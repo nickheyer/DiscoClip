@@ -38,11 +38,15 @@ docker run -d -p 7600:7600 nickheyer/discoclip
 
 #### Accessing The Web-UI
 
-If you are running DiscoClip on the machine you would like to access it from, you should be able to access it [here](http://127.0.0.1:7600). Otherwise, you will need to get the IP address of the computer hosting DiscoClip. On Windows, you would type `ipconfig` on the host machine and look for your `ipv4`.
+![image](https://user-images.githubusercontent.com/60236014/215385522-beee3c97-f624-48eb-ace9-7894b64b3fc3.png)
 
-If you would like to access DiscoClip remotely, as in not on the same network as the host machine, you will need to do some port forwarding to expose port 7600 to the internet. If you run into any trouble here, feel free to join the [Discord](https://discord.com/invite/6Z9yKTbsrP)!
+#### *If you are running DiscoClip on the machine you would like to access it from, you should be able to access it [here](http://127.0.0.1:7600). Otherwise, you will need to get the IP address of the computer hosting DiscoClip. On Windows, you would type `ipconfig` on the host machine and look for your `ipv4`.*
 
-#### Configuration
+#### *If you would like to access DiscoClip remotely, as in not on the same network as the host machine, you will need to do some port forwarding to expose port 7600 to the internet. If you run into any trouble here, feel free to join the [Discord](https://discord.com/invite/6Z9yKTbsrP)!*
+
+<hr />
+
+### Configuration
 
 
 ![image](https://user-images.githubusercontent.com/60236014/215380220-496a98b3-9262-41b0-86d4-60af6ec096ea.png)

@@ -72,7 +72,7 @@ async def on_valid_url(message):
         await client.change_presence(
             activity=discord.Activity(
             type = discord.ActivityType.watching,
-            name = f'& {get_current_status()}'
+            name = f'& waiting for links'
             ))
 
         if clip.check_fail():

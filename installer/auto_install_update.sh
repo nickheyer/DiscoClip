@@ -176,7 +176,7 @@ else
     echo "Pulling dirs from temp container..."
     for dir_path in "${DirsToBackup[@]}"; do
         base_dir=$(basename ${dir_path})
-        echo "Pulling ${tmp_dir}/${base_dir} <- ${tmp_id}:/app$/{dir_path}"
+        echo "Pulling ${tmp_dir}/${base_dir} <- ${tmp_id}:/app/${dir_path}"
         docker cp -a "${tmp_id}:/app/${dir_path}" "${tmp_dir}/${base_dir}"
     done
 

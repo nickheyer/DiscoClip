@@ -9,7 +9,7 @@ docker_user="nickheyer" # <-- Required!
 docker_app="discoclip" # <-- Required!
 
 ports="7600:7600" # <-- Optional
-declare -a FilesToBackup=("./data/values.json" "./data/activity.json" "./data/statemachine.json" "./archive/" "./logs/") # <-- Optional
+declare -a FilesToBackup=("./data/values.json" "./data/activity.json" "./data/statemachine.json" "archive/" "log/") # <-- Optional
 
 
 #Checking if script was run as root (with sudo)

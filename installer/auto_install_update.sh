@@ -177,7 +177,7 @@ else
     for dir_path in "${DirsToBackup[@]}"; do
         base_dir=$(basename ${dir_path})
         echo "Pulling ${tmp_dir}/${base_dir} <- ${tmp_id}:/app${dir_path:1}"
-        docker cp "${tmp_id}:/app${dir_path:1}" "${tmp_dir}/${base_dir}"
+        docker cp -a "${tmp_id}:/app${dir_path:1}" "${tmp_dir}/${base_dir}"
     done
 
     echo "Cleaning up temporary image and containers..."
@@ -215,11 +215,12 @@ else
     done
 
     echo "Injecting backed up dirs into container. Please wait..."
-    for dir_path in "${DirsoBackup[@]}"; do
+    for dir_path in "${DirsToBackup[@]}"; do
         base_dir=$(basename ${dir_path})
-        echo "Injecting ${tmp_dir}/${base_dir} -> ${new_id}:/app${dir_path:1}"
-        docker cp "${tmp_dir}/${base_dir}/*" "${new_id}:/app${dir_path:1}"
+        echo "Pulling ${tmp_dir}/${base_dir} -> ${tmp_id}:/app${dir_path:1}"
+        docker cp -a "${tmp_dir}/${base_dir}" "${new_id}:/app${dir_path}"
     done
+
 fi
 
 

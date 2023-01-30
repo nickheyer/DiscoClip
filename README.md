@@ -29,7 +29,7 @@ docker image pull nickheyer/discoclip_rpi:latest
 ```
 ##### Run Docker Container
 ```
-docker run -d -p 7600:7600 nickheyer/discolip
+docker run -d -p 7600:7600 nickheyer/discoclip
 ```
 ##### The server within the docker container can be accessed locally at [http://127.0.0.1:7600](http://127.0.0.1:7600)
 <hr />
@@ -84,6 +84,7 @@ https://www.tiktok.com/t/ZTRsaDRqY/
 
 
 - For any other comments or questions, feel free to reach me on discord via NicholasHeyer#4212
+- Feel free to join the [Discord](https://discord.com/invite/6Z9yKTbsrP)!
 
 
 

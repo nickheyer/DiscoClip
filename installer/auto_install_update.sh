@@ -10,7 +10,7 @@ docker_app="discoclip" # <-- Required!
 
 ports="7600:7600" # <-- Optional
 declare -a FilesToBackup=("./data/values.json" "./data/activity.json" "./data/statemachine.json") # <-- Optional
-declare -a DirsToBackup=("./archive" "./log") # <-- Optional
+declare -a DirsToBackup=("archive" "log") # <-- Optional
 
 #Checking if script was run as root (with sudo)
 if [ "$EUID" -ne 0 ]
@@ -176,8 +176,8 @@ else
     echo "Pulling dirs from temp container..."
     for dir_path in "${DirsToBackup[@]}"; do
         base_dir=$(basename ${dir_path})
-        echo "Pulling ${tmp_dir}/${base_dir} <- ${tmp_id}:/app${dir_path:1}"
-        docker cp -a "${tmp_id}:/app${dir_path:1}" "${tmp_dir}/${base_dir}"
+        echo "Pulling ${tmp_dir}/${base_dir} <- ${tmp_id}:/app$/{dir_path}"
+        docker cp -a "${tmp_id}:/app/${dir_path}" "${tmp_dir}/${base_dir}"
     done
 
     echo "Cleaning up temporary image and containers..."
@@ -217,9 +217,10 @@ else
     echo "Injecting backed up dirs into container. Please wait..."
     for dir_path in "${DirsToBackup[@]}"; do
         base_dir=$(basename ${dir_path})
-        echo "Pulling ${tmp_dir}/${base_dir} -> ${tmp_id}:/app${dir_path:1}"
-        docker cp -a "${tmp_dir}/${base_dir}" "${new_id}:/app${dir_path}"
+        echo "Pulling ${tmp_dir}/${base_dir} -> ${tmp_id}:/app/${dir_path}/.."
+        docker cp -a "${tmp_dir}/${base_dir}" "${new_id}:/app/${dir_path}/.."
     done
+
 
 fi
 

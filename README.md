@@ -8,7 +8,7 @@ A web-app/bot that monitors discord channels for IG/TikTok video-links then down
 ## General Requirements
 Running the discord bot requires a discord developer account (https://discord.com/developers/applications), and a bot created/invited (via your developer acount) to your chosen discord server.
 
-## Installation
+## Installation (Recommended Method)
 
 ### Linux -- Fully Automated Install & Updates
 
@@ -20,18 +20,62 @@ curl https://raw.githubusercontent.com/nickheyer/DiscoClip/main/installer/auto_i
 
 
 ##### Download Docker Image (x86_64 Architecture) 
-```
+```bash
 docker image pull nickheyer/discoclip:latest
 ```
 ##### Download Docker Image (aarch64 Architecture, ie: Raspberry-Pi) 
-```
+```bash
 docker image pull nickheyer/discoclip_rpi:latest
 ```
 ##### Run Docker Container
-```
+```bash
 docker run -d -p 7600:7600 nickheyer/discoclip
 ```
 ##### The server within the docker container can be accessed locally at [http://127.0.0.1:7600](http://127.0.0.1:7600)
+
+<hr />
+
+## Installation Without Docker (Not Recommended)
+
+### Prerequisites, Dependencies, and Requirements
+
+1. Python - Download and install Python [here](https://www.python.org/downloads/). Make sure that you choose "Add Python to environmental variables" during installation.
+2. Git - Download and install Git [here](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git)
+3. FFMpeg - Download and install FFMpeg [here](https://ffmpeg.org/download.html).
+4. "requirements.txt" - Once you've git-cloned DiscoClip (see next steps), you will be instructed to install the remaining dependencies found in this file, via `pip install -r requirements.txt`.
+
+### Next Steps
+
+1. Change directory to preferred install location
+```bash 
+cd /where/you/want/this/installed
+```
+
+2. Clone DiscoClip
+```bash 
+git clone https://github.com/nickheyer/DiscoClip
+```
+ 
+3. Change directory to DiscoClip
+```bash 
+cd ./DiscoClip
+```
+
+4. Install "requirements.txt"
+```bash 
+pip install -r requirements.txt
+```
+
+5. Run DiscoClip (Linux)
+```bash
+sh ./run.sh
+```
+
+5. Run DiscoClip (Windows)
+```powershell
+.\run.cmd
+```
+
 <hr />
 
 ## General Instructions

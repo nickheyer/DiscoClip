@@ -32,9 +32,10 @@ def start_bot():
     set_values('activity', 'currently', 'waiting for links')
 
 
-def kill_bot():
+def kill_bot(quiet=False):
     global bot_proc
-    set_values("statemachine", "botState", False)
+    if not quiet:
+        set_values("statemachine", "botState", False)
     set_values('activity', 'currently', 'offline')
     try:
         bot_proc.kill()
@@ -42,6 +43,7 @@ def kill_bot():
         bot_proc.close()
     except:
         pass
+
 
 def restart_bot():
     kill_bot()

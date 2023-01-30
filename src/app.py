@@ -33,7 +33,7 @@ def startup():
 #Function called on exit, similar to shutdown
 @atexit.register
 def exit_shutdown():
-    kill_bot()
+    kill_bot(quiet=True)
 
 # Beginning Routes with default index temp func
 @app.route("/")
@@ -83,13 +83,11 @@ def turn_bot_on():
         msg = f"Bot Is Already On"
         return msg
     for x, y in current_values.items():
-        if x == "internalReference" or (
-            "Token" in x
-        ):  # Keys in values.json that the bot can start without
+        if x in ['internalReference']:
             pass
-        elif y == None or y == "":
-            msg = "Missing Values"
-            return msg
+        elif y in [None, ""]:
+            return "Missing Values"
+
     try:
         start_bot()
     except:

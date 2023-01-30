@@ -2,7 +2,7 @@ import requests
 import instaloader as IL
 import subprocess
 import cv2
-from videohash import VideoHash
+#from videohash import VideoHash
 
 
 from utils import (
@@ -122,11 +122,9 @@ class Clip:
     def __check_archives(self):
         arch_dir = get_archive_path(self.platform)
         archived_files = list_files_in_dir(arch_dir)
-        v_hash = VideoHash(url=self.download_link)
+        #v_hash = VideoHash(url=self.download_link)
         for file in archived_files:
-            if file == self.file_name or (
-                v_hash.is_similar(VideoHash(path=concat_path(arch_dir, file)))
-            ):
+            if file == self.file_name:
                 self.full_path = concat_path(arch_dir, file)
                 self.size = get_file_size_mb(self.full_path)
                 return True

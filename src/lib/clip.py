@@ -4,7 +4,7 @@ import subprocess
 import cv2
 
 
-from utils import (
+from lib.utils import (
     get_cache_path,
     concat_path,
     search_log_for_file,

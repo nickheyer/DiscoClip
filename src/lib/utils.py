@@ -8,11 +8,15 @@ import json
 import shutil
 
 def get_project_root() -> Path:
-    return Path(__file__).absolute().parent.parent
+    return Path(__file__).absolute().parent.parent.parent
 
 def get_data_path() -> Path:
     root = get_project_root()
     return root.joinpath('data')
+
+def get_db_file() -> Path:
+    data_dir = get_data_path()
+    return data_dir.joinpath('disco.db')
 
 def get_err_logs_path() -> Path:
     root = get_project_root()

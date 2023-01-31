@@ -2,7 +2,7 @@ import os
 from sys import platform
 from subprocess import Popen
 
-from src.utils import (
+from lib.utils import (
     set_values,
     get_err_logs_path,
     get_src_path,

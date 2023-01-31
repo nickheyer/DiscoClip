@@ -1,14 +1,14 @@
 import discord
 import traceback
 import random
-from utils import (
+from lib.utils import (
     get_data,
     get_current_status,
     ClipUrl,
     get_bug_report_path
 )
 
-from clip import Clip
+from lib.clip import Clip
 
 VALUES = get_data("values")
 DISCORD_TOKEN : str = VALUES["discordToken"]

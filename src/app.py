@@ -1,31 +1,41 @@
-import sys
-import os
-# Required for container import PATH
-sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+import sys, os
+
+
+
+#sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 from flask import Flask, render_template, request, jsonify
+from flask_socketio import SocketIO
 
 import atexit
 import signal
 
-from src.utils import (
+from lib.utils import (
     set_values,
     set_file,
     get_data
 )
 
-from src.bot_controller import (
+from bot.bot_controller import (
     start_bot,
     kill_bot,
     restart_bot
 )
 
+from models.models import initialize_db
+
+
+
+
+
 app = Flask(__name__)
+socketio = SocketIO(app)
 
 # Ensure templates are auto-reloaded
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 
 @app.before_first_request #auto-starting based on current state stored in statemachine.json
 def startup():
+    initialize_db()
     current_status = get_data("statemachine")
     if current_status["botState"]:
         start_bot()
@@ -122,6 +132,6 @@ def shutdown():
     sys.exit()
 
 
-# Running App Loop
 if __name__ == "__main__":
-    app.run(debug=False)
+    print('THIS IS CWD ' + os.getcwd())
+    socketio.run(app)

@@ -1,8 +1,4 @@
 import sys, os
-
-
-
-#sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO
 
@@ -22,10 +18,6 @@ from bot.bot_controller import (
 )
 
 from models.models import initialize_db
-
-
-
-
 
 app = Flask(__name__)
 socketio = SocketIO(app)
@@ -133,5 +125,4 @@ def shutdown():
 
 
 if __name__ == "__main__":
-    print('THIS IS CWD ' + os.getcwd())
     socketio.run(app)

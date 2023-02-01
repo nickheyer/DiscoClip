@@ -63,6 +63,8 @@ def initialize_db():
         File
     ],
     safe=True)
+    if not Configuration.select().exists():
+        Configuration.create(is_archive=True, token="", upload_size_limit=8)
 
 if __name__ == '__main__':
     initialize_db()

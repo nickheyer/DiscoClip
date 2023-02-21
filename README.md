@@ -78,7 +78,7 @@ sh ./run.sh
 
 #### Accessing The Web-UI
 
-![image](https://media.discordapp.net/attachments/598552927946145835/1077417977328181258/image.png?width=811&height=839)
+![image](https://user-images.githubusercontent.com/60236014/220238279-848edf93-47d6-4c1a-8629-4e68fe11b749.png)
 
 #### *If you are running DiscoClip on the machine you would like to access it from, you should be able to access it [here](http://127.0.0.1:7600). Otherwise, you will need to get the IP address of the computer hosting DiscoClip. On Windows, you would type `ipconfig` on the host machine and look for your `ipv4`.*
 

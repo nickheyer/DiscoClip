@@ -6,8 +6,12 @@
 
 
 deploy/
+data/
+cache/
+archive/
 
 # User-specific files
+run-dev.sh
 *.rsuser
 *.suo
 *.user

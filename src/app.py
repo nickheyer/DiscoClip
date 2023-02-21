@@ -1,115 +1,112 @@
 import sys, os
-from flask import Flask, render_template, request, jsonify
+import requests
+from flask import Flask, render_template, request
 from flask_socketio import SocketIO
-
 import atexit
 import signal
 
-from lib.utils import (
-    set_values,
-    set_file,
-    get_data
+from models.utils import (
+    update_config,
+    update_state,
+    get_logs,
+    get_dict,
+    get_verbose_dict,
+    add_log
 )
+
+from lib.utils import initialize_dirs
 
 from bot.bot_controller import (
     start_bot,
-    kill_bot,
-    restart_bot
+    kill_bot
 )
 
 from models.models import initialize_db
 
+# --- FLASK/SOCKET INSTANTIATION
+
 app = Flask(__name__)
 socketio = SocketIO(app)
-
-# Ensure templates are auto-reloaded
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 
-@app.before_first_request #auto-starting based on current state stored in statemachine.json
-def startup():
-    initialize_db()
-    current_status = get_data("statemachine")
-    if current_status["botState"]:
-        start_bot()
 
-#Function called on exit, similar to shutdown
+# --- MISC HELPERS ---
+
+def refresh_logs():
+    socketio.emit('bot_log_added', {
+        'log': get_logs(100)
+    })
+
+def add_refresh_log(log):
+    add_log(log)
+    refresh_logs()
+
+def check_for_null(data):
+    nulls = []
+    for k, v in data.items():
+        if v in [None, '']:
+            nulls.append(k)
+    return nulls
+
+def validate_disc_token(token):
+    response = requests.get(
+        'https://discord.com/api/v9/users/@me',
+        headers={'Authorization': f'Bot {token}'})
+    return response.status_code == 200
+
+# --- STARTUP ---
+
+@app.before_first_request
+def startup():
+    initialize_dirs()
+    initialize_db()
+    add_refresh_log('Server started!')
+    update_state({
+        'app_state': True,
+        'current_activity': 'Offline'
+    })
+
+# --- SHUTDOWN ---
+
 @atexit.register
 def exit_shutdown():
-    kill_bot(quiet=True)
+    add_refresh_log('Server killed!')
+    update_state({
+        'bot_state': False,
+        'app_state': False
+    })
+    kill_bot()
 
-# Beginning Routes with default index temp func
+# --- HTTP ROUTES ---
+
 @app.route("/")
 def index():
-    data_list = [get_data("statemachine"), get_data("values")]
-    return render_template(
-        "/index.html",
-        data_list=data_list,
-        state=data_list[0],
-        values=data_list[1]
-    )
+    return render_template("/index.html")
 
-@app.route("/stat", methods=["POST"])
-def get_status():
-    return get_data("activity")
+# --- WEBSOCKET ROUTES ---
 
+# - CLIENT SOCKETS
 
-@app.route("/save", methods=["POST"])
-def save_credentials():
-    req = request.get_json()
-    file_name = req["file"]
-    json_data = req["data"]
-    prev = get_data(file_name)
-    dif = list()
-    for x in prev:
-        if prev[x] != json_data[x]:
-            dif.append(x)
-    if len(dif) > 0:
-        set_file(file_name, json_data)
-        if get_data('statemachine')['botState']:
-            restart_bot()
-            return "Saved and restarted"
-        else:
-            return "Saved"
-    return "No values to save"
+@socketio.on('client_connect')
+def socket_on_connect(data):
+    socketio.emit('client_info', {
+        'config': get_verbose_dict('Configuration'),
+        'state': get_dict('State'),
+        'log': get_logs(100)
+    })
 
-@app.route("/data", methods=["POST"])
-def return_data():
-    return get_data(request.get_json()["document"])
+@socketio.on('get_config')
+def socket_get_config(data):
+    config =  get_dict('Configuration')
+    socketio.emit('config', config)
 
+@socketio.on('update_config')
+def socket_update_config(data):
+    config = update_config(data)
+    socketio.emit('config_updated', config)
 
-@app.route("/on", methods=["POST"])
-def turn_bot_on():
-    current_state = get_data("statemachine")
-    current_values = get_data("values")
-    if current_state["botState"]:
-        msg = f"Bot Is Already On"
-        return msg
-    for x, y in current_values.items():
-        if x in ['internalReference']:
-            pass
-        elif y in [None, ""]:
-            return "Missing Values"
-
-    try:
-        start_bot()
-    except:
-        kill_bot()
-    msg = f"Turning Bot On"
-    return msg
-
-
-@app.route("/off", methods=["POST"])
-def turn_bot_off():
-    if get_data("statemachine")[f"botState"] == False:
-        msg = "Bot is already off"
-        return msg
-    kill_bot()
-    msg = f"Turning Bot Off"
-    return msg
-
-
-@app.route("/shutdown", methods=["POST"])
-def shutdown():
+@socketio.on('server_off')
+def socket_turn_server_off(data):
     kill_bot()
     if sys.platform in ["linux", "linux2"]:
         os.system("pkill -f gunicorn")
@@ -123,6 +120,75 @@ def shutdown():
         pass
     sys.exit()
 
+@socketio.on('bot_on')
+def socket_turn_bot_on(data):
+    bot_state = get_dict('State')['bot_state']
+    config = get_dict('Configuration')
+    try:
+        if bot_state:
+            raise Exception("Bot already on!")
+        null_fields = check_for_null(config)
+        if len(null_fields) > 0:
+            return {
+                'success': False,
+                'error': f'Missing required configuration fields: {", ".join(null_fields)}'
+            }
+        if not validate_disc_token(config['token']):
+            return {
+                'success': False,
+                'error': 'Invalid Discord Token'
+            }
+        start_bot(request.host, config['token'])
+        return {
+            'success': True
+        }
+    except Exception as e:
+        socketio.emit('bot_on_finished', { 'error': str(e) })
+
+@socketio.on('bot_off')
+def socket_turn_bot_on(data):
+    bot_state = get_dict('State')['bot_state']
+    try:
+        if not bot_state:
+            raise Exception("Bot already off!")
+        kill_bot()
+        socketio.emit('bot_off_finished', { 'success': True })
+        update_state({
+            'bot_state': False
+        })
+        add_refresh_log('Bot killed!')
+        refresh_logs()
+    except Exception as e:
+        socketio.emit('bot_off_finished', { 'error': str(e) })
+
+# - BOT SOCKETS
+
+@socketio.on('bot_connect')
+def socket_on_connect(data):
+    return get_dict('Configuration')
+
+@socketio.on('bot_started')
+def socket_bot_started(data):
+    # Forwarding the emit to the client from bot subproc
+    socketio.emit('bot_on_finished', data)
+    update_state({
+        'bot_state': True
+    })
+    add_refresh_log('Bot started!')
+
+@socketio.on('bot_change_presence')
+def socket_bot_change_presence(data):
+    status = {
+        'current_activity': data['presence']
+    }
+    update_state(status)
+    socketio.emit('update_status', status)
+
+@socketio.on('bot_add_log')
+def socket_bot_log_added(data):
+    add_refresh_log(data['log'])
+
+# --- SOCKET/FLASK APP LOOP ---
 
 if __name__ == "__main__":
     socketio.run(app)

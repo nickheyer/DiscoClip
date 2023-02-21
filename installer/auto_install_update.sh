@@ -9,8 +9,8 @@ docker_user="nickheyer" # <-- Required!
 docker_app="discoclip" # <-- Required!
 
 ports="7600:7600" # <-- Optional
-declare -a FilesToBackup=("./data/values.json" "./data/activity.json" "./data/statemachine.json") # <-- Optional
-declare -a DirsToBackup=("archive" "log") # <-- Optional
+declare -a FilesToBackup=() # <-- Optional
+declare -a DirsToBackup=("archive" "log" "data") # <-- Optional
 
 #Checking if script was run as root (with sudo)
 if [ "$EUID" -ne 0 ]
@@ -87,17 +87,17 @@ else
 
     echo "No services exist for this application. Creating service file. Please wait..."
     echo "[Unit]
-    Description=${app_name} Service
-    Requires=docker.service
-    After=docker.service
+Description=${app_name} Service
+Requires=docker.service
+After=docker.service
 
-    [Service]
-    Restart=always
-    ExecStart=${docker_loc} start -a ${docker_app}
-    ExecStop=${docker_loc} stop -t 2 ${docker_app}
+[Service]
+Restart=always
+ExecStart=${docker_loc} start -a ${docker_app}
+ExecStop=${docker_loc} stop -t 2 ${docker_app}
 
-    [Install]
-    WantedBy=default.target" > "${app_service_file}"
+[Install]
+WantedBy=default.target" > "${app_service_file}"
 fi
 
 #Checking for running app containers. Stopping them.
@@ -234,6 +234,11 @@ docker container stop $docker_app
 
 echo "Reloading systemctl daemon to poulate changes to services. Please wait..."
 systemctl daemon-reload
+
+#Enabling services
+
+echo "Enabling docker-${docker_app}.service. Please wait..."
+systemctl enable "docker-${docker_app}.service"
 
 #Starting services
 

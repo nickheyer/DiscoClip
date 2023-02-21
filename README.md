@@ -1,7 +1,7 @@
 ![image](https://user-images.githubusercontent.com/60236014/215372009-d6ca97db-f187-4c39-a8d9-d7ac31e5d52a.png)
 
 # DiscoClip
-A web-app/bot that monitors discord channels for IG/TikTok video-links then downloads, transcodes (to Discord's size limit), and posts the video to the same channel.
+A web-app/bot that monitors discord channels for IG/TikTok video-links then downloads, transcodes (to Discord's size limit), posts, and archives each video.
 
 <hr />
 
@@ -35,9 +35,10 @@ docker run -d -p 7600:7600 nickheyer/discoclip
 
 <hr />
 
-## Installation Without Docker (Not Recommended)
+## Installation From Source (Not Recommended)
 
 ### Prerequisites, Dependencies, and Requirements
+**_NOTE:_**  Installation from source using Windows has been deprecated with the introduction of web-socket functionality, gevent, and other integral parts of this application that are not currently supported by Microsoft.
 
 1. Python - Download and install Python [here](https://www.python.org/downloads/). Make sure that you choose "Add Python to environmental variables" during installation.
 2. Git - Download and install Git [here](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git)
@@ -66,14 +67,9 @@ cd ./DiscoClip
 pip install -r requirements.txt
 ```
 
-5. Run DiscoClip (Linux)
+5. Run DiscoClip
 ```bash
 sh ./run.sh
-```
-
-5. Run DiscoClip (Windows)
-```powershell
-.\run.cmd
 ```
 
 <hr />
@@ -82,7 +78,7 @@ sh ./run.sh
 
 #### Accessing The Web-UI
 
-![image](https://user-images.githubusercontent.com/60236014/215385522-beee3c97-f624-48eb-ace9-7894b64b3fc3.png)
+![image](https://media.discordapp.net/attachments/598552927946145835/1077417977328181258/image.png?width=811&height=839)
 
 #### *If you are running DiscoClip on the machine you would like to access it from, you should be able to access it [here](http://127.0.0.1:7600). Otherwise, you will need to get the IP address of the computer hosting DiscoClip. On Windows, you would type `ipconfig` on the host machine and look for your `ipv4`.*
 

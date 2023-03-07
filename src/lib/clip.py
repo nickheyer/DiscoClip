@@ -42,7 +42,8 @@ class Clip:
             avail_netlocs.extend(['www.tiktok.com', 'm.tiktok.com', 'tiktok.com'])
         urls = re.findall('http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', msg.content.strip())
         for url in urls:
-            if urllib.parse.urlparse(url).netloc.lower() in avail_netlocs:
+            parsed = urllib.parse.urlparse(url)
+            if parsed.path and parsed.netloc.lower() in avail_netlocs:
                 return url
         return None
 
@@ -64,13 +65,13 @@ class Clip:
         }
         pattern = {
             'TikTok': r'(/video/|/t/)([^/?]+)',
-            'Instagram': r'/reel/([^/?]+)',
+            'Instagram': r'/(reel|p)/([^/?]+)',
         }.get(platforms.get(netloc), None)
         if pattern is None:
             return 'Invalid'
         m = re.search(pattern, parsed_url.path)
         if m:
-            self.short_code = m.group(1)
+            self.short_code = m.group(2)
             return platforms.get(netloc, 'Invalid')
         return 'Invalid'
 

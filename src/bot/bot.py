@@ -85,6 +85,9 @@ async def on_valid_url(message, url):
 
     await clip.initialize()
     
+    if clip.platform in ['Invalid'] and not CONFIG.get('IS_DEBUG', False):
+        return
+
     action_phrases = [
         'Casting spells',
         'Working the magic',
@@ -122,8 +125,8 @@ async def on_valid_url(message, url):
         # CHECK THAT FILE EXISTS AT PATH BEFORE UPLOAD
         if await clip.check_exists():
             await clip.upload(notice, discord)
-        else:
-            await notice.edit(content=f'Invalid link. Failed while {random.choice(action_phrases).lower()}.')
+        elif CONFIG.get('IS_DEBUG', False):
+            await notice.edit(content=f'Invalid link. Failed while {random.choice(action_phrases)}.')
             return
 
         # IF SETTINGS ALLOW ARCHIVING, DO ARCHIVE ELSE DELETE FILE

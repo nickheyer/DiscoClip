@@ -47,6 +47,7 @@ bld/
 #Generated Virtual Env File
 venv/
 .vscode/
+.dockerignore
 assets/
 sandbox/
 

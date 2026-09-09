@@ -1,0 +1,37 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+
+[workspace.dependencies]
+discoclip-engine = { path = "crates/engine" }
+discoclip-bot = { path = "crates/bot" }
+discoclip-ui = { path = "crates/ui" }
+
+async-trait = "0.1"
+clap = { version = "4", features = ["derive"] }
+jiff = { version = "0.2", features = ["serde"] }
+reqwest = "0.13"
+rust-embed = "8"
+secrecy = { version = "0.10", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+tokio = { version = "1", features = ["sync"] }
+twilight-gateway = "0.17"
+twilight-http = "0.17"
+twilight-model = "0.17"
+url = { version = "2", features = ["serde"] }
+uuid = { version = "1", features = ["v7", "serde"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = true

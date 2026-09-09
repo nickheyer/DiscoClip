@@ -1,0 +1,20 @@
+[package]
+name = "discoclip-engine"
+description = "Source-agnostic media pipeline: resolve, download, transcode, publish, archive"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+jiff.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+url.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

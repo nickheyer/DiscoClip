@@ -1,0 +1,21 @@
+[package]
+name = "discoclip"
+description = "Watches Discord channels for video links, then downloads, transcodes, posts, and archives each one"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "discoclip"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+discoclip-bot.workspace = true
+discoclip-engine.workspace = true
+discoclip-ui.workspace = true
+serde.workspace = true
+
+[lints]
+workspace = true

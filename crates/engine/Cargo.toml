@@ -5,16 +5,48 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+build = "build.rs"
 
 [dependencies]
+aes.workspace = true
 async-trait.workspace = true
+base64.workspace = true
+bytes.workspace = true
+cbc.workspace = true
+dash-mpd.workspace = true
+futures.workspace = true
+hex.workspace = true
+http.workspace = true
 jiff.workspace = true
+linkify.workspace = true
+m3u8-rs.workspace = true
+mime.workspace = true
+percent-encoding.workspace = true
+regex.workspace = true
 reqwest.workspace = true
+rusqlite.workspace = true
+scraper.workspace = true
 serde.workspace = true
+serde_json.workspace = true
+slug.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tokio-rusqlite.workspace = true
+tokio-stream.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
 url.workspace = true
 uuid.workspace = true
+zstd.workspace = true
+
+[build-dependencies]
+hex.workspace = true
+liblzma.workspace = true
+sha2.workspace = true
+tar.workspace = true
+ureq.workspace = true
+zip.workspace = true
+zstd.workspace = true
 
 [lints]
 workspace = true

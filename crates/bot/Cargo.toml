@@ -7,13 +7,25 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+async-trait.workspace = true
 discoclip-engine.workspace = true
+futures.workspace = true
+jiff.workspace = true
 secrecy.workspace = true
 serde.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
 twilight-gateway.workspace = true
 twilight-http.workspace = true
 twilight-model.workspace = true
+twilight-util.workspace = true
 url.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
 
 [lints]
 workspace = true

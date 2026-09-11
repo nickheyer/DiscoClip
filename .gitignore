@@ -1,6 +1,8 @@
 /target
 /discoclip.toml
 /discoclip.yaml
+/discoclip.yml
+/discoclip.json
 /data/
 /cache/
 /archive/

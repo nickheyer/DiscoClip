@@ -2,3 +2,54 @@
 
 # DiscoClip
 A web-app/bot that monitors discord channels for video-links then downloads, transcodes, posts, and archives each video.
+
+## Running
+
+```
+DISCOCLIP_CONFIG=discoclip.toml discoclip
+
+# or
+
+discoclip --config discoclip.toml
+```
+
+## First run
+
+Until an account exists the server prints a setup token at startup. Open `/setup` in the
+web app and enter it to create the admin account. Logins are rate limited, sessions live
+in the database and can be reviewed and ended from the web app, and every state-changing
+request must carry the session's CSRF token.
+
+Accounts can also log in through GitHub, Google or any OpenID Connect issuer configured
+under `[auth]`, and through Discord once a Discord application is marked for login;
+identities are linked and unlinked from the account page, and the providers' tokens are
+kept encrypted under `secret.key` in the data directory.
+
+## Discord
+
+Discord applications are added in the web app with their bot token and, for login, their
+client secret; both are stored encrypted. Every application runs its own bot, and several
+applications can run side by side. Each application page offers the link that adds its bot
+to a guild, with the scopes and permissions it asks for, and lists the guilds the bot is in
+and the ones it was removed from.
+
+Which channels a bot watches is set by rules, one per channel: where results are posted,
+which link hosts count, which users or roles may post them, and how big or long a video
+may be. Operators edit any guild's rules; anyone who manages a guild on Discord and has
+linked their Discord account edits that guild's rules.
+
+The `/clip` and `/status` slash commands are registered per application from its page:
+globally, in chosen guilds, or not at all. Each bot is started, stopped and restarted from
+the app; a stopped bot stays stopped until started again, and every bot's state streams
+live to the app.
+
+Scripts use API tokens minted from the account page, sent as `Authorization: Bearer dc_...`;
+each token is limited to the permissions it was given and can be revoked at any time.
+
+## Settings
+
+Settings live in the database under `data_dir` (default `data`) and are managed from the
+web app. A provisioning file, `discoclip.toml`, `.yaml`, `.yml` or `.json` (see
+`discoclip.example.toml`), and `DISCOCLIP_<SECTION>__<KEY>` environment variables seed
+them at startup. A value changed in the web app is kept even when the file still names
+the old one.

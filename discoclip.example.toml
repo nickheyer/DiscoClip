@@ -1,0 +1,54 @@
+# Copy to discoclip.toml, or set any key through the environment as
+# DISCOCLIP_<SECTION>__<KEY>, for example DISCOCLIP_DISCORD__TOKEN. Environment variables
+# override the file. YAML and JSON files work the same way.
+
+data_dir = "data"              # database and secret key
+
+[log]
+# A tracing filter: a level, or per-crate directives such as "info,discoclip_engine=debug".
+level = "info"
+
+[engine]
+cache_dir = "cache"            # ffmpeg and in-flight downloads
+workers = 2                    # jobs processed at the same time
+
+[engine.limits]
+max_source_bytes = 2147483648  # largest source download accepted
+max_duration_secs = 10800      # longest video accepted
+max_height = 1080              # taller sources are downscaled
+
+# Uncomment to keep a copy of every finished video.
+# [engine.archive]
+# dir = "archive"
+# keep = "output"              # "output", "source" or "both"
+
+# Discord applications, with their bot tokens and client secrets, are added in the web app,
+# where they are kept encrypted, and so are the rules for which channels each bot watches
+# and where its slash commands are registered.
+
+[local]
+dir = "data/local"             # where jobs submitted from the web app are written
+max_bytes = 104857600          # size budget for web app submissions
+
+[web]
+bind = "127.0.0.1:8080"        # address the web app listens on
+# public_url = "https://clips.example.com"  # how browsers reach the app; login providers send them back here
+
+# Logging in with an OAuth provider instead of a password. Register an application at
+# the provider with the callback https://<public_url>/api/auth/<provider>/callback,
+# where <provider> is github, google, oidc, or discord for the application marked for login.
+[auth]
+oauth_signup = false           # create a viewer account for a provider identity nobody has linked
+# Discord login is offered by the Discord application marked for it in the web app.
+# [auth.github]
+# client_id = ""
+# client_secret = ""
+# [auth.google]
+# client_id = ""
+# client_secret = ""
+# [auth.oidc]                  # any OpenID Connect issuer
+# name = "Single sign-on"      # what the login button says
+# issuer = "https://login.example.com/realms/main"
+# client_id = ""
+# client_secret = ""
+# scopes = ["openid", "profile", "email"]

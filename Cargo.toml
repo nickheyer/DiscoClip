@@ -11,22 +11,66 @@ license = "MIT"
 [workspace.dependencies]
 discoclip-engine = { path = "crates/engine" }
 discoclip-bot = { path = "crates/bot" }
-discoclip-ui = { path = "crates/ui" }
 
+aes = "0.9"
+aes-gcm = "0.11"
+argon2 = "0.6"
 async-trait = "0.1"
-clap = { version = "4", features = ["derive"] }
+axum = { version = "0.8", features = ["macros"] }
+axum-extra = { version = "0.12", features = ["cookie"] }
+base64 = "0.23"
+bytes = "1"
+cbc = { version = "0.2", features = ["alloc"] }
+clap = { version = "4", features = ["derive", "env", "wrap_help"] }
+config = { version = "0.15", default-features = false, features = ["toml", "yaml", "json"] }
+dash-mpd = { version = "0.20", default-features = false, features = ["fetch", "rustls-tls"] }
+dirs = "6"
+futures = "0.3"
+hex = "0.4"
+http = "1"
+http-body-util = "0.1"
 jiff = { version = "0.2", features = ["serde"] }
-reqwest = "0.13"
-rust-embed = "8"
+linkify = "0.11"
+m3u8-rs = "6"
+mime = "0.3"
+percent-encoding = "2"
+rand = "0.10"
+regex = "1"
+reqwest = { version = "0.13", features = ["form", "json", "stream", "socks", "gzip", "brotli", "deflate", "zstd"] }
+rusqlite = { version = "0.40", features = ["bundled", "backup"] }
+scraper = "0.27"
 secrecy = { version = "0.10", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_path_to_error = "0.1"
+serde_yaml_ng = "0.10"
+slug = "0.1"
+subtle = "2"
 thiserror = "2"
-tokio = { version = "1", features = ["sync"] }
-twilight-gateway = "0.17"
+time = "0.3"
+toml = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "process", "fs", "io-util", "time", "signal"] }
+tokio-rusqlite = "0.8"
+tokio-stream = { version = "0.1", features = ["sync", "time"] }
+tokio-util = { version = "0.7", features = ["io"] }
+tokio-websockets = { version = "0.13", features = ["server", "sha1_smol"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.7", features = ["trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+twilight-gateway = { version = "0.17", default-features = false, features = ["rustls-platform-verifier", "twilight-http"] }
 twilight-http = "0.17"
 twilight-model = "0.17"
+twilight-util = { version = "0.17", features = ["builder"] }
 url = { version = "2", features = ["serde"] }
 uuid = { version = "1", features = ["v7", "serde"] }
+zstd = "0.14"
+
+liblzma = { version = "0.4", default-features = false, features = ["static"] }
+sha2 = "0.11"
+tar = "0.4"
+ureq = "3"
+zip = { version = "5", default-features = false, features = ["deflate"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

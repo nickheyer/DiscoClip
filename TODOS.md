@@ -1,6 +1,6 @@
 # TODOS
 
-Progress: 31%
+REMOVE EACH ITEM AS YOU FINISH IT. DO NOT PROGRESS UNTIL YOUVE COMPLETED THE CURRENT ITEM IN ITS ENTIRETY. MUST DO IN ORDER.
 
 1. `crates/app/src/web.rs`: `WebApp` serving the embedded SVELTE frontend with sessions, optional TLS, reverse-proxy awareness.
 2. Web: dashboard with live SSE job feed, queue depth, worker utilisation, bot state.

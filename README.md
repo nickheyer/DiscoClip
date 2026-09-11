@@ -13,6 +13,13 @@ DISCOCLIP_CONFIG=discoclip.toml discoclip
 discoclip --config discoclip.toml
 ```
 
+## Building
+
+The web app in `crates/app/ui` is a SvelteKit app that `cargo build` compiles with Node.js
+and npm and embeds in the binary, so the binary is the whole deployment. While working on
+the web app, `npm run dev` in `crates/app/ui` serves it with hot reload and proxies `/api`
+to a running server at `127.0.0.1:8080` (`DISCOCLIP_API` names another).
+
 ## First run
 
 Until an account exists the server prints a setup token at startup. Open `/setup` in the

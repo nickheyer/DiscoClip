@@ -51,6 +51,9 @@ uuid.workspace = true
 [lints]
 workspace = true
 
+[build-dependencies]
+sha2.workspace = true
+
 [dev-dependencies]
 http-body-util.workspace = true
 tokio-websockets.workspace = true

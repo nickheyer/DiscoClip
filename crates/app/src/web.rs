@@ -1,4 +1,5 @@
-//! The web app: an HTTP API over the stores, behind sessions.
+//! The web app: an HTTP API over the stores, behind sessions, and the browser app that
+//! drives it, built from `ui/` and embedded in the binary.
 
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -32,6 +33,7 @@ use crate::tokens::TokenStore;
 use crate::users::{UserError, UserStore};
 
 pub mod applications;
+pub mod assets;
 pub mod audit;
 pub mod auth;
 pub mod discord;
@@ -213,9 +215,11 @@ impl WebApp {
         Ok(Some(token))
     }
 
+    /// The API under `/api`, and the browser app everywhere else.
     pub fn router(&self) -> Router {
         Router::new()
             .nest("/api", api(self.state.clone()))
+            .fallback(assets::serve)
             .layer(TraceLayer::new_for_http())
     }
 
@@ -328,9 +332,15 @@ fn api(state: AppState) -> Router {
         .route("/audit", get(audit::list))
         .route("/auth/{provider}/start", get(oauth::start))
         .route("/auth/{provider}/callback", get(oauth::callback))
+        .fallback(api_not_found)
         .layer(from_fn(auth::csrf_guard))
         .layer(from_fn_with_state(state.clone(), auth::identify))
         .with_state(state)
+}
+
+/// An `/api` path nothing answers: the API's own 404, never the browser app's page.
+async fn api_not_found() -> error::ApiError {
+    error::ApiError::NotFound
 }
 
 #[cfg(test)]

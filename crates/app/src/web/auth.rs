@@ -16,6 +16,7 @@ use subtle::ConstantTimeEq;
 
 use super::AppState;
 use super::error::ApiError;
+use crate::audit::{self, Actor};
 use crate::sessions::{ABSOLUTE_LIFETIME, Session, SessionId};
 use crate::tokens::ApiToken;
 use crate::users::{Permission, User};
@@ -28,6 +29,8 @@ pub const CSRF_HEADER: &str = "x-csrf-token";
 pub struct Identity {
     pub user: User,
     pub via: Via,
+    /// The address the request came from.
+    pub ip: IpAddr,
 }
 
 /// What carried the account's credentials.
@@ -76,6 +79,19 @@ impl Identity {
         match &self.via {
             Via::Session { session, .. } => Some(session.id),
             Via::Token(_) => None,
+        }
+    }
+
+    /// The account as the audit log names it.
+    pub fn actor(&self) -> Actor {
+        Actor::User {
+            id: self.user.id,
+            username: self.user.username.clone(),
+            via: match &self.via {
+                Via::Session { .. } => audit::Via::Session,
+                Via::Token(_) => audit::Via::Token,
+            },
+            ip: self.ip,
         }
     }
 }
@@ -161,6 +177,7 @@ pub async fn identify(
         request.extensions_mut().insert(Identity {
             user,
             via: Via::Token(token),
+            ip,
         });
     } else if let Some(cookie) = jar.get(COOKIE)
         && let Some(auth) = state.sessions.authenticate(cookie.value()).await?
@@ -172,6 +189,7 @@ pub async fn identify(
                 session: auth.session,
                 csrf_token: auth.csrf_token,
             },
+            ip,
         });
     }
     Ok(next.run(request).await)
@@ -319,6 +337,7 @@ pub async fn start_session(
             session: created.session,
             csrf_token: created.csrf_token,
         },
+        ip,
     };
     Ok((jar.add(cookie), identity))
 }

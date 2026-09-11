@@ -101,7 +101,10 @@ pub async fn create(
         .await?
         .ok_or(ApiError::NotFound)?;
     check_channels(&state, id, &guild, &input).await?;
-    let rule = state.rules.create(id, &guild, input).await?;
+    let rule = state
+        .rules
+        .create(&identity.actor(), id, &guild, input)
+        .await?;
     tracing::info!(by = identity.user.username, rule = %rule.id, guild, channel = rule.input.channel_id, "watch rule added");
     Ok((StatusCode::CREATED, Json(rule)))
 }
@@ -136,7 +139,7 @@ pub async fn update(
     let current = state.rules.get(id).await?.ok_or(ApiError::NotFound)?;
     may_edit(&state, &identity, &current.guild_id).await?;
     check_channels(&state, current.application_id, &current.guild_id, &input).await?;
-    let rule = state.rules.update(id, input).await?;
+    let rule = state.rules.update(&identity.actor(), id, input).await?;
     tracing::info!(by = identity.user.username, rule = %rule.id, "watch rule changed");
     Ok(Json(rule))
 }
@@ -149,7 +152,7 @@ pub async fn delete(
     let id: RuleId = parse_id(&id)?;
     let current = state.rules.get(id).await?.ok_or(ApiError::NotFound)?;
     may_edit(&state, &identity, &current.guild_id).await?;
-    state.rules.delete(id).await?;
+    state.rules.delete(&identity.actor(), id).await?;
     tracing::info!(by = identity.user.username, rule = %id, "watch rule removed");
     Ok(StatusCode::NO_CONTENT)
 }

@@ -53,3 +53,24 @@ web app. A provisioning file, `discoclip.toml`, `.yaml`, `.yml` or `.json` (see
 `discoclip.example.toml`), and `DISCOCLIP_<SECTION>__<KEY>` environment variables seed
 them at startup. A value changed in the web app is kept even when the file still names
 the old one.
+
+## Audit log
+
+Every settings change and every Discord management action is written to an audit log in
+the same database transaction as the change: who did it (an account, from a browser session
+or with an API token, with its address; or provisioning, at startup), when, what it was done
+to, and what changed. Settings entries carry the value before and after and whatever was
+stored around or beneath the key and removed by the write; application entries the fields
+that changed, the command scope before and after, and how a registration went; rule
+entries the rule before and after. Secrets never appear: a bot token or client secret is
+logged as replaced, set or removed, and settings values at keys named like secrets are
+redacted.
+
+The actions are `settings.set`, `settings.reset`, `settings.import`,
+`settings.provision`, `application.create`, `application.update`, `application.delete`,
+`application.commands.set`, `application.commands.register`, `bot.start`, `bot.stop`,
+`bot.restart`, `rule.create`, `rule.update` and `rule.delete`. Admins read the log at
+`GET /api/audit`, newest first, narrowed by `actor` (an account id), `action`,
+`target_kind` (`setting`, `application` or `rule`) with `target_id`, and `since` and
+`until`; `limit` sets the page size and `before` takes the `next` of the previous page. An
+API token needs the `view_audit_log` scope to read it.

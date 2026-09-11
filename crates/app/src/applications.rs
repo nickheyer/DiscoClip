@@ -1,5 +1,6 @@
 //! Discord applications the server runs bots for, several per install, with their client
-//! secrets and bot tokens sealed under the keyring.
+//! secrets and bot tokens sealed under the keyring. Every change is written to the audit
+//! log in the same transaction; the secrets never are, only that they were replaced.
 
 use discoclip_bot::DiscordEndpoints;
 use discoclip_engine::StoreError;
@@ -7,10 +8,12 @@ use discoclip_engine::rusqlite::{self, Connection, OptionalExtension, params};
 use discoclip_engine::store::sqlite::SqliteStore;
 use jiff::Timestamp;
 use serde::Serialize;
+use serde_json::{Value as Json, json};
 use twilight_model::guild::Permissions;
 use url::Url;
 use uuid::Uuid;
 
+use crate::audit::{self, Action, Actor, Target};
 use crate::commands::{CommandMode, CommandScope};
 use crate::db::{nanos, timestamp, transact};
 use crate::secrets::{Keyring, SecretError};
@@ -181,9 +184,10 @@ impl ApplicationStore {
         Self { db, keyring }
     }
 
-    /// Adds an application; `client_id` is Discord's id for it.
+    /// Adds an application by `actor`; `client_id` is Discord's id for it.
     pub async fn create(
         &self,
+        actor: &Actor,
         name: &str,
         client_id: &str,
         credentials: Credentials,
@@ -191,6 +195,7 @@ impl ApplicationStore {
         let name = check_name(name)?;
         let client_id = client_id.to_string();
         let keyring = self.keyring.clone();
+        let actor = actor.clone();
         transact(&self.db, move |tx| {
             let id = ApplicationId(Uuid::now_v7());
             let now = Timestamp::now();
@@ -211,21 +216,34 @@ impl ApplicationStore {
                 ],
             );
             match inserted {
-                Ok(_) => Ok(Application {
-                    id,
-                    name,
-                    client_id,
-                    login: false,
-                    has_client_secret: credentials.client_secret.is_some(),
-                    commands: CommandsState {
-                        scope: CommandScope::default(),
-                        registered_at: None,
-                        error: None,
-                    },
-                    enabled: true,
-                    created_at: now,
-                    updated_at: now,
-                }),
+                Ok(_) => {
+                    audit::record(
+                        tx,
+                        &actor,
+                        Action::ApplicationCreate,
+                        Target::application(id, &name),
+                        json!({
+                            "name": name,
+                            "client_id": client_id,
+                            "has_client_secret": credentials.client_secret.is_some(),
+                        }),
+                    )?;
+                    Ok(Application {
+                        id,
+                        name,
+                        client_id,
+                        login: false,
+                        has_client_secret: credentials.client_secret.is_some(),
+                        commands: CommandsState {
+                            scope: CommandScope::default(),
+                            registered_at: None,
+                            error: None,
+                        },
+                        enabled: true,
+                        created_at: now,
+                        updated_at: now,
+                    })
+                }
                 Err(rusqlite::Error::SqliteFailure(error, _))
                     if error.code == rusqlite::ErrorCode::ConstraintViolation =>
                 {
@@ -313,17 +331,20 @@ impl ApplicationStore {
         .await
     }
 
-    /// Applies `changes`. Turning `login` on turns it off for every other application,
-    /// and needs a client secret to be stored or given.
+    /// Applies `changes` by `actor`. Turning `login` on turns it off for every other
+    /// application, and needs a client secret to be stored or given.
     pub async fn update(
         &self,
+        actor: &Actor,
         id: ApplicationId,
         changes: Changes,
     ) -> Result<Application, ApplicationError> {
         let name = changes.name.as_deref().map(check_name).transpose()?;
         let keyring = self.keyring.clone();
+        let actor = actor.clone();
         transact(&self.db, move |tx| {
             let mut application = get_in(tx, id)?.ok_or(ApplicationError::NotFound(id))?;
+            let previous = application.clone();
             let now = Timestamp::now();
             if let Some(name) = name {
                 tx.execute(
@@ -378,14 +399,26 @@ impl ApplicationStore {
                 params![id.to_string(), nanos(now)],
             )?;
             application.updated_at = now;
+            let details = update_details(&previous, &application, &changes);
+            if !details.is_empty() {
+                audit::record(
+                    tx,
+                    &actor,
+                    Action::ApplicationUpdate,
+                    Target::application(id, &application.name),
+                    Json::Object(details),
+                )?;
+            }
             Ok(application)
         })
         .await
     }
 
-    /// Sets where the commands are to be registered; registering is the caller's next step.
+    /// Sets where the commands are to be registered, by `actor`; registering is the
+    /// caller's next step.
     pub async fn set_commands(
         &self,
+        actor: &Actor,
         id: ApplicationId,
         scope: CommandScope,
     ) -> Result<Application, ApplicationError> {
@@ -394,7 +427,9 @@ impl ApplicationStore {
                 return Err(ApplicationError::InvalidGuild(guild.clone()));
             }
         }
+        let actor = actor.clone();
         transact(&self.db, move |tx| {
+            let previous = get_in(tx, id)?.ok_or(ApplicationError::NotFound(id))?;
             let guilds = serde_json::to_string(&scope.guilds)
                 .map_err(|e| StoreError::Corrupt(e.to_string()))?;
             if tx.execute(
@@ -403,6 +438,15 @@ impl ApplicationStore {
             )? == 0
             {
                 return Err(ApplicationError::NotFound(id));
+            }
+            if scope != previous.commands.scope {
+                audit::record(
+                    tx,
+                    &actor,
+                    Action::CommandsSet,
+                    Target::application(id, &previous.name),
+                    json!({ "scope": scope, "previous": previous.commands.scope }),
+                )?;
             }
             get_in(tx, id)?.ok_or(ApplicationError::NotFound(id))
         })
@@ -428,12 +472,14 @@ impl ApplicationStore {
         .await
     }
 
-    /// Records how registering the commands went.
+    /// Records how registering the commands, as asked for by `actor`, went.
     pub async fn record_commands(
         &self,
+        actor: &Actor,
         id: ApplicationId,
         outcome: Result<(), String>,
     ) -> Result<Application, ApplicationError> {
+        let actor = actor.clone();
         transact(&self.db, move |tx| {
             let now = nanos(Timestamp::now());
             let changed = match &outcome {
@@ -449,13 +495,31 @@ impl ApplicationStore {
             if changed == 0 {
                 return Err(ApplicationError::NotFound(id));
             }
-            get_in(tx, id)?.ok_or(ApplicationError::NotFound(id))
+            let application = get_in(tx, id)?.ok_or(ApplicationError::NotFound(id))?;
+            let mut details = json!({
+                "scope": application.commands.scope,
+                "registered": outcome.is_ok(),
+            });
+            if let Err(error) = &outcome {
+                details["error"] = Json::String(error.clone());
+            }
+            audit::record(
+                tx,
+                &actor,
+                Action::CommandsRegister,
+                Target::application(id, &application.name),
+                details,
+            )?;
+            Ok(application)
         })
         .await
     }
 
-    pub async fn delete(&self, id: ApplicationId) -> Result<(), ApplicationError> {
+    /// Removes an application by `actor`, and through the database its rules and guilds.
+    pub async fn delete(&self, actor: &Actor, id: ApplicationId) -> Result<(), ApplicationError> {
+        let actor = actor.clone();
         transact(&self.db, move |tx| {
+            let application = get_in(tx, id)?.ok_or(ApplicationError::NotFound(id))?;
             if tx.execute(
                 "DELETE FROM discord_applications WHERE id = ?1",
                 params![id.to_string()],
@@ -463,10 +527,44 @@ impl ApplicationStore {
             {
                 return Err(ApplicationError::NotFound(id));
             }
+            audit::record(
+                tx,
+                &actor,
+                Action::ApplicationDelete,
+                Target::application(id, &application.name),
+                json!({ "name": application.name, "client_id": application.client_id }),
+            )?;
             Ok(())
         })
         .await
     }
+}
+
+/// What an update changed, for the audit log: the fields that differ, with the name it
+/// had before, and which secrets were replaced, set or removed, never their values.
+fn update_details(
+    previous: &Application,
+    current: &Application,
+    changes: &Changes,
+) -> serde_json::Map<String, Json> {
+    let mut details = serde_json::Map::new();
+    if current.name != previous.name {
+        details.insert("name".into(), json!(current.name));
+        details.insert("previous_name".into(), json!(previous.name));
+    }
+    if changes.bot_token.is_some() {
+        details.insert("bot_token".into(), json!("replaced"));
+    }
+    if let Some(secret) = &changes.client_secret {
+        details.insert(
+            "client_secret".into(),
+            json!(if secret.is_some() { "set" } else { "removed" }),
+        );
+    }
+    if current.login != previous.login {
+        details.insert("login".into(), json!(current.login));
+    }
+    details
 }
 
 fn get_in(conn: &Connection, id: ApplicationId) -> Result<Option<Application>, ApplicationError> {
@@ -572,6 +670,10 @@ mod tests {
         ApplicationStore::new(db, Keyring::from_key([5; 32]))
     }
 
+    fn actor() -> Actor {
+        Actor::test()
+    }
+
     fn credentials(token: &str, secret: Option<&str>) -> Credentials {
         Credentials {
             bot_token: token.into(),
@@ -583,7 +685,12 @@ mod tests {
     async fn applications_keep_their_secrets_sealed_and_open_them_back() {
         let store = store().await;
         let first = store
-            .create(" Clips ", "100", credentials("bot-1", Some("secret-1")))
+            .create(
+                &actor(),
+                " Clips ",
+                "100",
+                credentials("bot-1", Some("secret-1")),
+            )
             .await
             .unwrap();
         assert_eq!(first.name, "Clips");
@@ -594,16 +701,18 @@ mod tests {
         assert!(first.commands.registered_at.is_none());
         assert!(first.enabled);
         let second = store
-            .create("Other", "200", credentials("bot-2", None))
+            .create(&actor(), "Other", "200", credentials("bot-2", None))
             .await
             .unwrap();
         assert!(!second.has_client_secret);
         assert!(matches!(
-            store.create("Again", "100", credentials("x", None)).await,
+            store.create(&actor(), "Again", "100", credentials("x", None)).await,
             Err(ApplicationError::Duplicate(id)) if id == "100"
         ));
         assert!(matches!(
-            store.create("", "300", credentials("x", None)).await,
+            store
+                .create(&actor(), "", "300", credentials("x", None))
+                .await,
             Err(ApplicationError::InvalidName)
         ));
 
@@ -638,17 +747,18 @@ mod tests {
     async fn updates_change_fields_and_one_application_signs_people_in() {
         let store = store().await;
         let a = store
-            .create("A", "1", credentials("bot-a", Some("secret-a")))
+            .create(&actor(), "A", "1", credentials("bot-a", Some("secret-a")))
             .await
             .unwrap();
         let b = store
-            .create("B", "2", credentials("bot-b", None))
+            .create(&actor(), "B", "2", credentials("bot-b", None))
             .await
             .unwrap();
         assert!(store.login_application().await.unwrap().is_none());
         assert!(matches!(
             store
                 .update(
+                    &actor(),
                     b.id,
                     Changes {
                         login: Some(true),
@@ -660,6 +770,7 @@ mod tests {
         ));
         let a = store
             .update(
+                &actor(),
                 a.id,
                 Changes {
                     name: Some("A renamed".into()),
@@ -675,6 +786,7 @@ mod tests {
 
         let b = store
             .update(
+                &actor(),
                 b.id,
                 Changes {
                     client_secret: Some(Some("secret-b".into())),
@@ -694,6 +806,7 @@ mod tests {
         // Removing the secret ends signing in with it.
         let b = store
             .update(
+                &actor(),
                 b.id,
                 Changes {
                     client_secret: Some(None),
@@ -709,7 +822,7 @@ mod tests {
         // Command scope and registration outcomes.
         assert!(matches!(
             store
-                .set_commands(
+                .set_commands(&actor(),
                     a.id,
                     CommandScope {
                         mode: CommandMode::Guilds,
@@ -721,6 +834,7 @@ mod tests {
         ));
         let scoped = store
             .set_commands(
+                &actor(),
                 a.id,
                 CommandScope {
                     mode: CommandMode::Guilds,
@@ -732,12 +846,12 @@ mod tests {
         assert_eq!(scoped.commands.scope.mode, CommandMode::Guilds);
         assert_eq!(scoped.commands.scope.guilds, vec!["100"]);
         let failed = store
-            .record_commands(a.id, Err("Missing Access".into()))
+            .record_commands(&actor(), a.id, Err("Missing Access".into()))
             .await
             .unwrap();
         assert_eq!(failed.commands.error.as_deref(), Some("Missing Access"));
         assert!(failed.commands.registered_at.is_none());
-        let done = store.record_commands(a.id, Ok(())).await.unwrap();
+        let done = store.record_commands(&actor(), a.id, Ok(())).await.unwrap();
         assert!(done.commands.error.is_none());
         assert!(done.commands.registered_at.is_some());
         let stopped = store.set_enabled(a.id, false).await.unwrap();
@@ -745,17 +859,19 @@ mod tests {
         assert!(!store.all_credentials().await.unwrap()[0].0.enabled);
         assert!(store.set_enabled(a.id, true).await.unwrap().enabled);
 
-        store.delete(b.id).await.unwrap();
+        store.delete(&actor(), b.id).await.unwrap();
         assert!(matches!(
-            store.delete(b.id).await,
+            store.delete(&actor(), b.id).await,
             Err(ApplicationError::NotFound(_))
         ));
         assert!(matches!(
-            store.set_commands(b.id, CommandScope::default()).await,
+            store
+                .set_commands(&actor(), b.id, CommandScope::default())
+                .await,
             Err(ApplicationError::NotFound(_))
         ));
         assert!(matches!(
-            store.update(b.id, Changes::default()).await,
+            store.update(&actor(), b.id, Changes::default()).await,
             Err(ApplicationError::NotFound(_))
         ));
         assert_eq!(store.list().await.unwrap().len(), 1);

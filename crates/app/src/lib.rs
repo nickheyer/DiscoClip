@@ -3,6 +3,7 @@
 
 pub mod applications;
 pub mod args;
+pub mod audit;
 pub mod bots;
 pub mod commands;
 pub mod compose;

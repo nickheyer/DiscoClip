@@ -10,6 +10,7 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use discoclip_bot::{BotControl, BotStatus, DiscordEndpoints, http_client};
 use futures::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 use twilight_http::error::ErrorType;
@@ -20,6 +21,7 @@ use super::error::ApiError;
 use crate::applications::{
     Application, ApplicationId, Changes, CommandsState, Credentials, InstallLink, install_link,
 };
+use crate::audit::{Action, Actor, Target};
 use crate::bots::BotEvent;
 use crate::commands::{self, CommandScope, CommandSummary};
 use crate::discord::BotGuild;
@@ -126,9 +128,11 @@ pub async fn create(
     identity.require(Permission::ManageApplications)?;
     let verified = verify_token(&state.discord, &request.bot_token).await?;
     let name = request.name.as_deref().unwrap_or(&verified.name);
+    let actor = identity.actor();
     let application = state
         .applications
         .create(
+            &actor,
             name,
             &verified.client_id,
             Credentials {
@@ -139,7 +143,8 @@ pub async fn create(
         .await?;
     state.bots.launch(&application, &request.bot_token).await;
     tracing::info!(by = identity.user.username, application = %application.id, name = application.name, "discord application added");
-    let application = register_commands(&state, application, &CommandScope::default()).await?;
+    let application =
+        register_commands(&state, &actor, application, &CommandScope::default()).await?;
     Ok((StatusCode::CREATED, Json(view(&state, application).await)))
 }
 
@@ -202,6 +207,7 @@ pub async fn update(
     let application = state
         .applications
         .update(
+            &identity.actor(),
             id,
             Changes {
                 name: request.name,
@@ -263,9 +269,11 @@ pub async fn guilds(
 }
 
 /// Makes Discord's registrations match the application's command scope, given what
-/// `previous` had registered, and records the outcome on the application.
+/// `previous` had registered, and records the outcome on the application and in the audit
+/// log as asked for by `actor`.
 async fn register_commands(
     state: &AppState,
+    actor: &Actor,
     application: Application,
     previous: &CommandScope,
 ) -> Result<Application, ApiError> {
@@ -297,7 +305,7 @@ async fn register_commands(
     }
     Ok(state
         .applications
-        .record_commands(application.id, outcome)
+        .record_commands(actor, application.id, outcome)
         .await?)
 }
 
@@ -348,8 +356,9 @@ pub async fn set_commands(
         .ok_or(ApiError::NotFound)?
         .commands
         .scope;
-    let application = state.applications.set_commands(id, scope).await?;
-    let application = register_commands(&state, application, &previous).await?;
+    let actor = identity.actor();
+    let application = state.applications.set_commands(&actor, id, scope).await?;
+    let application = register_commands(&state, &actor, application, &previous).await?;
     tracing::info!(by = identity.user.username, application = %id, "command scope changed");
     if let Some(error) = &application.commands.error {
         return Err(ApiError::BadGateway(format!(
@@ -373,7 +382,7 @@ pub async fn register(
         .await?
         .ok_or(ApiError::NotFound)?;
     let scope = application.commands.scope.clone();
-    let application = register_commands(&state, application, &scope).await?;
+    let application = register_commands(&state, &identity.actor(), application, &scope).await?;
     if let Some(error) = &application.commands.error {
         return Err(ApiError::BadGateway(format!(
             "Discord refused the registration: {error}"
@@ -387,6 +396,25 @@ async fn bot_application(state: &AppState, id: &str) -> Result<Application, ApiE
     state.applications.get(id).await?.ok_or(ApiError::NotFound)
 }
 
+/// Logs a bot action that went through, by `identity`.
+async fn audit_bot(
+    state: &AppState,
+    identity: &super::auth::Identity,
+    action: Action,
+    application: &Application,
+) -> Result<(), ApiError> {
+    state
+        .audit
+        .record(
+            &identity.actor(),
+            action,
+            Target::application(application.id, &application.name),
+            json!({ "enabled": application.enabled }),
+        )
+        .await?;
+    Ok(())
+}
+
 /// Starts the application's bot and keeps it meant to run.
 pub async fn start_bot(
     State(state): State<AppState>,
@@ -397,6 +425,7 @@ pub async fn start_bot(
     let application = bot_application(&state, &id).await?;
     let application = state.applications.set_enabled(application.id, true).await?;
     state.bots.start(application.id).await?;
+    audit_bot(&state, &identity, Action::BotStart, &application).await?;
     tracing::info!(by = identity.user.username, application = %application.id, "bot started");
     Ok(Json(view(&state, application).await))
 }
@@ -414,6 +443,7 @@ pub async fn stop_bot(
         .set_enabled(application.id, false)
         .await?;
     state.bots.stop(application.id).await?;
+    audit_bot(&state, &identity, Action::BotStop, &application).await?;
     tracing::info!(by = identity.user.username, application = %application.id, "bot stopped");
     Ok(Json(view(&state, application).await))
 }
@@ -428,6 +458,7 @@ pub async fn restart_bot(
     let application = bot_application(&state, &id).await?;
     let application = state.applications.set_enabled(application.id, true).await?;
     state.bots.restart(application.id).await?;
+    audit_bot(&state, &identity, Action::BotRestart, &application).await?;
     tracing::info!(by = identity.user.username, application = %application.id, "bot restarted");
     Ok(Json(view(&state, application).await))
 }
@@ -463,7 +494,7 @@ pub async fn delete(
 ) -> Result<StatusCode, ApiError> {
     identity.require(Permission::ManageApplications)?;
     let id: ApplicationId = parse_id(&id)?;
-    state.applications.delete(id).await?;
+    state.applications.delete(&identity.actor(), id).await?;
     state.bots.retire(id).await;
     state.refresh_discord_login().await?;
     tracing::info!(by = identity.user.username, application = %id, "discord application removed");

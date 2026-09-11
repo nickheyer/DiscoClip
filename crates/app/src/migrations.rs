@@ -189,6 +189,30 @@ ALTER TABLE discord_applications ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE watch_rules ADD COLUMN max_height INTEGER;
 ",
     },
+    Migration {
+        version: 13,
+        name: "audit_log",
+        sql: "
+CREATE TABLE audit_log (
+    id TEXT PRIMARY KEY,
+    at INTEGER NOT NULL,
+    actor_kind TEXT NOT NULL,
+    actor_id TEXT,
+    actor_name TEXT,
+    actor_via TEXT,
+    actor_ip TEXT,
+    action TEXT NOT NULL,
+    target_kind TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    target_name TEXT,
+    details TEXT NOT NULL
+);
+CREATE INDEX audit_log_at ON audit_log(at);
+CREATE INDEX audit_log_actor ON audit_log(actor_id, id);
+CREATE INDEX audit_log_action ON audit_log(action, id);
+CREATE INDEX audit_log_target ON audit_log(target_kind, target_id, id);
+",
+    },
 ];
 
 /// Brings the application's tables up to date; returns how many migrations ran.

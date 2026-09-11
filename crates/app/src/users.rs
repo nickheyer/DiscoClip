@@ -60,6 +60,8 @@ pub enum Permission {
     ManageWatchRules,
     /// Start, stop and restart the bots.
     ManageBots,
+    /// Read the audit log: who changed which setting, application, rule or bot.
+    ViewAuditLog,
 }
 
 impl std::fmt::Display for Permission {
@@ -69,6 +71,7 @@ impl std::fmt::Display for Permission {
             Permission::ManageApplications => "managing Discord applications",
             Permission::ManageWatchRules => "managing watch rules",
             Permission::ManageBots => "running the bots",
+            Permission::ViewAuditLog => "viewing the audit log",
         })
     }
 }
@@ -78,7 +81,9 @@ impl Role {
 
     pub fn allows(self, permission: Permission) -> bool {
         match permission {
-            Permission::ManageUsers | Permission::ManageApplications => self == Role::Admin,
+            Permission::ManageUsers | Permission::ManageApplications | Permission::ViewAuditLog => {
+                self == Role::Admin
+            }
             Permission::ManageWatchRules | Permission::ManageBots => {
                 matches!(self, Role::Admin | Role::Operator)
             }

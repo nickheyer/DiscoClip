@@ -19,6 +19,7 @@ use discoclip_engine::reqwest;
 use url::Url;
 
 use crate::applications::ApplicationStore;
+use crate::audit::AuditStore;
 use crate::bots::BotManager;
 use crate::discord::{BotGuildStore, GuildStore};
 use crate::oauth::{OAuthService, OAuthStore, PendingStates, Provider, Registry};
@@ -31,6 +32,7 @@ use crate::tokens::TokenStore;
 use crate::users::{UserError, UserStore};
 
 pub mod applications;
+pub mod audit;
 pub mod auth;
 pub mod discord;
 pub mod error;
@@ -98,6 +100,7 @@ pub struct AppState {
     pub bot_guilds: BotGuildStore,
     pub rules: RuleStore,
     pub discord: DiscordEndpoints,
+    pub audit: AuditStore,
 }
 
 impl AppState {
@@ -187,9 +190,10 @@ impl WebApp {
             public_url: config.public_url.clone(),
             applications: ApplicationStore::new(store.clone(), keyring),
             bots,
-            bot_guilds: BotGuildStore::new(store),
+            bot_guilds: BotGuildStore::new(store.clone()),
             rules,
             discord,
+            audit: AuditStore::new(store),
         };
         state.refresh_discord_login().await?;
         Ok(Self { state, config })
@@ -321,6 +325,7 @@ fn api(state: AppState) -> Router {
         )
         .route("/discord/guilds", get(discord::list_guilds))
         .route("/discord/guilds/refresh", post(discord::refresh_guilds))
+        .route("/audit", get(audit::list))
         .route("/auth/{provider}/start", get(oauth::start))
         .route("/auth/{provider}/callback", get(oauth::callback))
         .layer(from_fn(auth::csrf_guard))

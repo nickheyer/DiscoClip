@@ -1,6 +1,7 @@
 //! Watch rules: which channels each application's bot listens in, where results go, whose
 //! links count, and how big they may be. Edited in the app, read by the bots as they run
-//! through a cache the store keeps up.
+//! through a cache the store keeps up. Every change is written to the audit log in the
+//! same transaction.
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -11,11 +12,13 @@ use discoclip_engine::rusqlite::{self, Connection, OptionalExtension, params};
 use discoclip_engine::store::sqlite::SqliteStore;
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use twilight_model::id::Id;
 use twilight_model::id::marker::ChannelMarker;
 use uuid::Uuid;
 
 use crate::applications::ApplicationId;
+use crate::audit::{self, Action, Actor, Target};
 use crate::db::{nanos, timestamp, transact};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
@@ -213,8 +216,10 @@ impl RuleStore {
         transact(&self.db, move |tx| refresh(tx, &cache)).await
     }
 
+    /// Adds a rule by `actor`.
     pub async fn create(
         &self,
+        actor: &Actor,
         application: ApplicationId,
         guild_id: &str,
         input: RuleInput,
@@ -223,6 +228,7 @@ impl RuleStore {
         snowflake("guild", guild_id)?;
         let guild_id = guild_id.to_string();
         let cache = self.cache.clone();
+        let actor = actor.clone();
         transact(&self.db, move |tx| {
             let id = RuleId(Uuid::now_v7());
             let now = Timestamp::now();
@@ -257,16 +263,35 @@ impl RuleStore {
                 Err(error) => return Err(error.into()),
             }
             refresh(tx, &cache)?;
-            get_in(tx, id)?.ok_or(RuleError::NotFound(id))
+            let rule = get_in(tx, id)?.ok_or(RuleError::NotFound(id))?;
+            audit::record(
+                tx,
+                &actor,
+                Action::RuleCreate,
+                Target::rule(id, &rule.guild_id, &rule.input.channel_id),
+                json!({
+                    "application_id": rule.application_id,
+                    "guild_id": rule.guild_id,
+                    "rule": rule.input,
+                }),
+            )?;
+            Ok(rule)
         })
         .await
     }
 
-    /// Replaces what a rule says.
-    pub async fn update(&self, id: RuleId, input: RuleInput) -> Result<Rule, RuleError> {
+    /// Replaces what a rule says, by `actor`.
+    pub async fn update(
+        &self,
+        actor: &Actor,
+        id: RuleId,
+        input: RuleInput,
+    ) -> Result<Rule, RuleError> {
         check(&input)?;
         let cache = self.cache.clone();
+        let actor = actor.clone();
         transact(&self.db, move |tx| {
+            let previous = get_in(tx, id)?.ok_or(RuleError::NotFound(id))?;
             let now = Timestamp::now();
             let updated = tx.execute(
                 "UPDATE watch_rules SET channel_id = ?2, post_to = ?3, allow_hosts = ?4, allow_users = ?5, \
@@ -298,14 +323,32 @@ impl RuleStore {
                 Err(error) => return Err(error.into()),
             }
             refresh(tx, &cache)?;
-            get_in(tx, id)?.ok_or(RuleError::NotFound(id))
+            let rule = get_in(tx, id)?.ok_or(RuleError::NotFound(id))?;
+            if rule.input != previous.input {
+                audit::record(
+                    tx,
+                    &actor,
+                    Action::RuleUpdate,
+                    Target::rule(id, &rule.guild_id, &rule.input.channel_id),
+                    json!({
+                        "application_id": rule.application_id,
+                        "guild_id": rule.guild_id,
+                        "rule": rule.input,
+                        "previous": previous.input,
+                    }),
+                )?;
+            }
+            Ok(rule)
         })
         .await
     }
 
-    pub async fn delete(&self, id: RuleId) -> Result<(), RuleError> {
+    /// Removes a rule by `actor`.
+    pub async fn delete(&self, actor: &Actor, id: RuleId) -> Result<(), RuleError> {
         let cache = self.cache.clone();
+        let actor = actor.clone();
         transact(&self.db, move |tx| {
+            let rule = get_in(tx, id)?.ok_or(RuleError::NotFound(id))?;
             if tx.execute(
                 "DELETE FROM watch_rules WHERE id = ?1",
                 params![id.to_string()],
@@ -314,6 +357,17 @@ impl RuleStore {
                 return Err(RuleError::NotFound(id));
             }
             refresh(tx, &cache)?;
+            audit::record(
+                tx,
+                &actor,
+                Action::RuleDelete,
+                Target::rule(id, &rule.guild_id, &rule.input.channel_id),
+                json!({
+                    "application_id": rule.application_id,
+                    "guild_id": rule.guild_id,
+                    "rule": rule.input,
+                }),
+            )?;
             Ok(())
         })
         .await
@@ -434,6 +488,10 @@ mod tests {
     use crate::applications::{ApplicationStore, Credentials};
     use crate::secrets::Keyring;
 
+    fn actor() -> Actor {
+        Actor::test()
+    }
+
     async fn stores() -> (RuleStore, ApplicationId, ApplicationId, ApplicationStore) {
         let db = SqliteStore::open_in_memory().await.unwrap();
         crate::migrations::apply(&db).await.unwrap();
@@ -443,12 +501,12 @@ mod tests {
             client_secret: None,
         };
         let a = applications
-            .create("A", "1", credentials())
+            .create(&actor(), "A", "1", credentials())
             .await
             .unwrap()
             .id;
         let b = applications
-            .create("B", "2", credentials())
+            .create(&actor(), "B", "2", credentials())
             .await
             .unwrap()
             .id;
@@ -485,7 +543,10 @@ mod tests {
         full.max_source_bytes = Some(1000);
         full.max_duration_secs = Some(30);
         full.max_height = Some(720);
-        let rule = store.create(a, "100", full.clone()).await.unwrap();
+        let rule = store
+            .create(&actor(), a, "100", full.clone())
+            .await
+            .unwrap();
         assert_eq!(rule.input, full);
         assert_eq!(rule.guild_id, "100");
         let cached = cache.rule(a.0, Id::new(10)).unwrap();
@@ -498,10 +559,10 @@ mod tests {
         assert!(cache.rule(b.0, Id::new(10)).is_none());
 
         assert!(matches!(
-            store.create(a, "100", input("10")).await,
+            store.create(&actor(), a, "100", input("10")).await,
             Err(RuleError::Duplicate(c)) if c == "10"
         ));
-        store.create(b, "100", input("10")).await.unwrap();
+        store.create(&actor(), b, "100", input("10")).await.unwrap();
         assert!(cache.rule(b.0, Id::new(10)).is_some());
         for bad in [
             input("abc"),
@@ -532,17 +593,18 @@ mod tests {
             },
         ] {
             assert!(matches!(
-                store.create(a, "100", bad).await,
+                store.create(&actor(), a, "100", bad).await,
                 Err(RuleError::Invalid(_))
             ));
         }
         assert!(matches!(
-            store.create(a, "guild", input("12")).await,
+            store.create(&actor(), a, "guild", input("12")).await,
             Err(RuleError::Invalid(_))
         ));
 
         let disabled = store
             .update(
+                &actor(),
                 rule.id,
                 RuleInput {
                     enabled: false,
@@ -555,6 +617,7 @@ mod tests {
         assert!(cache.rule(a.0, Id::new(10)).is_none());
         let moved = store
             .update(
+                &actor(),
                 rule.id,
                 RuleInput {
                     channel_id: "13".into(),
@@ -575,19 +638,19 @@ mod tests {
         assert_eq!(store.list_all().await.unwrap().len(), 2);
         assert_eq!(store.get(rule.id).await.unwrap(), Some(moved));
 
-        store.delete(rule.id).await.unwrap();
+        store.delete(&actor(), rule.id).await.unwrap();
         assert!(matches!(
-            store.delete(rule.id).await,
+            store.delete(&actor(), rule.id).await,
             Err(RuleError::NotFound(_))
         ));
         assert!(cache.rule(a.0, Id::new(13)).is_none());
         assert!(matches!(
-            store.update(rule.id, input("10")).await,
+            store.update(&actor(), rule.id, input("10")).await,
             Err(RuleError::NotFound(_))
         ));
 
         // Removing an application removes its rules; a fresh load notices.
-        applications.delete(b).await.unwrap();
+        applications.delete(&actor(), b).await.unwrap();
         assert!(store.list_all().await.unwrap().is_empty());
         assert_eq!(store.load().await.unwrap(), 0);
         assert!(cache.rule(b.0, Id::new(10)).is_none());

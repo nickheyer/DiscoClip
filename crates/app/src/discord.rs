@@ -467,6 +467,7 @@ fn row_to_bot_guild(row: &rusqlite::Row<'_>) -> rusqlite::Result<BotGuild> {
 mod bot_guild_tests {
     use super::*;
     use crate::applications::{ApplicationStore, Credentials};
+    use crate::audit::Actor;
     use crate::secrets::Keyring;
 
     fn joined(id: &str, name: &str) -> JoinedGuild {
@@ -488,12 +489,12 @@ mod bot_guild_tests {
             client_secret: None,
         };
         let a = applications
-            .create("A", "1", credentials())
+            .create(&Actor::test(), "A", "1", credentials())
             .await
             .unwrap()
             .id;
         let b = applications
-            .create("B", "2", credentials())
+            .create(&Actor::test(), "B", "2", credentials())
             .await
             .unwrap()
             .id;
@@ -535,7 +536,7 @@ mod bot_guild_tests {
         assert!(listed.iter().any(|g| g.guild_id == "200" && !g.present));
         assert!(store.list_for(b).await.unwrap()[0].present);
 
-        applications.delete(b).await.unwrap();
+        applications.delete(&Actor::test(), b).await.unwrap();
         assert!(store.list_for(b).await.unwrap().is_empty());
     }
 }

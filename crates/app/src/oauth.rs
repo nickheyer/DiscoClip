@@ -566,6 +566,11 @@ impl Registry {
     ///
     /// [`set_discord`]: Registry::set_discord
     pub fn from_config(auth: &AuthConfig) -> Self {
+        Self::new(Self::configured(auth))
+    }
+
+    /// The providers `auth` names, in the order the login page shows them.
+    pub fn configured(auth: &AuthConfig) -> Vec<Provider> {
         let mut providers = Vec::new();
         if let Some(client) = &auth.github {
             providers.push(Provider::github(client));
@@ -576,7 +581,7 @@ impl Registry {
         if let Some(client) = &auth.oidc {
             providers.push(Provider::oidc(client));
         }
-        Self::new(providers)
+        providers
     }
 
     pub fn new(providers: Vec<Provider>) -> Self {
@@ -600,6 +605,21 @@ impl Registry {
                 self.discord_from_application = false;
             }
             None => {}
+        }
+    }
+
+    /// Replaces the providers the settings name, keeping the Discord provider an
+    /// application supplies.
+    pub fn replace_configured(&mut self, providers: Vec<Provider>) {
+        let from_application = if self.discord_from_application {
+            self.providers.iter().find(|p| p.id == "discord").cloned()
+        } else {
+            None
+        };
+        self.providers = providers.into_iter().map(Arc::new).collect();
+        if let Some(discord) = from_application {
+            self.providers.retain(|p| p.id != "discord");
+            self.providers.insert(0, discord);
         }
     }
 
@@ -1108,7 +1128,13 @@ pub struct OAuthService {
     pub http: reqwest::Client,
     pub states: PendingStates,
     /// Create a viewer account for an identity nobody has, at its first login.
-    pub signup: bool,
+    pub signup: std::sync::atomic::AtomicBool,
+}
+
+impl OAuthService {
+    pub fn signup(&self) -> bool {
+        self.signup.load(std::sync::atomic::Ordering::Relaxed)
+    }
 }
 
 /// How much life an access token must have left to be used as is.

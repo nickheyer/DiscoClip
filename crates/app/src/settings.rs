@@ -15,7 +15,7 @@ use std::path::PathBuf;
 
 use discoclip_engine::rusqlite::{self, Connection, params};
 use discoclip_engine::store::sqlite::SqliteStore;
-use discoclip_engine::{EngineConfig, StoreError};
+use discoclip_engine::{EngineConfig, HttpConfig, StoreError};
 use jiff::Timestamp;
 use secrecy::{ExposeSecret, SecretString};
 use serde::Serializer;
@@ -26,15 +26,128 @@ use url::Url;
 use crate::audit::{self, Action, Actor, Target};
 use crate::config::{ConfigError, Format, Provisioning};
 use crate::db::{nanos, timestamp, transact};
+use crate::web::proxy::Network;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Settings {
     pub log: LogConfig,
     pub engine: EngineConfig,
+    /// How resolvers and downloaders reach the platforms: user agent, timeouts, retries,
+    /// per-host rate limits and proxies.
+    pub http: HttpConfig,
     pub local: LocalConfig,
     pub web: WebConfig,
     pub auth: AuthConfig,
+}
+
+impl Settings {
+    /// Checks what the types alone cannot: values that parse but would not run.
+    pub fn validate(&self) -> Result<(), SettingsError> {
+        let invalid = |path: &str, message: String| SettingsError::Invalid {
+            path: path.to_string(),
+            message,
+        };
+        crate::telemetry::check_filter(&self.log.level)
+            .map_err(|e| invalid("log.level", format!("not a tracing filter: {e}")))?;
+        if self.engine.workers == 0 {
+            return Err(invalid("engine.workers", "must be at least 1".into()));
+        }
+        if self.engine.limits.max_height == 0 {
+            return Err(invalid("engine.limits.max_height", "must be at least 1".into()));
+        }
+        if self.engine.limits.max_source_bytes == 0 {
+            return Err(invalid(
+                "engine.limits.max_source_bytes",
+                "must be at least 1".into(),
+            ));
+        }
+        if self.engine.playlists.max_entries == 0 {
+            return Err(invalid("engine.playlists.max_entries", "must be at least 1".into()));
+        }
+        if self.engine.retention.sweep_interval_secs == 0 {
+            return Err(invalid(
+                "engine.retention.sweep_interval_secs",
+                "must be at least 1".into(),
+            ));
+        }
+        if self.engine.cache_dir.as_os_str().is_empty() {
+            return Err(invalid("engine.cache_dir", "cannot be empty".into()));
+        }
+        if let Some(archive) = &self.engine.archive
+            && archive.dir.as_os_str().is_empty()
+        {
+            return Err(invalid("engine.archive.dir", "cannot be empty".into()));
+        }
+        if self.http.user_agent.trim().is_empty() {
+            return Err(invalid("http.user_agent", "cannot be empty".into()));
+        }
+        if self.http.retry.attempts == 0 {
+            return Err(invalid("http.retry.attempts", "must be at least 1".into()));
+        }
+        if self.http.rate_limits.default.per_second < 0.0 {
+            return Err(invalid(
+                "http.rate_limits.default.per_second",
+                "cannot be negative".into(),
+            ));
+        }
+        for (host, rate) in &self.http.rate_limits.hosts {
+            if rate.per_second < 0.0 {
+                return Err(invalid(
+                    &format!("http.rate_limits.hosts.{host}.per_second"),
+                    "cannot be negative".into(),
+                ));
+            }
+        }
+        for (name, proxy) in self
+            .http
+            .proxies
+            .default
+            .iter()
+            .map(|p| ("http.proxies.default".to_string(), p))
+            .chain(
+                self.http
+                    .proxies
+                    .platforms
+                    .iter()
+                    .map(|(k, p)| (format!("http.proxies.platforms.{k}"), p)),
+            )
+            .chain(
+                self.http
+                    .proxies
+                    .hosts
+                    .iter()
+                    .map(|(k, p)| (format!("http.proxies.hosts.{k}"), p)),
+            )
+        {
+            if !matches!(proxy.scheme(), "http" | "https" | "socks5" | "socks5h" | "socks4" | "socks4a") {
+                return Err(invalid(
+                    &name,
+                    format!("{} is not an http or socks proxy URL", proxy.scheme()),
+                ));
+            }
+        }
+        if self.local.max_bytes == 0 {
+            return Err(invalid("local.max_bytes", "must be at least 1".into()));
+        }
+        if self.local.dir.as_os_str().is_empty() {
+            return Err(invalid("local.dir", "cannot be empty".into()));
+        }
+        if let Some(tls) = &self.web.tls {
+            if tls.cert.as_os_str().is_empty() {
+                return Err(invalid("web.tls.cert", "cannot be empty".into()));
+            }
+            if tls.key.as_os_str().is_empty() {
+                return Err(invalid("web.tls.key", "cannot be empty".into()));
+            }
+        }
+        if let Some(url) = &self.web.public_url
+            && !matches!(url.scheme(), "http" | "https")
+        {
+            return Err(invalid("web.public_url", "must be an http or https URL".into()));
+        }
+        Ok(())
+    }
 }
 
 /// Serialized in the clear so the settings store and provisioning export can hold it.
@@ -124,6 +237,15 @@ pub struct WebConfig {
     /// How browsers reach the app, such as `https://clips.example.com`; login providers
     /// send them back here. Without it the address a request arrived at is used.
     pub public_url: Option<Url>,
+    /// Serve HTTPS from these PEM files; without them the app speaks plain HTTP, as it
+    /// does behind a reverse proxy that terminates TLS.
+    pub tls: Option<TlsConfig>,
+    /// Addresses and networks of reverse proxies in front of the app. A request that
+    /// arrives from one of them is read for the `Forwarded`, `X-Forwarded-For`,
+    /// `X-Forwarded-Proto` and `X-Forwarded-Host` headers the proxy adds, so sessions,
+    /// rate limits, the audit log and login callbacks see the browser rather than the
+    /// proxy. Anything else on the wire keeps its own address.
+    pub trusted_proxies: Vec<Network>,
 }
 
 impl Default for WebConfig {
@@ -131,8 +253,19 @@ impl Default for WebConfig {
         Self {
             bind: SocketAddr::from((Ipv4Addr::LOCALHOST, 8080)),
             public_url: None,
+            tls: None,
+            trusted_proxies: Vec::new(),
         }
     }
+}
+
+/// A certificate chain and its private key, both PEM. The files are read again when they
+/// change on disk, so a renewed certificate takes effect without a restart.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TlsConfig {
+    pub cert: PathBuf,
+    pub key: PathBuf,
 }
 
 /// Who wrote a stored value last.
@@ -520,10 +653,14 @@ fn assemble(entries: &[Entry]) -> Result<Json, SettingsError> {
 }
 
 fn decode(entries: &[Entry]) -> Result<Settings, SettingsError> {
-    serde_path_to_error::deserialize(assemble(entries)?).map_err(|error| SettingsError::Invalid {
-        path: error.path().to_string(),
-        message: error.into_inner().to_string(),
-    })
+    let settings: Settings = serde_path_to_error::deserialize(assemble(entries)?).map_err(|error| {
+        SettingsError::Invalid {
+            path: error.path().to_string(),
+            message: error.into_inner().to_string(),
+        }
+    })?;
+    settings.validate()?;
+    Ok(settings)
 }
 
 #[cfg(test)]
@@ -959,6 +1096,36 @@ mod tests {
             .unwrap_err();
         assert!(matches!(error, SettingsError::Provisioning(_)));
         assert_eq!(store.load().await.unwrap().engine.workers, 3);
+    }
+
+    #[tokio::test]
+    async fn semantic_checks_refuse_values_that_would_not_run() {
+        let store = store().await;
+        for (key, value) in [
+            ("log.level", json!("not a [filter")),
+            ("engine.workers", json!(0)),
+            ("engine.limits.max_height", json!(0)),
+            ("engine.retention.sweep_interval_secs", json!(0)),
+            ("http.retry.attempts", json!(0)),
+            ("http.proxies.default", json!("ftp://proxy:1")),
+            ("local.max_bytes", json!(0)),
+            ("web.public_url", json!("ftp://clips.example.com")),
+            ("web.tls", json!({"cert": "", "key": "k"})),
+        ] {
+            let error = store.set(&actor(), key, value).await.unwrap_err();
+            assert!(matches!(error, SettingsError::Invalid { .. }), "{key}: {error}");
+        }
+        assert!(store.entries().await.unwrap().is_empty());
+        store
+            .set(&actor(), "log.level", json!("info,discoclip_engine=debug"))
+            .await
+            .unwrap();
+        store
+            .set(&actor(), "http.proxies.default", json!("socks5h://proxy:1080"))
+            .await
+            .unwrap();
+        let settings = store.load().await.unwrap();
+        assert_eq!(settings.http.proxies.default.unwrap().scheme(), "socks5h");
     }
 
     #[test]

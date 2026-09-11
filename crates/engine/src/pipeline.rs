@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use jiff::Timestamp;
@@ -25,7 +25,8 @@ use crate::transcode::{Target, Transcoder};
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
 
 pub(crate) struct Context {
-    pub config: EngineConfig,
+    /// The engine's settings, replaced whole when they change in the app.
+    pub config: Arc<RwLock<EngineConfig>>,
     pub http: Http,
     pub resolvers: Arc<ResolverRegistry>,
     pub downloaders: Vec<Arc<dyn Downloader>>,
@@ -39,6 +40,19 @@ pub(crate) struct Context {
 }
 
 impl Context {
+    /// The settings as they stand now.
+    pub fn config(&self) -> EngineConfig {
+        self.config.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    pub fn cache_dir(&self) -> PathBuf {
+        self.config
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .cache_dir
+            .clone()
+    }
+
     pub fn emit(&self, job: JobId, kind: EventKind) {
         let _ = self.events.send(EngineEvent {
             job,
@@ -86,7 +100,7 @@ impl Context {
     }
 
     pub fn job_dir(&self, id: JobId) -> PathBuf {
-        self.config.cache_dir.join("jobs").join(id.to_string())
+        self.cache_dir().join("jobs").join(id.to_string())
     }
 
     /// Forwards progress updates as events, at most one per `PROGRESS_INTERVAL`, always ending
@@ -146,10 +160,62 @@ pub(crate) async fn run_job(
     if let Err(error) = ctx.transition(&mut job, status).await {
         tracing::error!(job = %job.id, "could not persist final status: {error}");
     }
-    if let Err(error) = tokio::fs::remove_dir_all(&job_dir).await
+    if job.status == JobStatus::Done {
+        tidy_job_dir(&job, &job_dir).await;
+    } else if let Err(error) = tokio::fs::remove_dir_all(&job_dir).await
         && error.kind() != std::io::ErrorKind::NotFound
     {
         tracing::warn!(job = %job.id, "could not remove {}: {error}", job_dir.display());
+    }
+}
+
+/// The files a finished job keeps in the cache, for the web app to serve: the output and
+/// the subtitles fetched beside it. Everything else, the source above all, goes.
+pub(crate) fn kept_files(job: &Job) -> Vec<PathBuf> {
+    let mut keep: Vec<PathBuf> = job
+        .artifacts
+        .output
+        .iter()
+        .map(|file| file.path.clone())
+        .collect();
+    keep.extend(job.artifacts.subtitles.iter().map(|s| s.path.clone()));
+    keep
+}
+
+/// Removes what a finished job left in its directory beyond [`kept_files`]; a directory
+/// with nothing to keep goes altogether.
+async fn tidy_job_dir(job: &Job, job_dir: &Path) {
+    let keep = kept_files(job);
+    if keep.is_empty() {
+        if let Err(error) = tokio::fs::remove_dir_all(job_dir).await
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!(job = %job.id, "could not remove {}: {error}", job_dir.display());
+        }
+        return;
+    }
+    let mut entries = match tokio::fs::read_dir(job_dir).await {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+        Err(error) => {
+            tracing::warn!(job = %job.id, "could not read {}: {error}", job_dir.display());
+            return;
+        }
+    };
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let path = entry.path();
+        if keep.iter().any(|kept| kept == &path) {
+            continue;
+        }
+        let removed = match entry.file_type().await {
+            Ok(kind) if kind.is_dir() => tokio::fs::remove_dir_all(&path).await,
+            _ => tokio::fs::remove_file(&path).await,
+        };
+        if let Err(error) = removed
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!(job = %job.id, "could not remove {}: {error}", path.display());
+        }
     }
 }
 
@@ -160,7 +226,7 @@ async fn expand_playlist(
     playlist: crate::resolve::Playlist,
 ) -> Result<(), Interrupt> {
     let stage = Stage::Resolve;
-    let settings = &ctx.config.playlists;
+    let settings = ctx.config().playlists;
     if !settings.enabled {
         return Err(failed(stage)(StageError::Rejected(
             "playlist links are turned off".into(),
@@ -253,7 +319,8 @@ fn effective_duration(
 }
 
 async fn execute(ctx: &Context, job: &mut Job, job_dir: &Path) -> Result<(), Interrupt> {
-    let limits = job.request.limits.applied_to(&ctx.config.limits);
+    let config = ctx.config();
+    let limits = job.request.limits.applied_to(&config.limits);
     let url = job.request.url.clone();
     let origin = job.request.origin.clone();
 
@@ -328,8 +395,8 @@ async fn execute(ctx: &Context, job: &mut Job, job_dir: &Path) -> Result<(), Int
         max_live: Duration::from_secs(
             limits
                 .max_duration_secs
-                .unwrap_or(ctx.config.live.max_capture_secs)
-                .min(ctx.config.live.max_capture_secs),
+                .unwrap_or(config.live.max_capture_secs)
+                .min(config.live.max_capture_secs),
         ),
         clip,
         platform: resolved.resolver.clone(),
@@ -528,7 +595,7 @@ async fn execute(ctx: &Context, job: &mut Job, job_dir: &Path) -> Result<(), Int
     job.artifacts.published = Some(published);
 
     // Archive
-    if let Some(archiver) = &ctx.archiver {
+    if let Some(archiver) = ctx.archiver.as_ref().filter(|a| a.enabled()) {
         let stage = Stage::Archive;
         ctx.transition(job, JobStatus::Running { stage })
             .await

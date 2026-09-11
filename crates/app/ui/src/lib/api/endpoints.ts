@@ -13,8 +13,18 @@ import type {
 	Guild,
 	Identity,
 	InstallLink,
+	Artifact,
+	BulkRequest,
+	BulkResponse,
 	Intent,
+	Job,
+	JobPage,
+	JobQuery,
+	JobStats,
+	JobSummary,
 	LoginRequest,
+	SubmitRequest,
+	Submitted,
 	Minted,
 	Page,
 	PasswordRequest,
@@ -122,4 +132,20 @@ export const guilds = {
 
 export const audit = {
 	list: (query: AuditQuery) => get<Page>('/audit', { ...query })
+};
+
+export const jobs = {
+	list: (query: JobQuery = {}) => get<JobPage>('/jobs', { ...query }),
+	get: (job: string) => get<Job>(`/jobs/${id(job)}`),
+	children: (job: string) => get<JobSummary[]>(`/jobs/${id(job)}/children`),
+	stats: () => get<JobStats>('/jobs/stats'),
+	submit: (body: SubmitRequest) => post<Submitted>('/jobs', body),
+	retry: (job: string) => post<Submitted>(`/jobs/${id(job)}/retry`),
+	cancel: (job: string) => post<void>(`/jobs/${id(job)}/cancel`),
+	remove: (job: string) => del<void>(`/jobs/${id(job)}`),
+	bulk: (body: BulkRequest) => post<BulkResponse>('/jobs/bulk', body),
+	/** Where the browser fetches or plays an artifact; a plain link, not an API call. */
+	downloadUrl: (job: string, artifact: Artifact = 'output', index = 0, inline = false) =>
+		`/api/jobs/${id(job)}/download?artifact=${artifact}&index=${index}${inline ? '&inline=true' : ''}`,
+	eventsUrl: '/api/jobs/events'
 };

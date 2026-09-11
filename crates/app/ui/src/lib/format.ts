@@ -143,3 +143,32 @@ export function safeNext(value: string | null): string {
 export function prettyJson(value: unknown): string {
 	return JSON.stringify(value, null, 2) ?? 'null';
 }
+
+/** Seconds as `1:02:03` or `4:05`, the way players show a duration. */
+export function formatClock(totalSeconds: number): string {
+	const seconds = Math.max(0, Math.round(totalSeconds));
+	const h = Math.floor(seconds / 3600);
+	const m = Math.floor((seconds % 3600) / 60);
+	const s = seconds % 60;
+	const mm = h > 0 ? String(m).padStart(2, '0') : String(m);
+	return `${h > 0 ? `${h}:` : ''}${mm}:${String(s).padStart(2, '0')}`;
+}
+
+/** `1.5`, `90`, `1:30`, `1m30s` or `1h2m3s` as seconds; null when it is none of those. */
+export function parseTimeStamp(text: string): number | null {
+	const value = text.trim();
+	if (!value) return null;
+	if (value.includes(':')) {
+		let total = 0;
+		for (const part of value.split(':')) {
+			const n = Number(part);
+			if (!Number.isFinite(n) || n < 0) return null;
+			total = total * 60 + n;
+		}
+		return total;
+	}
+	if (/^\d+(\.\d+)?$/.test(value)) return Number(value);
+	const match = /^(?:(\d+(?:\.\d+)?)h)?(?:(\d+(?:\.\d+)?)m)?(?:(\d+(?:\.\d+)?)s)?$/.exec(value);
+	if (!match || match[0] === '') return null;
+	return Number(match[1] ?? 0) * 3600 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0);
+}

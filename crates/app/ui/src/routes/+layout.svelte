@@ -12,6 +12,7 @@
 	import { ROLE_LABELS } from '$lib/permissions';
 	import { bots } from '$lib/state/bots.svelte';
 	import { clock } from '$lib/state/clock.svelte';
+	import { jobs } from '$lib/state/jobs.svelte';
 	import { session } from '$lib/state/session.svelte';
 	import { theme } from '$lib/state/theme.svelte';
 	import { toast } from '$lib/state/toast.svelte';
@@ -27,6 +28,7 @@
 
 	const NAV: NavItem[] = [
 		{ href: '/', label: 'Overview', icon: 'dashboard' },
+		{ href: '/jobs', label: 'Jobs', icon: 'activity' },
 		{ href: '/applications', label: 'Applications', icon: 'bot', permission: 'manage_applications' },
 		{ href: '/rules', label: 'Watch rules', icon: 'rules', permission: 'manage_watch_rules' },
 		{ href: '/guilds', label: 'My guilds', icon: 'server' },
@@ -56,9 +58,15 @@
 		});
 		// A document the browser keeps in its back/forward cache must not hold the status
 		// stream open, or it takes up one of the few connections the browser allows a host.
-		const hide = () => bots.stop();
+		const hide = () => {
+			bots.stop();
+			jobs.stop();
+		};
 		const show = (event: PageTransitionEvent) => {
-			if (event.persisted && session.me) bots.start();
+			if (event.persisted && session.me) {
+				bots.start();
+				jobs.start();
+			}
 		};
 		window.addEventListener('pagehide', hide);
 		window.addEventListener('pageshow', show);
@@ -67,13 +75,19 @@
 			window.removeEventListener('pageshow', show);
 			clock.stop();
 			bots.stop();
+			jobs.stop();
 			onUnauthorized(null);
 		};
 	});
 
 	$effect(() => {
-		if (me) bots.start();
-		else bots.stop();
+		if (me) {
+			bots.start();
+			jobs.start();
+		} else {
+			bots.stop();
+			jobs.stop();
+		}
 	});
 
 	$effect(() => {

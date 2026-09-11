@@ -32,6 +32,21 @@ under `[auth]`, and through Discord once a Discord application is marked for log
 identities are linked and unlinked from the account page, and the providers' tokens are
 kept encrypted under `secret.key` in the data directory.
 
+## Serving
+
+`web.bind` is where the app listens. With `[web.tls]` naming a certificate and key in
+PEM the binary serves HTTPS itself, and re-reads the files whenever they change, so a
+renewed certificate takes effect without a restart. Without it the app speaks plain HTTP,
+which is how it runs behind a reverse proxy that terminates TLS.
+
+Behind a proxy, list the proxy's addresses or networks in `web.trusted_proxies`. Requests
+that arrive from one of them are read for `Forwarded`, `X-Forwarded-For`,
+`X-Forwarded-Proto` and `X-Forwarded-Host`, so sessions, rate limits, the audit log, the
+origin check and login callbacks see the browser and the public scheme and host rather
+than the proxy. Requests from anywhere else keep the address they arrived from, whatever
+headers they carry. Session cookies are marked `Secure` whenever the browser reached the
+app over HTTPS, by the binary or through a trusted proxy.
+
 ## Discord
 
 Discord applications are added in the web app with their bot token and, for login, their

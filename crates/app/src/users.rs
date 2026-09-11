@@ -62,6 +62,10 @@ pub enum Permission {
     ManageBots,
     /// Read the audit log: who changed which setting, application, rule or bot.
     ViewAuditLog,
+    /// Submit links, and retry, cancel and delete jobs.
+    ManageJobs,
+    /// Read and change the server's settings, import and export them.
+    ManageSettings,
 }
 
 impl std::fmt::Display for Permission {
@@ -72,6 +76,8 @@ impl std::fmt::Display for Permission {
             Permission::ManageWatchRules => "managing watch rules",
             Permission::ManageBots => "running the bots",
             Permission::ViewAuditLog => "viewing the audit log",
+            Permission::ManageJobs => "managing jobs",
+            Permission::ManageSettings => "managing settings",
         })
     }
 }
@@ -81,10 +87,11 @@ impl Role {
 
     pub fn allows(self, permission: Permission) -> bool {
         match permission {
-            Permission::ManageUsers | Permission::ManageApplications | Permission::ViewAuditLog => {
-                self == Role::Admin
-            }
-            Permission::ManageWatchRules | Permission::ManageBots => {
+            Permission::ManageUsers
+            | Permission::ManageApplications
+            | Permission::ViewAuditLog
+            | Permission::ManageSettings => self == Role::Admin,
+            Permission::ManageWatchRules | Permission::ManageBots | Permission::ManageJobs => {
                 matches!(self, Role::Admin | Role::Operator)
             }
         }
@@ -660,6 +667,11 @@ mod tests {
         assert!(!Role::Viewer.allows(Permission::ManageWatchRules));
         assert!(Role::Operator.allows(Permission::ManageBots));
         assert!(!Role::Viewer.allows(Permission::ManageBots));
+        assert!(Role::Admin.allows(Permission::ManageSettings));
+        assert!(!Role::Operator.allows(Permission::ManageSettings));
+        assert!(Role::Admin.allows(Permission::ManageJobs));
+        assert!(Role::Operator.allows(Permission::ManageJobs));
+        assert!(!Role::Viewer.allows(Permission::ManageJobs));
     }
 
     #[test]

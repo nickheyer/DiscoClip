@@ -7,9 +7,10 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
 		'manage_applications',
 		'view_audit_log',
 		'manage_watch_rules',
-		'manage_bots'
+		'manage_bots',
+		'manage_jobs'
 	],
-	operator: ['manage_watch_rules', 'manage_bots'],
+	operator: ['manage_watch_rules', 'manage_bots', 'manage_jobs'],
 	viewer: []
 };
 
@@ -24,7 +25,7 @@ export const ROLE_LABELS: Record<Role, { label: string; description: string }> =
 	},
 	operator: {
 		label: 'Operator',
-		description: 'Watch rules and the bots.'
+		description: 'Jobs, watch rules and the bots.'
 	},
 	viewer: {
 		label: 'Viewer',
@@ -52,5 +53,9 @@ export const PERMISSION_LABELS: Record<Permission, { label: string; description:
 	view_audit_log: {
 		label: 'View the audit log',
 		description: 'Read who changed which setting, application, rule or bot.'
+	},
+	manage_jobs: {
+		label: 'Manage jobs',
+		description: 'Submit links, and retry, cancel and delete jobs.'
 	}
 };

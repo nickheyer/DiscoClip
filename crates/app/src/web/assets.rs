@@ -33,8 +33,8 @@ static PAGE: LazyLock<&'static Asset> = LazyLock::new(|| {
         .expect("the embedded web app has an index.html")
 });
 
-/// The page loads scripts and styles from this host only, images also from Discord's CDN
-/// for guild icons, and talks to nothing but this host.
+/// The page loads scripts and styles from this host only, images also from any HTTPS host
+/// for guild icons and video thumbnails, and talks to nothing but this host.
 static CONTENT_SECURITY_POLICY: LazyLock<HeaderValue> = LazyLock::new(|| {
     let inline: String = INLINE_SCRIPT_HASHES
         .iter()
@@ -42,7 +42,7 @@ static CONTENT_SECURITY_POLICY: LazyLock<HeaderValue> = LazyLock::new(|| {
         .collect();
     HeaderValue::from_str(&format!(
         "default-src 'self'; script-src 'self'{inline}; style-src 'self' 'unsafe-inline'; \
-         img-src 'self' data: https://cdn.discordapp.com; font-src 'self'; connect-src 'self'; \
+         img-src 'self' data: https:; media-src 'self'; font-src 'self'; connect-src 'self'; \
          frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
     ))
     .expect("a CSP is a valid header value")

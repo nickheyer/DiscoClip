@@ -5,15 +5,16 @@
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
-use axum::http::{HeaderMap, header};
+use axum::http::HeaderMap;
 use axum::response::Redirect;
 use axum_extra::extract::cookie::CookieJar;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
 use super::AppState;
-use super::auth::{Auth, ClientIp, MaybeAuth, start_session};
+use super::auth::{Auth, MaybeAuth, start_session};
 use super::error::ApiError;
+use super::proxy::{Client, ClientInfo};
 use crate::oauth::{Identity, Intent, OAuthError, ProviderInfo, suggested_username};
 use crate::users::{Role, User, UserError};
 
@@ -21,17 +22,21 @@ pub async fn providers(State(state): State<AppState>) -> Json<Vec<ProviderInfo>>
     Json(state.oauth.providers())
 }
 
-/// Where a provider sends the browser back to: under `web.public_url`, or the host the
-/// request came to.
-fn callback_url(state: &AppState, headers: &HeaderMap, provider: &str) -> Result<Url, ApiError> {
-    let base = match &state.public_url {
-        Some(url) => url.clone(),
+/// Where a provider sends the browser back to: under `web.public_url`, or the scheme and
+/// host the request came to, as the trusted proxies report them.
+fn callback_url(state: &AppState, client: &ClientInfo, provider: &str) -> Result<Url, ApiError> {
+    let public_url = state
+        .public_url
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    let base = match public_url {
+        Some(url) => url,
         None => {
-            let host = headers
-                .get(header::HOST)
-                .and_then(|value| value.to_str().ok())
+            let origin = client
+                .origin()
                 .ok_or_else(|| ApiError::BadRequest("request has no Host header".into()))?;
-            Url::parse(&format!("http://{host}"))
+            Url::parse(&origin)
                 .map_err(|_| ApiError::BadRequest("request has an unusable Host header".into()))?
         }
     };
@@ -55,13 +60,13 @@ pub async fn start(
     Path(provider): Path<String>,
     Query(query): Query<StartQuery>,
     MaybeAuth(identity): MaybeAuth,
-    headers: HeaderMap,
+    Client(client): Client,
 ) -> Result<Redirect, ApiError> {
     let user = match query.intent {
         Intent::Login => None,
         Intent::Link => Some(identity.ok_or(ApiError::Unauthorized)?.user.id),
     };
-    let redirect_uri = callback_url(&state, &headers, &provider)?;
+    let redirect_uri = callback_url(&state, &client, &provider)?;
     let location = state
         .oauth
         .begin(&provider, query.intent, user, redirect_uri)
@@ -91,10 +96,11 @@ pub async fn callback(
     Path(provider): Path<String>,
     Query(query): Query<CallbackQuery>,
     MaybeAuth(current): MaybeAuth,
-    ClientIp(ip): ClientIp,
+    Client(client): Client,
     jar: CookieJar,
     headers: HeaderMap,
 ) -> Result<(CookieJar, Redirect), ApiError> {
+    let ip = client.ip;
     let pending = query
         .state
         .as_deref()
@@ -177,7 +183,7 @@ pub async fn callback(
                     };
                     user
                 }
-                None if state.oauth.signup => {
+                None if state.oauth.signup() => {
                     let user = sign_up(&state, &provider.id, &remote).await?;
                     state
                         .oauth
@@ -202,7 +208,7 @@ pub async fn callback(
             };
             tracing::info!(username = user.username, provider = provider.id, %ip, "logged in");
             sync_discord(&state, user.id, &provider.id).await;
-            let (jar, _) = start_session(&state, user, jar, &headers, ip).await?;
+            let (jar, _) = start_session(&state, user, jar, &headers, &client).await?;
             Ok((jar, Redirect::to("/")))
         }
     }

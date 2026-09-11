@@ -297,7 +297,7 @@ pub struct Entry {
 }
 
 /// Whether a settings key segment or a field name holds a secret.
-fn is_secret_name(name: &str) -> bool {
+pub fn is_secret_name(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
     name.contains("secret") || name.contains("password") || name.contains("token")
 }

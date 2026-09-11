@@ -24,6 +24,10 @@ pub enum ApiError {
     TooManyRequests(Duration),
     /// Another service the request depends on failed.
     BadGateway(String),
+    /// The server cannot take the request right now.
+    Unavailable(String),
+    /// A `Range` header asks for bytes outside a file of this length.
+    RangeNotSatisfiable(u64),
     Internal(String),
 }
 
@@ -46,6 +50,11 @@ impl IntoResponse for ApiError {
                 tracing::warn!("{message}");
                 (StatusCode::BAD_GATEWAY, message.clone())
             }
+            ApiError::Unavailable(message) => (StatusCode::SERVICE_UNAVAILABLE, message.clone()),
+            ApiError::RangeNotSatisfiable(len) => (
+                StatusCode::RANGE_NOT_SATISFIABLE,
+                format!("the range asked for lies outside the {len} bytes of the file"),
+            ),
             ApiError::Internal(message) => {
                 tracing::error!("{message}");
                 (
@@ -55,10 +64,18 @@ impl IntoResponse for ApiError {
             }
         };
         let mut response = (status, Json(json!({ "error": message }))).into_response();
-        if let ApiError::TooManyRequests(retry) = self {
-            response
-                .headers_mut()
-                .insert(header::RETRY_AFTER, HeaderValue::from(retry_secs(retry)));
+        match self {
+            ApiError::TooManyRequests(retry) => {
+                response
+                    .headers_mut()
+                    .insert(header::RETRY_AFTER, HeaderValue::from(retry_secs(retry)));
+            }
+            ApiError::RangeNotSatisfiable(len) => {
+                if let Ok(value) = HeaderValue::from_str(&format!("bytes */{len}")) {
+                    response.headers_mut().insert(header::CONTENT_RANGE, value);
+                }
+            }
+            _ => {}
         }
         response
     }
@@ -157,6 +174,52 @@ impl From<discoclip_bot::ControlError> for ApiError {
         match error {
             discoclip_bot::ControlError::Gone => ApiError::NotFound,
             discoclip_bot::ControlError::Disabled => ApiError::Conflict(error.to_string()),
+        }
+    }
+}
+
+impl From<discoclip_engine::SubmitError> for ApiError {
+    fn from(error: discoclip_engine::SubmitError) -> Self {
+        use discoclip_engine::SubmitError;
+        match error {
+            SubmitError::Unsupported(_) => ApiError::BadRequest(error.to_string()),
+            SubmitError::UnknownSource(_) => ApiError::Internal(error.to_string()),
+            SubmitError::Closed => ApiError::Unavailable(error.to_string()),
+            SubmitError::Store(_) => ApiError::Internal(error.to_string()),
+        }
+    }
+}
+
+impl From<discoclip_engine::RetryError> for ApiError {
+    fn from(error: discoclip_engine::RetryError) -> Self {
+        use discoclip_engine::RetryError;
+        match error {
+            RetryError::NotFound(_) => ApiError::NotFound,
+            RetryError::NotFinished(_) => ApiError::Conflict(error.to_string()),
+            RetryError::Submit(inner) => inner.into(),
+            RetryError::Store(_) => ApiError::Internal(error.to_string()),
+        }
+    }
+}
+
+impl From<discoclip_engine::CancelError> for ApiError {
+    fn from(error: discoclip_engine::CancelError) -> Self {
+        use discoclip_engine::CancelError;
+        match error {
+            CancelError::NotFound(_) => ApiError::NotFound,
+            CancelError::Finished(_) => ApiError::Conflict(error.to_string()),
+            CancelError::Store(_) => ApiError::Internal(error.to_string()),
+        }
+    }
+}
+
+impl From<discoclip_engine::DeleteError> for ApiError {
+    fn from(error: discoclip_engine::DeleteError) -> Self {
+        use discoclip_engine::DeleteError;
+        match error {
+            DeleteError::NotFound(_) => ApiError::NotFound,
+            DeleteError::NotFinished(_) => ApiError::Conflict(error.to_string()),
+            DeleteError::Store(_) => ApiError::Internal(error.to_string()),
         }
     }
 }

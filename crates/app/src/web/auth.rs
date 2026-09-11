@@ -1,10 +1,10 @@
 //! Who is asking: the session cookie, the CSRF token it must echo, first-run setup, login,
 //! logout, and the sessions an account can see and end.
 
-use std::net::{IpAddr, SocketAddr};
+use std::net::IpAddr;
 
 use axum::Json;
-use axum::extract::{ConnectInfo, FromRequestParts, Path, Request, State};
+use axum::extract::{FromRequestParts, Path, Request, State};
 use axum::http::request::Parts;
 use axum::http::{HeaderMap, Method, StatusCode, header};
 use axum::middleware::Next;
@@ -16,6 +16,7 @@ use subtle::ConstantTimeEq;
 
 use super::AppState;
 use super::error::ApiError;
+use super::proxy::{ClientInfo, Scheme};
 use crate::audit::{self, Actor};
 use crate::sessions::{ABSOLUTE_LIFETIME, Session, SessionId};
 use crate::tokens::ApiToken;
@@ -123,7 +124,7 @@ impl<S: Send + Sync> FromRequestParts<S> for MaybeAuth {
     }
 }
 
-/// The address the request came from.
+/// The address the request came from, through the trusted proxies.
 pub struct ClientIp(pub IpAddr);
 
 impl<S: Send + Sync> FromRequestParts<S> for ClientIp {
@@ -132,8 +133,8 @@ impl<S: Send + Sync> FromRequestParts<S> for ClientIp {
     async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, ApiError> {
         parts
             .extensions
-            .get::<ConnectInfo<SocketAddr>>()
-            .map(|info| ClientIp(info.0.ip()))
+            .get::<ClientInfo>()
+            .map(|info| ClientIp(info.ip))
             .ok_or_else(|| ApiError::Internal("client address unavailable".into()))
     }
 }
@@ -202,7 +203,11 @@ pub async fn csrf_guard(request: Request, next: Next) -> Result<Response, ApiErr
         *request.method(),
         Method::GET | Method::HEAD | Method::OPTIONS
     ) {
-        check_origin(request.headers())?;
+        let host = request
+            .extensions()
+            .get::<ClientInfo>()
+            .and_then(|info| info.host.clone());
+        check_origin(request.headers(), host.as_deref())?;
         if let Some(Identity {
             via: Via::Session { csrf_token, .. },
             ..
@@ -221,7 +226,9 @@ pub async fn csrf_guard(request: Request, next: Next) -> Result<Response, ApiErr
     Ok(next.run(request).await)
 }
 
-fn check_origin(headers: &HeaderMap) -> Result<(), ApiError> {
+/// `host` is what the browser asked for: the `Host` header, or what a trusted proxy
+/// forwarded when it rewrote it.
+fn check_origin(headers: &HeaderMap, host: Option<&str>) -> Result<(), ApiError> {
     if let Some(site) = headers
         .get("sec-fetch-site")
         .and_then(|value| value.to_str().ok())
@@ -233,10 +240,7 @@ fn check_origin(headers: &HeaderMap) -> Result<(), ApiError> {
         .get(header::ORIGIN)
         .and_then(|value| value.to_str().ok())
     {
-        let host = headers
-            .get(header::HOST)
-            .and_then(|value| value.to_str().ok())
-            .unwrap_or("");
+        let host = host.unwrap_or("");
         if !same_authority(origin, host) {
             return Err(ApiError::Forbidden(
                 "request origin does not match this host".into(),
@@ -312,22 +316,25 @@ impl WhoAmI {
     }
 }
 
-/// Opens a session for `user` and puts its cookie in the jar.
+/// Opens a session for `user` and puts its cookie in the jar. Over HTTPS the cookie is
+/// marked `Secure`, so a browser never sends it in the clear.
 pub async fn start_session(
     state: &AppState,
     user: User,
     jar: CookieJar,
     headers: &HeaderMap,
-    ip: IpAddr,
+    client: &ClientInfo,
 ) -> Result<(CookieJar, Identity), ApiError> {
     let user_agent = headers
         .get(header::USER_AGENT)
         .and_then(|value| value.to_str().ok())
         .map(|agent| agent.chars().take(256).collect());
+    let ip = client.ip;
     let created = state.sessions.create(user.id, user_agent, Some(ip)).await?;
     let cookie = Cookie::build((COOKIE, created.token))
         .path("/")
         .http_only(true)
+        .secure(client.scheme == Scheme::Https)
         .same_site(SameSite::Lax)
         .max_age(time::Duration::seconds(ABSOLUTE_LIFETIME.as_secs()))
         .build();
@@ -347,9 +354,9 @@ async fn open_session(
     user: User,
     jar: CookieJar,
     headers: &HeaderMap,
-    ip: IpAddr,
+    client: &ClientInfo,
 ) -> Result<(CookieJar, Json<WhoAmI>), ApiError> {
-    let (jar, identity) = start_session(state, user, jar, headers, ip).await?;
+    let (jar, identity) = start_session(state, user, jar, headers, client).await?;
     Ok((jar, Json(WhoAmI::of(identity))))
 }
 
@@ -385,11 +392,12 @@ pub struct SetupRequest {
 /// Creates the first account, an admin, and logs it in.
 pub async fn setup(
     State(state): State<AppState>,
-    ClientIp(ip): ClientIp,
+    super::proxy::Client(client): super::proxy::Client,
     jar: CookieJar,
     headers: HeaderMap,
     Json(request): Json<SetupRequest>,
 ) -> Result<(CookieJar, Json<WhoAmI>), ApiError> {
+    let ip = client.ip;
     let ip_key = ip.to_string();
     state
         .limits
@@ -412,7 +420,7 @@ pub async fn setup(
         .await?;
     *state.setup_token.lock().unwrap_or_else(|e| e.into_inner()) = None;
     tracing::info!(username = user.username, "first account created");
-    open_session(&state, user, jar, &headers, ip).await
+    open_session(&state, user, jar, &headers, &client).await
 }
 
 #[derive(Debug, Deserialize)]
@@ -423,11 +431,12 @@ pub struct LoginRequest {
 
 pub async fn login(
     State(state): State<AppState>,
-    ClientIp(ip): ClientIp,
+    super::proxy::Client(client): super::proxy::Client,
     jar: CookieJar,
     headers: HeaderMap,
     Json(request): Json<LoginRequest>,
 ) -> Result<(CookieJar, Json<WhoAmI>), ApiError> {
+    let ip = client.ip;
     let user_key = request.username.to_ascii_lowercase();
     let ip_key = ip.to_string();
     let wait = [
@@ -448,7 +457,7 @@ pub async fn login(
         Some(user) => {
             state.limits.login_user.clear(&user_key);
             tracing::info!(username = user.username, %ip, "logged in");
-            open_session(&state, user, cleared(jar), &headers, ip).await
+            open_session(&state, user, cleared(jar), &headers, &client).await
         }
         None => {
             state.limits.login_user.strike(&user_key);

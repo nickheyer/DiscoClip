@@ -81,7 +81,7 @@ pub async fn app_with_discord_db(
     let rules = RuleStore::new(db.clone());
     rules.load().await.unwrap();
     let bots = Arc::new(BotManager::new(
-        handle,
+        handle.clone(),
         discord.clone(),
         clients,
         crate::discord::BotGuildStore::new(db.clone()),
@@ -98,10 +98,28 @@ pub async fn app_with_discord_db(
             bots,
             rules,
             discord,
+            engine: handle,
         },
     )
     .await
     .unwrap();
+    (app, db)
+}
+
+/// An app whose admin is `nick` with the password `correct horse`, with its database.
+pub async fn app_with_admin_db() -> (WebApp, SqliteStore) {
+    let (app, db) = app_with_discord_db(
+        WebConfig::default(),
+        Registry::default(),
+        false,
+        DiscordEndpoints::default(),
+    )
+    .await;
+    app.state
+        .users
+        .set_up("nick", "correct horse")
+        .await
+        .unwrap();
     (app, db)
 }
 
@@ -183,6 +201,10 @@ fn stub_engine(db: SqliteStore, clients: Clients) -> Engine {
     .downloader(Nothing)
     .transcoder(Nothing)
     .publisher(DiscordPublisher::new(clients))
+    .publisher(crate::local::LocalPublisher::new(
+        std::env::temp_dir().join("discoclip-test-local"),
+        1024,
+    ))
     .build()
     .unwrap()
 }
@@ -208,6 +230,10 @@ pub struct Client {
     pub location: Option<String>,
     /// Sent as a bearer token instead of the cookie.
     pub bearer: Option<String>,
+    /// Extra headers on every request, as a reverse proxy would add them.
+    pub headers: Vec<(String, String)>,
+    /// The `Set-Cookie` header of the last response, when there was one.
+    pub set_cookie: Option<String>,
 }
 
 impl Client {
@@ -220,6 +246,8 @@ impl Client {
             origin: None,
             location: None,
             bearer: None,
+            headers: Vec::new(),
+            set_cookie: None,
         }
     }
 
@@ -245,6 +273,9 @@ impl Client {
         if let Some(bearer) = &self.bearer {
             request = request.header(header::AUTHORIZATION, format!("Bearer {bearer}"));
         }
+        for (name, value) in &self.headers {
+            request = request.header(name.as_str(), value.as_str());
+        }
         let body = match body {
             Some(json) => {
                 request = request.header(header::CONTENT_TYPE, "application/json");
@@ -259,6 +290,10 @@ impl Client {
         self.location = response
             .headers()
             .get(header::LOCATION)
+            .map(|v| v.to_str().unwrap().to_string());
+        self.set_cookie = response
+            .headers()
+            .get(header::SET_COOKIE)
             .map(|v| v.to_str().unwrap().to_string());
         if let Some(set) = response.headers().get(header::SET_COOKIE) {
             let set = set.to_str().unwrap();
@@ -289,6 +324,32 @@ impl Client {
 
     pub async fn get(&mut self, path: &str) -> (StatusCode, Json) {
         self.send(Method::GET, path, None).await
+    }
+
+    /// A GET whose answer is read as bytes, with its headers, for files.
+    pub async fn raw(&mut self, path: &str) -> (StatusCode, axum::http::HeaderMap, Vec<u8>) {
+        let mut request = Request::builder()
+            .method(Method::GET)
+            .uri(path)
+            .header(header::HOST, "localhost:8080");
+        if let Some(cookie) = &self.cookie {
+            request = request.header(header::COOKIE, format!("{}={cookie}", auth::COOKIE));
+        }
+        if let Some(bearer) = &self.bearer {
+            request = request.header(header::AUTHORIZATION, format!("Bearer {bearer}"));
+        }
+        for (name, value) in &self.headers {
+            request = request.header(name.as_str(), value.as_str());
+        }
+        let mut request = request.body(Body::empty()).unwrap();
+        request.extensions_mut().insert(ConnectInfo(self.ip));
+        let response = self.router.clone().oneshot(request).await.unwrap();
+        let status = response.status();
+        let headers = response.headers().clone();
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        (status, headers, bytes.to_vec())
     }
 
     /// Opens a server-sent event stream and returns what arrives within a moment.

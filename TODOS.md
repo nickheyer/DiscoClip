@@ -2,9 +2,6 @@
 
 REMOVE EACH ITEM AS YOU FINISH IT. DO NOT PROGRESS UNTIL YOUVE COMPLETED THE CURRENT ITEM IN ITS ENTIRETY. MUST DO IN ORDER.
 
-1. `crates/app/src/web.rs`: `WebApp` serving the embedded SVELTE frontend with sessions, optional TLS, reverse-proxy awareness.
-2. Web: dashboard with live SSE job feed, queue depth, worker utilisation, bot state.
-3. Web: jobs list, filters, detail with stage log and artifacts, download, retry, cancel, delete, bulk actions.
 4. Web: settings pages for every setting.
 5. Web: users, roles, sessions, API tokens.
 6. Web: Discord applications, guilds, channels, rules.

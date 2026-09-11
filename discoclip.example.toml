@@ -34,6 +34,17 @@ max_bytes = 104857600          # size budget for web app submissions
 bind = "127.0.0.1:8080"        # address the web app listens on
 # public_url = "https://clips.example.com"  # how browsers reach the app; login providers send them back here
 
+# Reverse proxies whose X-Forwarded-For, X-Forwarded-Proto, X-Forwarded-Host and
+# Forwarded headers are believed, as addresses or networks. Requests from anywhere else
+# keep the address they arrived from.
+# trusted_proxies = ["127.0.0.1", "10.0.0.0/8", "::1"]
+
+# Serve HTTPS straight from the binary. Both files are PEM; they are read again when
+# they change, so a renewed certificate needs no restart.
+# [web.tls]
+# cert = "/etc/discoclip/fullchain.pem"
+# key = "/etc/discoclip/privkey.pem"
+
 # Logging in with an OAuth provider instead of a password. Register an application at
 # the provider with the callback https://<public_url>/api/auth/<provider>/callback,
 # where <provider> is github, google, oidc, or discord for the application marked for login.

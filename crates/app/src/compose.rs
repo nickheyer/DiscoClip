@@ -132,9 +132,7 @@ async fn builder(settings: &Settings, store: SqliteStore) -> Result<EngineBuilde
     for resolver in resolvers(&http) {
         builder = builder.resolver_boxed(resolver);
     }
-    if let Some(archive) = engine_config.archive {
-        builder = builder.archiver(FsArchiver::new(archive));
-    }
+    builder = builder.archiver(FsArchiver::new(engine_config.archive));
     Ok(builder)
 }
 
@@ -228,6 +226,7 @@ async fn serve(
             bots: bots.clone(),
             rules,
             discord: endpoints,
+            engine: handle,
         },
     )
     .await?;

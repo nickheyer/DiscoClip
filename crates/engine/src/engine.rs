@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use jiff::Timestamp;
 use serde::Serialize;
@@ -105,6 +105,7 @@ impl EngineBuilder {
         let (events, _) = broadcast::channel(EVENT_CAPACITY);
         let resolvers = Arc::new(ResolverRegistry::new(self.resolvers));
         let workers = self.config.workers.max(1);
+        let config = Arc::new(RwLock::new(self.config));
         let shared = Arc::new(Shared {
             resolvers: resolvers.clone(),
             store: self.store.clone(),
@@ -113,12 +114,14 @@ impl EngineBuilder {
             submit: submit.clone(),
             events: events.clone(),
             active: Mutex::new(HashMap::new()),
-            workers,
+            workers: AtomicUsize::new(workers),
+            semaphore: Arc::new(Semaphore::new(workers)),
             queued: AtomicUsize::new(0),
-            cache_dir: self.config.cache_dir.clone(),
+            config: config.clone(),
+            archiver: self.archiver.clone(),
         });
         let context = Arc::new(Context {
-            config: self.config,
+            config,
             http: self.http,
             resolvers,
             downloaders: self.downloaders,
@@ -156,11 +159,11 @@ impl Engine {
     pub async fn run(mut self, shutdown: CancellationToken) -> Result<(), EngineError> {
         let ctx = self.context.clone();
         let shared = self.handle.shared.clone();
-        tokio::fs::create_dir_all(ctx.config.cache_dir.join("jobs")).await?;
+        tokio::fs::create_dir_all(ctx.cache_dir().join("jobs")).await?;
         self.recover().await?;
 
-        let workers = ctx.config.workers.max(1);
-        let semaphore = Arc::new(Semaphore::new(workers));
+        let workers = shared.workers.load(Ordering::Relaxed);
+        let semaphore = shared.semaphore.clone();
         let mut tasks: JoinSet<()> = JoinSet::new();
         tracing::info!(workers, "engine running");
 
@@ -232,12 +235,14 @@ impl Engine {
         Ok(())
     }
 
+    /// Requeues the jobs that were running or waiting when the engine last stopped, and
+    /// removes cache directories of jobs the store no longer has; a finished job's
+    /// directory stays, since it holds the output the web app serves, until retention
+    /// takes it.
     async fn recover(&self) -> Result<(), EngineError> {
         let ctx = &self.context;
         let active = ctx.store.list_active().await?;
-        let mut keep: HashSet<String> = HashSet::new();
         for mut job in active {
-            keep.insert(job.id.to_string());
             if matches!(job.status, JobStatus::Running { .. }) {
                 ctx.note(&mut job, None, "requeued after engine restart")
                     .await?;
@@ -249,17 +254,23 @@ impl Engine {
                 .await
                 .map_err(|_| EngineError::Incomplete("job queue closed during recovery"))?;
         }
-        let jobs_dir = ctx.config.cache_dir.join("jobs");
+        let jobs_dir = ctx.cache_dir().join("jobs");
         let mut entries = tokio::fs::read_dir(&jobs_dir).await?;
         while let Some(entry) = entries.next_entry().await? {
             let name = entry.file_name().to_string_lossy().into_owned();
-            if !keep.contains(&name) {
-                if let Err(error) = tokio::fs::remove_dir_all(entry.path()).await {
-                    tracing::warn!(
-                        "could not remove stale cache dir {}: {error}",
-                        entry.path().display()
-                    );
-                }
+            let known = match name.parse::<JobId>() {
+                Ok(id) => ctx.store.get(id).await?.is_some_and(|job| {
+                    job.status == JobStatus::Done && !pipeline::kept_files(&job).is_empty()
+                }),
+                Err(_) => false,
+            };
+            if !known
+                && let Err(error) = tokio::fs::remove_dir_all(entry.path()).await
+            {
+                tracing::warn!(
+                    "could not remove stale cache dir {}: {error}",
+                    entry.path().display()
+                );
             }
         }
         Ok(())
@@ -274,9 +285,12 @@ struct Shared {
     submit: mpsc::Sender<JobId>,
     events: broadcast::Sender<EngineEvent>,
     active: Mutex<HashMap<JobId, CancellationToken>>,
-    workers: usize,
+    /// How many jobs may run at once; the semaphore holds that many permits.
+    workers: AtomicUsize,
+    semaphore: Arc<Semaphore>,
     queued: AtomicUsize,
-    cache_dir: PathBuf,
+    config: Arc<RwLock<EngineConfig>>,
+    archiver: Option<Arc<dyn Archiver>>,
 }
 
 impl Shared {
@@ -285,6 +299,33 @@ impl Shared {
         self.submit.send(id).await.map_err(|_| {
             self.queued.fetch_sub(1, Ordering::Relaxed);
         })
+    }
+
+    fn cache_dir(&self) -> PathBuf {
+        self.config
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .cache_dir
+            .clone()
+    }
+
+    /// Grows or shrinks the worker pool to `wanted`. Growing frees permits at once;
+    /// shrinking takes permits back as running jobs release them, so nothing is
+    /// interrupted.
+    fn resize_workers(self: &Arc<Self>, wanted: usize) {
+        let wanted = wanted.max(1);
+        let current = self.workers.swap(wanted, Ordering::SeqCst);
+        if wanted > current {
+            self.semaphore.add_permits(wanted - current);
+        } else if wanted < current {
+            let shrink = current - wanted;
+            let semaphore = self.semaphore.clone();
+            tokio::spawn(async move {
+                if let Ok(permits) = semaphore.acquire_many(shrink as u32).await {
+                    permits.forget();
+                }
+            });
+        }
     }
 }
 
@@ -344,10 +385,39 @@ impl EngineHandle {
 
     pub fn utilisation(&self) -> Utilisation {
         Utilisation {
-            workers: self.shared.workers,
+            workers: self.shared.workers.load(Ordering::Relaxed),
             active: self.shared.active.lock().expect("active jobs lock").len(),
             waiting: self.shared.queued.load(Ordering::Relaxed),
         }
+    }
+
+    /// The engine's settings as they stand now.
+    pub fn config(&self) -> EngineConfig {
+        self.shared
+            .config
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    /// Replaces the engine's settings while it runs: limits, playlist and live capture
+    /// rules, retention and archiving apply to the next job, and the worker pool grows or
+    /// shrinks. The cache directory is where it was at startup; a change to it waits for
+    /// a restart and is reported by [`EngineHandle::cache_dir_pending`].
+    pub fn reconfigure(&self, mut config: EngineConfig) {
+        let startup_cache = self.shared.cache_dir();
+        config.cache_dir = startup_cache;
+        if let Some(archiver) = &self.shared.archiver {
+            archiver.reconfigure(config.archive.clone());
+        }
+        self.shared.resize_workers(config.workers);
+        *self.shared.config.write().unwrap_or_else(|e| e.into_inner()) = config;
+    }
+
+    /// Whether `wanted` differs from the cache directory in use, which only a restart
+    /// changes.
+    pub fn cache_dir_pending(&self, wanted: &Path) -> bool {
+        self.shared.cache_dir() != wanted
     }
 
     /// The ids of the jobs running right now.
@@ -477,7 +547,7 @@ impl EngineHandle {
             return Err(DeleteError::NotFinished(id));
         }
         self.shared.store.delete(id).await?;
-        let dir = self.shared.cache_dir.join("jobs").join(id.to_string());
+        let dir = self.shared.cache_dir().join("jobs").join(id.to_string());
         if let Err(error) = tokio::fs::remove_dir_all(&dir).await
             && error.kind() != std::io::ErrorKind::NotFound
         {
@@ -498,8 +568,9 @@ impl EngineHandle {
         kinds: &[StatusKind],
     ) -> Result<usize, StoreError> {
         let ids = self.shared.store.purge(before, kinds).await?;
+        let jobs_dir = self.shared.cache_dir().join("jobs");
         for id in &ids {
-            let dir = self.shared.cache_dir.join("jobs").join(id.to_string());
+            let dir = jobs_dir.join(id.to_string());
             let _ = tokio::fs::remove_dir_all(&dir).await;
             let _ = self.shared.events.send(EngineEvent {
                 job: *id,
@@ -513,7 +584,7 @@ impl EngineHandle {
     /// Removes cached job directories of jobs that are not running, oldest first, until the
     /// cache is under `max_bytes`; how many bytes were freed.
     pub async fn trim_cache(&self, max_bytes: u64) -> Result<u64, std::io::Error> {
-        let jobs_dir = self.shared.cache_dir.join("jobs");
+        let jobs_dir = self.shared.cache_dir().join("jobs");
         let active: HashSet<String> = self.active().iter().map(|id| id.to_string()).collect();
         let mut entries: Vec<(PathBuf, u64, std::time::SystemTime)> = Vec::new();
         let mut total = 0u64;
@@ -579,8 +650,8 @@ impl EngineHandle {
         self.shared.store.resolver_stats().await
     }
 
-    pub fn cache_dir(&self) -> &Path {
-        &self.shared.cache_dir
+    pub fn cache_dir(&self) -> PathBuf {
+        self.shared.cache_dir()
     }
 }
 

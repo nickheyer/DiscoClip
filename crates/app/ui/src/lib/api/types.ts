@@ -7,7 +7,8 @@ export type Permission =
 	| 'manage_applications'
 	| 'manage_watch_rules'
 	| 'manage_bots'
-	| 'view_audit_log';
+	| 'view_audit_log'
+	| 'manage_jobs';
 
 export type Intent = 'login' | 'link';
 
@@ -56,8 +57,19 @@ export const PERMISSIONS: Permission[] = [
 	'manage_applications',
 	'manage_watch_rules',
 	'manage_bots',
-	'view_audit_log'
+	'view_audit_log',
+	'manage_jobs'
 ];
+
+export type StatusKind = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
+
+export const STATUS_KINDS: StatusKind[] = ['queued', 'running', 'done', 'failed', 'cancelled'];
+
+export type Stage = 'resolve' | 'download' | 'transcode' | 'publish' | 'archive';
+
+export const STAGES: Stage[] = ['resolve', 'download', 'transcode', 'publish', 'archive'];
+
+export type JobOrder = 'newest' | 'oldest';
 
 export const COMMAND_MODES: CommandMode[] = ['off', 'global', 'guilds'];
 
@@ -153,6 +165,53 @@ export interface RuleInput {
 	max_height?: number | null;
 	enabled?: boolean;
 }
+
+export interface JobQuery {
+	source?: string;
+	status?: StatusKind;
+	resolver?: string;
+	parent?: string;
+	top_level?: boolean;
+	q?: string;
+	before?: string;
+	after?: string;
+	limit?: number;
+	offset?: number;
+	order?: JobOrder;
+}
+
+export interface SubmitRequest {
+	url: string;
+	limits?: Partial<RequestLimits>;
+	options?: Partial<RequestOptions>;
+}
+
+export interface Submitted {
+	id: string;
+}
+
+export type BulkAction = 'retry' | 'cancel' | 'delete';
+
+export interface BulkRequest {
+	action: BulkAction;
+	ids: string[];
+}
+
+export interface BulkOutcome {
+	id: string;
+	ok: boolean;
+	error: string | null;
+	job: string | null;
+}
+
+export interface BulkResponse {
+	action: BulkAction;
+	results: BulkOutcome[];
+	succeeded: number;
+	failed: number;
+}
+
+export type Artifact = 'output' | 'source' | 'subtitle';
 
 export interface AuditQuery {
 	actor?: string;
@@ -350,4 +409,284 @@ export interface Target {
 	kind: TargetKind;
 	id: string;
 	name: string | null;
+}
+
+// Jobs
+
+/** A `std::time::Duration` on the wire. */
+export interface DurationWire {
+	secs: number;
+	nanos: number;
+}
+
+export function durationSeconds(value: DurationWire | null | undefined): number | null {
+	if (!value) return null;
+	return value.secs + value.nanos / 1e9;
+}
+
+export type JobStatus =
+	| { status: 'queued' }
+	| { status: 'running'; stage: Stage }
+	| { status: 'done' }
+	| { status: 'failed'; stage: Stage; message: string }
+	| { status: 'cancelled' };
+
+export interface Origin {
+	source: string;
+	reference: string;
+	url: string | null;
+}
+
+export interface RequestLimits {
+	max_source_bytes: number | null;
+	max_duration_secs: number | null;
+	max_height: number | null;
+}
+
+export interface ClipRange {
+	start: DurationWire;
+	end: DurationWire | null;
+}
+
+export type SubtitleMode = 'keep' | 'burn' | 'skip';
+
+export interface RequestOptions {
+	clip: ClipRange | null;
+	subtitles: SubtitleMode;
+	subtitle_language: string | null;
+}
+
+export interface JobRequest {
+	origin: Origin;
+	url: string;
+	destination: string | null;
+	limits: RequestLimits;
+	options: RequestOptions;
+	parent: string | null;
+	retry_of: string | null;
+	submitted_by: string | null;
+}
+
+export interface JobSummary {
+	id: string;
+	url: string;
+	status: JobStatus;
+	source: string;
+	origin: Origin;
+	destination: string | null;
+	submitted_by: string | null;
+	parent: string | null;
+	retry_of: string | null;
+	title: string | null;
+	resolver: string | null;
+	uploader: string | null;
+	webpage_url: string | null;
+	thumbnail: string | null;
+	duration_secs: number | null;
+	live: boolean;
+	output_bytes: number | null;
+	published_url: string | null;
+	published_reference: string | null;
+	children: number;
+	archived_files: number;
+	created_at: string;
+	updated_at: string;
+	started_at: string | null;
+	finished_at: string | null;
+}
+
+export interface JobPage {
+	jobs: JobSummary[];
+	total: number;
+	limit: number;
+	offset: number;
+}
+
+export interface Stats {
+	queued: number;
+	running: number;
+	done: number;
+	failed: number;
+	cancelled: number;
+}
+
+export interface Utilisation {
+	workers: number;
+	active: number;
+	waiting: number;
+}
+
+export interface ResolverStats {
+	resolver: string;
+	done: number;
+	failed: number;
+	last_done_at: string | null;
+	last_failed_at: string | null;
+}
+
+export interface JobStats {
+	counts: Stats;
+	last_24h: Stats;
+	utilisation: Utilisation;
+	queue_depth: number;
+	active: string[];
+	resolvers: ResolverStats[];
+	at: string;
+}
+
+export interface Progress {
+	done: number;
+	total: number | null;
+}
+
+export interface LogEntry {
+	at: string;
+	stage: Stage | null;
+	message: string;
+}
+
+export type JobEvent = { job: string; at: string; job_summary: JobSummary | null } & (
+	| { kind: 'submitted'; request: JobRequest }
+	| { kind: 'status'; status: JobStatus }
+	| { kind: 'progress'; stage: Stage; progress: Progress }
+	| { kind: 'log'; entry: LogEntry }
+	| { kind: 'children'; ids: string[] }
+	| { kind: 'deleted' }
+);
+
+export type VariantKind = 'file' | 'hls' | 'dash' | 'ism' | 'rtmp' | 'rtsp' | 'whep' | 'browser';
+
+export type Codec = string | { other: string };
+
+export interface Variant {
+	url: string;
+	kind: VariantKind;
+	audio_url: string | null;
+	container: Codec | null;
+	video: Codec | null;
+	audio: Codec | null;
+	width: number | null;
+	height: number | null;
+	fps: number | null;
+	bitrate: number | null;
+	size: number | null;
+	duration: DurationWire | null;
+	headers: [string, string][];
+	format_id: string | null;
+	label: string | null;
+	language: string | null;
+	codecs: string | null;
+	video_only: boolean;
+	audio_only: boolean;
+	live: boolean;
+	drm: string | null;
+}
+
+export interface SubtitleTrack {
+	url: string;
+	language: string;
+	name: string | null;
+	format: string;
+	auto: boolean;
+	headers: [string, string][];
+}
+
+export interface Resolved {
+	resolver: string;
+	id: string | null;
+	title: string | null;
+	description: string | null;
+	uploader: string | null;
+	uploader_url: string | null;
+	uploaded_at: string | null;
+	duration: DurationWire | null;
+	thumbnail: string | null;
+	webpage_url: string | null;
+	live: boolean;
+	age_limit: number | null;
+	clip: ClipRange | null;
+	subtitles: SubtitleTrack[];
+	variants: Variant[];
+}
+
+export interface VideoTrack {
+	codec: Codec;
+	width: number;
+	height: number;
+	fps: number | null;
+	bitrate: number | null;
+}
+
+export interface AudioTrack {
+	codec: Codec;
+	channels: number;
+	sample_rate: number;
+	bitrate: number | null;
+}
+
+export interface MediaInfo {
+	container: Codec;
+	duration: DurationWire | null;
+	video: VideoTrack | null;
+	audio: AudioTrack | null;
+}
+
+export interface LocalFile {
+	path: string;
+	size: number;
+	info: MediaInfo | null;
+}
+
+export interface LocalSubtitle {
+	language: string;
+	name: string | null;
+	path: string;
+	format: string;
+}
+
+export interface Published {
+	reference: string;
+	url: string | null;
+	at: string;
+}
+
+export interface ArchiveEntry {
+	files: string[];
+	bytes: number;
+	at: string;
+}
+
+export interface StageTiming {
+	stage: Stage;
+	started_at: string;
+	ended_at: string | null;
+}
+
+export interface Artifacts {
+	resolved: Resolved | null;
+	source: LocalFile | null;
+	output: LocalFile | null;
+	published: Published | null;
+	archived: ArchiveEntry | null;
+	subtitles: LocalSubtitle[];
+	children: string[];
+	timings: StageTiming[];
+}
+
+export interface Job {
+	id: string;
+	request: JobRequest;
+	status: JobStatus;
+	artifacts: Artifacts;
+	log: LogEntry[];
+	created_at: string;
+	updated_at: string;
+	started_at: string | null;
+	finished_at: string | null;
+}
+
+/** The name of a codec or container as the wire carries it. */
+export function codecName(codec: Codec | null | undefined): string | null {
+	if (codec == null) return null;
+	return typeof codec === 'string' ? codec : codec.other;
 }

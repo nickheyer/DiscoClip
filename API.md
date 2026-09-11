@@ -30,7 +30,7 @@
 | Browser session | `Cookie: discoclip_session=<token>` |
 | API token | `Authorization: Bearer dc_<secret>` |
 | CSRF echo | `x-csrf-token: <csrf_token>` |
-| Origin check | `Origin` equal to `Host` |
+| Origin check | `Origin` equal to `Host` or the host a trusted proxy forwarded |
 | Site check | `Sec-Fetch-Site` in `same-origin` `none` |
 
 | Method | CSRF echo | Origin check | Site check |
@@ -68,6 +68,7 @@
 | `view_audit_log` | yes | no | no |
 | `manage_watch_rules` | yes | yes | no |
 | `manage_bots` | yes | yes | no |
+| `manage_jobs` | yes | yes | no |
 
 #### Global status codes
 
@@ -85,8 +86,10 @@
 | `415` | `text/plain` axum content type rejection |
 | `422` | `text/plain` axum JSON schema rejection |
 | `429` | `{ "error": "too many attempts; try again in <n> seconds" }` + `Retry-After: <n>` |
+| `416` | `{ "error": "<message>" }` + `Content-Range: bytes */<length>` |
 | `500` | `{ "error": "internal error" }` |
 | `502` | `{ "error": "<message>" }` |
+| `503` | `{ "error": "<message>" }` |
 
 #### Types
 
@@ -755,6 +758,151 @@ Fetches the requesting account's Discord guilds again and stores them.
 | Response | `200` `Guild[]` |
 | Errors | `401` `404` `502` |
 
+### Jobs
+
+#### GET /api/jobs
+
+Lists jobs newest first with filters and paging.
+
+| Field | Value |
+|---|---|
+| Auth | any |
+| Path | — |
+| Query | `JobQuery` |
+| Body | — |
+| Response | `200` `JobPage` |
+| Errors | `400` `401` |
+
+#### POST /api/jobs
+
+Queues a link submitted from the web app as a local job.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_jobs` |
+| Path | — |
+| Query | — |
+| Body | `SubmitRequest` |
+| Response | `202` `Submitted` |
+| Errors | `400` `401` `403` `503` |
+
+#### POST /api/jobs/bulk
+
+Retries or cancels or deletes several jobs and reports each.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_jobs` |
+| Path | — |
+| Query | — |
+| Body | `BulkRequest` |
+| Response | `200` `BulkResponse` |
+| Errors | `400` `401` `403` |
+
+#### GET /api/jobs/stats
+
+Returns the job counts and the workers' load and each resolver's record.
+
+| Field | Value |
+|---|---|
+| Auth | any |
+| Path | — |
+| Query | — |
+| Body | — |
+| Response | `200` `JobStats` |
+| Errors | `401` |
+
+#### GET /api/jobs/events
+
+Streams the job stats and every job event as server-sent events.
+
+| Field | Value |
+|---|---|
+| Auth | any |
+| Path | — |
+| Query | — |
+| Body | — |
+| Response | `200` `text/event-stream` · `event: stats` · `data: JobStats` · `event: job` · `data: JobEvent` |
+| Errors | `401` |
+
+#### GET /api/jobs/{id}
+
+Returns one job with its request and stage log and artifacts.
+
+| Field | Value |
+|---|---|
+| Auth | any |
+| Path | `id` `uuid` |
+| Query | — |
+| Body | — |
+| Response | `200` `Job` |
+| Errors | `401` `404` |
+
+#### DELETE /api/jobs/{id}
+
+Removes a finished job's record and its cached files.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_jobs` |
+| Path | `id` `uuid` |
+| Query | — |
+| Body | — |
+| Response | `204` |
+| Errors | `401` `403` `404` `409` |
+
+#### POST /api/jobs/{id}/retry
+
+Queues a fresh job with the same request as a finished one.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_jobs` |
+| Path | `id` `uuid` |
+| Query | — |
+| Body | — |
+| Response | `202` `Submitted` |
+| Errors | `400` `401` `403` `404` `409` `503` |
+
+#### POST /api/jobs/{id}/cancel
+
+Stops a queued or running job.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_jobs` |
+| Path | `id` `uuid` |
+| Query | — |
+| Body | — |
+| Response | `204` |
+| Errors | `401` `403` `404` `409` |
+
+#### GET /api/jobs/{id}/download
+
+Streams a job's output or source or subtitle file from the cache or the archive.
+
+| Field | Value |
+|---|---|
+| Auth | any |
+| Path | `id` `uuid` |
+| Query | `artifact` `Artifact` default `output` · `index` `integer` default `0` · `inline` `bool` default `false` |
+| Body | — |
+| Response | `200` file · `206` file with `Range` |
+| Errors | `401` `404` `409` `416` |
+
+#### GET /api/jobs/{id}/children
+
+Lists the jobs a playlist job expanded into oldest first.
+
+| Field | Value |
+|---|---|
+| Auth | any |
+| Path | `id` `uuid` |
+| Query | — |
+| Body | — |
+| Response | `200` `JobSummary[]` |
+| Errors | `401` `404` |
+
 ### Audit log
 
 #### GET /api/audit
@@ -890,6 +1038,37 @@ Rejects a command name the bot does not define.
 | `max_duration_secs` | `integer \| null` | no |
 | `max_height` | `integer \| null` | no |
 | `enabled` | `bool` | no · default `true` |
+
+#### SubmitRequest
+
+| Field | Type | Required |
+|---|---|---|
+| `url` | `url` | yes |
+| `limits` | `RequestLimits` | no |
+| `options` | `RequestOptions` | no |
+
+#### BulkRequest
+
+| Field | Type | Required |
+|---|---|---|
+| `action` | `BulkAction` | yes |
+| `ids` | `uuid[]` | yes · 1 to 500 |
+
+#### JobQuery
+
+| Field | Type | Required |
+|---|---|---|
+| `source` | `string` | no |
+| `status` | `StatusKind` | no |
+| `resolver` | `string` | no |
+| `parent` | `uuid` | no |
+| `top_level` | `bool` | no · default `false` |
+| `q` | `string` | no |
+| `before` | `timestamp` | no |
+| `after` | `timestamp` | no |
+| `limit` | `integer` | no · default `50` · max `500` |
+| `offset` | `integer` | no · default `0` |
+| `order` | `JobOrder` | no · default `newest` |
 
 #### AuditQuery
 
@@ -1115,6 +1294,358 @@ Rejects a command name the bot does not define.
 | `manageable` | `bool` |
 | `fetched_at` | `timestamp` |
 
+#### Submitted
+
+| Field | Type |
+|---|---|
+| `id` | `uuid` |
+
+#### BulkResponse
+
+| Field | Type |
+|---|---|
+| `action` | `BulkAction` |
+| `results` | `BulkOutcome[]` |
+| `succeeded` | `integer` |
+| `failed` | `integer` |
+
+#### BulkOutcome
+
+| Field | Type |
+|---|---|
+| `id` | `uuid` |
+| `ok` | `bool` |
+| `error` | `string \| null` |
+| `job` | `uuid \| null` |
+
+#### JobPage
+
+| Field | Type |
+|---|---|
+| `jobs` | `JobSummary[]` |
+| `total` | `integer` |
+| `limit` | `integer` |
+| `offset` | `integer` |
+
+#### JobSummary
+
+| Field | Type |
+|---|---|
+| `id` | `uuid` |
+| `url` | `url` |
+| `status` | `JobStatus` |
+| `source` | `string` |
+| `origin` | `Origin` |
+| `destination` | `string \| null` |
+| `submitted_by` | `string \| null` |
+| `parent` | `uuid \| null` |
+| `retry_of` | `uuid \| null` |
+| `title` | `string \| null` |
+| `resolver` | `string \| null` |
+| `uploader` | `string \| null` |
+| `webpage_url` | `url \| null` |
+| `thumbnail` | `url \| null` |
+| `duration_secs` | `number \| null` |
+| `live` | `bool` |
+| `output_bytes` | `integer \| null` |
+| `published_url` | `url \| null` |
+| `published_reference` | `string \| null` |
+| `children` | `integer` |
+| `archived_files` | `integer` |
+| `created_at` | `timestamp` |
+| `updated_at` | `timestamp` |
+| `started_at` | `timestamp \| null` |
+| `finished_at` | `timestamp \| null` |
+
+#### JobStatus
+
+| Field | Type | Present for `status` |
+|---|---|---|
+| `status` | `StatusKind` | all |
+| `stage` | `Stage` | `running` `failed` |
+| `message` | `string` | `failed` |
+
+#### Origin
+
+| Field | Type |
+|---|---|
+| `source` | `string` |
+| `reference` | `string` |
+| `url` | `url \| null` |
+
+#### JobStats
+
+| Field | Type |
+|---|---|
+| `counts` | `Stats` |
+| `last_24h` | `Stats` |
+| `utilisation` | `Utilisation` |
+| `queue_depth` | `integer` |
+| `active` | `uuid[]` |
+| `resolvers` | `ResolverStats[]` |
+| `at` | `timestamp` |
+
+#### Stats
+
+| Field | Type |
+|---|---|
+| `queued` | `integer` |
+| `running` | `integer` |
+| `done` | `integer` |
+| `failed` | `integer` |
+| `cancelled` | `integer` |
+
+#### Utilisation
+
+| Field | Type |
+|---|---|
+| `workers` | `integer` |
+| `active` | `integer` |
+| `waiting` | `integer` |
+
+#### ResolverStats
+
+| Field | Type |
+|---|---|
+| `resolver` | `string` |
+| `done` | `integer` |
+| `failed` | `integer` |
+| `last_done_at` | `timestamp \| null` |
+| `last_failed_at` | `timestamp \| null` |
+
+#### JobEvent
+
+| Field | Type | Present for `kind` |
+|---|---|---|
+| `job` | `uuid` | all |
+| `at` | `timestamp` | all |
+| `kind` | `JobEventKind` | all |
+| `job_summary` | `JobSummary \| null` | all |
+| `request` | `JobRequest` | `submitted` |
+| `status` | `JobStatus` | `status` |
+| `stage` | `Stage` | `progress` |
+| `progress` | `Progress` | `progress` |
+| `entry` | `LogEntry` | `log` |
+| `ids` | `uuid[]` | `children` |
+
+#### Progress
+
+| Field | Type |
+|---|---|
+| `done` | `integer` |
+| `total` | `integer \| null` |
+
+#### LogEntry
+
+| Field | Type |
+|---|---|
+| `at` | `timestamp` |
+| `stage` | `Stage \| null` |
+| `message` | `string` |
+
+#### JobRequest
+
+| Field | Type |
+|---|---|
+| `origin` | `Origin` |
+| `url` | `url` |
+| `destination` | `string \| null` |
+| `limits` | `RequestLimits` |
+| `options` | `RequestOptions` |
+| `parent` | `uuid \| null` |
+| `retry_of` | `uuid \| null` |
+| `submitted_by` | `string \| null` |
+
+#### RequestLimits
+
+| Field | Type |
+|---|---|
+| `max_source_bytes` | `integer \| null` |
+| `max_duration_secs` | `integer \| null` |
+| `max_height` | `integer \| null` |
+
+#### RequestOptions
+
+| Field | Type |
+|---|---|
+| `clip` | `ClipRange \| null` |
+| `subtitles` | `SubtitleMode` |
+| `subtitle_language` | `string \| null` |
+
+#### ClipRange
+
+| Field | Type |
+|---|---|
+| `start` | `Duration` |
+| `end` | `Duration \| null` |
+
+#### Duration
+
+| Field | Type |
+|---|---|
+| `secs` | `integer` |
+| `nanos` | `integer` |
+
+#### Job
+
+| Field | Type |
+|---|---|
+| `id` | `uuid` |
+| `request` | `JobRequest` |
+| `status` | `JobStatus` |
+| `artifacts` | `Artifacts` |
+| `log` | `LogEntry[]` |
+| `created_at` | `timestamp` |
+| `updated_at` | `timestamp` |
+| `started_at` | `timestamp \| null` |
+| `finished_at` | `timestamp \| null` |
+
+#### Artifacts
+
+| Field | Type |
+|---|---|
+| `resolved` | `Resolved \| null` |
+| `source` | `LocalFile \| null` |
+| `output` | `LocalFile \| null` |
+| `published` | `Published \| null` |
+| `archived` | `ArchiveEntry \| null` |
+| `subtitles` | `LocalSubtitle[]` |
+| `children` | `uuid[]` |
+| `timings` | `StageTiming[]` |
+
+#### Resolved
+
+| Field | Type |
+|---|---|
+| `resolver` | `string` |
+| `id` | `string \| null` |
+| `title` | `string \| null` |
+| `description` | `string \| null` |
+| `uploader` | `string \| null` |
+| `uploader_url` | `url \| null` |
+| `uploaded_at` | `timestamp \| null` |
+| `duration` | `Duration \| null` |
+| `thumbnail` | `url \| null` |
+| `webpage_url` | `url \| null` |
+| `live` | `bool` |
+| `age_limit` | `integer \| null` |
+| `clip` | `ClipRange \| null` |
+| `subtitles` | `SubtitleTrack[]` |
+| `variants` | `Variant[]` |
+
+#### Variant
+
+| Field | Type |
+|---|---|
+| `url` | `url` |
+| `kind` | `VariantKind` |
+| `audio_url` | `url \| null` |
+| `container` | `Codec \| null` |
+| `video` | `Codec \| null` |
+| `audio` | `Codec \| null` |
+| `width` | `integer \| null` |
+| `height` | `integer \| null` |
+| `fps` | `number \| null` |
+| `bitrate` | `integer \| null` |
+| `size` | `integer \| null` |
+| `duration` | `Duration \| null` |
+| `headers` | `[string, string][]` |
+| `format_id` | `string \| null` |
+| `label` | `string \| null` |
+| `language` | `string \| null` |
+| `codecs` | `string \| null` |
+| `video_only` | `bool` |
+| `audio_only` | `bool` |
+| `live` | `bool` |
+| `drm` | `string \| null` |
+
+#### Codec
+
+| Wire form | Meaning |
+|---|---|
+| `string` | a known codec or container name |
+| `{ "other": string }` | a name outside the known set |
+
+#### SubtitleTrack
+
+| Field | Type |
+|---|---|
+| `url` | `url` |
+| `language` | `string` |
+| `name` | `string \| null` |
+| `format` | `SubtitleFormat` |
+| `auto` | `bool` |
+| `headers` | `[string, string][]` |
+
+#### LocalFile
+
+| Field | Type |
+|---|---|
+| `path` | `string` |
+| `size` | `integer` |
+| `info` | `MediaInfo \| null` |
+
+#### MediaInfo
+
+| Field | Type |
+|---|---|
+| `container` | `Codec` |
+| `duration` | `Duration \| null` |
+| `video` | `VideoTrack \| null` |
+| `audio` | `AudioTrack \| null` |
+
+#### VideoTrack
+
+| Field | Type |
+|---|---|
+| `codec` | `Codec` |
+| `width` | `integer` |
+| `height` | `integer` |
+| `fps` | `number \| null` |
+| `bitrate` | `integer \| null` |
+
+#### AudioTrack
+
+| Field | Type |
+|---|---|
+| `codec` | `Codec` |
+| `channels` | `integer` |
+| `sample_rate` | `integer` |
+| `bitrate` | `integer \| null` |
+
+#### LocalSubtitle
+
+| Field | Type |
+|---|---|
+| `language` | `string` |
+| `name` | `string \| null` |
+| `path` | `string` |
+| `format` | `SubtitleFormat` |
+
+#### Published
+
+| Field | Type |
+|---|---|
+| `reference` | `string` |
+| `url` | `url \| null` |
+| `at` | `timestamp` |
+
+#### ArchiveEntry
+
+| Field | Type |
+|---|---|
+| `files` | `string[]` |
+| `bytes` | `integer` |
+| `at` | `timestamp` |
+
+#### StageTiming
+
+| Field | Type |
+|---|---|
+| `stage` | `Stage` |
+| `started_at` | `timestamp` |
+| `ended_at` | `timestamp \| null` |
+
 #### Page
 
 | Field | Type |
@@ -1205,6 +1736,7 @@ Rejects a command name the bot does not define.
 | `manage_watch_rules` |
 | `manage_bots` |
 | `view_audit_log` |
+| `manage_jobs` |
 
 #### Intent
 
@@ -1212,6 +1744,92 @@ Rejects a command name the bot does not define.
 |---|
 | `login` |
 | `link` |
+
+#### StatusKind
+
+| Value |
+|---|
+| `queued` |
+| `running` |
+| `done` |
+| `failed` |
+| `cancelled` |
+
+#### Stage
+
+| Value |
+|---|
+| `resolve` |
+| `download` |
+| `transcode` |
+| `publish` |
+| `archive` |
+
+#### BulkAction
+
+| Value |
+|---|
+| `retry` |
+| `cancel` |
+| `delete` |
+
+#### Artifact
+
+| Value |
+|---|
+| `output` |
+| `source` |
+| `subtitle` |
+
+#### JobOrder
+
+| Value |
+|---|
+| `newest` |
+| `oldest` |
+
+#### JobEventKind
+
+| Value |
+|---|
+| `submitted` |
+| `status` |
+| `progress` |
+| `log` |
+| `children` |
+| `deleted` |
+
+#### SubtitleMode
+
+| Value |
+|---|
+| `keep` |
+| `burn` |
+| `skip` |
+
+#### SubtitleFormat
+
+| Value |
+|---|
+| `vtt` |
+| `srt` |
+| `ttml` |
+| `ass` |
+| `json3` |
+| `hls_vtt` |
+
+#### VariantKind
+
+| Value |
+|---|
+| `file` |
+| `hls` |
+| `dash` |
+| `ism` |
+| `rtmp` |
+| `rtsp` |
+| `whep` |
+| `browser` |
 
 #### CallbackError
 

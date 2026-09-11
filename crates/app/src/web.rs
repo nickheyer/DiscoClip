@@ -9,7 +9,7 @@ use axum::Router;
 use axum::middleware::{from_fn, from_fn_with_state};
 use axum::routing::{delete, get, post, put};
 use discoclip_bot::DiscordEndpoints;
-use discoclip_engine::StoreError;
+use discoclip_engine::{EngineHandle, StoreError};
 use discoclip_engine::store::sqlite::SqliteStore;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
@@ -29,6 +29,7 @@ use crate::rules::RuleStore;
 use crate::secrets::Keyring;
 use crate::sessions::{SessionStore, random_token};
 use crate::settings::{OAuthClient, WebConfig};
+use crate::web::proxy::Proxies;
 use crate::tokens::TokenStore;
 use crate::users::{UserError, UserStore};
 
@@ -38,10 +39,13 @@ pub mod audit;
 pub mod auth;
 pub mod discord;
 pub mod error;
+pub mod jobs;
 pub mod oauth;
+pub mod proxy;
 pub mod rules;
 #[cfg(test)]
 pub mod testing;
+pub mod tls;
 pub mod tokens;
 pub mod users;
 
@@ -62,6 +66,8 @@ pub enum WebError {
     Http(#[from] discoclip_engine::reqwest::Error),
     #[error(transparent)]
     Application(#[from] crate::applications::ApplicationError),
+    #[error(transparent)]
+    Tls(#[from] tls::TlsError),
 }
 
 /// How many failed attempts a key gets before it has to wait.
@@ -103,6 +109,10 @@ pub struct AppState {
     pub rules: RuleStore,
     pub discord: DiscordEndpoints,
     pub audit: AuditStore,
+    /// `web.trusted_proxies`: whose forwarding headers are believed.
+    pub proxies: Arc<Proxies>,
+    /// The job engine: what the jobs pages list, stream and act on.
+    pub engine: EngineHandle,
 }
 
 impl AppState {
@@ -140,6 +150,7 @@ pub struct Services {
     pub bots: Arc<BotManager>,
     pub rules: RuleStore,
     pub discord: DiscordEndpoints,
+    pub engine: EngineHandle,
 }
 
 pub struct WebApp {
@@ -173,6 +184,7 @@ impl WebApp {
             bots,
             rules,
             discord,
+            engine,
         } = services;
         let oauth = OAuthService {
             registry: std::sync::RwLock::new(providers),
@@ -196,6 +208,8 @@ impl WebApp {
             rules,
             discord,
             audit: AuditStore::new(store),
+            proxies: Arc::new(Proxies::new(config.trusted_proxies.clone())),
+            engine,
         };
         state.refresh_discord_login().await?;
         Ok(Self { state, config })
@@ -215,33 +229,62 @@ impl WebApp {
         Ok(Some(token))
     }
 
-    /// The API under `/api`, and the browser app everywhere else.
+    /// The API under `/api`, and the browser app everywhere else. Every request first
+    /// has its client worked out through the trusted proxies.
     pub fn router(&self) -> Router {
         Router::new()
             .nest("/api", api(self.state.clone()))
             .fallback(assets::serve)
+            .layer(from_fn_with_state(self.state.clone(), proxy::resolve))
             .layer(TraceLayer::new_for_http())
     }
 
-    pub async fn serve(self, shutdown: CancellationToken) -> Result<(), WebError> {
+    pub fn config(&self) -> &WebConfig {
+        &self.config
+    }
+
+    /// Opens the socket `web.bind` names.
+    pub async fn bind(&self) -> Result<TcpListener, WebError> {
         let addr = self.config.bind;
-        let listener = TcpListener::bind(addr)
+        TcpListener::bind(addr)
             .await
-            .map_err(|source| WebError::Bind { addr, source })?;
+            .map_err(|source| WebError::Bind { addr, source })
+    }
+
+    /// Binds and serves until `shutdown`.
+    pub async fn serve(self, shutdown: CancellationToken) -> Result<(), WebError> {
+        let listener = self.bind().await?;
+        self.run(listener, shutdown).await
+    }
+
+    /// Serves on `listener` until `shutdown`: over TLS when `web.tls` names a certificate,
+    /// plain HTTP otherwise. Open connections get a moment to finish after shutdown.
+    pub async fn run(self, listener: TcpListener, shutdown: CancellationToken) -> Result<(), WebError> {
         let addr = listener.local_addr()?;
-        tracing::info!(%addr, "web app listening");
+        let scheme = if self.config.tls.is_some() { "https" } else { "http" };
+        tracing::info!(%addr, scheme, "web app listening");
         if let Some(token) = self.arm_setup().await? {
             tracing::warn!(
-                "no accounts yet: open http://{addr}/setup and enter setup token {token}"
+                "no accounts yet: open {scheme}://{addr}/setup and enter setup token {token}"
             );
         }
-        axum::serve(
-            listener,
-            self.router()
-                .into_make_service_with_connect_info::<SocketAddr>(),
-        )
-        .with_graceful_shutdown(shutdown.cancelled_owned())
-        .await?;
+        match &self.config.tls {
+            Some(config) => {
+                let certificate = tls::Reloading::load(config)?;
+                let server = certificate.server_config()?;
+                tokio::spawn(certificate.watch(shutdown.clone()));
+                tls::serve(listener, server, self.router(), shutdown).await?;
+            }
+            None => {
+                axum::serve(
+                    listener,
+                    self.router()
+                        .into_make_service_with_connect_info::<SocketAddr>(),
+                )
+                .with_graceful_shutdown(shutdown.cancelled_owned())
+                .await?;
+            }
+        }
         Ok(())
     }
 }
@@ -330,6 +373,15 @@ fn api(state: AppState) -> Router {
         .route("/discord/guilds", get(discord::list_guilds))
         .route("/discord/guilds/refresh", post(discord::refresh_guilds))
         .route("/audit", get(audit::list))
+        .route("/jobs", get(jobs::list).post(jobs::submit))
+        .route("/jobs/stats", get(jobs::stats))
+        .route("/jobs/events", get(jobs::events))
+        .route("/jobs/bulk", post(jobs::bulk))
+        .route("/jobs/{id}", get(jobs::get).delete(jobs::delete))
+        .route("/jobs/{id}/children", get(jobs::children))
+        .route("/jobs/{id}/retry", post(jobs::retry))
+        .route("/jobs/{id}/cancel", post(jobs::cancel))
+        .route("/jobs/{id}/download", get(jobs::download))
         .route("/auth/{provider}/start", get(oauth::start))
         .route("/auth/{provider}/callback", get(oauth::callback))
         .fallback(api_not_found)
@@ -348,8 +400,202 @@ mod tests {
     use axum::http::StatusCode;
     use serde_json::{Value as Json, json};
 
-    use super::testing::{Client, app, app_with_admin};
+    use super::testing::{Client, app, app_with, app_with_admin};
+    use crate::oauth::Registry;
+    use crate::settings::{TlsConfig, WebConfig};
     use crate::users::Role;
+
+    fn behind_proxies(nets: &[&str]) -> WebConfig {
+        WebConfig {
+            trusted_proxies: nets.iter().map(|n| n.parse().unwrap()).collect(),
+            ..WebConfig::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn forwarding_headers_count_only_from_trusted_proxies() {
+        let app = app_with(behind_proxies(&["10.0.0.0/8"]), Registry::default(), false).await;
+        app.state
+            .users
+            .set_up("nick", "correct horse")
+            .await
+            .unwrap();
+
+        // The test client's peer is 10.0.0.1, a trusted proxy: the browser is what it
+        // forwards, and a forwarded https scheme makes the cookie Secure.
+        let mut browser = Client::new(&app);
+        browser.headers = vec![
+            ("x-forwarded-for".into(), "203.0.113.7, 10.0.0.2".into()),
+            ("x-forwarded-proto".into(), "https".into()),
+            ("x-forwarded-host".into(), "clips.example.com".into()),
+        ];
+        let (status, body) = browser.login("nick", "correct horse").await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["session"]["ip"], "203.0.113.7");
+        assert!(browser.set_cookie.as_deref().unwrap().contains("Secure"));
+
+        // The origin check compares against the forwarded host, not the backend's.
+        browser.origin = Some("https://clips.example.com".into());
+        let (status, body) = browser.get("/api/session").await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let (status, _) = browser.post("/api/logout", Json::Null).await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+
+        // A peer outside the trusted networks keeps its own address and scheme.
+        let mut direct = Client::new(&app);
+        direct.ip = "192.0.2.5:4000".parse().unwrap();
+        direct.headers = vec![
+            ("x-forwarded-for".into(), "203.0.113.7".into()),
+            ("x-forwarded-proto".into(), "https".into()),
+        ];
+        let (status, body) = direct.login("nick", "correct horse").await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["session"]["ip"], "192.0.2.5");
+        assert!(!direct.set_cookie.as_deref().unwrap().contains("Secure"));
+    }
+
+    #[tokio::test]
+    async fn wrong_passwords_are_counted_against_the_forwarded_address() {
+        let app = app_with(behind_proxies(&["10.0.0.1"]), Registry::default(), false).await;
+        app.state
+            .users
+            .set_up("nick", "correct horse")
+            .await
+            .unwrap();
+        let mut proxied = Client::new(&app);
+        for i in 0..20 {
+            proxied.headers = vec![("x-forwarded-for".into(), format!("203.0.113.{i}"))];
+            let (status, _) = proxied.login(&format!("user{i}"), "x").await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED);
+        }
+        // Twenty failures from twenty different browsers lock none of them out.
+        proxied.headers = vec![("x-forwarded-for".into(), "203.0.113.99".into())];
+        let (status, _) = proxied.login("nick", "correct horse").await;
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn login_callbacks_follow_the_forwarded_scheme_and_host() {
+        let fake = super::testing::FakeProvider::start().await;
+        let app = app_with(
+            behind_proxies(&["10.0.0.0/8"]),
+            Registry::new(vec![fake.oidc()]),
+            true,
+        )
+        .await;
+        let mut browser = Client::new(&app);
+        browser.headers = vec![
+            ("x-forwarded-proto".into(), "https".into()),
+            ("x-forwarded-host".into(), "clips.example.com".into()),
+        ];
+        let (status, _) = browser.get("/api/auth/oidc/start").await;
+        assert_eq!(status, StatusCode::SEE_OTHER);
+        let location = url::Url::parse(&browser.location.clone().unwrap()).unwrap();
+        let query: std::collections::HashMap<String, String> =
+            location.query_pairs().into_owned().collect();
+        assert_eq!(
+            query["redirect_uri"],
+            "https://clips.example.com/api/auth/oidc/callback"
+        );
+    }
+
+    fn write_certificate(dir: &std::path::Path) -> TlsConfig {
+        let key = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+        let config = TlsConfig {
+            cert: dir.join("cert.pem"),
+            key: dir.join("key.pem"),
+        };
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(&config.cert, key.cert.pem()).unwrap();
+        std::fs::write(&config.key, key.key_pair.serialize_pem()).unwrap();
+        config
+    }
+
+    #[tokio::test]
+    async fn https_is_served_from_pem_files_and_reloaded_when_they_change() {
+        let dir = std::env::temp_dir().join(format!("discoclip-tls-{}", uuid::Uuid::now_v7()));
+        let tls = write_certificate(&dir);
+        let config = WebConfig {
+            bind: "127.0.0.1:0".parse().unwrap(),
+            tls: Some(tls.clone()),
+            ..WebConfig::default()
+        };
+        let app = app_with(config, Registry::default(), false).await;
+        let listener = app.bind().await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let shutdown = tokio_util::sync::CancellationToken::new();
+        let server = tokio::spawn(app.run(listener, shutdown.clone()));
+
+        let client = discoclip_engine::reqwest::Client::builder()
+            .danger_accept_invalid_certs(true)
+            .build()
+            .unwrap();
+        let response = client
+            .get(format!("https://{addr}/api/setup"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+        assert_eq!(
+            response
+                .headers()
+                .get("strict-transport-security")
+                .unwrap(),
+            "max-age=31536000"
+        );
+        assert_eq!(response.json::<Json>().await.unwrap(), json!({"needed": true}));
+        // Plain HTTP on the same port is refused.
+        assert!(
+            client
+                .get(format!("http://{addr}/api/setup"))
+                .send()
+                .await
+                .is_err()
+        );
+
+        // A renewed certificate is picked up from the files.
+        let reloading = super::tls::Reloading::load(&tls).unwrap();
+        assert!(!reloading.reload_if_changed().unwrap());
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let renewed = rcgen::generate_simple_self_signed(vec!["renewed.test".into()]).unwrap();
+        std::fs::write(&tls.cert, renewed.cert.pem()).unwrap();
+        std::fs::write(&tls.key, renewed.key_pair.serialize_pem()).unwrap();
+        assert!(reloading.reload_if_changed().unwrap());
+        assert!(!reloading.reload_if_changed().unwrap());
+        std::fs::write(&tls.key, "not a key").unwrap();
+        assert!(reloading.reload_if_changed().is_err());
+
+        shutdown.cancel();
+        server.await.unwrap().unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn bad_certificate_files_are_refused_at_startup() {
+        let dir = std::env::temp_dir().join(format!("discoclip-tls-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cert = dir.join("cert.pem");
+        let key = dir.join("key.pem");
+        std::fs::write(&cert, "").unwrap();
+        std::fs::write(&key, "").unwrap();
+        let config = TlsConfig {
+            cert: cert.clone(),
+            key: key.clone(),
+        };
+        assert!(matches!(
+            super::tls::Reloading::load(&config),
+            Err(super::tls::TlsError::Read { .. } | super::tls::TlsError::NoCertificate { .. })
+        ));
+        let config = TlsConfig {
+            cert: dir.join("missing.pem"),
+            key,
+        };
+        assert!(matches!(
+            super::tls::Reloading::load(&config),
+            Err(super::tls::TlsError::Read { .. })
+        ));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[tokio::test]
     async fn first_run_setup_needs_the_token_and_happens_once() {

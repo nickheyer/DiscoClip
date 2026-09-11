@@ -24,8 +24,13 @@ discoclip-bot.workspace = true
 discoclip-engine.workspace = true
 futures.workspace = true
 hex.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+ipnet.workspace = true
 jiff.workspace = true
 rand.workspace = true
+rustls.workspace = true
+rustls-pki-types.workspace = true
 secrecy.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -36,6 +41,7 @@ subtle.workspace = true
 thiserror.workspace = true
 time.workspace = true
 tokio.workspace = true
+tokio-rustls.workspace = true
 tokio-stream.workspace = true
 toml.workspace = true
 tower.workspace = true
@@ -56,4 +62,5 @@ sha2.workspace = true
 
 [dev-dependencies]
 http-body-util.workspace = true
+rcgen.workspace = true
 tokio-websockets.workspace = true

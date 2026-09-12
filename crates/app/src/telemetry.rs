@@ -21,7 +21,19 @@ impl LogHandle {
 
 /// Whether `filter` is a tracing directive the subscriber takes.
 pub fn check_filter(filter: &str) -> Result<(), String> {
-    EnvFilter::try_new(filter).map(|_| ()).map_err(|e| e.to_string())
+    EnvFilter::try_new(filter)
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// A filter handle that no subscriber reads, for tests of the parts that change it. The
+/// layer behind the handle is kept for the life of the process, as the global subscriber
+/// keeps the real one.
+pub fn detached(filter: &str) -> LogHandle {
+    let filter = EnvFilter::try_new(filter).unwrap_or_else(|_| EnvFilter::new("info"));
+    let (layer, handle): (reload::Layer<EnvFilter, Registry>, _) = reload::Layer::new(filter);
+    std::mem::forget(layer);
+    LogHandle { handle }
 }
 
 /// Installs the global tracing subscriber. `RUST_LOG` overrides the configured filter at

@@ -264,9 +264,7 @@ impl Engine {
                 }),
                 Err(_) => false,
             };
-            if !known
-                && let Err(error) = tokio::fs::remove_dir_all(entry.path()).await
-            {
+            if !known && let Err(error) = tokio::fs::remove_dir_all(entry.path()).await {
                 tracing::warn!(
                     "could not remove stale cache dir {}: {error}",
                     entry.path().display()
@@ -401,23 +399,21 @@ impl EngineHandle {
     }
 
     /// Replaces the engine's settings while it runs: limits, playlist and live capture
-    /// rules, retention and archiving apply to the next job, and the worker pool grows or
-    /// shrinks. The cache directory is where it was at startup; a change to it waits for
-    /// a restart and is reported by [`EngineHandle::cache_dir_pending`].
-    pub fn reconfigure(&self, mut config: EngineConfig) {
-        let startup_cache = self.shared.cache_dir();
-        config.cache_dir = startup_cache;
+    /// rules, retention and archiving apply to the next job, the worker pool grows or
+    /// shrinks, and jobs from now on work under the new cache directory, whose job
+    /// directory is created here. Jobs already running finish where they started.
+    pub async fn reconfigure(&self, config: EngineConfig) -> Result<(), std::io::Error> {
+        tokio::fs::create_dir_all(config.cache_dir.join("jobs")).await?;
         if let Some(archiver) = &self.shared.archiver {
             archiver.reconfigure(config.archive.clone());
         }
         self.shared.resize_workers(config.workers);
-        *self.shared.config.write().unwrap_or_else(|e| e.into_inner()) = config;
-    }
-
-    /// Whether `wanted` differs from the cache directory in use, which only a restart
-    /// changes.
-    pub fn cache_dir_pending(&self, wanted: &Path) -> bool {
-        self.shared.cache_dir() != wanted
+        *self
+            .shared
+            .config
+            .write()
+            .unwrap_or_else(|e| e.into_inner()) = config;
+        Ok(())
     }
 
     /// The ids of the jobs running right now.

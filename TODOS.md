@@ -2,8 +2,6 @@
 
 REMOVE EACH ITEM AS YOU FINISH IT. DO NOT PROGRESS UNTIL YOUVE COMPLETED THE CURRENT ITEM IN ITS ENTIRETY. MUST DO IN ORDER.
 
-4. Web: settings pages for every setting.
-5. Web: users, roles, sessions, API tokens.
 6. Web: Discord applications, guilds, channels, rules.
 7. Web: platform coverage page with formats and last fixture pass date.
 8. Web: health, metrics, log viewer.

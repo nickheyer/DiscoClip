@@ -6,13 +6,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use config::{FileFormat, Map, Source, Value, ValueKind};
 use serde_json::Value as Json;
 
 use crate::settings::Settings;
 
 /// Environment variables `DISCOCLIP_<SECTION>__<KEY>` override config file values.
-pub const ENV_PREFIX: &str = "DISCOCLIP";
+pub const ENV_PREFIX: &str = "DISCOCLIP_";
 /// Names the config file, like `--config`.
 pub const CONFIG_PATH_VAR: &str = "DISCOCLIP_CONFIG";
 /// The directory holding the database: provisioned like every other key, but never stored,
@@ -25,8 +24,19 @@ const FILE_STEM: &str = "discoclip";
 pub enum ConfigError {
     #[error("{0} is not a .toml, .yaml, .yml or .json file")]
     UnknownFormat(PathBuf),
-    #[error(transparent)]
-    Source(#[from] config::ConfigError),
+    #[error("could not read {path}: {source}")]
+    Read {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    #[error("{format} in {origin}: {message}")]
+    Parse {
+        format: Format,
+        origin: String,
+        message: String,
+    },
+    #[error("{path}: {message}")]
+    Invalid { path: String, message: String },
     #[error("could not encode settings: {0}")]
     Encode(#[from] serde_json::Error),
     #[error("{0} is provisioned but no setting holds it")]
@@ -38,7 +48,10 @@ pub enum ConfigError {
 }
 
 /// A provisioning file format, by extension.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "lowercase")]
 pub enum Format {
     Toml,
     Yaml,
@@ -65,11 +78,31 @@ impl Format {
         }
     }
 
-    fn file_format(self) -> FileFormat {
-        match self {
-            Format::Toml => FileFormat::Toml,
-            Format::Yaml => FileFormat::Yaml,
-            Format::Json => FileFormat::Json,
+    /// Reads a file in this format as a JSON tree; a file with nothing in it is an
+    /// empty tree.
+    pub fn parse(self, text: &str, origin: &str) -> Result<Json, ConfigError> {
+        let failed = |e: &dyn std::fmt::Display| ConfigError::Parse {
+            format: self,
+            origin: origin.to_string(),
+            message: e.to_string(),
+        };
+        if text.trim().is_empty() {
+            return Ok(Json::Object(serde_json::Map::new()));
+        }
+        let tree = match self {
+            Format::Toml => {
+                toml_to_json(toml::from_str::<toml::Value>(text).map_err(|e| failed(&e))?)
+            }
+            Format::Yaml => serde_yaml_ng::from_str::<Json>(text).map_err(|e| failed(&e))?,
+            Format::Json => serde_json::from_str::<Json>(text).map_err(|e| failed(&e))?,
+        };
+        match tree {
+            Json::Null => Ok(Json::Object(serde_json::Map::new())),
+            Json::Object(_) => Ok(tree),
+            other => Err(failed(&format!(
+                "the document is {} rather than a table of settings",
+                kind_of(&other)
+            ))),
         }
     }
 
@@ -107,6 +140,34 @@ impl std::fmt::Display for Format {
     }
 }
 
+fn kind_of(value: &Json) -> &'static str {
+    match value {
+        Json::Null => "null",
+        Json::Bool(_) => "a boolean",
+        Json::Number(_) => "a number",
+        Json::String(_) => "a string",
+        Json::Array(_) => "a list",
+        Json::Object(_) => "a table",
+    }
+}
+
+fn toml_to_json(value: toml::Value) -> Json {
+    match value {
+        toml::Value::String(s) => Json::String(s),
+        toml::Value::Integer(i) => Json::from(i),
+        toml::Value::Float(f) => serde_json::Number::from_f64(f).map_or(Json::Null, Json::Number),
+        toml::Value::Boolean(b) => Json::Bool(b),
+        toml::Value::Datetime(d) => Json::String(d.to_string()),
+        toml::Value::Array(items) => Json::Array(items.into_iter().map(toml_to_json).collect()),
+        toml::Value::Table(table) => Json::Object(
+            table
+                .into_iter()
+                .map(|(key, value)| (key, toml_to_json(value)))
+                .collect(),
+        ),
+    }
+}
+
 fn first_null(tree: &Json, prefix: &str) -> Option<String> {
     match tree {
         Json::Null => Some(prefix.to_string()),
@@ -125,7 +186,10 @@ fn first_null(tree: &Json, prefix: &str) -> Option<String> {
 /// the setting types.
 #[derive(Debug, Clone, Default)]
 pub struct Provisioning {
-    sources: config::Config,
+    /// The file's tree.
+    tree: Json,
+    /// Environment overrides by dotted path, as the variables spell them.
+    env: BTreeMap<String, String>,
     /// The config file that was read, when one was named or found.
     pub file: Option<PathBuf>,
 }
@@ -133,19 +197,24 @@ pub struct Provisioning {
 impl Provisioning {
     /// A file's contents alone, without the environment.
     pub fn from_text(text: &str, format: Format) -> Result<Self, ConfigError> {
-        let sources = config::Config::builder()
-            .add_source(config::File::from_str(text, format.file_format()))
-            .build()?;
         Ok(Self {
-            sources,
+            tree: format.parse(text, "the text given")?,
+            env: BTreeMap::new(),
             file: None,
         })
     }
 
     /// A settings tree, as if it had been read from a file.
     pub fn from_tree(tree: &Json) -> Result<Self, ConfigError> {
+        if !tree.is_object() {
+            return Err(ConfigError::Invalid {
+                path: String::new(),
+                message: format!("a settings tree is a table, not {}", kind_of(tree)),
+            });
+        }
         Ok(Self {
-            sources: config::Config::try_from(tree)?,
+            tree: tree.clone(),
+            env: BTreeMap::new(),
             file: None,
         })
     }
@@ -158,27 +227,26 @@ impl Provisioning {
     /// Where the database lives: `data_dir` from the file or `DISCOCLIP_DATA_DIR`, else
     /// `data`, relative to the working directory.
     pub fn data_dir(&self) -> Result<PathBuf, ConfigError> {
-        match self.sources.get_string(DATA_DIR_KEY) {
-            Ok(dir) => Ok(PathBuf::from(dir)),
-            Err(config::ConfigError::NotFound(_)) => Ok(PathBuf::from(DEFAULT_DATA_DIR)),
-            Err(error) => Err(error.into()),
+        if let Some(dir) = self.env.get(DATA_DIR_KEY) {
+            return Ok(PathBuf::from(dir));
+        }
+        match self.tree.get(DATA_DIR_KEY) {
+            None | Some(Json::Null) => Ok(PathBuf::from(DEFAULT_DATA_DIR)),
+            Some(Json::String(dir)) => Ok(PathBuf::from(dir)),
+            Some(other) => Err(ConfigError::Invalid {
+                path: DATA_DIR_KEY.into(),
+                message: format!("is {} rather than a path", kind_of(other)),
+            }),
         }
     }
 
-    /// The provisioned settings, without the data directory.
-    fn settings_sources(&self) -> Result<config::Config, ConfigError> {
-        let mut tree: Json = self.sources.clone().try_deserialize()?;
-        if let Some(table) = tree.as_object_mut() {
-            table.remove(DATA_DIR_KEY);
-        }
-        Ok(config::Config::try_from(&tree)?)
-    }
-
+    /// Every provisioned path: the file's leaves and the environment's variables, without
+    /// the data directory.
     fn paths(&self) -> BTreeSet<String> {
-        let mut paths = BTreeSet::new();
-        if let Ok(table) = self.sources.collect() {
-            leaf_paths(&table, "", &mut paths);
-        }
+        let mut leaves = BTreeMap::new();
+        json_leaves(&self.tree, "", &mut leaves);
+        let mut paths: BTreeSet<String> = leaves.into_keys().collect();
+        paths.extend(self.env.keys().cloned());
         paths.remove(DATA_DIR_KEY);
         paths
     }
@@ -188,11 +256,30 @@ impl Provisioning {
     /// `engine.archive.keep` alone when the directory is stored already, and `"4"` from the
     /// environment comes back as `4`.
     pub fn resolve(&self, base: &Json) -> Result<BTreeMap<String, Json>, ConfigError> {
-        let merged = config::Config::builder()
-            .add_source(config::Config::try_from(base)?)
-            .add_source(self.settings_sources()?)
-            .build()?;
-        let settings: Settings = merged.try_deserialize()?;
+        let mut merged = base.clone();
+        if !merged.is_object() {
+            merged = Json::Object(serde_json::Map::new());
+        }
+        deep_merge(&mut merged, &self.tree);
+        let exemplar = serde_json::to_value(Settings::exemplar())?;
+        for (path, raw) in &self.env {
+            if path == DATA_DIR_KEY {
+                continue;
+            }
+            let template = at_path(&merged, path)
+                .filter(|value| !value.is_null())
+                .or_else(|| at_path(&exemplar, path));
+            let value = coerce(raw, template);
+            set_at_path(&mut merged, path, value);
+        }
+        if let Some(table) = merged.as_object_mut() {
+            table.remove(DATA_DIR_KEY);
+        }
+        let settings: Settings =
+            serde_path_to_error::deserialize(merged).map_err(|error| ConfigError::Invalid {
+                path: error.path().to_string(),
+                message: error.into_inner().to_string(),
+            })?;
         let mut canonical = BTreeMap::new();
         json_leaves(&serde_json::to_value(&settings)?, "", &mut canonical);
 
@@ -210,29 +297,137 @@ impl Provisioning {
 /// directories, otherwise nothing; then layers environment overrides on top.
 pub fn load(explicit: Option<&Path>) -> Result<Provisioning, ConfigError> {
     let file = explicit.map(Path::to_path_buf).or_else(discover);
-    let sources = build(file.as_deref(), provisioning_vars(std::env::vars_os()))?;
-    Ok(Provisioning { sources, file })
+    build(file.as_deref(), provisioning_vars(std::env::vars_os()))
 }
 
-fn build(file: Option<&Path>, vars: Map<String, String>) -> Result<config::Config, ConfigError> {
-    let mut builder = config::Config::builder();
-    if let Some(path) = file {
-        let format = Format::from_path(path)
-            .ok_or_else(|| ConfigError::UnknownFormat(path.to_path_buf()))?;
-        builder = builder.add_source(
-            config::File::from(path)
-                .format(format.file_format())
-                .required(true),
-        );
+fn build(file: Option<&Path>, vars: BTreeMap<String, String>) -> Result<Provisioning, ConfigError> {
+    let tree = match file {
+        Some(path) => {
+            let format = Format::from_path(path)
+                .ok_or_else(|| ConfigError::UnknownFormat(path.to_path_buf()))?;
+            let text = std::fs::read_to_string(path).map_err(|source| ConfigError::Read {
+                path: path.to_path_buf(),
+                source,
+            })?;
+            format.parse(&text, &path.display().to_string())?
+        }
+        None => Json::Object(serde_json::Map::new()),
+    };
+    let mut env = BTreeMap::new();
+    for (name, value) in vars {
+        let Some(rest) = name.strip_prefix(ENV_PREFIX) else {
+            continue;
+        };
+        if rest.is_empty() {
+            continue;
+        }
+        let path = rest
+            .split("__")
+            .map(|segment| segment.to_ascii_lowercase())
+            .collect::<Vec<_>>()
+            .join(".");
+        env.insert(path, value);
     }
-    let environment = config::Environment::with_prefix(ENV_PREFIX)
-        .prefix_separator("_")
-        .separator("__")
-        .source(Some(vars));
-    Ok(builder.add_source(environment).build()?)
+    Ok(Provisioning {
+        tree,
+        env,
+        file: file.map(Path::to_path_buf),
+    })
 }
 
-/// The canonical leaf at `path`, or the array leaf that contains it.
+/// Lays `over` onto `tree`: tables merge key by key, anything else replaces.
+fn deep_merge(tree: &mut Json, over: &Json) {
+    match (tree, over) {
+        (Json::Object(base), Json::Object(top)) => {
+            for (key, value) in top {
+                match base.get_mut(key) {
+                    Some(slot) if slot.is_object() && value.is_object() => deep_merge(slot, value),
+                    _ => {
+                        base.insert(key.clone(), value.clone());
+                    }
+                }
+            }
+        }
+        (tree, over) => *tree = over.clone(),
+    }
+}
+
+/// The value at the dotted `path` of `tree`, when there is one.
+fn at_path<'a>(tree: &'a Json, path: &str) -> Option<&'a Json> {
+    path.split('.')
+        .try_fold(tree, |node, segment| node.get(segment))
+}
+
+/// Puts `value` at the dotted `path` of `tree`, making tables along the way.
+fn set_at_path(tree: &mut Json, path: &str, value: Json) {
+    let segments: Vec<&str> = path.split('.').collect();
+    let Some((last, sections)) = segments.split_last() else {
+        return;
+    };
+    let mut node = tree;
+    for section in sections {
+        if !node.is_object() {
+            *node = Json::Object(serde_json::Map::new());
+        }
+        let map = node.as_object_mut().expect("just made an object");
+        node = map
+            .entry(*section)
+            .or_insert_with(|| Json::Object(serde_json::Map::new()));
+    }
+    if !node.is_object() {
+        *node = Json::Object(serde_json::Map::new());
+    }
+    node.as_object_mut()
+        .expect("just made an object")
+        .insert((*last).to_string(), value);
+}
+
+/// An environment variable's text as the value its setting expects: numbers, booleans,
+/// lists and tables where the setting holds one, `null` for an explicit null, and the
+/// text itself everywhere else. Text that does not fit stays text, so the type check
+/// names it.
+fn coerce(raw: &str, template: Option<&Json>) -> Json {
+    let text = raw.trim();
+    if text == "null" {
+        return Json::Null;
+    }
+    match template {
+        Some(Json::Number(_)) => text
+            .parse::<i64>()
+            .map(Json::from)
+            .or_else(|_| text.parse::<u64>().map(Json::from))
+            .or_else(|_| {
+                text.parse::<f64>()
+                    .ok()
+                    .and_then(serde_json::Number::from_f64)
+                    .map(Json::Number)
+                    .ok_or(())
+            })
+            .unwrap_or_else(|_| Json::String(raw.to_string())),
+        Some(Json::Bool(_)) => match text.to_ascii_lowercase().as_str() {
+            "true" | "yes" | "on" | "1" => Json::Bool(true),
+            "false" | "no" | "off" | "0" => Json::Bool(false),
+            _ => Json::String(raw.to_string()),
+        },
+        Some(Json::Array(_)) => match serde_json::from_str::<Json>(text) {
+            Ok(Json::Array(items)) => Json::Array(items),
+            _ => Json::Array(
+                text.split(',')
+                    .map(str::trim)
+                    .filter(|item| !item.is_empty())
+                    .map(|item| Json::String(item.to_string()))
+                    .collect(),
+            ),
+        },
+        Some(Json::Object(_)) => match serde_json::from_str::<Json>(text) {
+            Ok(Json::Object(map)) => Json::Object(map),
+            _ => Json::String(raw.to_string()),
+        },
+        _ => Json::String(raw.to_string()),
+    }
+}
+
+/// The canonical leaf at `path`, or the array or map leaf that contains it.
 fn holder<'a>(canonical: &'a BTreeMap<String, Json>, path: &str) -> Option<(&'a str, &'a Json)> {
     let mut candidate = path;
     loop {
@@ -251,23 +446,13 @@ fn join(prefix: &str, key: &str) -> String {
     }
 }
 
-/// Dotted paths of every value in the merged sources; tables recurse, arrays are values.
-fn leaf_paths(table: &Map<String, Value>, prefix: &str, out: &mut BTreeSet<String>) {
-    for (key, value) in table {
-        let path = join(prefix, key);
-        match &value.kind {
-            ValueKind::Table(inner) => leaf_paths(inner, &path, out),
-            _ => {
-                out.insert(path);
-            }
-        }
-    }
-}
-
-/// Dotted paths of every value in a JSON tree; objects recurse, arrays are values.
+/// Dotted paths of every value in a JSON tree; objects recurse, arrays and the maps
+/// named by [`ATOMIC_KEYS`] are values.
+///
+/// [`ATOMIC_KEYS`]: crate::settings::ATOMIC_KEYS
 pub fn json_leaves(value: &Json, prefix: &str, out: &mut BTreeMap<String, Json>) {
     match value {
-        Json::Object(map) => {
+        Json::Object(map) if crate::settings::atomic_key(prefix) != Some(prefix) => {
             for (key, value) in map {
                 json_leaves(value, &join(prefix, key), out);
             }
@@ -303,7 +488,7 @@ fn search_dirs() -> Vec<PathBuf> {
 }
 
 /// The variables that provision settings: everything but the one naming the config file.
-fn provisioning_vars<K, V>(vars: impl Iterator<Item = (K, V)>) -> Map<String, String>
+fn provisioning_vars<K, V>(vars: impl Iterator<Item = (K, V)>) -> BTreeMap<String, String>
 where
     K: Into<std::ffi::OsString>,
     V: Into<std::ffi::OsString>,
@@ -324,7 +509,7 @@ mod tests {
 
     use super::*;
 
-    fn vars(pairs: &[(&str, &str)]) -> Map<String, String> {
+    fn vars(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
         pairs
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
@@ -341,18 +526,15 @@ mod tests {
 
     fn resolve(
         file: Option<&Path>,
-        vars: Map<String, String>,
+        vars: BTreeMap<String, String>,
     ) -> Result<BTreeMap<String, Json>, ConfigError> {
-        let provisioning = Provisioning {
-            sources: build(file, vars)?,
-            file: None,
-        };
-        provisioning.resolve(&json!({}))
+        build(file, vars)?.resolve(&json!({}))
     }
 
     #[test]
     fn nothing_is_provisioned_without_file_or_environment() {
         assert!(resolve(None, vars(&[])).unwrap().is_empty());
+        assert!(build(None, vars(&[])).unwrap().is_empty());
     }
 
     #[test]
@@ -365,6 +547,36 @@ mod tests {
         assert_eq!(values["engine.workers"], json!(4));
         assert_eq!(values["log.level"], json!("warn"));
         assert_eq!(values.len(), 2);
+        let values = resolve(
+            None,
+            vars(&[
+                ("DISCOCLIP_ENGINE__PLAYLISTS__ENABLED", "no"),
+                ("DISCOCLIP_HTTP__RATE_LIMITS__DEFAULT__PER_SECOND", "2.5"),
+                ("DISCOCLIP_WEB__TRUSTED_PROXIES", "10.0.0.1, 10.0.0.0/8"),
+                ("DISCOCLIP_AUTH__OIDC__SCOPES", "[\"openid\"]"),
+                ("DISCOCLIP_AUTH__OIDC__ISSUER", "https://issuer.example/"),
+                ("DISCOCLIP_AUTH__OIDC__CLIENT_ID", "c"),
+                ("DISCOCLIP_AUTH__OIDC__CLIENT_SECRET", "s"),
+                ("DISCOCLIP_ENGINE__LIMITS__MAX_DURATION_SECS", "null"),
+                (
+                    "DISCOCLIP_HTTP__PROXIES__HOSTS",
+                    "{\"a.test\": \"socks5://p:1\"}",
+                ),
+            ]),
+        )
+        .unwrap();
+        assert_eq!(values["engine.playlists.enabled"], json!(false));
+        assert_eq!(values["http.rate_limits.default.per_second"], json!(2.5));
+        assert_eq!(
+            values["web.trusted_proxies"],
+            json!(["10.0.0.1", "10.0.0.0/8"])
+        );
+        assert_eq!(values["auth.oidc.scopes"], json!(["openid"]));
+        assert_eq!(values["engine.limits.max_duration_secs"], Json::Null);
+        assert_eq!(
+            values["http.proxies.hosts"],
+            json!({"a.test": "socks5://p:1"})
+        );
     }
 
     #[test]
@@ -421,12 +633,35 @@ mod tests {
 
     #[test]
     fn rejects_unknown_keys_and_bad_types() {
-        assert!(resolve(None, vars(&[("DISCOCLIP_BOGUS", "1")])).is_err());
-        assert!(resolve(None, vars(&[("DISCOCLIP_ENGINE__WORKERS", "many")])).is_err());
+        assert!(matches!(
+            resolve(None, vars(&[("DISCOCLIP_BOGUS", "1")])),
+            Err(ConfigError::Invalid { .. })
+        ));
+        let error = resolve(None, vars(&[("DISCOCLIP_ENGINE__WORKERS", "many")])).unwrap_err();
+        assert!(
+            matches!(error, ConfigError::Invalid { ref path, .. } if path == "engine.workers"),
+            "{error}"
+        );
         let file = temp_file("unknown.toml", "[engine]\nbogus = 1\n");
         assert!(resolve(Some(&file), vars(&[])).is_err());
         let file = temp_file("partial.toml", "[engine.archive]\nkeep = \"both\"\n");
         assert!(resolve(Some(&file), vars(&[])).is_err());
+        let file = temp_file("broken.toml", "[engine\nworkers = 1\n");
+        assert!(matches!(
+            build(Some(&file), vars(&[])),
+            Err(ConfigError::Parse {
+                format: Format::Toml,
+                ..
+            })
+        ));
+        assert!(matches!(
+            Provisioning::from_text("[1, 2]", Format::Json),
+            Err(ConfigError::Parse { .. })
+        ));
+        assert!(matches!(
+            build(Some(Path::new("/nowhere/discoclip.toml")), vars(&[])),
+            Err(ConfigError::Read { .. })
+        ));
     }
 
     #[test]
@@ -439,6 +674,36 @@ mod tests {
         assert_eq!(values.len(), 1);
         assert_eq!(values["engine.archive.keep"], json!("both"));
         assert!(provisioning.resolve(&json!({})).is_err());
+    }
+
+    #[test]
+    fn maps_keyed_by_hosts_are_single_values() {
+        let file = temp_file(
+            "hosts.toml",
+            "[http.rate_limits.hosts.\"youtube.com\"]\nper_second = 1.0\nburst = 2\n[http.proxies.hosts]\n\"tiktok.com\" = \"socks5://p:1080\"\n",
+        );
+        let values = resolve(Some(&file), vars(&[])).unwrap();
+        assert_eq!(
+            values["http.rate_limits.hosts"],
+            json!({"youtube.com": {"per_second": 1.0, "burst": 2}})
+        );
+        assert_eq!(
+            values["http.proxies.hosts"],
+            json!({"tiktok.com": "socks5://p:1080"})
+        );
+        assert_eq!(values.len(), 2);
+        // Provisioning a map over a stored one keeps the stored hosts.
+        let provisioning = Provisioning::from_text(
+            "[http.rate_limits.hosts.\"reddit.com\"]\nper_second = 3.0\n",
+            Format::Toml,
+        )
+        .unwrap();
+        let values = provisioning
+            .resolve(&json!({"http": {"rate_limits": {"hosts": {"youtube.com": {"per_second": 1.0, "burst": 2}}}}}))
+            .unwrap();
+        let hosts = values["http.rate_limits.hosts"].as_object().unwrap();
+        assert_eq!(hosts.len(), 2);
+        assert_eq!(hosts["reddit.com"]["burst"], 8);
     }
 
     #[test]
@@ -462,10 +727,7 @@ mod tests {
 
     #[test]
     fn data_dir_is_provisioned_but_never_stored() {
-        let none = Provisioning {
-            sources: build(None, vars(&[])).unwrap(),
-            file: None,
-        };
+        let none = build(None, vars(&[])).unwrap();
         assert_eq!(none.data_dir().unwrap(), PathBuf::from("data"));
         assert!(none.resolve(&json!({})).unwrap().is_empty());
 
@@ -473,10 +735,7 @@ mod tests {
             "data.toml",
             "data_dir = \"/var/lib/discoclip\"\n[log]\nlevel = \"warn\"\n",
         );
-        let from_file = Provisioning {
-            sources: build(Some(&file), vars(&[])).unwrap(),
-            file: None,
-        };
+        let from_file = build(Some(&file), vars(&[])).unwrap();
         assert_eq!(
             from_file.data_dir().unwrap(),
             PathBuf::from("/var/lib/discoclip")
@@ -485,10 +744,7 @@ mod tests {
         assert_eq!(values.len(), 1);
         assert_eq!(values["log.level"], json!("warn"));
 
-        let from_env = Provisioning {
-            sources: build(Some(&file), vars(&[("DISCOCLIP_DATA_DIR", "/srv/dc")])).unwrap(),
-            file: None,
-        };
+        let from_env = build(Some(&file), vars(&[("DISCOCLIP_DATA_DIR", "/srv/dc")])).unwrap();
         assert_eq!(from_env.data_dir().unwrap(), PathBuf::from("/srv/dc"));
         assert!(!from_env.is_empty());
         assert!(
@@ -497,6 +753,8 @@ mod tests {
                 .unwrap()
                 .contains_key("data_dir")
         );
+        let bad = Provisioning::from_tree(&json!({"data_dir": 3})).unwrap();
+        assert!(matches!(bad.data_dir(), Err(ConfigError::Invalid { .. })));
     }
 
     #[test]
@@ -532,6 +790,10 @@ mod tests {
             assert_eq!(values["auth.oidc.scopes"], json!(["openid"]), "{format}");
             assert_eq!(values["web.bind"], json!("0.0.0.0:9000"), "{format}");
             assert_eq!(values.len(), 8, "{format}");
+            assert!(
+                Provisioning::from_text("", format).unwrap().is_empty(),
+                "{format}"
+            );
         }
     }
 

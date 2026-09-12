@@ -2,16 +2,20 @@
 //! drives it, built from `ui/` and embedded in the binary.
 
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 use axum::Router;
 use axum::middleware::{from_fn, from_fn_with_state};
 use axum::routing::{delete, get, post, put};
 use discoclip_bot::DiscordEndpoints;
-use discoclip_engine::{EngineHandle, StoreError};
+use discoclip_engine::ffmpeg::Ffmpeg;
 use discoclip_engine::store::sqlite::SqliteStore;
+use discoclip_engine::{EngineHandle, StoreError};
 use tokio::net::TcpListener;
+use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 use tower_http::trace::TraceLayer;
 
@@ -23,26 +27,31 @@ use crate::applications::ApplicationStore;
 use crate::audit::AuditStore;
 use crate::bots::BotManager;
 use crate::discord::{BotGuildStore, GuildStore};
+use crate::live::Live;
+use crate::local::SharedLocalConfig;
 use crate::oauth::{OAuthService, OAuthStore, PendingStates, Provider, Registry};
 use crate::ratelimit::RateLimiter;
 use crate::rules::RuleStore;
 use crate::secrets::Keyring;
 use crate::sessions::{SessionStore, random_token};
-use crate::settings::{OAuthClient, WebConfig};
-use crate::web::proxy::Proxies;
+use crate::settings::{OAuthClient, Settings, SettingsStore, TlsConfig, WebConfig};
+use crate::telemetry::LogHandle;
 use crate::tokens::TokenStore;
 use crate::users::{UserError, UserStore};
+use crate::web::proxy::Proxies;
 
 pub mod applications;
 pub mod assets;
 pub mod audit;
 pub mod auth;
+pub mod channels;
 pub mod discord;
 pub mod error;
 pub mod jobs;
 pub mod oauth;
 pub mod proxy;
 pub mod rules;
+pub mod settings;
 #[cfg(test)]
 pub mod testing;
 pub mod tls;
@@ -68,6 +77,10 @@ pub enum WebError {
     Application(#[from] crate::applications::ApplicationError),
     #[error(transparent)]
     Tls(#[from] tls::TlsError),
+    #[error(transparent)]
+    Settings(#[from] crate::settings::SettingsError),
+    #[error(transparent)]
+    Live(#[from] crate::live::LiveError),
 }
 
 /// How many failed attempts a key gets before it has to wait.
@@ -101,18 +114,25 @@ pub struct AppState {
     /// Set while no account exists; the setup page must present it.
     pub setup_token: Arc<Mutex<Option<String>>>,
     pub oauth: Arc<OAuthService>,
-    /// `web.public_url`.
-    pub public_url: Option<Url>,
+    /// `web.public_url`, as it stands.
+    pub public_url: Arc<RwLock<Option<Url>>>,
     pub applications: ApplicationStore,
     pub bots: Arc<BotManager>,
     pub bot_guilds: BotGuildStore,
     pub rules: RuleStore,
     pub discord: DiscordEndpoints,
     pub audit: AuditStore,
-    /// `web.trusted_proxies`: whose forwarding headers are believed.
-    pub proxies: Arc<Proxies>,
+    /// `web.trusted_proxies`: whose forwarding headers are believed, as it stands.
+    pub proxies: Arc<RwLock<Proxies>>,
     /// The job engine: what the jobs pages list, stream and act on.
     pub engine: EngineHandle,
+    pub settings: SettingsStore,
+    /// Where settings changes are applied.
+    pub live: Arc<Live>,
+    /// Where the database lives; provisioned, never a setting.
+    pub data_dir: PathBuf,
+    /// The provisioning file read at startup, when one was.
+    pub provisioning_file: Option<PathBuf>,
 }
 
 impl AppState {
@@ -151,10 +171,16 @@ pub struct Services {
     pub rules: RuleStore,
     pub discord: DiscordEndpoints,
     pub engine: EngineHandle,
+    pub settings: SettingsStore,
+    pub log: LogHandle,
+    pub ffmpeg: Ffmpeg,
+    /// The `local` settings as the local publisher reads them.
+    pub local: SharedLocalConfig,
+    pub data_dir: PathBuf,
+    pub provisioning_file: Option<PathBuf>,
 }
 
 pub struct WebApp {
-    config: WebConfig,
     state: AppState,
 }
 
@@ -169,13 +195,12 @@ fn oauth_http() -> Result<reqwest::Client, reqwest::Error> {
 }
 
 impl WebApp {
-    /// `providers` are the login providers the settings name, joined by Discord when an
-    /// application is marked for login; `oauth_signup` lets an unknown provider identity
-    /// create its own viewer account.
+    /// `providers` are the login providers offered at first, joined by Discord when an
+    /// application is marked for login; the `auth` settings replace them whenever they
+    /// change.
     pub async fn new(
-        config: WebConfig,
+        settings: &Settings,
         providers: Registry,
-        oauth_signup: bool,
         services: Services,
     ) -> Result<Self, WebError> {
         let Services {
@@ -185,14 +210,34 @@ impl WebApp {
             rules,
             discord,
             engine,
+            settings: settings_store,
+            log,
+            ffmpeg,
+            local,
+            data_dir,
+            provisioning_file,
         } = services;
-        let oauth = OAuthService {
+        let oauth = Arc::new(OAuthService {
             registry: std::sync::RwLock::new(providers),
             store: OAuthStore::new(store.clone(), keyring.clone()),
             http: oauth_http()?,
             states: PendingStates::default(),
-            signup: oauth_signup,
-        };
+            signup: AtomicBool::new(settings.auth.oauth_signup),
+        });
+        let public_url = Arc::new(RwLock::new(settings.web.public_url.clone()));
+        let proxies = Arc::new(RwLock::new(Proxies::new(
+            settings.web.trusted_proxies.clone(),
+        )));
+        let live = Arc::new(Live {
+            log,
+            engine: engine.clone(),
+            ffmpeg,
+            local,
+            oauth: oauth.clone(),
+            public_url: public_url.clone(),
+            proxies: proxies.clone(),
+            web: watch::Sender::new(settings.web.clone()),
+        });
         let state = AppState {
             users: UserStore::new(store.clone()),
             sessions: SessionStore::new(store.clone()),
@@ -200,19 +245,23 @@ impl WebApp {
             guilds: GuildStore::new(store.clone()),
             limits: Arc::new(Limits::default()),
             setup_token: Arc::new(Mutex::new(None)),
-            oauth: Arc::new(oauth),
-            public_url: config.public_url.clone(),
+            oauth,
+            public_url,
             applications: ApplicationStore::new(store.clone(), keyring),
             bots,
             bot_guilds: BotGuildStore::new(store.clone()),
             rules,
             discord,
             audit: AuditStore::new(store),
-            proxies: Arc::new(Proxies::new(config.trusted_proxies.clone())),
+            proxies,
             engine,
+            settings: settings_store,
+            live,
+            data_dir,
+            provisioning_file,
         };
         state.refresh_discord_login().await?;
-        Ok(Self { state, config })
+        Ok(Self { state })
     }
 
     /// While no account exists, arms the setup page with a fresh token and returns it.
@@ -239,16 +288,14 @@ impl WebApp {
             .layer(TraceLayer::new_for_http())
     }
 
-    pub fn config(&self) -> &WebConfig {
-        &self.config
+    /// The `web` settings as they stand.
+    pub fn config(&self) -> WebConfig {
+        self.state.live.web_config()
     }
 
     /// Opens the socket `web.bind` names.
     pub async fn bind(&self) -> Result<TcpListener, WebError> {
-        let addr = self.config.bind;
-        TcpListener::bind(addr)
-            .await
-            .map_err(|source| WebError::Bind { addr, source })
+        bind(self.config().bind).await
     }
 
     /// Binds and serves until `shutdown`.
@@ -258,35 +305,129 @@ impl WebApp {
     }
 
     /// Serves on `listener` until `shutdown`: over TLS when `web.tls` names a certificate,
-    /// plain HTTP otherwise. Open connections get a moment to finish after shutdown.
-    pub async fn run(self, listener: TcpListener, shutdown: CancellationToken) -> Result<(), WebError> {
-        let addr = listener.local_addr()?;
-        let scheme = if self.config.tls.is_some() { "https" } else { "http" };
-        tracing::info!(%addr, scheme, "web app listening");
-        if let Some(token) = self.arm_setup().await? {
-            tracing::warn!(
-                "no accounts yet: open {scheme}://{addr}/setup and enter setup token {token}"
-            );
-        }
-        match &self.config.tls {
-            Some(config) => {
-                let certificate = tls::Reloading::load(config)?;
-                let server = certificate.server_config()?;
-                tokio::spawn(certificate.watch(shutdown.clone()));
-                tls::serve(listener, server, self.router(), shutdown).await?;
+    /// plain HTTP otherwise. When `web.bind` changes, the new address is listened on before
+    /// the old one is given up, so an address that cannot be taken after all leaves the app
+    /// where it was; when `web.tls` changes, the same address is listened on again with the
+    /// new files. Open connections get a moment to finish at each change and at shutdown.
+    pub async fn run(
+        self,
+        listener: TcpListener,
+        shutdown: CancellationToken,
+    ) -> Result<(), WebError> {
+        let mut web = self.state.live.web.subscribe();
+        let mut listener = Some(listener);
+        let mut config = web.borrow_and_update().clone();
+        loop {
+            let socket = match listener.take() {
+                Some(socket) => socket,
+                None => rebind(config.bind, &shutdown).await?,
+            };
+            let addr = socket.local_addr()?;
+            let scheme = if config.tls.is_some() {
+                "https"
+            } else {
+                "http"
+            };
+            tracing::info!(%addr, scheme, "web app listening");
+            if let Some(token) = self.arm_setup().await? {
+                tracing::warn!(
+                    "no accounts yet: open {scheme}://{addr}/setup and enter setup token {token}"
+                );
             }
-            None => {
-                axum::serve(
-                    listener,
-                    self.router()
-                        .into_make_service_with_connect_info::<SocketAddr>(),
-                )
-                .with_graceful_shutdown(shutdown.cancelled_owned())
-                .await?;
-            }
+            let stop = shutdown.child_token();
+            let server = tokio::spawn(serve_on(
+                socket,
+                config.tls.clone(),
+                self.router(),
+                stop.clone(),
+            ));
+            let next = loop {
+                tokio::select! {
+                    _ = shutdown.cancelled() => break None,
+                    changed = web.changed() => {
+                        if changed.is_err() {
+                            break None;
+                        }
+                        let next = web.borrow().clone();
+                        if next.bind == config.bind && next.tls == config.tls {
+                            continue;
+                        }
+                        if next.bind == config.bind {
+                            break Some((next, None));
+                        }
+                        match bind(next.bind).await {
+                            Ok(fresh) => break Some((next, Some(fresh))),
+                            Err(error) => {
+                                tracing::error!(
+                                    "web app stays on {addr}: the new address cannot be listened on: {error}"
+                                );
+                            }
+                        }
+                    }
+                }
+            };
+            stop.cancel();
+            server
+                .await
+                .map_err(|e| WebError::Io(std::io::Error::other(e)))??;
+            let Some((next, fresh)) = next else {
+                return Ok(());
+            };
+            tracing::info!("web app listener closed; the new address or certificate takes over");
+            config = next;
+            listener = fresh;
         }
-        Ok(())
     }
+}
+
+/// Listens on `addr` again once the listener there was closed, asking a few times while
+/// the socket is released, unless `shutdown` comes first.
+async fn rebind(addr: SocketAddr, shutdown: &CancellationToken) -> Result<TcpListener, WebError> {
+    const ATTEMPTS: u32 = 50;
+    let mut attempt = 0;
+    loop {
+        attempt += 1;
+        match bind(addr).await {
+            Ok(listener) => return Ok(listener),
+            Err(error) if attempt < ATTEMPTS && !shutdown.is_cancelled() => {
+                tracing::warn!(attempt, "{error}; asking again");
+                tokio::time::sleep(Duration::from_millis(200)).await;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
+async fn bind(addr: SocketAddr) -> Result<TcpListener, WebError> {
+    TcpListener::bind(addr)
+        .await
+        .map_err(|source| WebError::Bind { addr, source })
+}
+
+/// Serves `router` on `listener` until `stop`, over TLS when `tls` names a certificate.
+async fn serve_on(
+    listener: TcpListener,
+    tls: Option<TlsConfig>,
+    router: Router,
+    stop: CancellationToken,
+) -> Result<(), WebError> {
+    match tls {
+        Some(config) => {
+            let certificate = tls::Reloading::load(&config)?;
+            let server = certificate.server_config()?;
+            tokio::spawn(certificate.watch(stop.clone()));
+            tls::serve(listener, server, router, stop).await?;
+        }
+        None => {
+            axum::serve(
+                listener,
+                router.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .with_graceful_shutdown(stop.cancelled_owned())
+            .await?;
+        }
+    }
+    Ok(())
 }
 
 fn api(state: AppState) -> Router {
@@ -296,8 +437,10 @@ fn api(state: AppState) -> Router {
         .route("/logout", post(auth::logout))
         .route("/session", get(auth::current_session))
         .route("/sessions", get(auth::list_sessions))
+        .route("/sessions/all", get(users::list_all_sessions))
         .route("/sessions/others", delete(auth::revoke_other_sessions))
         .route("/sessions/{id}", delete(auth::revoke_session))
+        .route("/roles", get(users::roles))
         .route("/users", get(users::list).post(users::create))
         .route(
             "/users/{id}",
@@ -308,7 +451,12 @@ fn api(state: AppState) -> Router {
             "/users/{id}/sessions",
             get(users::list_sessions).delete(users::revoke_sessions),
         )
+        .route(
+            "/users/{id}/sessions/{session}",
+            delete(users::revoke_session),
+        )
         .route("/tokens", get(tokens::list).post(tokens::create))
+        .route("/tokens/all", get(tokens::list_all))
         .route("/tokens/{id}", delete(tokens::revoke))
         .route("/users/{id}/tokens", get(tokens::list_for_user))
         .route(
@@ -321,6 +469,13 @@ fn api(state: AppState) -> Router {
         .route(
             "/auth/identities/{provider}/refresh",
             post(oauth::refresh_identity),
+        )
+        .route("/settings", get(settings::get).patch(settings::patch))
+        .route("/settings/export", get(settings::export))
+        .route("/settings/import", post(settings::import))
+        .route(
+            "/settings/{key}",
+            put(settings::set).delete(settings::reset),
         )
         .route(
             "/discord/applications",
@@ -364,6 +519,18 @@ fn api(state: AppState) -> Router {
         .route(
             "/discord/applications/{id}/guilds/{guild}/rules",
             get(rules::list_for_guild).post(rules::create),
+        )
+        .route(
+            "/discord/applications/{id}/guilds/{guild}/channels",
+            get(channels::list_channels),
+        )
+        .route(
+            "/discord/applications/{id}/guilds/{guild}/roles",
+            get(channels::list_roles),
+        )
+        .route(
+            "/discord/applications/{id}/guilds/{guild}/members",
+            get(channels::search_members),
         )
         .route("/discord/rules", get(rules::list_all))
         .route(
@@ -537,13 +704,13 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), 200);
         assert_eq!(
-            response
-                .headers()
-                .get("strict-transport-security")
-                .unwrap(),
+            response.headers().get("strict-transport-security").unwrap(),
             "max-age=31536000"
         );
-        assert_eq!(response.json::<Json>().await.unwrap(), json!({"needed": true}));
+        assert_eq!(
+            response.json::<Json>().await.unwrap(),
+            json!({"needed": true})
+        );
         // Plain HTTP on the same port is refused.
         assert!(
             client

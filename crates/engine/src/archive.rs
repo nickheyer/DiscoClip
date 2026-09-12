@@ -79,7 +79,10 @@ impl FsArchiver {
     }
 
     pub fn config(&self) -> Option<ArchiveConfig> {
-        self.config.read().unwrap_or_else(|e| e.into_inner()).clone()
+        self.config
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     fn target_dir(config: &ArchiveConfig, job: &Job) -> PathBuf {

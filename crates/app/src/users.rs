@@ -82,8 +82,39 @@ impl std::fmt::Display for Permission {
     }
 }
 
+impl Permission {
+    pub const ALL: [Permission; 7] = [
+        Permission::ManageUsers,
+        Permission::ManageApplications,
+        Permission::ManageWatchRules,
+        Permission::ManageBots,
+        Permission::ViewAuditLog,
+        Permission::ManageJobs,
+        Permission::ManageSettings,
+    ];
+}
+
 impl Role {
     pub const ALL: [Role; 3] = [Role::Admin, Role::Operator, Role::Viewer];
+
+    /// What the role is for, in a sentence.
+    pub fn description(self) -> &'static str {
+        match self {
+            Role::Admin => {
+                "Everything: accounts, Discord applications, settings, rules, bots and the audit log."
+            }
+            Role::Operator => "Jobs, watch rules and the bots.",
+            Role::Viewer => "Read only, plus the rules of guilds they manage on Discord.",
+        }
+    }
+
+    /// Every permission the role allows.
+    pub fn permissions(self) -> Vec<Permission> {
+        Permission::ALL
+            .into_iter()
+            .filter(|permission| self.allows(*permission))
+            .collect()
+    }
 
     pub fn allows(self, permission: Permission) -> bool {
         match permission {
@@ -672,6 +703,21 @@ mod tests {
         assert!(Role::Admin.allows(Permission::ManageJobs));
         assert!(Role::Operator.allows(Permission::ManageJobs));
         assert!(!Role::Viewer.allows(Permission::ManageJobs));
+    }
+
+    #[test]
+    fn roles_list_their_permissions() {
+        assert_eq!(Role::Admin.permissions(), Permission::ALL.to_vec());
+        assert_eq!(
+            Role::Operator.permissions(),
+            vec![
+                Permission::ManageWatchRules,
+                Permission::ManageBots,
+                Permission::ManageJobs
+            ]
+        );
+        assert!(Role::Viewer.permissions().is_empty());
+        assert!(!Role::Viewer.description().is_empty());
     }
 
     #[test]

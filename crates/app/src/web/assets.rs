@@ -72,7 +72,11 @@ pub async fn serve(request: Request) -> Response {
     }
     let path = request.uri().path().trim_start_matches('/');
     let asset: &Asset = BY_PATH.get(path).copied().unwrap_or(*PAGE);
-    let cache = if asset.immutable { IMMUTABLE } else { REVALIDATE };
+    let cache = if asset.immutable {
+        IMMUTABLE
+    } else {
+        REVALIDATE
+    };
 
     let mut response = Response::builder()
         .header(header::ETAG, asset.etag)
@@ -80,7 +84,10 @@ pub async fn serve(request: Request) -> Response {
         .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff");
     if asset.content_type.starts_with("text/html") {
         response = response
-            .header(header::CONTENT_SECURITY_POLICY, CONTENT_SECURITY_POLICY.clone())
+            .header(
+                header::CONTENT_SECURITY_POLICY,
+                CONTENT_SECURITY_POLICY.clone(),
+            )
             .header(header::REFERRER_POLICY, "same-origin")
             .header(header::X_FRAME_OPTIONS, "DENY");
     }

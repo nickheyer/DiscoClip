@@ -147,3 +147,29 @@ export const post = <T>(path: string, body?: unknown, quiet?: number[]) =>
 export const put = <T>(path: string, body?: unknown) => request<T>('PUT', path, { body });
 export const patch = <T>(path: string, body?: unknown) => request<T>('PATCH', path, { body });
 export const del = <T>(path: string) => request<T>('DELETE', path);
+
+/** A GET whose answer is a text file rather than JSON. */
+export async function text(path: string): Promise<string> {
+	let response: Response;
+	try {
+		response = await fetch(`/api${path}`, {
+			method: 'GET',
+			headers: { Accept: 'text/plain, application/json' },
+			credentials: 'same-origin',
+			cache: 'no-store'
+		});
+	} catch {
+		throw new ApiError(0, 'the server could not be reached');
+	}
+	const body = await response.text();
+	if (response.ok) return body;
+	let parsed: unknown = body;
+	try {
+		parsed = JSON.parse(body);
+	} catch {
+		// The body is the message itself.
+	}
+	const error = new ApiError(response.status, errorMessage(response.status, parsed));
+	if (response.status === 401 && unauthorized) unauthorized();
+	throw error;
+}

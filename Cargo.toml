@@ -22,7 +22,6 @@ base64 = "0.23"
 bytes = "1"
 cbc = { version = "0.2", features = ["alloc"] }
 clap = { version = "4", features = ["derive", "env", "wrap_help"] }
-config = { version = "0.15", default-features = false, features = ["toml", "yaml", "json"] }
 dash-mpd = { version = "0.20", default-features = false, features = ["fetch", "rustls-tls"] }
 dirs = "6"
 futures = "0.3"

@@ -8,7 +8,8 @@ export type Permission =
 	| 'manage_watch_rules'
 	| 'manage_bots'
 	| 'view_audit_log'
-	| 'manage_jobs';
+	| 'manage_jobs'
+	| 'manage_settings';
 
 export type Intent = 'login' | 'link';
 
@@ -58,7 +59,8 @@ export const PERMISSIONS: Permission[] = [
 	'manage_watch_rules',
 	'manage_bots',
 	'view_audit_log',
-	'manage_jobs'
+	'manage_jobs',
+	'manage_settings'
 ];
 
 export type StatusKind = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
@@ -260,6 +262,18 @@ export interface User {
 	updated_at: string;
 }
 
+export interface RoleView {
+	role: Role;
+	description: string;
+	permissions: Permission[];
+	accounts: User[];
+}
+
+export interface AccountSessionView extends SessionView {
+	user_id: string;
+	username: string;
+}
+
 export interface ApiToken {
 	id: string;
 	user_id: string;
@@ -269,6 +283,10 @@ export interface ApiToken {
 	created_at: string;
 	last_used_at: string | null;
 	expires_at: string | null;
+}
+
+export interface AccountTokenView extends ApiToken {
+	username: string;
 }
 
 export interface Minted {
@@ -358,6 +376,56 @@ export interface BotGuild {
 	joined_at: string;
 	left_at: string | null;
 	updated_at: string;
+}
+
+export type ChannelKind =
+	| 'text'
+	| 'announcement'
+	| 'voice'
+	| 'stage'
+	| 'category'
+	| 'forum'
+	| 'media'
+	| 'thread'
+	| 'other';
+
+export const CHANNEL_KINDS: ChannelKind[] = [
+	'text',
+	'announcement',
+	'voice',
+	'stage',
+	'category',
+	'forum',
+	'media',
+	'thread',
+	'other'
+];
+
+export interface GuildChannel {
+	id: string;
+	name: string;
+	kind: ChannelKind;
+	parent_id: string | null;
+	position: number;
+	/** The rule watching the channel, when one does. */
+	rule: string | null;
+}
+
+export interface GuildRole {
+	id: string;
+	name: string;
+	color: number;
+	position: number;
+	managed: boolean;
+}
+
+export interface GuildMember {
+	id: string;
+	username: string;
+	display_name: string | null;
+	nick: string | null;
+	avatar: string | null;
+	bot: boolean;
 }
 
 export interface Rule {
@@ -689,4 +757,50 @@ export interface Job {
 export function codecName(codec: Codec | null | undefined): string | null {
 	if (codec == null) return null;
 	return typeof codec === 'string' ? codec : codec.other;
+}
+
+// Settings
+
+export type SettingSource = 'provisioning' | 'app';
+
+export type SettingsFormat = 'toml' | 'yaml' | 'json';
+
+export const SETTINGS_FORMATS: SettingsFormat[] = ['toml', 'yaml', 'json'];
+
+/** A JSON value as the settings hold it. */
+export type SettingValue =
+	| string
+	| number
+	| boolean
+	| null
+	| SettingValue[]
+	| { [key: string]: SettingValue };
+
+export interface SettingEntry {
+	key: string;
+	source: SettingSource;
+	updated_at: string;
+}
+
+export interface SettingsView {
+	settings: Record<string, SettingValue>;
+	defaults: Record<string, SettingValue>;
+	entries: SettingEntry[];
+	secrets: string[];
+	data_dir: string;
+	provisioning_file: string | null;
+}
+
+export interface SettingsChange {
+	set?: Record<string, SettingValue>;
+	reset?: string[];
+}
+
+export interface SettingSetRequest {
+	value: SettingValue;
+}
+
+export interface SettingsImportRequest {
+	format: SettingsFormat;
+	text: string;
 }

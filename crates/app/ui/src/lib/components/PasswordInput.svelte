@@ -12,6 +12,7 @@
 		mono?: boolean;
 		minlength?: number;
 		maxlength?: number;
+		oninput?: (event: Event) => void;
 	}
 
 	let {
@@ -24,7 +25,8 @@
 		disabled = false,
 		mono = false,
 		minlength,
-		maxlength
+		maxlength,
+		oninput
 	}: Props = $props();
 
 	let shown = $state(false);
@@ -42,6 +44,7 @@
 		{disabled}
 		{minlength}
 		{maxlength}
+		{oninput}
 		spellcheck="false"
 		aria-invalid={invalid ? 'true' : undefined}
 	/>

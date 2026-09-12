@@ -42,6 +42,38 @@ pub struct Settings {
 }
 
 impl Settings {
+    /// Settings with every optional section present, so the type of every path can be read
+    /// off them: what the environment's text is coerced against.
+    pub fn exemplar() -> Self {
+        let client = OAuthClient {
+            client_id: String::new(),
+            client_secret: SecretString::from(String::new()),
+        };
+        let mut settings = Settings::default();
+        settings.engine.archive = Some(discoclip_engine::archive::ArchiveConfig {
+            dir: PathBuf::from("archive"),
+            keep: discoclip_engine::archive::Keep::Output,
+        });
+        settings.engine.limits.max_duration_secs = Some(0);
+        settings.http.proxies.default =
+            Some(Url::parse("http://proxy.invalid:3128").expect("valid"));
+        settings.web.public_url = Some(Url::parse("https://example.invalid/").expect("valid"));
+        settings.web.tls = Some(TlsConfig {
+            cert: PathBuf::from("cert.pem"),
+            key: PathBuf::from("key.pem"),
+        });
+        settings.auth.github = Some(client.clone());
+        settings.auth.google = Some(client.clone());
+        settings.auth.oidc = Some(OidcClient {
+            name: default_oidc_name(),
+            issuer: Url::parse("https://example.invalid/").expect("valid"),
+            client_id: client.client_id,
+            client_secret: client.client_secret,
+            scopes: default_oidc_scopes(),
+        });
+        settings
+    }
+
     /// Checks what the types alone cannot: values that parse but would not run.
     pub fn validate(&self) -> Result<(), SettingsError> {
         let invalid = |path: &str, message: String| SettingsError::Invalid {
@@ -54,7 +86,10 @@ impl Settings {
             return Err(invalid("engine.workers", "must be at least 1".into()));
         }
         if self.engine.limits.max_height == 0 {
-            return Err(invalid("engine.limits.max_height", "must be at least 1".into()));
+            return Err(invalid(
+                "engine.limits.max_height",
+                "must be at least 1".into(),
+            ));
         }
         if self.engine.limits.max_source_bytes == 0 {
             return Err(invalid(
@@ -63,7 +98,10 @@ impl Settings {
             ));
         }
         if self.engine.playlists.max_entries == 0 {
-            return Err(invalid("engine.playlists.max_entries", "must be at least 1".into()));
+            return Err(invalid(
+                "engine.playlists.max_entries",
+                "must be at least 1".into(),
+            ));
         }
         if self.engine.retention.sweep_interval_secs == 0 {
             return Err(invalid(
@@ -120,7 +158,10 @@ impl Settings {
                     .map(|(k, p)| (format!("http.proxies.hosts.{k}"), p)),
             )
         {
-            if !matches!(proxy.scheme(), "http" | "https" | "socks5" | "socks5h" | "socks4" | "socks4a") {
+            if !matches!(
+                proxy.scheme(),
+                "http" | "https" | "socks5" | "socks5h" | "socks4" | "socks4a"
+            ) {
                 return Err(invalid(
                     &name,
                     format!("{} is not an http or socks proxy URL", proxy.scheme()),
@@ -144,7 +185,10 @@ impl Settings {
         if let Some(url) = &self.web.public_url
             && !matches!(url.scheme(), "http" | "https")
         {
-            return Err(invalid("web.public_url", "must be an http or https URL".into()));
+            return Err(invalid(
+                "web.public_url",
+                "must be an http or https URL".into(),
+            ));
         }
         Ok(())
     }
@@ -269,7 +313,8 @@ pub struct TlsConfig {
 }
 
 /// Who wrote a stored value last.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Source {
     /// The provisioning file or the environment, at startup.
     Provisioning,
@@ -303,6 +348,32 @@ pub struct Entry {
     pub updated_at: Timestamp,
 }
 
+/// Keys whose values are stored whole rather than split into the paths beneath them:
+/// maps keyed by host names, whose keys carry dots of their own.
+pub const ATOMIC_KEYS: [&str; 3] = [
+    "http.rate_limits.hosts",
+    "http.proxies.platforms",
+    "http.proxies.hosts",
+];
+
+/// The atomic key `path` is, or lies beneath.
+pub fn atomic_key(path: &str) -> Option<&'static str> {
+    ATOMIC_KEYS.iter().copied().find(|atomic| {
+        path == *atomic
+            || path
+                .strip_prefix(atomic)
+                .is_some_and(|rest| rest.starts_with('.'))
+    })
+}
+
+/// The paths the store keeps `value` at when it is written to `key`: every leaf beneath
+/// an object, arrays and atomic maps whole.
+pub fn leaves_of(key: &str, value: &Json) -> BTreeMap<String, Json> {
+    let mut out = BTreeMap::new();
+    crate::config::json_leaves(value, key, &mut out);
+    out
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum SettingsError {
     #[error(transparent)]
@@ -330,12 +401,91 @@ pub struct Bootstrapped {
     pub kept: Vec<String>,
 }
 
-/// The settings after an import.
+/// Keys to store and keys to remove, applied together and checked as a whole.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Change {
+    pub set: BTreeMap<String, Json>,
+    pub reset: Vec<String>,
+}
+
+impl Change {
+    pub fn set(key: &str, value: Json) -> Self {
+        Self {
+            set: BTreeMap::from([(key.to_string(), value)]),
+            reset: Vec::new(),
+        }
+    }
+
+    pub fn reset(key: &str) -> Self {
+        Self {
+            set: BTreeMap::new(),
+            reset: vec![key.to_string()],
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.set.is_empty() && self.reset.is_empty()
+    }
+
+    /// The keys the change touches, sets first.
+    pub fn keys(&self) -> Vec<String> {
+        self.set
+            .keys()
+            .cloned()
+            .chain(self.reset.iter().cloned())
+            .collect()
+    }
+
+    fn check_keys(&self) -> Result<(), SettingsError> {
+        for key in self.keys() {
+            if key.is_empty() || key.split('.').any(|segment| segment.is_empty()) {
+                return Err(SettingsError::Invalid {
+                    path: key,
+                    message: "is not a dotted settings path".into(),
+                });
+            }
+            if let Some(atomic) = atomic_key(&key)
+                && atomic != key
+            {
+                return Err(SettingsError::Invalid {
+                    path: key.clone(),
+                    message: format!("is part of {atomic}, which is set as a whole"),
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+/// The settings after a change: what the server now runs on and the keys written.
 #[derive(Debug, Clone)]
-pub struct Imported {
+pub struct Changed {
     pub settings: Settings,
-    /// The keys the import wrote.
-    pub keys: Vec<String>,
+    /// The leaf keys stored.
+    pub written: Vec<String>,
+    /// The keys removed.
+    pub removed: Vec<String>,
+}
+
+/// One stored value as the app shows it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct EntryView {
+    pub key: String,
+    pub source: Source,
+    pub updated_at: Timestamp,
+}
+
+/// The settings as the app edits them: what the server runs on with secrets withheld,
+/// the defaults beside them, which values are stored and by whom, and which secrets
+/// are set.
+#[derive(Debug, Clone, Serialize)]
+pub struct View {
+    pub settings: Json,
+    pub defaults: Json,
+    pub entries: Vec<EntryView>,
+    /// Secret keys that hold a value; their values are withheld from `settings`.
+    pub secrets: Vec<String>,
 }
 
 /// Writes the provisioned values into `db`, keeping anything the app changed, and returns
@@ -387,11 +537,10 @@ impl SettingsStore {
                     kept.push(key);
                     continue;
                 }
-                write(tx, &key, &value, Source::Provisioning, now)?;
-                written.push(key);
+                written.extend(write(tx, &key, &value, Source::Provisioning, now)?);
             }
             let after = read_entries(tx)?;
-            log_changes(
+            log_leaves(
                 tx,
                 &actor,
                 Action::SettingsProvision,
@@ -411,22 +560,24 @@ impl SettingsStore {
         &self,
         actor: &Actor,
         provisioning: &Provisioning,
-    ) -> Result<Imported, SettingsError> {
+    ) -> Result<Changed, SettingsError> {
+        let change = self.import_change(provisioning).await?;
+        self.apply(actor, Action::SettingsImport, &change).await
+    }
+
+    /// The change an import of `provisioning` amounts to, over what is stored.
+    pub async fn import_change(
+        &self,
+        provisioning: &Provisioning,
+    ) -> Result<Change, SettingsError> {
         let provisioning = provisioning.clone();
-        let actor = actor.clone();
         transact(&self.db, move |tx| {
             let existing = read_entries(tx)?;
-            let values = provisioning.resolve(&assemble(&existing)?)?;
-            let now = Timestamp::now();
-            let mut keys = Vec::with_capacity(values.len());
-            for (key, value) in values {
-                write(tx, &key, &value, Source::App, now)?;
-                keys.push(key);
-            }
-            let after = read_entries(tx)?;
-            log_changes(tx, &actor, Action::SettingsImport, &existing, &after, &keys)?;
-            let settings = decode(&after)?;
-            Ok(Imported { settings, keys })
+            let set = provisioning.resolve(&assemble(&existing)?)?;
+            Ok(Change {
+                set,
+                reset: Vec::new(),
+            })
         })
         .await
     }
@@ -450,68 +601,158 @@ impl SettingsStore {
         transact(&self.db, |tx| read_entries(tx)).await
     }
 
-    /// Stores `value` at `key` as an app change by `actor`. Any value stored at a section
-    /// around `key`, or at a path beneath it, is replaced. Nothing is written unless the
-    /// settings as a whole stay valid; the new settings are returned.
+    /// The settings as the app shows them.
+    pub async fn view(&self) -> Result<View, SettingsError> {
+        transact(&self.db, |tx| {
+            let entries = read_entries(tx)?;
+            let settings = decode(&entries)?;
+            Ok(view_of(&settings, &entries))
+        })
+        .await
+    }
+
+    /// What the settings would be after `change`, without storing anything.
+    pub async fn preview(&self, change: &Change) -> Result<Settings, SettingsError> {
+        change.check_keys()?;
+        let change = change.clone();
+        transact(&self.db, move |tx| {
+            let before = read_entries(tx)?;
+            let mut rows: BTreeMap<String, Json> = before
+                .iter()
+                .map(|entry| (entry.key.clone(), entry.value.clone()))
+                .collect();
+            for key in &change.reset {
+                rows.retain(|stored, _| !(stored == key || beneath(stored, key)));
+            }
+            for (key, value) in &change.set {
+                rows.retain(|stored, _| !related(stored, key));
+                rows.extend(leaves_of(key, value));
+            }
+            let entries: Vec<Entry> = rows
+                .into_iter()
+                .map(|(key, value)| Entry {
+                    key,
+                    value,
+                    source: Source::App,
+                    updated_at: Timestamp::UNIX_EPOCH,
+                })
+                .collect();
+            decode(&entries)
+        })
+        .await
+    }
+
+    /// Stores `change` as done by `actor` in one transaction, logged as `action`: every
+    /// key set is written as the leaves beneath it, replacing whatever was stored at, around
+    /// or beneath it; every key reset is removed with everything beneath it. Nothing is
+    /// written unless the settings as a whole stay valid; the new settings are returned.
+    pub async fn apply(
+        &self,
+        actor: &Actor,
+        action: Action,
+        change: &Change,
+    ) -> Result<Changed, SettingsError> {
+        change.check_keys()?;
+        let change = change.clone();
+        let actor = actor.clone();
+        transact(&self.db, move |tx| {
+            let before = read_entries(tx)?;
+            let before_tree = assemble(&before)?;
+            let now = Timestamp::now();
+            let mut removed = Vec::new();
+            for key in &change.reset {
+                removed.extend(remove(tx, key)?);
+            }
+            let mut written = Vec::new();
+            for (key, value) in &change.set {
+                written.extend(write(tx, key, value, Source::App, now)?);
+            }
+            let after = read_entries(tx)?;
+            let settings = decode(&after)?;
+            for key in &change.reset {
+                let gone = removed_around(key, &before, &after, true);
+                if gone.is_empty() {
+                    continue;
+                }
+                audit::record(
+                    tx,
+                    &actor,
+                    Action::SettingsReset,
+                    Target::setting(key),
+                    audit::settings_details(key, at_path(&before_tree, key), None, &gone),
+                )?;
+            }
+            for (key, value) in &change.set {
+                let previous = at_path(&before_tree, key);
+                let leaves = leaves_of(key, value);
+                let gone: BTreeMap<String, Json> = removed_around(key, &before, &after, true)
+                    .into_iter()
+                    .filter(|(gone, _)| !leaves.contains_key(gone))
+                    .collect();
+                let unchanged = previous == Some(value)
+                    && gone.is_empty()
+                    && leaves.keys().all(|leaf| {
+                        before
+                            .iter()
+                            .any(|entry| &entry.key == leaf && entry.source == Source::App)
+                    });
+                if unchanged {
+                    continue;
+                }
+                audit::record(
+                    tx,
+                    &actor,
+                    action,
+                    Target::setting(key),
+                    audit::settings_details(key, previous, Some(value), &gone),
+                )?;
+            }
+            Ok(Changed {
+                settings,
+                written,
+                removed,
+            })
+        })
+        .await
+    }
+
+    /// Stores `value` at `key` as an app change by `actor`.
     pub async fn set(
         &self,
         actor: &Actor,
         key: &str,
         value: Json,
     ) -> Result<Settings, SettingsError> {
-        let key = key.to_string();
-        let actor = actor.clone();
-        transact(&self.db, move |tx| {
-            let before = read_entries(tx)?;
-            write(tx, &key, &value, Source::App, Timestamp::now())?;
-            let after = read_entries(tx)?;
-            log_changes(
-                tx,
-                &actor,
-                Action::SettingsSet,
-                &before,
-                &after,
-                std::slice::from_ref(&key),
-            )?;
-            decode(&after)
-        })
-        .await
+        Ok(self
+            .apply(actor, Action::SettingsSet, &Change::set(key, value))
+            .await?
+            .settings)
     }
 
     /// Removes the stored value at `key` and everything beneath it, so the defaults apply.
-    /// Nothing is removed unless the settings as a whole stay valid; the new settings are
-    /// returned.
     pub async fn reset(&self, actor: &Actor, key: &str) -> Result<Settings, SettingsError> {
-        let key = key.to_string();
-        let actor = actor.clone();
-        transact(&self.db, move |tx| {
-            let before = read_entries(tx)?;
-            tx.execute(
-                "DELETE FROM settings WHERE key = ?1 OR substr(key, 1, length(?1) + 1) = ?1 || '.'",
-                params![key],
-            )?;
-            let after = read_entries(tx)?;
-            let removed = removed_around(&key, &before, &after, true);
-            if !removed.is_empty() {
-                audit::record(
-                    tx,
-                    &actor,
-                    Action::SettingsReset,
-                    Target::setting(&key),
-                    audit::settings_details(&key, None, None, &removed),
-                )?;
-            }
-            decode(&after)
-        })
-        .await
+        Ok(self
+            .apply(actor, Action::SettingsReset, &Change::reset(key))
+            .await?
+            .settings)
     }
 }
 
 /// Whether one path is the other, contains it, or lies beneath it.
 fn related(a: &str, b: &str) -> bool {
-    a == b
-        || a.strip_prefix(b).is_some_and(|rest| rest.starts_with('.'))
-        || b.strip_prefix(a).is_some_and(|rest| rest.starts_with('.'))
+    a == b || beneath(a, b) || beneath(b, a)
+}
+
+/// Whether `path` lies strictly beneath `ancestor`.
+fn beneath(path: &str, ancestor: &str) -> bool {
+    path.strip_prefix(ancestor)
+        .is_some_and(|rest| rest.starts_with('.'))
+}
+
+/// The value at the dotted `path` of `tree`, when there is one.
+fn at_path<'a>(tree: &'a Json, path: &str) -> Option<&'a Json> {
+    path.split('.')
+        .try_fold(tree, |node, segment| node.get(segment))
 }
 
 /// The values stored around or beneath `key` before that are gone after; `key` itself
@@ -530,10 +771,10 @@ fn removed_around(
         .collect()
 }
 
-/// Logs what writing `keys` changed, one entry per key: the value before and after, and
-/// the values stored around or beneath it that the write removed. A key the write left
+/// Logs what writing the leaf `keys` changed, one entry per key: the value before and
+/// after, and the values stored around it that the write removed. A key the write left
 /// exactly as it was, in value and source, is not logged.
-fn log_changes(
+fn log_leaves(
     conn: &Connection,
     actor: &Actor,
     action: Action,
@@ -599,32 +840,54 @@ fn read_entries(conn: &Connection) -> Result<Vec<Entry>, SettingsError> {
     Ok(entries)
 }
 
-/// Upserts `key`, removing any value stored at a section around it or a path beneath it.
+/// Removes `key` and every row beneath it; the keys removed.
+fn remove(conn: &Connection, key: &str) -> Result<Vec<String>, SettingsError> {
+    let mut stmt = conn.prepare(
+        "DELETE FROM settings WHERE key = ?1 OR substr(key, 1, length(?1) + 1) = ?1 || '.' RETURNING key",
+    )?;
+    let rows = stmt.query_map(params![key], |row| row.get::<_, String>(0))?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
+/// Stores `value` at `key` as the leaves beneath it, removing any value stored at a section
+/// around it or a path beneath it; the leaf keys written.
 fn write(
     conn: &Connection,
     key: &str,
     value: &Json,
     source: Source,
     now: Timestamp,
-) -> Result<(), SettingsError> {
+) -> Result<Vec<String>, SettingsError> {
     conn.execute(
-        "DELETE FROM settings WHERE key != ?1 AND (
+        "DELETE FROM settings WHERE
             substr(key, 1, length(?1) + 1) = ?1 || '.' OR
-            substr(?1, 1, length(key) + 1) = key || '.'
-        )",
+            substr(?1, 1, length(key) + 1) = key || '.'",
         params![key],
     )?;
-    let encoded = serde_json::to_string(value).map_err(|e| StoreError::Corrupt(e.to_string()))?;
-    conn.execute(
-        "INSERT INTO settings (key, value, source, updated_at) VALUES (?1, ?2, ?3, ?4)
-         ON CONFLICT(key) DO UPDATE SET
-            value = excluded.value,
-            source = excluded.source,
-            updated_at = excluded.updated_at
-         WHERE settings.value != excluded.value OR settings.source != excluded.source",
-        params![key, encoded, source.as_str(), nanos(now)],
-    )?;
-    Ok(())
+    let leaves = leaves_of(key, value);
+    if leaves.is_empty() {
+        conn.execute("DELETE FROM settings WHERE key = ?1", params![key])?;
+        return Ok(Vec::new());
+    }
+    if !leaves.contains_key(key) {
+        conn.execute("DELETE FROM settings WHERE key = ?1", params![key])?;
+    }
+    let mut written = Vec::with_capacity(leaves.len());
+    for (leaf, value) in leaves {
+        let encoded =
+            serde_json::to_string(&value).map_err(|e| StoreError::Corrupt(e.to_string()))?;
+        conn.execute(
+            "INSERT INTO settings (key, value, source, updated_at) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(key) DO UPDATE SET
+                value = excluded.value,
+                source = excluded.source,
+                updated_at = excluded.updated_at
+             WHERE settings.value != excluded.value OR settings.source != excluded.source",
+            params![leaf, encoded, source.as_str(), nanos(now)],
+        )?;
+        written.push(leaf);
+    }
+    Ok(written)
 }
 
 /// Nests dotted keys into one JSON tree.
@@ -653,14 +916,63 @@ fn assemble(entries: &[Entry]) -> Result<Json, SettingsError> {
 }
 
 fn decode(entries: &[Entry]) -> Result<Settings, SettingsError> {
-    let settings: Settings = serde_path_to_error::deserialize(assemble(entries)?).map_err(|error| {
-        SettingsError::Invalid {
-            path: error.path().to_string(),
-            message: error.into_inner().to_string(),
-        }
-    })?;
+    let settings: Settings =
+        serde_path_to_error::deserialize(assemble(entries)?).map_err(|error| {
+            SettingsError::Invalid {
+                path: error.path().to_string(),
+                message: error.into_inner().to_string(),
+            }
+        })?;
     settings.validate()?;
     Ok(settings)
+}
+
+/// The settings tree with every secret withheld, and the keys of the secrets that are set.
+fn withhold_secrets(tree: &Json) -> (Json, Vec<String>) {
+    let mut leaves = BTreeMap::new();
+    crate::config::json_leaves(tree, "", &mut leaves);
+    let mut secrets = Vec::new();
+    let mut withheld = tree.clone();
+    for (key, value) in &leaves {
+        if !key.split('.').any(audit::is_secret_name) {
+            continue;
+        }
+        let set = match value {
+            Json::Null => false,
+            Json::String(text) => !text.is_empty(),
+            _ => true,
+        };
+        if set {
+            secrets.push(key.clone());
+        }
+        if let Some(slot) = key
+            .split('.')
+            .try_fold(&mut withheld, |node, segment| node.get_mut(segment))
+        {
+            *slot = Json::Null;
+        }
+    }
+    (withheld, secrets)
+}
+
+fn view_of(settings: &Settings, entries: &[Entry]) -> View {
+    let tree = serde_json::to_value(settings).unwrap_or(Json::Null);
+    let (withheld, secrets) = withhold_secrets(&tree);
+    let (defaults, _) =
+        withhold_secrets(&serde_json::to_value(Settings::default()).unwrap_or(Json::Null));
+    View {
+        settings: withheld,
+        defaults,
+        entries: entries
+            .iter()
+            .map(|entry| EntryView {
+                key: entry.key.clone(),
+                source: entry.source,
+                updated_at: entry.updated_at,
+            })
+            .collect(),
+        secrets,
+    }
 }
 
 #[cfg(test)]
@@ -821,8 +1133,7 @@ mod tests {
             .set(&actor(), "engine.limits.max_height", json!(720))
             .await
             .unwrap();
-        // A whole section provisioned as one value only happens through an import file
-        // that stores it so; provisioning files always split sections into paths.
+        // A section set whole is stored as the paths beneath it.
         store
             .set(&actor(), "local", json!({"max_bytes": 7}))
             .await
@@ -844,7 +1155,7 @@ mod tests {
             keys(&entries),
             vec![
                 ("engine.limits.max_height", Source::App),
-                ("local", Source::App)
+                ("local.max_bytes", Source::App)
             ]
         );
     }
@@ -911,7 +1222,10 @@ mod tests {
             2 * 1024 * 1024 * 1024
         );
         let entries = store.entries().await.unwrap();
-        assert_eq!(keys(&entries), vec![("engine.limits", Source::App)]);
+        assert_eq!(
+            keys(&entries),
+            vec![("engine.limits.max_height", Source::App)]
+        );
 
         let settings = store
             .set(&actor(), "engine.limits.max_height", json!(360))
@@ -1057,7 +1371,7 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(imported.keys, vec!["engine.workers", "web.bind"]);
+        assert_eq!(imported.written, vec!["engine.workers", "web.bind"]);
         assert_eq!(imported.settings.engine.workers, 9);
         assert_eq!(imported.settings.web.bind.port(), 2);
         assert_eq!(imported.settings.log.level, "warn");
@@ -1113,7 +1427,10 @@ mod tests {
             ("web.tls", json!({"cert": "", "key": "k"})),
         ] {
             let error = store.set(&actor(), key, value).await.unwrap_err();
-            assert!(matches!(error, SettingsError::Invalid { .. }), "{key}: {error}");
+            assert!(
+                matches!(error, SettingsError::Invalid { .. }),
+                "{key}: {error}"
+            );
         }
         assert!(store.entries().await.unwrap().is_empty());
         store
@@ -1121,11 +1438,209 @@ mod tests {
             .await
             .unwrap();
         store
-            .set(&actor(), "http.proxies.default", json!("socks5h://proxy:1080"))
+            .set(
+                &actor(),
+                "http.proxies.default",
+                json!("socks5h://proxy:1080"),
+            )
             .await
             .unwrap();
         let settings = store.load().await.unwrap();
         assert_eq!(settings.http.proxies.default.unwrap().scheme(), "socks5h");
+    }
+
+    #[tokio::test]
+    async fn maps_keyed_by_hosts_are_stored_whole() {
+        let store = store().await;
+        let settings = store
+            .set(
+                &actor(),
+                "http.rate_limits.hosts",
+                json!({"youtube.com": {"per_second": 1.0, "burst": 2}}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            settings.http.rate_limits.hosts["youtube.com"].per_second,
+            1.0
+        );
+        let entries = store.entries().await.unwrap();
+        assert_eq!(
+            keys(&entries),
+            vec![("http.rate_limits.hosts", Source::App)]
+        );
+        let error = store
+            .set(
+                &actor(),
+                "http.rate_limits.hosts.youtube.com.burst",
+                json!(3),
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, SettingsError::Invalid { path, .. } if path == "http.rate_limits.hosts.youtube.com.burst")
+        );
+        // Provisioning the map adds to the stored hosts unless the app changed them.
+        let fresh = self::store().await;
+        fresh
+            .bootstrap(&provisioning(
+                json!({"http": {"proxies": {"hosts": {"a.test": "socks5://p:1"}}}}),
+            ))
+            .await
+            .unwrap();
+        let boot = fresh
+            .bootstrap(&provisioning(
+                json!({"http": {"proxies": {"hosts": {"b.test": "http://q:2"}}}}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(boot.settings.http.proxies.hosts.len(), 2);
+        let entries = fresh.entries().await.unwrap();
+        assert_eq!(
+            keys(&entries),
+            vec![("http.proxies.hosts", Source::Provisioning)]
+        );
+        for format in Format::ALL {
+            let text = fresh.export(format).await.unwrap();
+            assert!(text.contains("a.test"), "{format}: {text}");
+            let again = self::store().await;
+            again
+                .bootstrap(&Provisioning::from_text(&text, format).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(again.load().await.unwrap().http.proxies.hosts.len(), 2);
+        }
+    }
+
+    #[tokio::test]
+    async fn changes_set_and_reset_together_after_a_preview() {
+        let store = store().await;
+        store
+            .bootstrap(&provisioning(
+                json!({"engine": {"workers": 4}, "log": {"level": "warn"}}),
+            ))
+            .await
+            .unwrap();
+        let change = Change {
+            set: BTreeMap::from([
+                ("engine.workers".to_string(), json!(6)),
+                (
+                    "web.tls".to_string(),
+                    json!({"cert": "c.pem", "key": "k.pem"}),
+                ),
+            ]),
+            reset: vec!["log.level".into()],
+        };
+        let preview = store.preview(&change).await.unwrap();
+        assert_eq!(preview.engine.workers, 6);
+        assert_eq!(preview.log.level, "info");
+        assert_eq!(preview.web.tls.unwrap().cert, PathBuf::from("c.pem"));
+        assert_eq!(store.load().await.unwrap().engine.workers, 4);
+        assert_eq!(store.entries().await.unwrap().len(), 2);
+
+        let changed = store
+            .apply(&actor(), Action::SettingsSet, &change)
+            .await
+            .unwrap();
+        assert_eq!(
+            changed.written,
+            vec!["engine.workers", "web.tls.cert", "web.tls.key"]
+        );
+        assert_eq!(changed.removed, vec!["log.level"]);
+        assert_eq!(changed.settings.engine.workers, 6);
+        assert_eq!(changed.settings.log.level, "info");
+        let entries = store.entries().await.unwrap();
+        assert_eq!(
+            keys(&entries),
+            vec![
+                ("engine.workers", Source::App),
+                ("web.tls.cert", Source::App),
+                ("web.tls.key", Source::App)
+            ]
+        );
+        // A bad key in a change writes nothing of it.
+        let bad = Change {
+            set: BTreeMap::from([
+                ("engine.workers".to_string(), json!(1)),
+                ("engine.bogus".to_string(), json!(1)),
+            ]),
+            reset: Vec::new(),
+        };
+        assert!(store.preview(&bad).await.is_err());
+        assert!(
+            store
+                .apply(&actor(), Action::SettingsSet, &bad)
+                .await
+                .is_err()
+        );
+        assert_eq!(store.load().await.unwrap().engine.workers, 6);
+        assert!(matches!(
+            store.preview(&Change::set("", json!(1))).await,
+            Err(SettingsError::Invalid { .. })
+        ));
+        assert!(matches!(
+            store.preview(&Change::set("a..b", json!(1))).await,
+            Err(SettingsError::Invalid { .. })
+        ));
+        // Writing beneath a section stored as null replaces the null.
+        store
+            .set(&actor(), "engine.archive", Json::Null)
+            .await
+            .unwrap();
+        let settings = store
+            .set(&actor(), "engine.archive.dir", json!("arch"))
+            .await
+            .unwrap();
+        assert_eq!(settings.engine.archive.unwrap().dir, PathBuf::from("arch"));
+        assert!(
+            store
+                .entries()
+                .await
+                .unwrap()
+                .iter()
+                .all(|entry| entry.key != "engine.archive")
+        );
+    }
+
+    #[tokio::test]
+    async fn views_withhold_secrets_and_name_the_ones_set() {
+        let store = store().await;
+        let view = store.view().await.unwrap();
+        assert!(view.secrets.is_empty());
+        assert!(view.entries.is_empty());
+        assert_eq!(view.settings["engine"]["workers"], 2);
+        assert_eq!(view.defaults["engine"]["workers"], 2);
+        assert_eq!(view.settings["auth"]["github"], Json::Null);
+        store
+            .apply(
+                &actor(),
+                Action::SettingsSet,
+                &Change {
+                    set: BTreeMap::from([
+                        ("auth.github.client_id".to_string(), json!("id")),
+                        ("auth.github.client_secret".to_string(), json!("s3cret")),
+                        ("engine.workers".to_string(), json!(3)),
+                    ]),
+                    reset: Vec::new(),
+                },
+            )
+            .await
+            .unwrap();
+        let view = store.view().await.unwrap();
+        assert_eq!(view.settings["auth"]["github"]["client_id"], "id");
+        assert_eq!(view.settings["auth"]["github"]["client_secret"], Json::Null);
+        assert_eq!(view.secrets, vec!["auth.github.client_secret"]);
+        assert!(!serde_json::to_string(&view).unwrap().contains("s3cret"));
+        let stored: Vec<&str> = view.entries.iter().map(|e| e.key.as_str()).collect();
+        assert_eq!(
+            stored,
+            vec![
+                "auth.github.client_id",
+                "auth.github.client_secret",
+                "engine.workers"
+            ]
+        );
+        assert!(view.entries.iter().all(|e| e.source == Source::App));
     }
 
     #[test]

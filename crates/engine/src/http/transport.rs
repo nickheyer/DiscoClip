@@ -43,34 +43,39 @@ pub struct TransportResponse {
 pub trait Transport: Send + Sync {
     async fn send(&self, request: TransportRequest) -> Result<TransportResponse, HttpError>;
     fn name(&self) -> &'static str;
+    /// Takes new connection and read timeouts for the requests that follow.
+    fn configure(&self, _connect_timeout: Duration, _read_timeout: Duration) {}
 }
 
 /// The network, through reqwest, one client per proxy.
 pub struct LiveTransport {
-    connect_timeout: Duration,
-    read_timeout: Duration,
+    timeouts: Mutex<(Duration, Duration)>,
     clients: Mutex<HashMap<String, reqwest::Client>>,
 }
 
 impl LiveTransport {
     pub fn new(connect_timeout: Duration, read_timeout: Duration) -> Self {
         Self {
-            connect_timeout,
-            read_timeout,
+            timeouts: Mutex::new((connect_timeout, read_timeout)),
             clients: Mutex::new(HashMap::new()),
         }
     }
 
+    pub fn timeouts(&self) -> (Duration, Duration) {
+        *self.timeouts.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     fn client(&self, proxy: Option<&Url>) -> Result<reqwest::Client, HttpError> {
         let key = proxy.map(|p| p.to_string()).unwrap_or_default();
+        let (connect_timeout, read_timeout) = self.timeouts();
         let mut clients = self.clients.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(client) = clients.get(&key) {
             return Ok(client.clone());
         }
         let mut builder = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
-            .connect_timeout(self.connect_timeout)
-            .read_timeout(self.read_timeout);
+            .connect_timeout(connect_timeout)
+            .read_timeout(read_timeout);
         if let Some(proxy) = proxy {
             builder = builder.proxy(
                 reqwest::Proxy::all(proxy.as_str())
@@ -119,6 +124,19 @@ impl Transport for LiveTransport {
 
     fn name(&self) -> &'static str {
         "live"
+    }
+
+    /// Clients built with the old timeouts are dropped; the next request builds new ones.
+    fn configure(&self, connect_timeout: Duration, read_timeout: Duration) {
+        let mut timeouts = self.timeouts.lock().unwrap_or_else(|e| e.into_inner());
+        if *timeouts == (connect_timeout, read_timeout) {
+            return;
+        }
+        *timeouts = (connect_timeout, read_timeout);
+        self.clients
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
     }
 }
 

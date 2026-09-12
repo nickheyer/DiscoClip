@@ -42,7 +42,10 @@ pub(crate) struct Context {
 impl Context {
     /// The settings as they stand now.
     pub fn config(&self) -> EngineConfig {
-        self.config.read().unwrap_or_else(|e| e.into_inner()).clone()
+        self.config
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     pub fn cache_dir(&self) -> PathBuf {
@@ -335,7 +338,7 @@ async fn execute(ctx: &Context, job: &mut Job, job_dir: &Path) -> Result<(), Int
         .await
         .map_err(|e| failed(stage)(e.into()))?;
     let resolved = match resolution {
-        Resolution::Media(resolved) => resolved,
+        Resolution::Media(resolved) => *resolved,
         Resolution::Playlist(playlist) => return expand_playlist(ctx, job, playlist).await,
     };
     let clip = job.request.options.clip.or(resolved.clip);
@@ -392,6 +395,7 @@ async fn execute(ctx: &Context, job: &mut Job, job_dir: &Path) -> Result<(), Int
         .map_err(|e| failed(stage)(StageError::Download(e.into())))?;
     let context = DownloadContext {
         max_bytes: limits.max_source_bytes,
+        max_height: limits.max_height,
         max_live: Duration::from_secs(
             limits
                 .max_duration_secs

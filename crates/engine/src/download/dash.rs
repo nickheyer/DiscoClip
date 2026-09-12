@@ -21,16 +21,11 @@ const MAX_MANIFEST: usize = 16 * 1024 * 1024;
 pub struct DashDownloader {
     http: Http,
     ffmpeg: Ffmpeg,
-    max_height: u32,
 }
 
 impl DashDownloader {
-    pub fn new(http: Http, ffmpeg: Ffmpeg, max_height: u32) -> Self {
-        Self {
-            http,
-            ffmpeg,
-            max_height,
-        }
+    pub fn new(http: Http, ffmpeg: Ffmpeg) -> Self {
+        Self { http, ffmpeg }
     }
 }
 
@@ -122,7 +117,8 @@ impl Downloader for DashDownloader {
         )
         .await?;
         let mpd = dash_mpd::parse(&xml)?;
-        if let Some(size) = estimated_bytes(&mpd, self.max_height, variant.duration)
+        let max_height = context.max_height;
+        if let Some(size) = estimated_bytes(&mpd, max_height, variant.duration)
             && size > context.max_bytes
         {
             return Err(DownloadError::TooLarge {
@@ -145,10 +141,11 @@ impl Downloader for DashDownloader {
             .read_timeout(Duration::from_secs(60))
             .build()
             .map_err(|e| DownloadError::Process(e.to_string()))?;
-        let ffmpeg = self.ffmpeg.ffmpeg_path().to_str().ok_or_else(|| {
+        let ffmpeg_path = self.ffmpeg.ffmpeg_path();
+        let ffmpeg = ffmpeg_path.to_str().ok_or_else(|| {
             DownloadError::Process(format!(
                 "ffmpeg path {} is not valid UTF-8",
-                self.ffmpeg.ffmpeg_path().display()
+                ffmpeg_path.display()
             ))
         })?;
         progress.send_replace(Progress {
@@ -161,7 +158,7 @@ impl Downloader for DashDownloader {
             .with_ffmpeg(ffmpeg)
             .with_muxer_preference("mkv", "ffmpeg")
             .best_quality()
-            .prefer_video_height(u64::from(self.max_height))
+            .prefer_video_height(u64::from(max_height))
             .fetch_subtitles(false)
             .add_progress_observer(Arc::new(Observer(progress)))
             .download_to(&dest)

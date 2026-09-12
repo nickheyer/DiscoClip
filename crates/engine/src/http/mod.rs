@@ -296,6 +296,10 @@ impl Http {
     /// Applies new rate limits, proxies, retries and timeouts to requests from now on.
     pub fn configure(&self, config: HttpConfig) {
         self.inner.limiter.set(config.rate_limits.clone());
+        self.inner.transport.configure(
+            Duration::from_secs(config.connect_timeout_secs),
+            Duration::from_secs(config.read_timeout_secs),
+        );
         *self.inner.config.write().unwrap_or_else(|e| e.into_inner()) = config;
     }
 
@@ -794,8 +798,11 @@ mod tests {
     use super::*;
     use std::sync::atomic::AtomicUsize;
 
+    /// A status, headers and body to answer with.
+    type Reply = (u16, Vec<(String, String)>, &'static str);
+
     struct Scripted {
-        responses: Mutex<Vec<(u16, Vec<(String, String)>, &'static str)>>,
+        responses: Mutex<Vec<Reply>>,
         seen: Mutex<Vec<TransportRequest>>,
         calls: AtomicUsize,
     }
@@ -832,9 +839,7 @@ mod tests {
         }
     }
 
-    fn scripted(
-        responses: Vec<(u16, Vec<(String, String)>, &'static str)>,
-    ) -> (Http, Arc<Scripted>) {
+    fn scripted(responses: Vec<Reply>) -> (Http, Arc<Scripted>) {
         let transport = Arc::new(Scripted {
             responses: Mutex::new(responses),
             seen: Mutex::new(Vec::new()),

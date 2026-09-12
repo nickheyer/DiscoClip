@@ -35,7 +35,10 @@ impl LocalPublisher {
     }
 
     fn config(&self) -> LocalConfig {
-        self.config.read().unwrap_or_else(|e| e.into_inner()).clone()
+        self.config
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     /// `<dir>/<short job id>-<title slug>.<ext>`

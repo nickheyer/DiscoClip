@@ -142,7 +142,9 @@ impl Reloading {
                 _ = tokio::time::sleep(RELOAD_INTERVAL) => {}
             }
             match self.reload_if_changed() {
-                Ok(true) => tracing::info!(cert = %self.config.cert.display(), "tls certificate reloaded"),
+                Ok(true) => {
+                    tracing::info!(cert = %self.config.cert.display(), "tls certificate reloaded")
+                }
                 Ok(false) => {}
                 Err(error) => tracing::error!("tls certificate not reloaded: {error}"),
             }

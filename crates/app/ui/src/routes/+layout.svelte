@@ -26,21 +26,58 @@
 		permission?: Permission;
 	}
 
-	const NAV: NavItem[] = [
-		{ href: '/', label: 'Overview', icon: 'dashboard' },
-		{ href: '/jobs', label: 'Jobs', icon: 'activity' },
-		{ href: '/applications', label: 'Applications', icon: 'bot', permission: 'manage_applications' },
-		{ href: '/rules', label: 'Watch rules', icon: 'rules', permission: 'manage_watch_rules' },
-		{ href: '/guilds', label: 'My guilds', icon: 'server' },
-		{ href: '/users', label: 'Accounts', icon: 'users', permission: 'manage_users' },
-		{ href: '/audit', label: 'Audit log', icon: 'audit', permission: 'view_audit_log' },
-		{ href: '/account', label: 'Account', icon: 'user' }
+	interface NavGroup {
+		label: string;
+		items: NavItem[];
+	}
+
+	const NAV: NavGroup[] = [
+		{
+			label: 'Work',
+			items: [
+				{ href: '/', label: 'Overview', icon: 'dashboard' },
+				{ href: '/jobs', label: 'Jobs', icon: 'activity' }
+			]
+		},
+		{
+			label: 'Discord',
+			items: [
+				{ href: '/applications', label: 'Applications', icon: 'bot', permission: 'manage_applications' },
+				{ href: '/rules', label: 'Watch rules', icon: 'rules', permission: 'manage_watch_rules' },
+				{ href: '/guilds', label: 'My guilds', icon: 'server' }
+			]
+		},
+		{
+			label: 'Access',
+			items: [
+				{ href: '/users', label: 'Accounts', icon: 'users', permission: 'manage_users' },
+				{ href: '/roles', label: 'Roles', icon: 'shield', permission: 'manage_users' },
+				{ href: '/sessions', label: 'Sessions', icon: 'laptop', permission: 'manage_users' },
+				{ href: '/tokens', label: 'API tokens', icon: 'key', permission: 'manage_users' }
+			]
+		},
+		{
+			label: 'Server',
+			items: [
+				{ href: '/settings', label: 'Settings', icon: 'settings', permission: 'manage_settings' },
+				{ href: '/audit', label: 'Audit log', icon: 'audit', permission: 'view_audit_log' }
+			]
+		},
+		{
+			label: 'You',
+			items: [{ href: '/account', label: 'Account', icon: 'user' }]
+		}
 	];
 
 	const me = $derived(session.me);
 	const pathname = $derived(page.url.pathname);
 	const bare = $derived(!me || pathname === '/login' || pathname === '/setup');
-	const items = $derived(NAV.filter((item) => !item.permission || session.can(item.permission)));
+	const groups = $derived(
+		NAV.map((group) => ({
+			...group,
+			items: group.items.filter((item) => !item.permission || session.can(item.permission))
+		})).filter((group) => group.items.length > 0)
+	);
 	let navOpen = $state(false);
 	let loggingOut = $state(false);
 
@@ -167,15 +204,20 @@
 				<span>DiscoClip</span>
 			</a>
 			<nav class="nav" aria-label="Main">
-				{#each items as item (item.href)}
-					<a
-						href={item.href}
-						class={['nav-item', active(item.href) && 'active']}
-						aria-current={active(item.href) ? 'page' : undefined}
-					>
-						<Icon name={item.icon} size={17} />
-						<span>{item.label}</span>
-					</a>
+				{#each groups as group (group.label)}
+					<div class="nav-group">
+						<span class="nav-label">{group.label}</span>
+						{#each group.items as item (item.href)}
+							<a
+								href={item.href}
+								class={['nav-item', active(item.href) && 'active']}
+								aria-current={active(item.href) ? 'page' : undefined}
+							>
+								<Icon name={item.icon} size={17} />
+								<span>{item.label}</span>
+							</a>
+						{/each}
+					</div>
 				{/each}
 			</nav>
 			<div class="side-foot">
@@ -321,8 +363,24 @@
 	.nav {
 		display: flex;
 		flex-direction: column;
-		gap: 2px;
+		gap: 10px;
 		padding: 4px 10px;
+		overflow-y: auto;
+	}
+
+	.nav-group {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.nav-label {
+		padding: 4px 10px 2px;
+		font-size: 11px;
+		font-weight: 600;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--text-3);
 	}
 
 	.nav-item {

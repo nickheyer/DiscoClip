@@ -156,7 +156,12 @@ impl Proxies {
             .first()
             .and_then(|element| element.proto.clone())
             .or_else(|| header_text(headers, "x-forwarded-proto"))
-            .and_then(|value| value.split(',').next().map(|s| s.trim().to_ascii_lowercase()));
+            .and_then(|value| {
+                value
+                    .split(',')
+                    .next()
+                    .map(|s| s.trim().to_ascii_lowercase())
+            });
         match proto.as_deref() {
             Some("https") => {
                 info.scheme = Scheme::Https;
@@ -277,7 +282,11 @@ pub async fn resolve(
     next: Next,
 ) -> Response {
     let tls = request.extensions().get::<Tls>().is_some();
-    let info = state.proxies.resolve(peer, request.headers(), tls);
+    let info = state
+        .proxies
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .resolve(peer, request.headers(), tls);
     let secure = info.scheme == Scheme::Https;
     request.extensions_mut().insert(info);
     let mut response = next.run(request).await;
@@ -446,8 +455,14 @@ mod tests {
 
     #[test]
     fn addresses_in_every_spelling() {
-        assert_eq!(parse_ip("203.0.113.9"), Some("203.0.113.9".parse().unwrap()));
-        assert_eq!(parse_ip("203.0.113.9:80"), Some("203.0.113.9".parse().unwrap()));
+        assert_eq!(
+            parse_ip("203.0.113.9"),
+            Some("203.0.113.9".parse().unwrap())
+        );
+        assert_eq!(
+            parse_ip("203.0.113.9:80"),
+            Some("203.0.113.9".parse().unwrap())
+        );
         assert_eq!(parse_ip("\"[::1]\""), Some("::1".parse().unwrap()));
         assert_eq!(parse_ip("[::1]:443"), Some("::1".parse().unwrap()));
         assert_eq!(parse_ip("_hidden"), None);

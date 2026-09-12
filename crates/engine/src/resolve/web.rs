@@ -380,10 +380,10 @@ impl Resolver for WebResolver {
 
     async fn resolve(&self, url: &Url) -> Result<Resolution, ResolveError> {
         if let Some(found) = self.attempt(BROWSER_UA, url).await? {
-            return Ok(Resolution::Media(found));
+            return Ok(Resolution::from(found));
         }
         if let Some(found) = self.attempt(EMBED_BOT_UA, url).await? {
-            return Ok(Resolution::Media(found));
+            return Ok(Resolution::from(found));
         }
         Err(ResolveError::NotFound(url.clone()))
     }

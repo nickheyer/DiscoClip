@@ -4,7 +4,7 @@ use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum_extra::extract::cookie::CookieJar;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::AppState;
 use super::auth::{Auth, Revoked, SessionView, cleared, parse_id};
@@ -18,6 +18,99 @@ pub async fn list(
 ) -> Result<Json<Vec<User>>, ApiError> {
     identity.require(Permission::ManageUsers)?;
     Ok(Json(state.users.list().await?))
+}
+
+/// A role with what it allows and who holds it.
+#[derive(Debug, Serialize)]
+pub struct RoleView {
+    pub role: Role,
+    pub description: &'static str,
+    pub permissions: Vec<Permission>,
+    /// The accounts holding the role, oldest first.
+    pub accounts: Vec<User>,
+}
+
+/// Every role with its permissions and its accounts.
+pub async fn roles(
+    State(state): State<AppState>,
+    Auth(identity): Auth,
+) -> Result<Json<Vec<RoleView>>, ApiError> {
+    identity.require(Permission::ManageUsers)?;
+    let users = state.users.list().await?;
+    Ok(Json(
+        Role::ALL
+            .into_iter()
+            .map(|role| RoleView {
+                role,
+                description: role.description(),
+                permissions: role.permissions(),
+                accounts: users.iter().filter(|u| u.role == role).cloned().collect(),
+            })
+            .collect(),
+    ))
+}
+
+/// A session with the account it belongs to.
+#[derive(Debug, Serialize)]
+pub struct AccountSessionView {
+    pub user_id: UserId,
+    pub username: String,
+    #[serde(flatten)]
+    pub session: SessionView,
+}
+
+/// Every account's live sessions, newest first, for admins.
+pub async fn list_all_sessions(
+    State(state): State<AppState>,
+    Auth(identity): Auth,
+) -> Result<Json<Vec<AccountSessionView>>, ApiError> {
+    identity.require(Permission::ManageUsers)?;
+    let users = state.users.list().await?;
+    let current = identity
+        .session_id()
+        .unwrap_or(SessionId(uuid::Uuid::nil()));
+    let sessions = state.sessions.list_all().await?;
+    Ok(Json(
+        sessions
+            .iter()
+            .filter_map(|session| {
+                let user = users.iter().find(|u| u.id == session.user_id)?;
+                Some(AccountSessionView {
+                    user_id: user.id,
+                    username: user.username.clone(),
+                    session: SessionView::of(session, current),
+                })
+            })
+            .collect(),
+    ))
+}
+
+/// Ends one session of an account, for admins; the cookie is cleared when it is their own.
+pub async fn revoke_session(
+    State(state): State<AppState>,
+    Auth(identity): Auth,
+    Path((id, session)): Path<(String, String)>,
+    jar: CookieJar,
+) -> Result<(CookieJar, StatusCode), ApiError> {
+    identity.require(Permission::ManageUsers)?;
+    let id: UserId = parse_id(&id)?;
+    let session_id: SessionId = parse_id(&session)?;
+    let found = state
+        .sessions
+        .get(session_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    if found.user_id != id {
+        return Err(ApiError::NotFound);
+    }
+    state.sessions.revoke(session_id).await?;
+    tracing::info!(by = identity.user.username, %id, session = %session_id, "session ended");
+    let jar = if identity.session_id() == Some(session_id) {
+        cleared(jar)
+    } else {
+        jar
+    };
+    Ok((jar, StatusCode::NO_CONTENT))
 }
 
 #[derive(Debug, Deserialize)]
@@ -421,6 +514,130 @@ mod tests {
 
         let (status, _) = viewer_phone.login("viewer", "reset by admin").await;
         assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    }
+
+    #[tokio::test]
+    async fn roles_are_listed_with_their_permissions_and_accounts() {
+        let app = app_with_admin().await;
+        let mut admin = Client::new(&app);
+        admin.login("nick", "correct horse").await;
+        admin
+            .post(
+                "/api/users",
+                json!({"username": "viewer", "password": "battery staple", "role": "viewer"}),
+            )
+            .await;
+        let (status, body) = admin.get("/api/roles").await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let roles = body.as_array().unwrap();
+        assert_eq!(roles.len(), 3);
+        assert_eq!(roles[0]["role"], "admin");
+        assert_eq!(roles[0]["permissions"].as_array().unwrap().len(), 7);
+        assert_eq!(roles[0]["accounts"][0]["username"], "nick");
+        assert_eq!(roles[1]["role"], "operator");
+        assert_eq!(
+            roles[1]["permissions"],
+            json!(["manage_watch_rules", "manage_bots", "manage_jobs"])
+        );
+        assert_eq!(roles[1]["accounts"], json!([]));
+        assert_eq!(roles[2]["role"], "viewer");
+        assert_eq!(roles[2]["permissions"], json!([]));
+        assert_eq!(roles[2]["accounts"][0]["username"], "viewer");
+        assert!(
+            roles[2]["description"]
+                .as_str()
+                .unwrap()
+                .contains("Read only")
+        );
+        let mut viewer = Client::new(&app);
+        viewer.login("viewer", "battery staple").await;
+        assert_eq!(viewer.get("/api/roles").await.0, StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn admins_list_every_session_and_end_one_of_anyones() {
+        let app = app_with_admin().await;
+        let mut admin = Client::new(&app);
+        admin.login("nick", "correct horse").await;
+        let (_, body) = admin
+            .post(
+                "/api/users",
+                json!({"username": "viewer", "password": "battery staple", "role": "viewer"}),
+            )
+            .await;
+        let viewer_id = body["id"].as_str().unwrap().to_string();
+        let mut viewer = Client::new(&app);
+        viewer.login("viewer", "battery staple").await;
+        let mut viewer_phone = Client::new(&app);
+        viewer_phone.headers = vec![("user-agent".into(), "Phone/1.0 (Android)".into())];
+        viewer_phone.login("viewer", "battery staple").await;
+
+        let (status, body) = admin.get("/api/sessions/all").await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let sessions = body.as_array().unwrap();
+        assert_eq!(sessions.len(), 3);
+        assert_eq!(sessions[0]["username"], "viewer");
+        assert_eq!(sessions[0]["user_agent"], "Phone/1.0 (Android)");
+        assert_eq!(sessions[0]["current"], false);
+        assert!(
+            sessions
+                .iter()
+                .any(|s| s["username"] == "nick" && s["current"] == true)
+        );
+        let phone_id = sessions[0]["id"].as_str().unwrap().to_string();
+        let own_id = sessions.iter().find(|s| s["current"] == true).unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert_eq!(
+            viewer.get("/api/sessions/all").await.0,
+            StatusCode::FORBIDDEN
+        );
+
+        // One session of another account; the wrong account or id is not found.
+        let (status, _) = admin
+            .delete(&format!("/api/users/{viewer_id}/sessions/{own_id}"))
+            .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        let (status, _) = admin
+            .delete(&format!("/api/users/{viewer_id}/sessions/not-a-session"))
+            .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        let (status, _) = viewer
+            .delete(&format!("/api/users/{viewer_id}/sessions/{phone_id}"))
+            .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let (status, _) = admin
+            .delete(&format!("/api/users/{viewer_id}/sessions/{phone_id}"))
+            .await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+        assert_eq!(
+            viewer_phone.get("/api/session").await.0,
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(viewer.get("/api/session").await.0, StatusCode::OK);
+        assert_eq!(
+            admin
+                .get("/api/sessions/all")
+                .await
+                .1
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+
+        // Admins ending their own current session are logged out.
+        let admin_id = admin.get("/api/session").await.1["user"]["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let (status, _) = admin
+            .delete(&format!("/api/users/{admin_id}/sessions/{own_id}"))
+            .await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+        assert!(admin.cookie.is_none());
+        assert_eq!(admin.get("/api/session").await.0, StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]

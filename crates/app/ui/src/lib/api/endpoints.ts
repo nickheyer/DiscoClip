@@ -1,7 +1,9 @@
 // Every endpoint in API.md, as a function.
 
-import { del, get, patch, post, put } from './client';
+import { del, get, patch, post, put, text } from './client';
 import type {
+	AccountSessionView,
+	AccountTokenView,
 	ApiToken,
 	ApplicationCreateRequest,
 	ApplicationUpdateRequest,
@@ -11,6 +13,9 @@ import type {
 	CommandScope,
 	CommandsView,
 	Guild,
+	GuildChannel,
+	GuildMember,
+	GuildRole,
 	Identity,
 	InstallLink,
 	Artifact,
@@ -30,9 +35,15 @@ import type {
 	PasswordRequest,
 	ProviderInfo,
 	Revoked,
+	RoleView,
 	Rule,
 	RuleInput,
 	SessionView,
+	SettingsChange,
+	SettingsFormat,
+	SettingsImportRequest,
+	SettingsView,
+	SettingValue,
 	SetupRequest,
 	SetupStatus,
 	TokenCreateRequest,
@@ -52,8 +63,13 @@ export const auth = {
 	logout: () => post<void>('/logout', undefined, [401]),
 	session: () => get<WhoAmI>('/session', undefined, [401]),
 	sessions: () => get<SessionView[]>('/sessions'),
+	allSessions: () => get<AccountSessionView[]>('/sessions/all'),
 	revokeOtherSessions: () => del<Revoked>('/sessions/others'),
 	revokeSession: (session: string) => del<void>(`/sessions/${id(session)}`)
+};
+
+export const roles = {
+	list: () => get<RoleView[]>('/roles')
 };
 
 export const users = {
@@ -66,6 +82,8 @@ export const users = {
 		put<void>(`/users/${id(user)}/password`, body),
 	sessions: (user: string) => get<SessionView[]>(`/users/${id(user)}/sessions`),
 	revokeSessions: (user: string) => del<Revoked>(`/users/${id(user)}/sessions`),
+	revokeSession: (user: string, session: string) =>
+		del<void>(`/users/${id(user)}/sessions/${id(session)}`),
 	tokens: (user: string) => get<ApiToken[]>(`/users/${id(user)}/tokens`),
 	revokeToken: (user: string, token: string) =>
 		del<void>(`/users/${id(user)}/tokens/${id(token)}`)
@@ -73,6 +91,7 @@ export const users = {
 
 export const tokens = {
 	list: () => get<ApiToken[]>('/tokens'),
+	all: () => get<AccountTokenView[]>('/tokens/all'),
 	create: (body: TokenCreateRequest) => post<Minted>('/tokens', body),
 	revoke: (token: string) => del<void>(`/tokens/${id(token)}`)
 };
@@ -114,6 +133,17 @@ export const applications = {
 	eventsUrl: '/api/discord/bots/events'
 };
 
+export const channels = {
+	list: (application: string, guild: string) =>
+		get<GuildChannel[]>(`/discord/applications/${id(application)}/guilds/${id(guild)}/channels`),
+	roles: (application: string, guild: string) =>
+		get<GuildRole[]>(`/discord/applications/${id(application)}/guilds/${id(guild)}/roles`),
+	members: (application: string, guild: string, q: string) =>
+		get<GuildMember[]>(`/discord/applications/${id(application)}/guilds/${id(guild)}/members`, {
+			q
+		})
+};
+
 export const rules = {
 	listForGuild: (application: string, guild: string) =>
 		get<Rule[]>(`/discord/applications/${id(application)}/guilds/${id(guild)}/rules`),
@@ -132,6 +162,18 @@ export const guilds = {
 
 export const audit = {
 	list: (query: AuditQuery) => get<Page>('/audit', { ...query })
+};
+
+export const settings = {
+	get: () => get<SettingsView>('/settings'),
+	change: (body: SettingsChange) => patch<SettingsView>('/settings', body),
+	set: (key: string, value: SettingValue) =>
+		put<SettingsView>(`/settings/${id(key)}`, { value }),
+	reset: (key: string) => del<SettingsView>(`/settings/${id(key)}`),
+	import: (body: SettingsImportRequest) => post<SettingsView>('/settings/import', body),
+	exportText: (format: SettingsFormat) => text(`/settings/export?format=${format}`),
+	/** Where the browser downloads the settings as a file; a plain link, not an API call. */
+	exportUrl: (format: SettingsFormat) => `/api/settings/export?format=${format}`
 };
 
 export const jobs = {

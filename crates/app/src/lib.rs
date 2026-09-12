@@ -10,6 +10,7 @@ pub mod compose;
 pub mod config;
 pub mod db;
 pub mod discord;
+pub mod live;
 pub mod local;
 pub mod migrations;
 pub mod oauth;

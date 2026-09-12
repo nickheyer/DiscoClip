@@ -66,6 +66,7 @@
 | `manage_users` | yes | no | no |
 | `manage_applications` | yes | no | no |
 | `view_audit_log` | yes | no | no |
+| `manage_settings` | yes | no | no |
 | `manage_watch_rules` | yes | yes | no |
 | `manage_bots` | yes | yes | no |
 | `manage_jobs` | yes | yes | no |
@@ -183,6 +184,19 @@ Lists the live browser sessions of the requesting account.
 | Response | `200` `SessionView[]` |
 | Errors | `401` `403` |
 
+#### GET /api/sessions/all
+
+Lists the live browser sessions of every account newest first.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_users` |
+| Path | — |
+| Query | — |
+| Body | — |
+| Response | `200` `AccountSessionView[]` |
+| Errors | `401` `403` |
+
 #### DELETE /api/sessions/others
 
 Ends every session of the requesting account except the current one.
@@ -208,6 +222,21 @@ Ends one session of the requesting account.
 | Body | — |
 | Response | `204` + cleared cookie when `id` is the current session |
 | Errors | `401` `403` `404` |
+
+### Roles
+
+#### GET /api/roles
+
+Lists every role with its permissions and the accounts holding it.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_users` |
+| Path | — |
+| Query | — |
+| Body | — |
+| Response | `200` `RoleView[]` |
+| Errors | `401` `403` |
 
 ### Users
 
@@ -315,6 +344,19 @@ Ends every browser session of an account.
 | Response | `200` `Revoked` + cleared cookie when `id` is the requesting account |
 | Errors | `401` `403` `404` |
 
+#### DELETE /api/users/{id}/sessions/{session}
+
+Ends one browser session of an account.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_users` |
+| Path | `id` `uuid` · `session` `uuid` |
+| Query | — |
+| Body | — |
+| Response | `204` + cleared cookie when `session` is the requesting session |
+| Errors | `401` `403` `404` |
+
 ### API tokens
 
 #### GET /api/tokens
@@ -342,6 +384,19 @@ Mints an API token and returns its secret once.
 | Body | `TokenCreateRequest` |
 | Response | `201` `Minted` |
 | Errors | `400` `401` `403` |
+
+#### GET /api/tokens/all
+
+Lists the live API tokens of every account newest first.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_users` |
+| Path | — |
+| Query | — |
+| Body | — |
+| Response | `200` `AccountTokenView[]` |
+| Errors | `401` `403` |
 
 #### DELETE /api/tokens/{id}
 
@@ -462,6 +517,86 @@ Fetches a linked identity's profile again and renews its provider tokens.
 | Response | `200` `Identity` |
 | Errors | `401` `404` `409` `502` |
 
+### Settings
+
+#### GET /api/settings
+
+Returns every setting with its default and which values are stored and by whom.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_settings` |
+| Path | — |
+| Query | — |
+| Body | — |
+| Response | `200` `SettingsView` |
+| Errors | `401` `403` |
+
+#### PATCH /api/settings
+
+Stores several keys and resets several keys together and applies them to the running server.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_settings` |
+| Path | — |
+| Query | — |
+| Body | `SettingsChange` |
+| Response | `200` `SettingsView` |
+| Errors | `400` `401` `403` |
+
+#### PUT /api/settings/{key}
+
+Stores one value at a dotted key and applies it to the running server.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_settings` |
+| Path | `key` `string` |
+| Query | — |
+| Body | `SettingSetRequest` |
+| Response | `200` `SettingsView` |
+| Errors | `400` `401` `403` |
+
+#### DELETE /api/settings/{key}
+
+Removes the stored value at a dotted key and everything beneath it so the default applies.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_settings` |
+| Path | `key` `string` |
+| Query | — |
+| Body | — |
+| Response | `200` `SettingsView` |
+| Errors | `400` `401` `403` |
+
+#### POST /api/settings/import
+
+Stores every key of a provisioning file as an app change and applies them.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_settings` |
+| Path | — |
+| Query | — |
+| Body | `SettingsImportRequest` |
+| Response | `200` `SettingsView` |
+| Errors | `400` `401` `403` |
+
+#### GET /api/settings/export
+
+Returns the stored values as a provisioning file.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_settings` |
+| Path | — |
+| Query | `format` `SettingsFormat` default `toml` |
+| Body | — |
+| Response | `200` `application/toml` `application/yaml` `application/json` file |
+| Errors | `400` `401` `403` |
+
 ### Discord applications
 
 #### GET /api/discord/applications
@@ -554,6 +689,45 @@ Lists the guilds the application's bot is in or was removed from.
 | Body | — |
 | Response | `200` `BotGuild[]` |
 | Errors | `401` `403` `404` |
+
+#### GET /api/discord/applications/{id}/guilds/{guild}/channels
+
+Lists the channels of a guild as the application's bot sees them with the rule watching each.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_watch_rules` or session managing `guild` |
+| Path | `id` `uuid` · `guild` `snowflake` |
+| Query | — |
+| Body | — |
+| Response | `200` `GuildChannel[]` |
+| Errors | `401` `403` `404` `409` `502` |
+
+#### GET /api/discord/applications/{id}/guilds/{guild}/roles
+
+Lists the roles of a guild as the application's bot sees them.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_watch_rules` or session managing `guild` |
+| Path | `id` `uuid` · `guild` `snowflake` |
+| Query | — |
+| Body | — |
+| Response | `200` `GuildRole[]` |
+| Errors | `401` `403` `404` `409` `502` |
+
+#### GET /api/discord/applications/{id}/guilds/{guild}/members
+
+Searches the members of a guild by name through the application's bot.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_watch_rules` or session managing `guild` |
+| Path | `id` `uuid` · `guild` `snowflake` |
+| Query | `q` `string` · `limit` `integer` default `20` max `100` |
+| Body | — |
+| Response | `200` `GuildMember[]` |
+| Errors | `400` `401` `403` `404` `409` `502` |
 
 ### Slash command registration
 
@@ -1001,6 +1175,26 @@ Rejects a command name the bot does not define.
 | `scopes` | `Permission[]` | no · default `[]` |
 | `expires_in_days` | `integer` | no |
 
+#### SettingsChange
+
+| Field | Type | Required |
+|---|---|---|
+| `set` | `object` of dotted key to `json` | no · default `{}` |
+| `reset` | `string[]` | no · default `[]` |
+
+#### SettingSetRequest
+
+| Field | Type | Required |
+|---|---|---|
+| `value` | `json` | yes |
+
+#### SettingsImportRequest
+
+| Field | Type | Required |
+|---|---|---|
+| `format` | `SettingsFormat` | yes |
+| `text` | `string` | yes |
+
 #### ApplicationCreateRequest
 
 | Field | Type | Required |
@@ -1112,11 +1306,28 @@ Rejects a command name the bot does not define.
 | `ip` | `ip \| null` |
 | `current` | `bool` |
 
+#### AccountSessionView
+
+| Field | Type |
+|---|---|
+| `user_id` | `uuid` |
+| `username` | `string` |
+| `...SessionView` | `SessionView` |
+
 #### Revoked
 
 | Field | Type |
 |---|---|
 | `revoked` | `integer` |
+
+#### RoleView
+
+| Field | Type |
+|---|---|
+| `role` | `Role` |
+| `description` | `string` |
+| `permissions` | `Permission[]` |
+| `accounts` | `User[]` |
 
 #### User
 
@@ -1141,6 +1352,13 @@ Rejects a command name the bot does not define.
 | `created_at` | `timestamp` |
 | `last_used_at` | `timestamp \| null` |
 | `expires_at` | `timestamp \| null` |
+
+#### AccountTokenView
+
+| Field | Type |
+|---|---|
+| `username` | `string` |
+| `...ApiToken` | `ApiToken` |
 
 #### Minted
 
@@ -1188,6 +1406,25 @@ Rejects a command name the bot does not define.
 | `link` | success | `/account` |
 | `login` | failure | `/login?error=<CallbackError>` |
 | `link` | failure | `/account?error=<CallbackError>` |
+
+#### SettingsView
+
+| Field | Type |
+|---|---|
+| `settings` | `object` |
+| `defaults` | `object` |
+| `entries` | `SettingEntry[]` |
+| `secrets` | `string[]` |
+| `data_dir` | `string` |
+| `provisioning_file` | `string \| null` |
+
+#### SettingEntry
+
+| Field | Type |
+|---|---|
+| `key` | `string` |
+| `source` | `SettingSource` |
+| `updated_at` | `timestamp` |
 
 #### ApplicationView
 
@@ -1270,6 +1507,38 @@ Rejects a command name the bot does not define.
 | `joined_at` | `timestamp` |
 | `left_at` | `timestamp \| null` |
 | `updated_at` | `timestamp` |
+
+#### GuildChannel
+
+| Field | Type |
+|---|---|
+| `id` | `snowflake` |
+| `name` | `string` |
+| `kind` | `ChannelKind` |
+| `parent_id` | `snowflake \| null` |
+| `position` | `integer` |
+| `rule` | `uuid \| null` |
+
+#### GuildRole
+
+| Field | Type |
+|---|---|
+| `id` | `snowflake` |
+| `name` | `string` |
+| `color` | `integer` |
+| `position` | `integer` |
+| `managed` | `bool` |
+
+#### GuildMember
+
+| Field | Type |
+|---|---|
+| `id` | `snowflake` |
+| `username` | `string` |
+| `display_name` | `string \| null` |
+| `nick` | `string \| null` |
+| `avatar` | `string \| null` |
+| `bot` | `bool` |
 
 #### Rule
 
@@ -1737,6 +2006,7 @@ Rejects a command name the bot does not define.
 | `manage_bots` |
 | `view_audit_log` |
 | `manage_jobs` |
+| `manage_settings` |
 
 #### Intent
 
@@ -1744,6 +2014,21 @@ Rejects a command name the bot does not define.
 |---|
 | `login` |
 | `link` |
+
+#### SettingSource
+
+| Value |
+|---|
+| `provisioning` |
+| `app` |
+
+#### SettingsFormat
+
+| Value |
+|---|
+| `toml` |
+| `yaml` |
+| `json` |
 
 #### StatusKind
 
@@ -1852,6 +2137,20 @@ Rejects a command name the bot does not define.
 | `off` |
 | `global` |
 | `guilds` |
+
+#### ChannelKind
+
+| Value |
+|---|
+| `text` |
+| `announcement` |
+| `voice` |
+| `stage` |
+| `category` |
+| `forum` |
+| `media` |
+| `thread` |
+| `other` |
 
 #### BotState
 

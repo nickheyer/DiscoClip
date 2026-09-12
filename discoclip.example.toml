@@ -22,6 +22,50 @@ max_height = 1080              # taller sources are downscaled
 # dir = "archive"
 # keep = "output"              # "output", "source" or "both"
 
+[engine.playlists]
+enabled = true                 # a playlist link becomes one job per entry
+max_entries = 50               # the most entries one link expands into
+
+[engine.live]
+max_capture_secs = 10800       # how long a live stream is recorded before it is cut
+
+[engine.retention]
+jobs_days = 90                 # finished jobs older than this are removed; 0 keeps them
+failed_jobs_days = 30          # failed and cancelled jobs older than this are removed; 0 keeps them
+cache_max_bytes = 21474836480  # the cache is trimmed back under this, oldest first; 0 never trims
+sweep_interval_secs = 3600     # how often retention runs
+
+# How resolvers and downloaders reach the platforms.
+[http]
+user_agent = "DiscoClip/0.1.0" # sent when a request names no other user agent
+connect_timeout_secs = 15
+request_timeout_secs = 90      # bound on a page or API request; media downloads have none
+read_timeout_secs = 60         # longest pause between two chunks of a body
+max_redirects = 10
+
+[http.retry]
+attempts = 3                   # total attempts, including the first
+base_ms = 500                  # the pause before the first retry; each retry doubles it
+max_ms = 10000                 # the pause is capped here
+
+[http.rate_limits.default]
+per_second = 4.0               # requests per host on average; 0 means no limit
+burst = 8                      # how many may go at once when the host has been idle
+
+# Rates by host suffix: youtube.com covers www.youtube.com.
+# [http.rate_limits.hosts."youtube.com"]
+# per_second = 1.0
+# burst = 2
+
+# Proxies by platform and by host suffix, over a default; bypassed hosts go direct.
+# [http.proxies]
+# default = "socks5h://proxy:1080"
+# bypass = ["internal.example"]
+# [http.proxies.platforms]
+# tiktok = "http://proxy:3128"
+# [http.proxies.hosts]
+# "googlevideo.com" = "http://proxy:3128"
+
 # Discord applications, with their bot tokens and client secrets, are added in the web app,
 # where they are kept encrypted, and so are the rules for which channels each bot watches
 # and where its slash commands are registered.

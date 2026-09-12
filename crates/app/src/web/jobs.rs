@@ -89,19 +89,17 @@ impl JobSummary {
             uploader: resolved.and_then(|r| r.uploader.clone()),
             webpage_url: resolved.and_then(|r| r.webpage_url.clone()),
             thumbnail: resolved.and_then(|r| r.thumbnail.clone()),
-            duration_secs: resolved
-                .and_then(|r| r.duration)
-                .map(|d| d.as_secs_f64()),
+            duration_secs: resolved.and_then(|r| r.duration).map(|d| d.as_secs_f64()),
             live: resolved.is_some_and(|r| r.live),
             output_bytes: job.artifacts.output.as_ref().map(|f| f.size),
             published_url: job.artifacts.published.as_ref().and_then(|p| p.url.clone()),
-            published_reference: job.artifacts.published.as_ref().map(|p| p.reference.clone()),
-            children: job.artifacts.children.len(),
-            archived_files: job
+            published_reference: job
                 .artifacts
-                .archived
+                .published
                 .as_ref()
-                .map_or(0, |a| a.files.len()),
+                .map(|p| p.reference.clone()),
+            children: job.artifacts.children.len(),
+            archived_files: job.artifacts.archived.as_ref().map_or(0, |a| a.files.len()),
             created_at: job.created_at,
             updated_at: job.updated_at,
             started_at: job.started_at,
@@ -300,7 +298,13 @@ pub async fn events(
             match item {
                 Ok(event) => {
                     let job_summary = if carries_summary(&event.kind) {
-                        engine.get(event.job).await.ok().flatten().as_ref().map(JobSummary::of)
+                        engine
+                            .get(event.job)
+                            .await
+                            .ok()
+                            .flatten()
+                            .as_ref()
+                            .map(JobSummary::of)
                     } else {
                         None
                     };
@@ -614,9 +618,11 @@ async fn locate(job: &Job, query: &DownloadQuery) -> Result<(PathBuf, String), A
                 .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
                 .take(32)
                 .collect::<String>();
-            let path = first_present(vec![track.path.clone()]).await.ok_or_else(|| {
-                ApiError::Conflict("the subtitle file is no longer in the cache".into())
-            })?;
+            let path = first_present(vec![track.path.clone()])
+                .await
+                .ok_or_else(|| {
+                    ApiError::Conflict("the subtitle file is no longer in the cache".into())
+                })?;
             let ext = path
                 .extension()
                 .and_then(|e| e.to_str())
@@ -774,10 +780,18 @@ mod tests {
             .await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
         let (status, body) = admin
-            .post("/api/jobs", json!({"url": "https://nothing-handles.test/clip"}))
+            .post(
+                "/api/jobs",
+                json!({"url": "https://nothing-handles.test/clip"}),
+            )
             .await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
-        assert!(body["error"].as_str().unwrap().contains("no resolver handles"));
+        assert!(
+            body["error"]
+                .as_str()
+                .unwrap()
+                .contains("no resolver handles")
+        );
         let (status, body) = admin
             .post(
                 "/api/jobs",
@@ -842,7 +856,12 @@ mod tests {
         assert_eq!(body["failed"], 1);
         assert_eq!(body["results"][0]["ok"], true);
         assert_eq!(body["results"][1]["ok"], false);
-        assert!(body["results"][1]["error"].as_str().unwrap().contains("not found"));
+        assert!(
+            body["results"][1]["error"]
+                .as_str()
+                .unwrap()
+                .contains("not found")
+        );
         let (status, body) = admin
             .post("/api/jobs/bulk", json!({"action": "retry", "ids": [retry]}))
             .await;
@@ -853,7 +872,10 @@ mod tests {
             .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
         let (status, _) = admin
-            .post("/api/jobs/bulk", json!({"action": "explode", "ids": [retry]}))
+            .post(
+                "/api/jobs/bulk",
+                json!({"action": "explode", "ids": [retry]}),
+            )
             .await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
 
@@ -868,13 +890,19 @@ mod tests {
         let (status, _) = viewer.get("/api/jobs").await;
         assert_eq!(status, StatusCode::OK);
         let (status, _) = viewer
-            .post("/api/jobs", json!({"url": format!("https://{SUPPORTED_HOST}/x")}))
+            .post(
+                "/api/jobs",
+                json!({"url": format!("https://{SUPPORTED_HOST}/x")}),
+            )
             .await;
         assert_eq!(status, StatusCode::FORBIDDEN);
         let (status, _) = viewer.delete(&format!("/api/jobs/{retry}")).await;
         assert_eq!(status, StatusCode::FORBIDDEN);
         let (status, _) = viewer
-            .post("/api/jobs/bulk", json!({"action": "cancel", "ids": [retry]}))
+            .post(
+                "/api/jobs/bulk",
+                json!({"action": "cancel", "ids": [retry]}),
+            )
             .await;
         assert_eq!(status, StatusCode::FORBIDDEN);
         assert!(db.get(retry.parse().unwrap()).await.unwrap().is_some());
@@ -935,12 +963,19 @@ mod tests {
             format!("attachment; filename=\"my-clip-{short}.mp4\"")
         );
         admin.headers = vec![("range".into(), "bytes=2-5".into())];
-        let (status, headers, body) = admin.raw(&format!("/api/jobs/{id}/download?inline=true")).await;
+        let (status, headers, body) = admin
+            .raw(&format!("/api/jobs/{id}/download?inline=true"))
+            .await;
         assert_eq!(status, StatusCode::PARTIAL_CONTENT);
         assert_eq!(body, b"2345");
         assert_eq!(headers["content-range"], "bytes 2-5/10");
         assert_eq!(headers["content-length"], "4");
-        assert!(headers["content-disposition"].to_str().unwrap().starts_with("inline"));
+        assert!(
+            headers["content-disposition"]
+                .to_str()
+                .unwrap()
+                .starts_with("inline")
+        );
         admin.headers = vec![("range".into(), "bytes=-3".into())];
         let (status, _, body) = admin.raw(&format!("/api/jobs/{id}/download")).await;
         assert_eq!(status, StatusCode::PARTIAL_CONTENT);
@@ -952,17 +987,26 @@ mod tests {
         admin.headers.clear();
 
         let (status, headers, body) = admin
-            .raw(&format!("/api/jobs/{id}/download?artifact=subtitle&index=0"))
+            .raw(&format!(
+                "/api/jobs/{id}/download?artifact=subtitle&index=0"
+            ))
             .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body, b"WEBVTT\n");
-        assert!(headers["content-type"].to_str().unwrap().starts_with("text/vtt"));
+        assert!(
+            headers["content-type"]
+                .to_str()
+                .unwrap()
+                .starts_with("text/vtt")
+        );
         assert_eq!(
             headers["content-disposition"],
             format!("attachment; filename=\"my-clip-{short}.en.vtt\"")
         );
         let (status, _, _) = admin
-            .raw(&format!("/api/jobs/{id}/download?artifact=subtitle&index=3"))
+            .raw(&format!(
+                "/api/jobs/{id}/download?artifact=subtitle&index=3"
+            ))
             .await;
         assert_eq!(status, StatusCode::NOT_FOUND);
         // The source was tidied away after the job finished.
@@ -1066,11 +1110,7 @@ mod tests {
         let stream = admin.stream("/api/jobs/events").await;
         assert!(stream.contains("event: stats"), "{stream}");
         assert!(stream.contains("\"queue_depth\":1"), "{stream}");
-        app.state
-            .engine
-            .cancel(id)
-            .await
-            .unwrap();
+        app.state.engine.cancel(id).await.unwrap();
         let stream = admin.stream("/api/jobs/events").await;
         assert!(stream.contains("\"queue_depth\":0"), "{stream}");
 

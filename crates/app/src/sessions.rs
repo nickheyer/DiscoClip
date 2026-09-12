@@ -205,6 +205,20 @@ impl SessionStore {
         .await
     }
 
+    /// Every live session of every account, newest first.
+    pub async fn list_all(&self) -> Result<Vec<Session>, StoreError> {
+        transact(&self.db, move |tx| {
+            let now = Timestamp::now();
+            let mut stmt = tx.prepare(&format!(
+                "{SELECT} FROM sessions ORDER BY created_at DESC, id DESC"
+            ))?;
+            let rows = stmt.query_map([], row_to_session)?;
+            let sessions = rows.collect::<Result<Vec<_>, _>>()?;
+            Ok(sessions.into_iter().filter(|s| s.is_live(now)).collect())
+        })
+        .await
+    }
+
     /// Ends `id`; whether it existed.
     pub async fn revoke(&self, id: SessionId) -> Result<bool, StoreError> {
         transact(&self.db, move |tx| {
@@ -353,6 +367,21 @@ mod tests {
         assert_eq!(sessions.revoke_all_for(a, None).await.unwrap(), 1);
         assert!(sessions.list_for(a).await.unwrap().is_empty());
         assert_eq!(sessions.list_for(b).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn every_account_s_sessions_are_listed_together() {
+        let (sessions, a, b) = stores().await;
+        let a1 = sessions.create(a, None, None).await.unwrap();
+        let b1 = sessions.create(b, None, None).await.unwrap();
+        let all: Vec<(SessionId, UserId)> = sessions
+            .list_all()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|s| (s.id, s.user_id))
+            .collect();
+        assert_eq!(all, vec![(b1.session.id, b), (a1.session.id, a)]);
     }
 
     #[tokio::test]

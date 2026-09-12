@@ -23,7 +23,7 @@ use discoclip_engine::resolve::{
     Platform, Resolution, ResolveError, Resolver, SessionSupport, Variant, VariantKind,
 };
 use discoclip_engine::transcode::{Target, TranscodeError, Transcoder};
-use discoclip_engine::{Engine, EngineConfig, Http, HttpConfig};
+use discoclip_engine::{Engine, EngineConfig, Http};
 use futures::{SinkExt, StreamExt};
 use http_body_util::BodyExt;
 use tokio::sync::broadcast;
@@ -35,7 +35,7 @@ use crate::bots::BotManager;
 use crate::oauth::{Endpoints, Kind, Provider, Registry};
 use crate::rules::RuleStore;
 use crate::secrets::Keyring;
-use crate::settings::{OAuthClient, OidcClient, WebConfig};
+use crate::settings::{AuthConfig, OAuthClient, OidcClient, Settings, SettingsStore, WebConfig};
 
 pub async fn app() -> WebApp {
     app_with(WebConfig::default(), Registry::default(), false).await
@@ -64,6 +64,33 @@ pub async fn app_with_discord_db(
     oauth_signup: bool,
     discord: DiscordEndpoints,
 ) -> (WebApp, SqliteStore) {
+    let settings = Settings {
+        web: config,
+        auth: AuthConfig {
+            oauth_signup,
+            ..AuthConfig::default()
+        },
+        ..Settings::default()
+    };
+    app_with_settings(settings, providers, discord).await
+}
+
+/// The tools every test app runs on, unpacked once into a directory of their own.
+static FFMPEG: tokio::sync::OnceCell<discoclip_engine::ffmpeg::Ffmpeg> =
+    tokio::sync::OnceCell::const_new();
+
+/// A cache directory each test app gets to itself, under the temporary directory.
+pub fn test_dir(name: &str) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("discoclip-{name}-{}", uuid::Uuid::now_v7()))
+}
+
+/// An app over `settings`, whose settings store holds `settings` as the app wrote them,
+/// so a test starts from exactly what it asked for.
+pub async fn app_with_settings(
+    settings: Settings,
+    providers: Registry,
+    discord: DiscordEndpoints,
+) -> (WebApp, SqliteStore) {
     // DISCOCLIP_TEST_LOG=debug shows what the bots and the gateway do during a test.
     if let Ok(filter) = std::env::var("DISCOCLIP_TEST_LOG") {
         let _ = tracing_subscriber::fmt()
@@ -73,8 +100,46 @@ pub async fn app_with_discord_db(
     }
     let db = SqliteStore::open_in_memory().await.unwrap();
     crate::migrations::apply(&db).await.unwrap();
+    let store = SettingsStore::new(db.clone());
+    // Each app works under directories of its own rather than the working directory.
+    let mut settings = settings;
+    if settings.engine.cache_dir == EngineConfig::default().cache_dir {
+        settings.engine.cache_dir = test_dir("cache");
+    }
+    if settings.local.dir == crate::settings::LocalConfig::default().dir {
+        settings.local.dir = test_dir("local");
+    }
+    let mut tree = std::collections::BTreeMap::new();
+    crate::config::json_leaves(&serde_json::to_value(&settings).unwrap(), "", &mut tree);
+    let defaults = {
+        let mut out = std::collections::BTreeMap::new();
+        crate::config::json_leaves(
+            &serde_json::to_value(Settings::default()).unwrap(),
+            "",
+            &mut out,
+        );
+        out
+    };
+    let set: std::collections::BTreeMap<String, Json> = tree
+        .into_iter()
+        .filter(|(key, value)| defaults.get(key) != Some(value))
+        .collect();
+    if !set.is_empty() {
+        store
+            .apply(
+                &crate::audit::Actor::test(),
+                crate::audit::Action::SettingsSet,
+                &crate::settings::Change {
+                    set,
+                    reset: Vec::new(),
+                },
+            )
+            .await
+            .unwrap();
+    }
+    let settings = store.load().await.unwrap();
     let clients = Clients::default();
-    let engine = stub_engine(db.clone(), clients.clone());
+    let engine = stub_engine(db.clone(), clients.clone(), &settings);
     let handle = engine.handle();
     // The engine never runs, but it must stay alive for its queue to accept submissions.
     std::mem::forget(engine);
@@ -88,10 +153,20 @@ pub async fn app_with_discord_db(
         rules.cache(),
         CancellationToken::new(),
     ));
+    let ffmpeg = FFMPEG
+        .get_or_init(|| async {
+            let dir = std::env::temp_dir().join("discoclip-test-ffmpeg");
+            discoclip_engine::ffmpeg::Ffmpeg::provision(&dir)
+                .await
+                .unwrap()
+        })
+        .await
+        .clone();
+    let log = crate::telemetry::detached(&settings.log.level);
+    let local = Arc::new(std::sync::RwLock::new(settings.local.clone()));
     let app = WebApp::new(
-        config,
+        &settings,
         providers,
-        oauth_signup,
         Services {
             store: db.clone(),
             keyring: Keyring::from_key([3; 32]),
@@ -99,6 +174,12 @@ pub async fn app_with_discord_db(
             rules,
             discord,
             engine: handle,
+            settings: store,
+            log,
+            ffmpeg,
+            local,
+            data_dir: std::path::PathBuf::from("data"),
+            provisioning_file: None,
         },
     )
     .await
@@ -128,7 +209,7 @@ pub const SUPPORTED_HOST: &str = "video.test";
 
 /// An engine that accepts links to [`SUPPORTED_HOST`] and never runs them; bots only need
 /// its handle, and the jobs they submit sit in the database.
-fn stub_engine(db: SqliteStore, clients: Clients) -> Engine {
+fn stub_engine(db: SqliteStore, clients: Clients, settings: &Settings) -> Engine {
     struct Nothing;
 
     #[async_trait]
@@ -193,17 +274,17 @@ fn stub_engine(db: SqliteStore, clients: Clients) -> Engine {
     }
 
     Engine::builder(
-        EngineConfig::default(),
+        settings.engine.clone(),
         Arc::new(db),
-        Http::new(HttpConfig::default()),
+        Http::new(settings.http.clone()),
     )
     .resolver(Nothing)
     .downloader(Nothing)
     .transcoder(Nothing)
     .publisher(DiscordPublisher::new(clients))
-    .publisher(crate::local::LocalPublisher::new(
-        std::env::temp_dir().join("discoclip-test-local"),
-        1024,
+    .publisher(crate::local::LocalPublisher::with_config(
+        settings.local.dir.clone(),
+        settings.local.max_bytes,
     ))
     .build()
     .unwrap()
@@ -698,6 +779,31 @@ pub struct FakeDiscord {
     pub state: Arc<Mutex<FakeDiscordState>>,
 }
 
+/// A channel Discord knows, as its REST API lists it.
+#[derive(Debug, Clone)]
+pub struct FakeChannel {
+    pub guild: String,
+    pub name: String,
+    /// Discord's channel type number: 0 text, 2 voice, 4 category, 5 announcement, 11
+    /// thread, 15 forum.
+    pub kind: u8,
+    pub parent: Option<String>,
+    pub position: i32,
+}
+
+impl FakeChannel {
+    fn json(&self, id: &str) -> Json {
+        let mut channel = json!({
+            "id": id, "type": self.kind, "guild_id": self.guild, "name": self.name,
+            "position": self.position,
+        });
+        if let Some(parent) = &self.parent {
+            channel["parent_id"] = json!(parent);
+        }
+        channel
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct FakeBot {
     pub application_id: String,
@@ -769,8 +875,12 @@ pub struct FakeDiscordState {
     pub identified: Vec<String>,
     /// Commands set, by application id for global ones and `application:guild` per guild.
     pub commands: HashMap<String, Json>,
-    /// Channels Discord knows: id to (guild id, name).
-    pub channels: HashMap<String, (String, String)>,
+    /// Channels Discord knows, by id.
+    pub channels: HashMap<String, FakeChannel>,
+    /// Roles by guild, in the order added.
+    pub roles: HashMap<String, Vec<Json>>,
+    /// Members by guild, in the order added.
+    pub members: HashMap<String, Vec<Json>>,
     /// OAuth codes waiting to be exchanged, with the user subject each stands for.
     pub codes: HashMap<String, String>,
     /// User access tokens issued, with their subjects.
@@ -797,6 +907,8 @@ impl FakeDiscord {
             identified: Vec::new(),
             commands: HashMap::new(),
             channels: HashMap::new(),
+            roles: HashMap::new(),
+            members: HashMap::new(),
             codes: HashMap::new(),
             access: HashMap::new(),
             refresh: HashMap::new(),
@@ -826,6 +938,18 @@ impl FakeDiscord {
             .route(
                 "/api/v10/channels/{id}",
                 axum::routing::get(discord_channel),
+            )
+            .route(
+                "/api/v10/guilds/{id}/channels",
+                axum::routing::get(discord_guild_channels),
+            )
+            .route(
+                "/api/v10/guilds/{id}/roles",
+                axum::routing::get(discord_guild_roles),
+            )
+            .route(
+                "/api/v10/guilds/{id}/members/search",
+                axum::routing::get(discord_guild_members_search),
             )
             .route("/api/v10/users/@me", axum::routing::get(discord_me))
             .route(
@@ -878,11 +1002,77 @@ impl FakeDiscord {
         );
     }
 
-    /// A channel Discord knows about.
+    /// A text channel Discord knows about.
     pub fn add_channel(&self, id: &str, guild: &str, name: &str) {
+        self.add_channel_of(id, guild, name, 0, None, 0);
+    }
+
+    /// A channel of Discord type `kind` under `parent`, at `position` among its siblings.
+    pub fn add_channel_of(
+        &self,
+        id: &str,
+        guild: &str,
+        name: &str,
+        kind: u8,
+        parent: Option<&str>,
+        position: i32,
+    ) {
+        self.lock().channels.insert(
+            id.into(),
+            FakeChannel {
+                guild: guild.into(),
+                name: name.into(),
+                kind,
+                parent: parent.map(str::to_string),
+                position,
+            },
+        );
+    }
+
+    /// A role of `guild`.
+    pub fn add_role(
+        &self,
+        guild: &str,
+        id: &str,
+        name: &str,
+        color: u32,
+        position: i64,
+        managed: bool,
+    ) {
         self.lock()
-            .channels
-            .insert(id.into(), (guild.into(), name.into()));
+            .roles
+            .entry(guild.into())
+            .or_default()
+            .push(json!({
+                "id": id, "name": name, "color": color,
+                "colors": {"primary_color": color, "secondary_color": null, "tertiary_color": null},
+                "hoist": false, "managed": managed, "mentionable": false, "permissions": "0",
+                "position": position, "flags": 0,
+            }));
+    }
+
+    /// A member of `guild`.
+    pub fn add_member(
+        &self,
+        guild: &str,
+        id: &str,
+        username: &str,
+        global_name: Option<&str>,
+        nick: Option<&str>,
+        bot: bool,
+    ) {
+        self.lock()
+            .members
+            .entry(guild.into())
+            .or_default()
+            .push(json!({
+                "user": {
+                    "id": id, "username": username, "discriminator": "0", "avatar": null,
+                    "global_name": global_name, "bot": bot,
+                },
+                "nick": nick, "roles": [], "joined_at": "2026-01-01T00:00:00.000000+00:00",
+                "deaf": false, "mute": false, "flags": 0, "pending": false, "avatar": null,
+            }));
     }
 
     /// The guilds `token`'s bot is in at its next login.
@@ -1044,15 +1234,107 @@ async fn discord_channel(
         return unauthorized();
     }
     match state.channels.get(&id) {
-        Some((guild, name)) => (
-            StatusCode::OK,
-            AxumJson(json!({"id": id, "type": 0, "guild_id": guild, "name": name})),
-        ),
+        Some(channel) => (StatusCode::OK, AxumJson(channel.json(&id))),
         None => (
             StatusCode::NOT_FOUND,
             AxumJson(json!({"message": "Unknown Channel", "code": 10003})),
         ),
     }
+}
+
+/// Whether the bot behind `headers` is in `guild`: the guild has something in it.
+fn guild_known(state: &FakeDiscordState, guild: &str) -> bool {
+    state.channels.values().any(|c| c.guild == guild)
+        || state.roles.contains_key(guild)
+        || state.members.contains_key(guild)
+}
+
+fn unknown_guild() -> (StatusCode, AxumJson<Json>) {
+    (
+        StatusCode::NOT_FOUND,
+        AxumJson(json!({"message": "Unknown Guild", "code": 10004})),
+    )
+}
+
+async fn discord_guild_channels(
+    axum::extract::State(state): Discord,
+    axum::extract::Path(guild): axum::extract::Path<String>,
+    headers: axum::http::HeaderMap,
+) -> (StatusCode, AxumJson<Json>) {
+    let state = state.lock().unwrap();
+    if bot_token(&headers).is_none_or(|t| !state.bots.contains_key(&t)) {
+        return unauthorized();
+    }
+    if !guild_known(&state, &guild) {
+        return unknown_guild();
+    }
+    let channels: Vec<Json> = state
+        .channels
+        .iter()
+        .filter(|(_, c)| c.guild == guild)
+        .map(|(id, c)| c.json(id))
+        .collect();
+    (StatusCode::OK, AxumJson(Json::Array(channels)))
+}
+
+async fn discord_guild_roles(
+    axum::extract::State(state): Discord,
+    axum::extract::Path(guild): axum::extract::Path<String>,
+    headers: axum::http::HeaderMap,
+) -> (StatusCode, AxumJson<Json>) {
+    let state = state.lock().unwrap();
+    if bot_token(&headers).is_none_or(|t| !state.bots.contains_key(&t)) {
+        return unauthorized();
+    }
+    if !guild_known(&state, &guild) {
+        return unknown_guild();
+    }
+    (
+        StatusCode::OK,
+        AxumJson(Json::Array(
+            state.roles.get(&guild).cloned().unwrap_or_default(),
+        )),
+    )
+}
+
+async fn discord_guild_members_search(
+    axum::extract::State(state): Discord,
+    axum::extract::Path(guild): axum::extract::Path<String>,
+    axum::extract::Query(query): axum::extract::Query<HashMap<String, String>>,
+    headers: axum::http::HeaderMap,
+) -> (StatusCode, AxumJson<Json>) {
+    let state = state.lock().unwrap();
+    if bot_token(&headers).is_none_or(|t| !state.bots.contains_key(&t)) {
+        return unauthorized();
+    }
+    if !guild_known(&state, &guild) {
+        return unknown_guild();
+    }
+    let needle = query
+        .get("query")
+        .cloned()
+        .unwrap_or_default()
+        .to_lowercase();
+    let limit: usize = query.get("limit").and_then(|l| l.parse().ok()).unwrap_or(1);
+    let found: Vec<Json> = state
+        .members
+        .get(&guild)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|m| {
+            [
+                m["user"]["username"].as_str(),
+                m["user"]["global_name"].as_str(),
+                m["nick"].as_str(),
+            ]
+            .into_iter()
+            .flatten()
+            .any(|name| name.to_lowercase().starts_with(&needle))
+        })
+        .take(limit)
+        .collect();
+    (StatusCode::OK, AxumJson(Json::Array(found)))
 }
 
 async fn discord_me(

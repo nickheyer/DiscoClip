@@ -6,6 +6,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
 		'manage_users',
 		'manage_applications',
 		'view_audit_log',
+		'manage_settings',
 		'manage_watch_rules',
 		'manage_bots',
 		'manage_jobs'
@@ -21,7 +22,8 @@ export function roleAllows(role: Role, permission: Permission): boolean {
 export const ROLE_LABELS: Record<Role, { label: string; description: string }> = {
 	admin: {
 		label: 'Admin',
-		description: 'Everything: accounts, Discord applications, rules, bots and the audit log.'
+		description:
+			'Everything: accounts, Discord applications, settings, rules, bots and the audit log.'
 	},
 	operator: {
 		label: 'Operator',
@@ -57,5 +59,9 @@ export const PERMISSION_LABELS: Record<Permission, { label: string; description:
 	manage_jobs: {
 		label: 'Manage jobs',
 		description: 'Submit links, and retry, cancel and delete jobs.'
+	},
+	manage_settings: {
+		label: 'Manage settings',
+		description: 'Read and change the server’s settings, and import and export them.'
 	}
 };

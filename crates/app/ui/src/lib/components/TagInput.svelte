@@ -12,6 +12,8 @@
 		disabled?: boolean;
 		/** Known values offered as a datalist. */
 		suggestions?: { value: string; label: string }[];
+		/** Called with the values whenever they change. */
+		onchange?: (values: string[]) => void;
 	}
 
 	let {
@@ -22,8 +24,14 @@
 		normalize = (v) => v.trim(),
 		mono = true,
 		disabled = false,
-		suggestions = []
+		suggestions = [],
+		onchange
 	}: Props = $props();
+
+	function update(next: string[]) {
+		values = next;
+		onchange?.(next);
+	}
 
 	let draft = $state('');
 	let problem = $state<string | null>(null);
@@ -39,7 +47,7 @@
 			problem = message;
 			return false;
 		}
-		if (!values.includes(value)) values = [...values, value];
+		if (!values.includes(value)) update([...values, value]);
 		problem = null;
 		return true;
 	}
@@ -53,7 +61,7 @@
 			event.preventDefault();
 			commitDraft();
 		} else if (event.key === 'Backspace' && draft === '' && values.length) {
-			values = values.slice(0, -1);
+			update(values.slice(0, -1));
 		}
 	}
 
@@ -65,7 +73,7 @@
 	}
 
 	function remove(value: string) {
-		values = values.filter((v) => v !== value);
+		update(values.filter((v) => v !== value));
 		input?.focus();
 	}
 

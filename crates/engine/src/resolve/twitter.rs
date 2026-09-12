@@ -245,6 +245,6 @@ impl Resolver for TwitterResolver {
             .and_then(|u| Url::parse(u).ok());
         resolved.variants = variants;
         let _ = check_status;
-        Ok(Resolution::Media(resolved))
+        Ok(Resolution::from(resolved))
     }
 }

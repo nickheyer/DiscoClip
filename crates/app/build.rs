@@ -36,11 +36,21 @@ fn run(ui: &Path, args: &[&str], env: &[(&str, &Path)]) {
     for (key, value) in env {
         command.env(key, value);
     }
-    let status = command
-        .status()
-        .unwrap_or_else(|e| panic!("could not run `{} {}` in {}: {e}", npm(), args.join(" "), ui.display()));
+    let status = command.status().unwrap_or_else(|e| {
+        panic!(
+            "could not run `{} {}` in {}: {e}",
+            npm(),
+            args.join(" "),
+            ui.display()
+        )
+    });
     if !status.success() {
-        panic!("`{} {}` failed in {}: {status}", npm(), args.join(" "), ui.display());
+        panic!(
+            "`{} {}` failed in {}: {status}",
+            npm(),
+            args.join(" "),
+            ui.display()
+        );
     }
 }
 
@@ -131,8 +141,16 @@ fn base64(bytes: &[u8]) -> String {
         let n = u32::from_be_bytes([0, word[0], word[1], word[2]]);
         out.push(TABLE[(n >> 18) as usize & 63] as char);
         out.push(TABLE[(n >> 12) as usize & 63] as char);
-        out.push(if chunk.len() > 1 { TABLE[(n >> 6) as usize & 63] as char } else { '=' });
-        out.push(if chunk.len() > 2 { TABLE[n as usize & 63] as char } else { '=' });
+        out.push(if chunk.len() > 1 {
+            TABLE[(n >> 6) as usize & 63] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            TABLE[n as usize & 63] as char
+        } else {
+            '='
+        });
     }
     out
 }
@@ -144,13 +162,20 @@ fn inline_script_hashes(html: &str) -> Vec<String> {
     let mut rest = html;
     while let Some(start) = rest.find("<script") {
         let after_tag = &rest[start..];
-        let Some(open_end) = after_tag.find('>') else { break };
+        let Some(open_end) = after_tag.find('>') else {
+            break;
+        };
         let attributes = &after_tag[..open_end];
         let body_start = open_end + 1;
-        let Some(close) = after_tag[body_start..].find("</script>") else { break };
+        let Some(close) = after_tag[body_start..].find("</script>") else {
+            break;
+        };
         let body = &after_tag[body_start..body_start + close];
         if !attributes.contains("src=") && !body.trim().is_empty() {
-            hashes.push(format!("sha256-{}", base64(&Sha256::digest(body.as_bytes()))));
+            hashes.push(format!(
+                "sha256-{}",
+                base64(&Sha256::digest(body.as_bytes()))
+            ));
         }
         rest = &after_tag[body_start + close + "</script>".len()..];
     }
@@ -159,7 +184,8 @@ fn inline_script_hashes(html: &str) -> Vec<String> {
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
-    let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR"));
+    let manifest =
+        PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR"));
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("cargo sets OUT_DIR"));
     let ui = manifest.join("ui");
     for watched in WATCHED {
@@ -167,13 +193,21 @@ fn main() {
     }
 
     if needs_install(&ui) {
-        run(&ui, &["ci", "--no-audit", "--no-fund", "--loglevel=error"], &[]);
+        run(
+            &ui,
+            &["ci", "--no-audit", "--no-fund", "--loglevel=error"],
+            &[],
+        );
     }
     let dist = out_dir.join("ui");
     if dist.exists() {
         fs::remove_dir_all(&dist).unwrap_or_else(|e| panic!("clearing {}: {e}", dist.display()));
     }
-    run(&ui, &["run", "build", "--silent"], &[("DISCOCLIP_UI_OUT", &dist)]);
+    run(
+        &ui,
+        &["run", "build", "--silent"],
+        &[("DISCOCLIP_UI_OUT", &dist)],
+    );
 
     let mut assets = Vec::new();
     walk(&dist, &dist, &mut assets);

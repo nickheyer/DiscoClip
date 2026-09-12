@@ -61,7 +61,7 @@ impl RedditResolver {
         resolved.duration = duration;
         resolved.subtitles = expanded.subtitles;
         resolved.variants = variants;
-        Ok(Resolution::Media(resolved))
+        Ok(Resolution::from(resolved))
     }
 
     async fn canonical_post_id(&self, url: &Url) -> Result<Option<String>, ResolveError> {

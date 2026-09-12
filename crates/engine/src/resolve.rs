@@ -138,16 +138,22 @@ impl ResolverRegistry {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Resolution {
-    Media(Resolved),
+    Media(Box<Resolved>),
     Playlist(Playlist),
 }
 
 impl Resolution {
     pub fn media(self) -> Option<Resolved> {
         match self {
-            Resolution::Media(resolved) => Some(resolved),
+            Resolution::Media(resolved) => Some(*resolved),
             Resolution::Playlist(_) => None,
         }
+    }
+}
+
+impl From<Resolved> for Resolution {
+    fn from(resolved: Resolved) -> Self {
+        Resolution::Media(Box::new(resolved))
     }
 }
 
@@ -427,8 +433,8 @@ pub enum ResolveError {
     #[error("{url} needs a logged-in {platform} session: {reason}")]
     LoginRequired {
         url: Url,
-        platform: String,
-        reason: String,
+        platform: &'static str,
+        reason: Box<str>,
     },
     #[error("{0} is rate limiting requests; try again later")]
     RateLimited(Url),
@@ -451,11 +457,11 @@ impl ResolveError {
         }
     }
 
-    pub fn login_required(url: &Url, platform: &str, reason: impl Into<String>) -> Self {
+    pub fn login_required(url: &Url, platform: &'static str, reason: impl Into<String>) -> Self {
         Self::LoginRequired {
             url: url.clone(),
-            platform: platform.to_string(),
-            reason: reason.into(),
+            platform,
+            reason: reason.into().into_boxed_str(),
         }
     }
 

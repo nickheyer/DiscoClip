@@ -23,6 +23,8 @@ pub mod subtitles;
 pub struct DownloadContext {
     /// Bytes the source may occupy on disk.
     pub max_bytes: u64,
+    /// The tallest picture worth fetching; manifests offering several pick by this.
+    pub max_height: u32,
     /// How long a live stream is captured before it is cut and treated as a recording.
     pub max_live: Duration,
     /// The portion wanted; downloaders that can seek fetch only it.
@@ -35,6 +37,7 @@ impl DownloadContext {
     pub fn new(max_bytes: u64) -> Self {
         Self {
             max_bytes,
+            max_height: crate::config::Limits::default().max_height,
             max_live: Duration::from_secs(3 * 60 * 60),
             clip: None,
             platform: crate::http::WEB_PLATFORM.to_string(),

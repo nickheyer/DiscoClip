@@ -17,7 +17,7 @@ use discoclip_engine::resolve::twitter::TwitterResolver;
 use discoclip_engine::resolve::web::WebResolver;
 use discoclip_engine::store::sqlite::SqliteStore;
 use discoclip_engine::transcode::FfmpegTranscoder;
-use discoclip_engine::{Engine, EngineBuilder, Http, HttpConfig};
+use discoclip_engine::{Engine, EngineBuilder, Http};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
@@ -26,13 +26,13 @@ use crate::args::Args;
 use crate::bots::BotManager;
 use crate::config;
 use crate::discord::BotGuildStore;
-use crate::local::LocalPublisher;
+use crate::local::{LocalPublisher, SharedLocalConfig};
 use crate::migrations;
 use crate::oauth::Registry;
 use crate::rules::RuleStore;
 use crate::secrets::{KEY_FILE, Keyring, SecretError};
-use crate::settings::{self, Settings};
-use crate::telemetry;
+use crate::settings::{self, Settings, SettingsStore};
+use crate::telemetry::{self, LogHandle};
 use crate::web::{self, Services, WebApp};
 
 #[derive(Debug, thiserror::Error)]
@@ -79,7 +79,7 @@ pub fn run(args: Args) -> ExitCode {
         let keyring = Keyring::load_or_create(&data_dir.join(KEY_FILE))?;
         let migrated = migrations::apply(&store).await?;
         let boot = settings::bootstrap(&store, &provisioning).await?;
-        telemetry::init(&boot.settings.log.level);
+        let log = telemetry::init(&boot.settings.log.level);
         if migrated > 0 {
             tracing::info!(count = migrated, "database migrated");
         }
@@ -93,7 +93,15 @@ pub fn run(args: Args) -> ExitCode {
                 "provisioned value not applied: it was changed in the app"
             );
         }
-        serve(boot.settings, store, keyring).await
+        serve(Startup {
+            settings: boot.settings,
+            store,
+            keyring,
+            log,
+            data_dir,
+            provisioning_file: provisioning.file.clone(),
+        })
+        .await
     });
     runtime.shutdown_timeout(std::time::Duration::from_secs(10));
     match result {
@@ -113,27 +121,26 @@ fn resolvers(http: &Http) -> Vec<Box<dyn Resolver>> {
     ]
 }
 
-async fn builder(settings: &Settings, store: SqliteStore) -> Result<EngineBuilder, Error> {
+/// The engine as the settings shape it, with the ffmpeg handle it runs on.
+async fn builder(
+    settings: &Settings,
+    store: SqliteStore,
+) -> Result<(EngineBuilder, Ffmpeg), Error> {
     let engine_config = settings.engine.clone();
     tokio::fs::create_dir_all(&engine_config.cache_dir).await?;
     let ffmpeg = Ffmpeg::provision(&engine_config.cache_dir).await?;
     let store = Arc::new(store);
-    let http = Http::new(HttpConfig::default());
-    let max_height = engine_config.limits.max_height;
+    let http = Http::new(settings.http.clone());
     let mut builder = Engine::builder(engine_config.clone(), store, http.clone())
         .downloader(HttpDownloader::new(http.clone()))
         .downloader(HlsDownloader::new(http.clone(), ffmpeg.clone()))
-        .downloader(DashDownloader::new(
-            http.clone(),
-            ffmpeg.clone(),
-            max_height,
-        ))
-        .transcoder(FfmpegTranscoder::new(ffmpeg));
+        .downloader(DashDownloader::new(http.clone(), ffmpeg.clone()))
+        .transcoder(FfmpegTranscoder::new(ffmpeg.clone()));
     for resolver in resolvers(&http) {
         builder = builder.resolver_boxed(resolver);
     }
     builder = builder.archiver(FsArchiver::new(engine_config.archive));
-    Ok(builder)
+    Ok((builder, ffmpeg))
 }
 
 /// Cancels `token` once SIGINT or SIGTERM (Unix) or Ctrl-C (Windows) arrives.
@@ -164,24 +171,36 @@ fn cancel_on_signal(token: CancellationToken) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Runs the server: the engine and the web app are the process, and end it when they fail.
-/// The Discord bot is supervised beside them; its failures show up in the web app, never as
-/// an exit.
-async fn serve(
+/// What the server starts from once provisioning has been applied.
+struct Startup {
     settings: Settings,
     store: SqliteStore,
     keyring: Keyring,
-) -> Result<ExitCode, Error> {
+    log: LogHandle,
+    data_dir: std::path::PathBuf,
+    provisioning_file: Option<std::path::PathBuf>,
+}
+
+/// Runs the server: the engine and the web app are the process, and end it when they fail.
+/// The Discord bot is supervised beside them; its failures show up in the web app, never as
+/// an exit.
+async fn serve(startup: Startup) -> Result<ExitCode, Error> {
+    let Startup {
+        settings,
+        store,
+        keyring,
+        log,
+        data_dir,
+        provisioning_file,
+    } = startup;
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "starting discoclip");
 
     let endpoints = DiscordEndpoints::default();
     let clients: Clients = Clients::default();
-    let mut builder = builder(&settings, store.clone()).await?;
+    let (mut builder, ffmpeg) = builder(&settings, store.clone()).await?;
+    let local: SharedLocalConfig = Arc::new(std::sync::RwLock::new(settings.local.clone()));
     builder = builder
-        .publisher(LocalPublisher::new(
-            settings.local.dir.clone(),
-            settings.local.max_bytes,
-        ))
+        .publisher(LocalPublisher::new(local.clone()))
         .publisher(DiscordPublisher::new(clients.clone()));
     let engine = builder.build()?;
     let handle = engine.handle();
@@ -217,16 +236,21 @@ async fn serve(
     });
     let token = shutdown.clone();
     let app = WebApp::new(
-        settings.web.clone(),
+        &settings,
         Registry::from_config(&settings.auth),
-        settings.auth.oauth_signup,
         Services {
-            store,
+            store: store.clone(),
             keyring,
             bots: bots.clone(),
             rules,
             discord: endpoints,
             engine: handle,
+            settings: SettingsStore::new(store),
+            log,
+            ffmpeg,
+            local,
+            data_dir,
+            provisioning_file,
         },
     )
     .await?;

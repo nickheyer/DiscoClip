@@ -198,6 +198,20 @@ impl TokenStore {
         .await
     }
 
+    /// Every account's live tokens, newest first.
+    pub async fn list_all(&self) -> Result<Vec<ApiToken>, TokenError> {
+        transact(&self.db, move |tx| {
+            let now = Timestamp::now();
+            let mut stmt = tx.prepare(&format!(
+                "{SELECT} FROM api_tokens ORDER BY created_at DESC, id DESC"
+            ))?;
+            let rows = stmt.query_map([], row_to_token)?;
+            let tokens = rows.collect::<Result<Vec<_>, _>>()?;
+            Ok(tokens.into_iter().filter(|t| t.is_live(now)).collect())
+        })
+        .await
+    }
+
     /// Ends `id` for good.
     pub async fn revoke(&self, id: TokenId) -> Result<(), TokenError> {
         transact(&self.db, move |tx| {
@@ -305,7 +319,9 @@ mod tests {
         assert_eq!(tokens.list_for(a).await.unwrap(), vec![used.clone()]);
         assert_eq!(tokens.get(token.id).await.unwrap(), Some(used));
 
+        assert_eq!(tokens.list_all().await.unwrap().len(), 1);
         tokens.revoke(token.id).await.unwrap();
+        assert!(tokens.list_all().await.unwrap().is_empty());
         assert!(matches!(
             tokens.revoke(token.id).await,
             Err(TokenError::NotFound(id)) if id == token.id

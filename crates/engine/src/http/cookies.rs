@@ -311,7 +311,7 @@ impl Jar {
         if matching.is_empty() {
             return None;
         }
-        matching.sort_by(|a, b| b.path.len().cmp(&a.path.len()));
+        matching.sort_by_key(|c| std::cmp::Reverse(c.path.len()));
         Some(
             matching
                 .iter()

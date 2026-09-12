@@ -68,13 +68,29 @@ live to the app.
 Scripts use API tokens minted from the account page, sent as `Authorization: Bearer dc_...`;
 each token is limited to the permissions it was given and can be revoked at any time.
 
+## Accounts
+
+Accounts hold one of three roles, admin, operator or viewer; the roles page shows what
+each allows and who holds it. Admins manage accounts from the accounts page, see every
+live session and every API token across accounts from the sessions and API tokens pages,
+and end or revoke any of them.
+
 ## Settings
 
 Settings live in the database under `data_dir` (default `data`) and are managed from the
-web app. A provisioning file, `discoclip.toml`, `.yaml`, `.yml` or `.json` (see
-`discoclip.example.toml`), and `DISCOCLIP_<SECTION>__<KEY>` environment variables seed
-them at startup. A value changed in the web app is kept even when the file still names
-the old one.
+web app's settings page by admins. A provisioning file, `discoclip.toml`, `.yaml`, `.yml`
+or `.json` (see `discoclip.example.toml`), and `DISCOCLIP_<SECTION>__<KEY>` environment
+variables seed them at startup. A value changed in the web app is kept even when the file
+still names the old one.
+
+Every setting takes effect the moment it is saved: the log filter, the engine's workers,
+limits, archive, playlist, live capture and retention rules, its cache directory, the
+HTTP client's user agent, timeouts, retries, per-host rate limits and proxies, local
+publishing, the listener address and TLS files (the app listens again on the new ones),
+the trusted proxies, the public URL and the login providers. A change the running server
+cannot take, such as an address already in use or a certificate file that does not load,
+is refused before anything is stored. The settings page also exports the stored values as
+a provisioning file and imports one, and every change is written to the audit log.
 
 ## Audit log
 

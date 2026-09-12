@@ -14,7 +14,11 @@ use crate::users::Permission;
 
 /// 403 unless the account may edit `guild`'s rules: through its role, or because it
 /// manages the guild on Discord (from a browser session, as API tokens carry no guilds).
-async fn may_edit(state: &AppState, identity: &Identity, guild: &str) -> Result<(), ApiError> {
+pub(super) async fn may_edit(
+    state: &AppState,
+    identity: &Identity,
+    guild: &str,
+) -> Result<(), ApiError> {
     if identity.user.role.allows(Permission::ManageWatchRules) {
         return identity.require(Permission::ManageWatchRules);
     }

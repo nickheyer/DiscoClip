@@ -5,6 +5,7 @@ use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use serde::Deserialize;
@@ -29,10 +30,19 @@ pub enum FfmpegError {
     Io(#[from] io::Error),
 }
 
+/// Where the tools live; shared by every clone, so a relocation reaches them all.
 #[derive(Debug, Clone)]
-pub struct Ffmpeg {
+struct Tools {
     ffmpeg: PathBuf,
     ffprobe: PathBuf,
+}
+
+/// The embedded tools, unpacked under a cache directory and moved when it changes.
+#[derive(Debug, Clone)]
+pub struct Ffmpeg {
+    tools: Arc<RwLock<Tools>>,
+    /// Held while unpacking, so two relocations at once do not race over the files.
+    unpacking: Arc<tokio::sync::Mutex<()>>,
 }
 
 pub struct Output {
@@ -43,47 +53,65 @@ pub struct Output {
 impl Ffmpeg {
     /// Unpacks the embedded binaries into `cache_dir` (once per build) and verifies they run.
     pub async fn provision(cache_dir: &Path) -> Result<Self, FfmpegError> {
-        let dir = cache_dir.join("ffmpeg").join(&TOOLS_DIGEST[..16]);
-        let tools = Self {
-            ffmpeg: dir.join(FFMPEG_EXE),
-            ffprobe: dir.join(FFPROBE_EXE),
+        let tools = unpack(cache_dir).await?;
+        let handle = Self {
+            tools: Arc::new(RwLock::new(tools)),
+            unpacking: Arc::new(tokio::sync::Mutex::new(())),
         };
-        let targets = [
-            (tools.ffmpeg.clone(), FFMPEG_ZST),
-            (tools.ffprobe.clone(), FFPROBE_ZST),
-        ];
-        tokio::task::spawn_blocking(move || {
-            targets
-                .iter()
-                .try_for_each(|(exe, payload)| install(exe, payload))
-        })
-        .await
-        .map_err(|e| FfmpegError::Install(e.to_string()))??;
-        let banner = tools.version().await?;
+        let banner = handle.version().await?;
+        tracing::info!(dir = %handle.dir().display(), "{banner}");
+        Ok(handle)
+    }
+
+    /// Unpacks the binaries under another cache directory and uses them from then on;
+    /// every clone of this handle follows.
+    pub async fn relocate(&self, cache_dir: &Path) -> Result<(), FfmpegError> {
+        let _unpacking = self.unpacking.lock().await;
+        let tools = unpack(cache_dir).await?;
+        let banner = version_of(&tools.ffmpeg).await?;
+        let dir = tools
+            .ffmpeg
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_default();
+        *self.tools.write().unwrap_or_else(|e| e.into_inner()) = tools;
         tracing::info!(dir = %dir.display(), "{banner}");
-        Ok(tools)
+        Ok(())
+    }
+
+    fn tools(&self) -> Tools {
+        self.tools.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// The cache directory the tools are unpacked under.
+    pub fn cache_dir(&self) -> PathBuf {
+        self.dir()
+            .parent()
+            .and_then(Path::parent)
+            .map(Path::to_path_buf)
+            .unwrap_or_default()
+    }
+
+    /// The directory the tools are unpacked in.
+    pub fn dir(&self) -> PathBuf {
+        self.tools()
+            .ffmpeg
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_default()
     }
 
     /// Path of the ffmpeg executable, for libraries that run it themselves.
-    pub fn ffmpeg_path(&self) -> &Path {
-        &self.ffmpeg
+    pub fn ffmpeg_path(&self) -> PathBuf {
+        self.tools().ffmpeg
+    }
+
+    pub fn ffprobe_path(&self) -> PathBuf {
+        self.tools().ffprobe
     }
 
     pub async fn version(&self) -> Result<String, FfmpegError> {
-        let out = Command::new(&self.ffmpeg)
-            .arg("-version")
-            .stdin(std::process::Stdio::null())
-            .output()
-            .await?;
-        if !out.status.success() {
-            return Err(FfmpegError::Install(format!(
-                "{} exited with {}",
-                self.ffmpeg.display(),
-                out.status
-            )));
-        }
-        let text = String::from_utf8_lossy(&out.stdout);
-        Ok(text.lines().next().unwrap_or("ffmpeg").to_string())
+        version_of(&self.ffmpeg_path()).await
     }
 
     /// Runs ffmpeg with the given arguments. Global options for unattended use and machine
@@ -93,7 +121,7 @@ impl Ffmpeg {
         args: impl IntoIterator<Item = OsString>,
         mut on_time: impl FnMut(Duration) + Send,
     ) -> Result<Output, FfmpegError> {
-        let mut command = Command::new(&self.ffmpeg);
+        let mut command = Command::new(self.ffmpeg_path());
         command
             .arg("-hide_banner")
             .arg("-nostdin")
@@ -153,7 +181,7 @@ impl Ffmpeg {
 
     /// Reads container, duration, and the first video and audio streams with ffprobe.
     pub async fn probe(&self, path: &Path) -> Result<MediaInfo, FfmpegError> {
-        let out = Command::new(&self.ffprobe)
+        let out = Command::new(self.ffprobe_path())
             .args([
                 "-v",
                 "error",
@@ -201,6 +229,44 @@ impl Ffmpeg {
     }
 }
 
+/// Where the tools of this build live under `cache_dir`, unpacked if they are not yet.
+async fn unpack(cache_dir: &Path) -> Result<Tools, FfmpegError> {
+    let dir = cache_dir.join("ffmpeg").join(&TOOLS_DIGEST[..16]);
+    let tools = Tools {
+        ffmpeg: dir.join(FFMPEG_EXE),
+        ffprobe: dir.join(FFPROBE_EXE),
+    };
+    let targets = [
+        (tools.ffmpeg.clone(), FFMPEG_ZST),
+        (tools.ffprobe.clone(), FFPROBE_ZST),
+    ];
+    tokio::task::spawn_blocking(move || {
+        targets
+            .iter()
+            .try_for_each(|(exe, payload)| install(exe, payload))
+    })
+    .await
+    .map_err(|e| FfmpegError::Install(e.to_string()))??;
+    Ok(tools)
+}
+
+async fn version_of(ffmpeg: &Path) -> Result<String, FfmpegError> {
+    let out = Command::new(ffmpeg)
+        .arg("-version")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .await?;
+    if !out.status.success() {
+        return Err(FfmpegError::Install(format!(
+            "{} exited with {}",
+            ffmpeg.display(),
+            out.status
+        )));
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    Ok(text.lines().next().unwrap_or("ffmpeg").to_string())
+}
+
 fn install(exe: &Path, payload: &[u8]) -> Result<(), FfmpegError> {
     if exe.is_file() {
         return Ok(());
@@ -213,7 +279,9 @@ fn install(exe: &Path, payload: &[u8]) -> Result<(), FfmpegError> {
         .ok_or_else(|| FfmpegError::Install("no file name".into()))?
         .to_string_lossy();
     fs::create_dir_all(dir)?;
-    let tmp = dir.join(format!("{name}.{}.part", std::process::id()));
+    static UNPACKS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let unique = UNPACKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = dir.join(format!("{name}.{}.{unique}.part", std::process::id()));
     {
         let mut out = File::create(&tmp)?;
         zstd::stream::copy_decode(payload, &mut out)

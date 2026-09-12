@@ -2,7 +2,7 @@
 	import { goto, invalidate } from '$app/navigation';
 	import type { PageData } from './$types';
 	import { ROLES, messageOf, users } from '$lib/api';
-	import type { Role } from '$lib/api';
+	import type { Role, SessionView } from '$lib/api';
 	import Alert from '$lib/components/Alert.svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import Badge from '$lib/components/Badge.svelte';
@@ -86,6 +86,33 @@
 	// Sessions
 
 	let endingAll = $state(false);
+	let endingOne = $state<string | null>(null);
+
+	async function endSession(view: SessionView) {
+		if (view.current) {
+			const ok = await confirm.ask({
+				title: 'End your own session?',
+				message: 'This is the session you are using now. Ending it logs you out here.',
+				confirmLabel: 'Log out',
+				danger: true
+			});
+			if (!ok) return;
+		}
+		endingOne = view.id;
+		try {
+			await users.revokeSession(user.id, view.id);
+			if (view.current) {
+				await session.leave();
+				return;
+			}
+			toast.ok('Session ended.');
+			await refresh();
+		} catch (cause) {
+			toast.error(`Could not end the session: ${messageOf(cause)}`);
+		} finally {
+			endingOne = null;
+		}
+	}
 
 	async function endAllSessions() {
 		const ok = await confirm.ask({
@@ -236,7 +263,7 @@
 			<div class="table-wrap flush">
 				<table class="table">
 					<thead>
-						<tr><th>Client</th><th>Address</th><th>Started</th><th>Last seen</th><th>Expires</th></tr>
+						<tr><th>Client</th><th>Address</th><th>Started</th><th>Last seen</th><th>Expires</th><th></th></tr>
 					</thead>
 					<tbody>
 						{#each data.sessions as view (view.id)}
@@ -252,6 +279,9 @@
 								<td><Time value={view.created_at} /></td>
 								<td><Time value={view.last_seen_at} /></td>
 								<td><Time value={view.expires_at} /></td>
+								<td class="actions">
+									<Button size="sm" variant="ghost" loading={endingOne === view.id} onclick={() => endSession(view)}>{view.current ? 'Log out' : 'End'}</Button>
+								</td>
 							</tr>
 						{/each}
 					</tbody>

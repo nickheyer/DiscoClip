@@ -88,6 +88,38 @@ pub async fn revoke(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// A token with the account it belongs to.
+#[derive(Debug, Serialize)]
+pub struct AccountTokenView {
+    pub username: String,
+    #[serde(flatten)]
+    pub token: ApiToken,
+}
+
+/// Every account's live tokens, newest first, for admins.
+pub async fn list_all(
+    State(state): State<AppState>,
+    Auth(identity): Auth,
+) -> Result<Json<Vec<AccountTokenView>>, ApiError> {
+    identity.require(Permission::ManageUsers)?;
+    let users = state.users.list().await?;
+    Ok(Json(
+        state
+            .tokens
+            .list_all()
+            .await?
+            .into_iter()
+            .filter_map(|token| {
+                let user = users.iter().find(|u| u.id == token.user_id)?;
+                Some(AccountTokenView {
+                    username: user.username.clone(),
+                    token,
+                })
+            })
+            .collect(),
+    ))
+}
+
 /// An account's tokens, for admins.
 pub async fn list_for_user(
     State(state): State<AppState>,
@@ -270,6 +302,14 @@ mod tests {
         // Another account's token is invisible to a non-admin, visible to admins.
         let (status, _) = admin.delete(&format!("/api/tokens/{token_id}")).await;
         assert_eq!(status, StatusCode::NOT_FOUND);
+        let (status, body) = admin.get("/api/tokens/all").await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let all = body.as_array().unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0]["username"], "viewer");
+        assert_eq!(all[0]["name"], "mine");
+        assert!(all[0].get("secret").is_none());
+        assert_eq!(viewer.get("/api/tokens/all").await.0, StatusCode::FORBIDDEN);
         let (status, _) = viewer.get(&format!("/api/users/{viewer_id}/tokens")).await;
         assert_eq!(status, StatusCode::FORBIDDEN);
         let (status, body) = admin.get(&format!("/api/users/{viewer_id}/tokens")).await;

@@ -34,6 +34,8 @@ export function targetHref(target: Target): string | null {
 			return `/applications/${encodeURIComponent(target.id)}`;
 		case 'rule':
 			return `/rules/${encodeURIComponent(target.id)}`;
+		case 'setting':
+			return `/settings?key=${encodeURIComponent(target.id)}`;
 		default:
 			return null;
 	}

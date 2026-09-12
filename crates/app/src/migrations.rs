@@ -213,6 +213,45 @@ CREATE INDEX audit_log_action ON audit_log(action, id);
 CREATE INDEX audit_log_target ON audit_log(target_kind, target_id, id);
 ",
     },
+    Migration {
+        version: 14,
+        name: "platform_fixtures",
+        sql: "
+CREATE TABLE fixture_platforms (
+    platform TEXT PRIMARY KEY,
+    last_run_at INTEGER NOT NULL,
+    last_pass_at INTEGER,
+    last_fail_at INTEGER,
+    passed INTEGER NOT NULL,
+    failed INTEGER NOT NULL
+);
+CREATE TABLE fixture_results (
+    platform TEXT NOT NULL,
+    url TEXT NOT NULL,
+    run_at INTEGER NOT NULL,
+    ok INTEGER NOT NULL,
+    error TEXT,
+    title TEXT,
+    duration_ms INTEGER NOT NULL,
+    last_pass_at INTEGER,
+    PRIMARY KEY (platform, url)
+);
+",
+    },
+    Migration {
+        version: 15,
+        name: "platform_cookies",
+        sql: "
+CREATE TABLE platform_cookies (
+    platform TEXT PRIMARY KEY,
+    jar TEXT,
+    cookies INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER,
+    check_json TEXT,
+    checked_at INTEGER
+);
+",
+    },
 ];
 
 /// Brings the application's tables up to date; returns how many migrations ran.

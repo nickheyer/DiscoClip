@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { PageData } from './$types';
-	import type { Rule } from '$lib/api';
+	import type { GuildChannel, Rule } from '$lib/api';
 	import Badge from '$lib/components/Badge.svelte';
 	import BotBadge from '$lib/components/BotBadge.svelte';
 	import Button from '$lib/components/Button.svelte';
@@ -8,6 +8,7 @@
 	import GuildIcon from '$lib/components/GuildIcon.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Time from '$lib/components/Time.svelte';
+	import { channelName, groupKey } from '$lib/discord';
 	import { pluralize, shortId } from '$lib/format';
 	import { describeFilters, describeLimits } from '$lib/rules';
 	import { bots } from '$lib/state/bots.svelte';
@@ -24,6 +25,9 @@
 		appName: string;
 		guildName: string;
 		guildIcon: string | null;
+		/** The guild's channels, or `null` with `channelsError` when the bot could not list them. */
+		channels: GuildChannel[] | null;
+		channelsError: string | null;
 		rules: Rule[];
 	}
 
@@ -43,7 +47,7 @@
 		const needle = query.trim().toLowerCase();
 		const map = new Map<string, Group>();
 		for (const rule of data.rules) {
-			const key = `${rule.application_id}/${rule.guild_id}`;
+			const key = groupKey(rule.application_id, rule.guild_id);
 			let group = map.get(key);
 			if (!group) {
 				const guild = guildOf(rule.application_id, rule.guild_id);
@@ -54,6 +58,8 @@
 					appName: appName(rule.application_id),
 					guildName: guild?.name ?? `Guild ${rule.guild_id}`,
 					guildIcon: guild?.icon ?? null,
+					channels: data.channelsByGuild.get(key) ?? null,
+					channelsError: data.channelErrors.get(key) ?? null,
 					rules: []
 				};
 				map.set(key, group);
@@ -76,6 +82,7 @@
 					: group.rules.filter(
 							(r) =>
 								r.channel_id.includes(needle) ||
+								channelName(group.channels, r.channel_id).toLowerCase().includes(needle) ||
 								(r.post_to ?? '').includes(needle) ||
 								r.allow_hosts.some((h) => h.includes(needle))
 						);
@@ -88,6 +95,19 @@
 <svelte:head>
 	<title>Watch rules · DiscoClip</title>
 </svelte:head>
+
+{#snippet channelRef(channels: GuildChannel[] | null, id: string, href?: string)}
+	{#if channels?.some((c) => c.id === id)}
+		<span class="stack-sm" style="gap:0">
+			{#if href}<a {href} class="row-link">{channelName(channels, id)}</a>{:else}<span>{channelName(channels, id)}</span>{/if}
+			<code class="small">{id}</code>
+		</span>
+	{:else if href}
+		<a {href} class="row-link"><code>{id}</code></a>
+	{:else}
+		<code>{id}</code>
+	{/if}
+{/snippet}
 
 <PageHeader title="Watch rules" description="Every channel a bot watches, by application and guild.">
 	{#snippet actions()}
@@ -128,6 +148,9 @@
 					</div>
 					<Button size="sm" variant="ghost" href={`/applications/${group.applicationId}/guilds/${group.guildId}`} iconRight="chevron-right">Manage</Button>
 				</div>
+				{#if group.channelsError}
+					<p class="hint listing">Shown by channel id: the bot could not list the guild's channels ({group.channelsError}).</p>
+				{/if}
 				<div class="table-wrap flush">
 					<table class="table">
 						<thead>
@@ -136,8 +159,8 @@
 						<tbody>
 							{#each group.rules as rule (rule.id)}
 								<tr class={[!rule.enabled && 'off']}>
-									<td><a href={`/rules/${rule.id}`} class="row-link"><code>{rule.channel_id}</code></a></td>
-									<td>{#if rule.post_to}<code>{rule.post_to}</code>{:else}<span class="faint">same channel</span>{/if}</td>
+									<td>{@render channelRef(group.channels, rule.channel_id, `/rules/${rule.id}`)}</td>
+									<td>{#if rule.post_to}{@render channelRef(group.channels, rule.post_to)}{:else}<span class="faint">same channel</span>{/if}</td>
 									<td>{describeFilters(rule)}</td>
 									<td>{describeLimits(rule)}</td>
 									<td>{#if rule.enabled}<Badge tone="ok" size="sm" dot>Enabled</Badge>{:else}<Badge size="sm">Disabled</Badge>{/if}</td>
@@ -164,6 +187,10 @@
 		border: none;
 		border-radius: 0 0 var(--radius) var(--radius);
 		box-shadow: none;
+	}
+
+	.listing {
+		padding: 10px 20px 0;
 	}
 
 	tr.off td {

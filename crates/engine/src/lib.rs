@@ -10,6 +10,7 @@ pub mod event;
 pub mod ffmpeg;
 pub mod http;
 pub mod job;
+pub mod js;
 pub mod media;
 mod pipeline;
 pub mod plan;

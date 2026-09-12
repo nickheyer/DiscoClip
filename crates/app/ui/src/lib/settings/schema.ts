@@ -461,6 +461,29 @@ export const SECTIONS: SectionSpec[] = [
 		]
 	},
 	{
+		key: 'fixtures',
+		title: 'Platform fixtures',
+		description:
+			'Every platform names public links its fixtures resolve, so the platforms page shows what works and when each platform last passed in full.',
+		icon: 'check-circle',
+		fields: [
+			{
+				name: 'interval_secs',
+				label: 'Run every',
+				kind: 'seconds',
+				hint: 'How often every platform’s fixtures run on their own. Zero runs them only from the platforms page.',
+				min: 0
+			},
+			{
+				name: 'timeout_secs',
+				label: 'Link timeout',
+				kind: 'seconds',
+				hint: 'The longest one link may take to resolve before it counts as failed.',
+				min: 1
+			}
+		]
+	},
+	{
 		key: 'web',
 		title: 'Web app',
 		description: 'How this app is reached.',

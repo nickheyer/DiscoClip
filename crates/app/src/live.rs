@@ -1,7 +1,8 @@
 //! Settings taking effect while the server runs. Every part of the server that a setting
 //! shapes is reached from here, so a change stored in the app is applied at once: the
-//! log filter, the engine, the HTTP client the resolvers use, local publishing, the web
-//! listener, the trusted proxies, the public URL and the login providers.
+//! log filter, the engine, the HTTP client the resolvers use, local publishing, the
+//! fixture schedule, the web listener, the trusted proxies, the public URL and the login
+//! providers.
 
 use std::net::SocketAddr;
 use std::path::Path;
@@ -14,6 +15,7 @@ use tokio::net::TcpListener;
 use tokio::sync::watch;
 use url::Url;
 
+use crate::fixtures::SharedFixtureConfig;
 use crate::local::SharedLocalConfig;
 use crate::oauth::{OAuthService, Registry};
 use crate::settings::{Settings, WebConfig};
@@ -48,6 +50,7 @@ pub struct Live {
     pub engine: EngineHandle,
     pub ffmpeg: Ffmpeg,
     pub local: SharedLocalConfig,
+    pub fixtures: SharedFixtureConfig,
     pub oauth: Arc<OAuthService>,
     pub public_url: Arc<RwLock<Option<Url>>>,
     pub proxies: Arc<RwLock<Proxies>>,
@@ -95,6 +98,7 @@ impl Live {
         }
         self.engine.http().configure(settings.http.clone());
         *self.local.write().unwrap_or_else(|e| e.into_inner()) = settings.local.clone();
+        *self.fixtures.write().unwrap_or_else(|e| e.into_inner()) = settings.fixtures.clone();
         self.oauth
             .registry
             .write()

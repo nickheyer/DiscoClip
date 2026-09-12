@@ -341,6 +341,7 @@ mod tests {
                         "engine.limits.max_height": 720,
                         "local.dir": local.display().to_string(),
                         "local.max_bytes": 4096,
+                        "fixtures.interval_secs": 3600,
                         "http.user_agent": "Tester/1.0",
                         "http.connect_timeout_secs": 3,
                         "http.rate_limits.hosts": {"youtube.com": {"per_second": 1.0, "burst": 2}},
@@ -375,6 +376,8 @@ mod tests {
         assert_eq!(http.connect_timeout_secs, 3);
         assert_eq!(http.rate_limits.hosts["youtube.com"].burst, 2);
         assert_eq!(app.state.live.local.read().unwrap().max_bytes, 4096);
+        assert_eq!(app.state.live.fixtures.read().unwrap().interval_secs, 3600);
+        assert_eq!(app.state.fixtures.config().interval_secs, 3600);
         assert_eq!(
             app.state
                 .public_url

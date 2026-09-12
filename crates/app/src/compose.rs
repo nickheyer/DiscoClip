@@ -12,9 +12,20 @@ use discoclip_engine::download::dash::DashDownloader;
 use discoclip_engine::download::hls::HlsDownloader;
 use discoclip_engine::ffmpeg::Ffmpeg;
 use discoclip_engine::resolve::Resolver;
+use discoclip_engine::resolve::dailymotion::DailymotionResolver;
+use discoclip_engine::resolve::facebook::FacebookResolver;
+use discoclip_engine::resolve::imgur::ImgurResolver;
+use discoclip_engine::resolve::instagram::InstagramResolver;
+use discoclip_engine::resolve::kick::KickResolver;
 use discoclip_engine::resolve::reddit::RedditResolver;
-use discoclip_engine::resolve::twitter::TwitterResolver;
+use discoclip_engine::resolve::redgifs::RedgifsResolver;
+use discoclip_engine::resolve::streamable::StreamableResolver;
+use discoclip_engine::resolve::tiktok::TiktokResolver;
+use discoclip_engine::resolve::twitch::TwitchResolver;
+use discoclip_engine::resolve::vimeo::VimeoResolver;
 use discoclip_engine::resolve::web::WebResolver;
+use discoclip_engine::resolve::x::XResolver;
+use discoclip_engine::resolve::youtube::YoutubeResolver;
 use discoclip_engine::store::sqlite::SqliteStore;
 use discoclip_engine::transcode::FfmpegTranscoder;
 use discoclip_engine::{Engine, EngineBuilder, Http};
@@ -25,7 +36,9 @@ use crate::applications::ApplicationStore;
 use crate::args::Args;
 use crate::bots::BotManager;
 use crate::config;
+use crate::cookies::CookieStore;
 use crate::discord::BotGuildStore;
+use crate::fixtures::{FixtureRunner, FixtureStore};
 use crate::local::{LocalPublisher, SharedLocalConfig};
 use crate::migrations;
 use crate::oauth::Registry;
@@ -57,6 +70,8 @@ enum Error {
     Application(#[from] crate::applications::ApplicationError),
     #[error(transparent)]
     Rules(#[from] crate::rules::RuleError),
+    #[error(transparent)]
+    Cookies(#[from] crate::cookies::CookieError),
 }
 
 pub fn run(args: Args) -> ExitCode {
@@ -115,8 +130,19 @@ pub fn run(args: Args) -> ExitCode {
 
 fn resolvers(http: &Http) -> Vec<Box<dyn Resolver>> {
     vec![
-        Box::new(TwitterResolver::new(http.clone())),
+        Box::new(YoutubeResolver::new(http.clone())),
+        Box::new(XResolver::new(http.clone())),
+        Box::new(TiktokResolver::new(http.clone())),
+        Box::new(InstagramResolver::new(http.clone())),
+        Box::new(FacebookResolver::new(http.clone())),
         Box::new(RedditResolver::new(http.clone())),
+        Box::new(TwitchResolver::new(http.clone())),
+        Box::new(KickResolver::new(http.clone())),
+        Box::new(VimeoResolver::new(http.clone())),
+        Box::new(DailymotionResolver::new(http.clone())),
+        Box::new(StreamableResolver::new(http.clone())),
+        Box::new(ImgurResolver::new(http.clone())),
+        Box::new(RedgifsResolver::new(http.clone())),
         Box::new(WebResolver::new(http.clone())),
     ]
 }
@@ -132,7 +158,7 @@ async fn builder(
     let store = Arc::new(store);
     let http = Http::new(settings.http.clone());
     let mut builder = Engine::builder(engine_config.clone(), store, http.clone())
-        .downloader(HttpDownloader::new(http.clone()))
+        .downloader(HttpDownloader::new(http.clone(), ffmpeg.clone()))
         .downloader(HlsDownloader::new(http.clone(), ffmpeg.clone()))
         .downloader(DashDownloader::new(http.clone(), ffmpeg.clone()))
         .transcoder(FfmpegTranscoder::new(ffmpeg.clone()));
@@ -185,6 +211,7 @@ struct Startup {
 /// The Discord bot is supervised beside them; its failures show up in the web app, never as
 /// an exit.
 async fn serve(startup: Startup) -> Result<ExitCode, Error> {
+    let started_at = jiff::Timestamp::now();
     let Startup {
         settings,
         store,
@@ -204,9 +231,22 @@ async fn serve(startup: Startup) -> Result<ExitCode, Error> {
         .publisher(DiscordPublisher::new(clients.clone()));
     let engine = builder.build()?;
     let handle = engine.handle();
+    let jars = CookieStore::new(store.clone(), keyring.clone())
+        .jars()
+        .await?;
+    for (platform, jar) in jars {
+        tracing::info!(platform, cookies = jar.len(), "session cookies loaded");
+        handle.http().set_jar(&platform, jar);
+    }
 
     let shutdown = CancellationToken::new();
     cancel_on_signal(shutdown.clone())?;
+
+    let fixtures = Arc::new(FixtureRunner::new(
+        handle.clone(),
+        FixtureStore::new(store.clone()),
+        Arc::new(std::sync::RwLock::new(settings.fixtures.clone())),
+    ));
 
     let rules = RuleStore::new(store.clone());
     rules.load().await?;
@@ -235,6 +275,12 @@ async fn serve(startup: Startup) -> Result<ExitCode, Error> {
         Ok("engine")
     });
     let token = shutdown.clone();
+    let schedule = fixtures.clone();
+    tasks.spawn(async move {
+        schedule.schedule(token).await;
+        Ok("fixtures")
+    });
+    let token = shutdown.clone();
     let app = WebApp::new(
         &settings,
         Registry::from_config(&settings.auth),
@@ -245,12 +291,14 @@ async fn serve(startup: Startup) -> Result<ExitCode, Error> {
             rules,
             discord: endpoints,
             engine: handle,
+            fixtures,
             settings: SettingsStore::new(store),
             log,
             ffmpeg,
             local,
             data_dir,
             provisioning_file,
+            started_at,
         },
     )
     .await?;

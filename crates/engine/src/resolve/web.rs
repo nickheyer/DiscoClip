@@ -1,6 +1,7 @@
 //! Generic resolver for direct media files, HLS, DASH and Smooth Streaming manifests, and
 //! web pages that advertise their video through standard metadata, `<video>` tags, or an
-//! embedded player the registry knows.
+//! embedded player the registry knows. A page reached through a redirect to another host,
+//! as short links are, is handed back to the registry so the host's own resolver takes it.
 
 use std::collections::HashSet;
 use std::time::Duration;
@@ -306,6 +307,10 @@ impl WebResolver {
                 Ok(Some(resolved))
             }
             Kind::Html => {
+                if final_url.host_str() != url.host_str() {
+                    drop(response);
+                    return Err(ResolveError::Redirect(final_url));
+                }
                 let (body, _) = response.bytes_up_to(MAX_PAGE).await?;
                 let html = String::from_utf8_lossy(&body).into_owned();
                 let media = extract(&html, &final_url);
@@ -464,6 +469,34 @@ mod tests {
                 truncated: false,
             },
         }
+    }
+
+    #[tokio::test]
+    async fn a_short_link_to_another_host_is_handed_back_unwrapped() {
+        let mut fixture = Fixture::new("web", None);
+        fixture.exchanges.push(exchange(
+            "https://t.co/abc",
+            "text/html",
+            "",
+            301,
+            &[("location", "https://x.com/someone/status/123")],
+        ));
+        fixture.exchanges.push(exchange(
+            "https://x.com/someone/status/123",
+            "text/html; charset=utf-8",
+            "<html><body>a post</body></html>",
+            200,
+            &[],
+        ));
+        let resolver = WebResolver::new(Http::replay(fixture));
+        let error = resolver
+            .resolve(&Url::parse("https://t.co/abc").unwrap())
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&error, ResolveError::Redirect(u) if u.as_str() == "https://x.com/someone/status/123"),
+            "{error}"
+        );
     }
 
     #[tokio::test]

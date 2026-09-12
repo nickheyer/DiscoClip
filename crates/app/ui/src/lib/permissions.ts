@@ -9,7 +9,8 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
 		'manage_settings',
 		'manage_watch_rules',
 		'manage_bots',
-		'manage_jobs'
+		'manage_jobs',
+		'view_logs'
 	],
 	operator: ['manage_watch_rules', 'manage_bots', 'manage_jobs'],
 	viewer: []
@@ -23,7 +24,7 @@ export const ROLE_LABELS: Record<Role, { label: string; description: string }> =
 	admin: {
 		label: 'Admin',
 		description:
-			'Everything: accounts, Discord applications, settings, rules, bots and the audit log.'
+			'Everything: accounts, Discord applications, settings, rules, bots, the audit log and the server log.'
 	},
 	operator: {
 		label: 'Operator',
@@ -63,5 +64,9 @@ export const PERMISSION_LABELS: Record<Permission, { label: string; description:
 	manage_settings: {
 		label: 'Manage settings',
 		description: 'Read and change the server’s settings, and import and export them.'
+	},
+	view_logs: {
+		label: 'View the server log',
+		description: 'Read the server’s log as it is written.'
 	}
 };

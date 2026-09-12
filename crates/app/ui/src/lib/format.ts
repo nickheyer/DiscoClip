@@ -96,6 +96,13 @@ export function guildIconUrl(guildId: string, icon: string | null, size = 64): s
 	return `https://cdn.discordapp.com/icons/${guildId}/${icon}.${ext}?size=${size}`;
 }
 
+/** A user's avatar on Discord's CDN, animated ones as GIFs. */
+export function userAvatarUrl(userId: string, avatar: string | null, size = 64): string | null {
+	if (!avatar) return null;
+	const ext = avatar.startsWith('a_') ? 'gif' : 'png';
+	return `https://cdn.discordapp.com/avatars/${userId}/${avatar}.${ext}?size=${size}`;
+}
+
 /** Up to two letters for an avatar without an image. */
 export function initials(name: string): string {
 	const words = name

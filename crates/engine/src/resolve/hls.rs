@@ -42,7 +42,22 @@ pub async fn expand(
     check_status(&response, url)?;
     let base = response.url.clone();
     let body = response.bytes(MAX_PLAYLIST).await?;
-    match m3u8_rs::parse_playlist_res(&body) {
+    expand_playlist(http, url, &base, &body, platform, user_agent, headers).await
+}
+
+/// [`expand`] for a playlist already read: `body` came from `base`, and `url` names the
+/// playlist in errors.
+pub async fn expand_playlist(
+    http: &Http,
+    url: &Url,
+    base: &Url,
+    body: &[u8],
+    platform: &str,
+    user_agent: &str,
+    headers: &[(String, String)],
+) -> Result<Expanded, ResolveError> {
+    let base = base.clone();
+    match m3u8_rs::parse_playlist_res(body) {
         Ok(Playlist::MasterPlaylist(master)) => {
             let mut variants = Vec::new();
             for stream in master.variants.iter().filter(|v| !v.is_i_frame) {

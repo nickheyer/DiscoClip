@@ -20,7 +20,8 @@ use discoclip_engine::download::{DownloadContext, DownloadError, Downloaded, Dow
 use discoclip_engine::event::ProgressSender;
 use discoclip_engine::media::{LocalFile, MediaInfo};
 use discoclip_engine::resolve::{
-    Platform, Resolution, ResolveError, Resolver, SessionSupport, Variant, VariantKind,
+    Platform, Resolution, ResolveError, Resolved, Resolver, SessionCheck, SessionSupport, Variant,
+    VariantKind,
 };
 use discoclip_engine::transcode::{Target, TranscodeError, Transcoder};
 use discoclip_engine::{Engine, EngineConfig, Http};
@@ -32,6 +33,7 @@ use tokio_websockets::{CloseCode, Message, ServerBuilder};
 
 use super::{Services, WebApp, auth};
 use crate::bots::BotManager;
+use crate::fixtures::{FixtureRunner, FixtureStore};
 use crate::oauth::{Endpoints, Kind, Provider, Registry};
 use crate::rules::RuleStore;
 use crate::secrets::Keyring;
@@ -164,6 +166,11 @@ pub async fn app_with_settings(
         .clone();
     let log = crate::telemetry::detached(&settings.log.level);
     let local = Arc::new(std::sync::RwLock::new(settings.local.clone()));
+    let fixtures = Arc::new(FixtureRunner::new(
+        handle.clone(),
+        FixtureStore::new(db.clone()),
+        Arc::new(std::sync::RwLock::new(settings.fixtures.clone())),
+    ));
     let app = WebApp::new(
         &settings,
         providers,
@@ -174,12 +181,14 @@ pub async fn app_with_settings(
             rules,
             discord,
             engine: handle,
+            fixtures,
             settings: store,
             log,
             ffmpeg,
             local,
             data_dir: std::path::PathBuf::from("data"),
             provisioning_file: None,
+            started_at: jiff::Timestamp::now(),
         },
     )
     .await
@@ -207,8 +216,91 @@ pub async fn app_with_admin_db() -> (WebApp, SqliteStore) {
 /// A host the stub engine accepts links from, so submissions can be watched.
 pub const SUPPORTED_HOST: &str = "video.test";
 
+/// The host of the fixtured platform's links.
+pub const FIXTURE_HOST: &str = "fixture.test";
+
+/// How long the fixtured platform's slow link takes to resolve.
+pub const SLOW_FIXTURE: std::time::Duration = std::time::Duration::from_millis(300);
+
+/// A platform with fixtures: `/ok` resolves, `/slow` resolves after [`SLOW_FIXTURE`], and
+/// `/bad` fails the first time it is asked and resolves after that. A jar holding a `sid`
+/// cookie logs it in as `tester`.
+struct Fixtured {
+    asked_bad: std::sync::atomic::AtomicUsize,
+    http: Http,
+}
+
+impl Fixtured {
+    fn media(title: &str) -> Resolution {
+        let mut resolved = Resolved::new("fixtured");
+        resolved.title = Some(title.into());
+        resolved.variants.push(Variant::file(
+            url::Url::parse("https://fixture.test/media.mp4").unwrap(),
+        ));
+        resolved.into()
+    }
+}
+
+#[async_trait]
+impl Resolver for Fixtured {
+    fn id(&self) -> &'static str {
+        "fixtured"
+    }
+
+    fn platform(&self) -> Platform {
+        Platform {
+            id: "fixtured",
+            name: "Fixtured",
+            hosts: &[FIXTURE_HOST],
+            features: &["videos"],
+            formats: &["mp4"],
+            session: SessionSupport::Optional,
+            examples: &[
+                "https://fixture.test/ok",
+                "https://fixture.test/bad",
+                "https://fixture.test/slow",
+            ],
+        }
+    }
+
+    fn matches(&self, url: &url::Url) -> bool {
+        url.host_str() == Some(FIXTURE_HOST)
+    }
+
+    async fn resolve(&self, url: &url::Url) -> Result<Resolution, ResolveError> {
+        match url.path() {
+            "/ok" => Ok(Self::media("A fixture")),
+            "/slow" => {
+                tokio::time::sleep(SLOW_FIXTURE).await;
+                Ok(Self::media("A slow fixture"))
+            }
+            "/bad" => {
+                let asked = self
+                    .asked_bad
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if asked == 0 {
+                    Err(ResolveError::NotFound(url.clone()))
+                } else {
+                    Ok(Self::media("A recovered fixture"))
+                }
+            }
+            _ => Err(ResolveError::NotFound(url.clone())),
+        }
+    }
+
+    async fn check_session(&self) -> Result<SessionCheck, ResolveError> {
+        Ok(match self.http.jar("fixtured").get("sid") {
+            Some(_) => SessionCheck::LoggedIn {
+                account: "tester".into(),
+            },
+            None => SessionCheck::LoggedOut,
+        })
+    }
+}
+
 /// An engine that accepts links to [`SUPPORTED_HOST`] and never runs them; bots only need
-/// its handle, and the jobs they submit sit in the database.
+/// its handle, and the jobs they submit sit in the database. It also carries the fixtured
+/// platform, whose links resolve without the network.
 fn stub_engine(db: SqliteStore, clients: Clients, settings: &Settings) -> Engine {
     struct Nothing;
 
@@ -273,21 +365,22 @@ fn stub_engine(db: SqliteStore, clients: Clients, settings: &Settings) -> Engine
         }
     }
 
-    Engine::builder(
-        settings.engine.clone(),
-        Arc::new(db),
-        Http::new(settings.http.clone()),
-    )
-    .resolver(Nothing)
-    .downloader(Nothing)
-    .transcoder(Nothing)
-    .publisher(DiscordPublisher::new(clients))
-    .publisher(crate::local::LocalPublisher::with_config(
-        settings.local.dir.clone(),
-        settings.local.max_bytes,
-    ))
-    .build()
-    .unwrap()
+    let http = Http::new(settings.http.clone());
+    Engine::builder(settings.engine.clone(), Arc::new(db), http.clone())
+        .resolver(Nothing)
+        .resolver(Fixtured {
+            asked_bad: std::sync::atomic::AtomicUsize::new(0),
+            http,
+        })
+        .downloader(Nothing)
+        .transcoder(Nothing)
+        .publisher(DiscordPublisher::new(clients))
+        .publisher(crate::local::LocalPublisher::with_config(
+            settings.local.dir.clone(),
+            settings.local.max_bytes,
+        ))
+        .build()
+        .unwrap()
 }
 
 /// An app whose admin is `nick` with the password `correct horse`.
@@ -951,6 +1044,10 @@ impl FakeDiscord {
                 "/api/v10/guilds/{id}/members/search",
                 axum::routing::get(discord_guild_members_search),
             )
+            .route(
+                "/api/v10/guilds/{id}/members/{user}",
+                axum::routing::get(discord_guild_member),
+            )
             .route("/api/v10/users/@me", axum::routing::get(discord_me))
             .route(
                 "/api/v10/users/@me/guilds",
@@ -1051,7 +1148,8 @@ impl FakeDiscord {
             }));
     }
 
-    /// A member of `guild`.
+    /// A member of `guild`, with an account avatar when it has a nickname, and a guild
+    /// avatar besides, which the app is not to confuse with the account's.
     pub fn add_member(
         &self,
         guild: &str,
@@ -1061,17 +1159,20 @@ impl FakeDiscord {
         nick: Option<&str>,
         bot: bool,
     ) {
+        let avatar = nick.map(|_| "0123456789abcdef0123456789abcdef");
+        let guild_avatar = nick.map(|_| "fedcba9876543210fedcba9876543210");
         self.lock()
             .members
             .entry(guild.into())
             .or_default()
             .push(json!({
                 "user": {
-                    "id": id, "username": username, "discriminator": "0", "avatar": null,
+                    "id": id, "username": username, "discriminator": "0", "avatar": avatar,
                     "global_name": global_name, "bot": bot,
                 },
                 "nick": nick, "roles": [], "joined_at": "2026-01-01T00:00:00.000000+00:00",
-                "deaf": false, "mute": false, "flags": 0, "pending": false, "avatar": null,
+                "deaf": false, "mute": false, "flags": 0, "pending": false,
+                "avatar": guild_avatar,
             }));
     }
 
@@ -1335,6 +1436,32 @@ async fn discord_guild_members_search(
         .take(limit)
         .collect();
     (StatusCode::OK, AxumJson(Json::Array(found)))
+}
+
+async fn discord_guild_member(
+    axum::extract::State(state): Discord,
+    axum::extract::Path((guild, user)): axum::extract::Path<(String, String)>,
+    headers: axum::http::HeaderMap,
+) -> (StatusCode, AxumJson<Json>) {
+    let state = state.lock().unwrap();
+    if bot_token(&headers).is_none_or(|t| !state.bots.contains_key(&t)) {
+        return unauthorized();
+    }
+    if !guild_known(&state, &guild) {
+        return unknown_guild();
+    }
+    let found = state
+        .members
+        .get(&guild)
+        .and_then(|members| members.iter().find(|m| m["user"]["id"] == user.as_str()))
+        .cloned();
+    match found {
+        Some(member) => (StatusCode::OK, AxumJson(member)),
+        None => (
+            StatusCode::NOT_FOUND,
+            AxumJson(json!({"message": "Unknown Member", "code": 10007})),
+        ),
+    }
 }
 
 async fn discord_me(

@@ -66,6 +66,8 @@ pub enum Permission {
     ManageJobs,
     /// Read and change the server's settings, import and export them.
     ManageSettings,
+    /// Read the server's log as it is written.
+    ViewLogs,
 }
 
 impl std::fmt::Display for Permission {
@@ -78,12 +80,13 @@ impl std::fmt::Display for Permission {
             Permission::ViewAuditLog => "viewing the audit log",
             Permission::ManageJobs => "managing jobs",
             Permission::ManageSettings => "managing settings",
+            Permission::ViewLogs => "viewing the server log",
         })
     }
 }
 
 impl Permission {
-    pub const ALL: [Permission; 7] = [
+    pub const ALL: [Permission; 8] = [
         Permission::ManageUsers,
         Permission::ManageApplications,
         Permission::ManageWatchRules,
@@ -91,6 +94,7 @@ impl Permission {
         Permission::ViewAuditLog,
         Permission::ManageJobs,
         Permission::ManageSettings,
+        Permission::ViewLogs,
     ];
 }
 
@@ -101,7 +105,7 @@ impl Role {
     pub fn description(self) -> &'static str {
         match self {
             Role::Admin => {
-                "Everything: accounts, Discord applications, settings, rules, bots and the audit log."
+                "Everything: accounts, Discord applications, settings, rules, bots, the audit log and the server log."
             }
             Role::Operator => "Jobs, watch rules and the bots.",
             Role::Viewer => "Read only, plus the rules of guilds they manage on Discord.",
@@ -121,7 +125,8 @@ impl Role {
             Permission::ManageUsers
             | Permission::ManageApplications
             | Permission::ViewAuditLog
-            | Permission::ManageSettings => self == Role::Admin,
+            | Permission::ManageSettings
+            | Permission::ViewLogs => self == Role::Admin,
             Permission::ManageWatchRules | Permission::ManageBots | Permission::ManageJobs => {
                 matches!(self, Role::Admin | Role::Operator)
             }

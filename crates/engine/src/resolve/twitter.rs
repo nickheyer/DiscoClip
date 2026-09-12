@@ -48,6 +48,13 @@ pub fn status_id(url: &Url) -> Option<String> {
     RE_STATUS.captures(url.path()).map(|c| c[1].to_string())
 }
 
+/// The `WxH` a video URL's path names.
+pub fn dimensions(url: &Url) -> Option<(u32, u32)> {
+    RE_DIMS
+        .captures(url.path())
+        .and_then(|c| Some((c[1].parse::<u32>().ok()?, c[2].parse::<u32>().ok()?)))
+}
+
 #[async_trait]
 impl Resolver for TwitterResolver {
     fn id(&self) -> &'static str {

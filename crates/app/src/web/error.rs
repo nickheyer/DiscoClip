@@ -9,6 +9,7 @@ use discoclip_engine::StoreError;
 use serde_json::json;
 
 use crate::applications::ApplicationError;
+use crate::cookies::CookieError;
 use crate::oauth::OAuthError;
 use crate::rules::RuleError;
 use crate::tokens::TokenError;
@@ -31,9 +32,14 @@ pub enum ApiError {
     Internal(String),
 }
 
-impl IntoResponse for ApiError {
-    fn into_response(self) -> Response {
-        let (status, message) = match &self {
+impl ApiError {
+    /// The message the response carries.
+    pub fn message(&self) -> String {
+        self.status_and_message().1
+    }
+
+    fn status_and_message(&self) -> (StatusCode, String) {
+        match self {
             ApiError::BadRequest(message) => (StatusCode::BAD_REQUEST, message.clone()),
             ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, "not logged in".to_string()),
             ApiError::Forbidden(message) => (StatusCode::FORBIDDEN, message.clone()),
@@ -62,7 +68,13 @@ impl IntoResponse for ApiError {
                     "internal error".to_string(),
                 )
             }
-        };
+        }
+    }
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        let (status, message) = self.status_and_message();
         let mut response = (status, Json(json!({ "error": message }))).into_response();
         match self {
             ApiError::TooManyRequests(retry) => {
@@ -221,5 +233,11 @@ impl From<discoclip_engine::DeleteError> for ApiError {
             DeleteError::NotFinished(_) => ApiError::Conflict(error.to_string()),
             DeleteError::Store(_) => ApiError::Internal(error.to_string()),
         }
+    }
+}
+
+impl From<CookieError> for ApiError {
+    fn from(error: CookieError) -> Self {
+        ApiError::Internal(error.to_string())
     }
 }

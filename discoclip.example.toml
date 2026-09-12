@@ -74,6 +74,12 @@ burst = 8                      # how many may go at once when the host has been 
 dir = "data/local"             # where jobs submitted from the web app are written
 max_bytes = 104857600          # size budget for web app submissions
 
+# Every platform names public links its fixtures resolve; the platforms page shows what
+# each run found and when every link of a platform last passed.
+[fixtures]
+interval_secs = 86400          # how often every platform's fixtures run; 0 runs them only on request
+timeout_secs = 60              # how long one link may take to resolve before it counts as failed
+
 [web]
 bind = "127.0.0.1:8080"        # address the web app listens on
 # public_url = "https://clips.example.com"  # how browsers reach the app; login providers send them back here

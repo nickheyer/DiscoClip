@@ -11,7 +11,7 @@ use super::{
     Platform, Resolution, ResolveError, Resolved, Resolver, SessionCheck, SessionSupport, Variant,
     VariantKind, clean_title, fetch_ok, hls,
 };
-use crate::http::{EMBED_BOT_UA, Http};
+use crate::http::{Cookie, EMBED_BOT_UA, Http};
 
 const MAX_JSON: usize = 8 * 1024 * 1024;
 const PLATFORM: &str = "reddit";
@@ -231,6 +231,11 @@ impl Resolver for RedditResolver {
             }
             _ => Err(ResolveError::NotFound(url.clone())),
         }
+    }
+
+    /// Reddit hides posts marked over 18 behind a prompt this cookie answers.
+    fn consent_cookies(&self) -> Vec<Cookie> {
+        vec![Cookie::new("over18", "1", "reddit.com")]
     }
 
     async fn check_session(&self) -> Result<SessionCheck, ResolveError> {

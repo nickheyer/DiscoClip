@@ -37,6 +37,7 @@ serde_path_to_error.workspace = true
 serde_yaml_ng.workspace = true
 sha2.workspace = true
 subtle.workspace = true
+sysinfo.workspace = true
 thiserror.workspace = true
 time.workspace = true
 tokio.workspace = true

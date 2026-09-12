@@ -9,14 +9,26 @@ use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::http::{Http, HttpError, Response, StatusCode};
+use crate::http::{Cookie, Http, HttpError, Response, StatusCode};
 use crate::media::{AudioCodec, Container, VideoCodec};
 
+pub mod dailymotion;
+pub mod facebook;
 pub mod hls;
+pub mod imgur;
+pub mod instagram;
+pub mod kick;
 pub mod page;
 pub mod reddit;
+pub mod redgifs;
+pub mod streamable;
+pub mod tiktok;
+pub mod twitch;
 pub mod twitter;
+pub mod vimeo;
 pub mod web;
+pub mod x;
+pub mod youtube;
 
 const MAX_REDIRECT_HOPS: usize = 5;
 /// The most of a page or API answer a resolver reads.
@@ -70,6 +82,11 @@ pub trait Resolver: Send + Sync {
     fn platform(&self) -> Platform;
     fn matches(&self, url: &Url) -> bool;
     async fn resolve(&self, url: &Url) -> Result<Resolution, ResolveError>;
+    /// Cookies that get past the platform's consent and age gates without an account, sent
+    /// with every request of the platform's unless its jar holds one of the same name.
+    fn consent_cookies(&self) -> Vec<Cookie> {
+        Vec::new()
+    }
     /// Whether the platform's stored cookies log in, and as whom.
     async fn check_session(&self) -> Result<SessionCheck, ResolveError> {
         Ok(SessionCheck::Unsupported)

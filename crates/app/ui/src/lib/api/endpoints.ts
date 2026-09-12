@@ -10,7 +10,13 @@ import type {
 	ApplicationView,
 	AuditQuery,
 	BotGuild,
+	CheckStarted,
 	CommandScope,
+	CookiesImport,
+	Health,
+	LogPage,
+	LogQuery,
+	Metrics,
 	CommandsView,
 	Guild,
 	GuildChannel,
@@ -33,6 +39,8 @@ import type {
 	Minted,
 	Page,
 	PasswordRequest,
+	PlatformCoverage,
+	SessionOutcome,
 	ProviderInfo,
 	Revoked,
 	RoleView,
@@ -141,7 +149,11 @@ export const channels = {
 	members: (application: string, guild: string, q: string) =>
 		get<GuildMember[]>(`/discord/applications/${id(application)}/guilds/${id(guild)}/members`, {
 			q
-		})
+		}),
+	member: (application: string, guild: string, user: string) =>
+		get<GuildMember>(
+			`/discord/applications/${id(application)}/guilds/${id(guild)}/members/${id(user)}`
+		)
 };
 
 export const rules = {
@@ -162,6 +174,39 @@ export const guilds = {
 
 export const audit = {
 	list: (query: AuditQuery) => get<Page>('/audit', { ...query })
+};
+
+export const health = {
+	get: () => get<Health>('/health')
+};
+
+export const metrics = {
+	get: () => get<Metrics>('/metrics')
+};
+
+export const logs = {
+	list: (query: LogQuery = {}) => get<LogPage>('/logs', { ...query }),
+	/** Where the browser follows new lines; a plain URL for an EventSource, not an API call. */
+	eventsUrl: (query: Pick<LogQuery, 'level' | 'target' | 'q'>) => {
+		const params = new URLSearchParams();
+		for (const [key, value] of Object.entries(query)) {
+			if (value) params.set(key, String(value));
+		}
+		const text = params.toString();
+		return `/api/logs/events${text ? `?${text}` : ''}`;
+	}
+};
+
+export const platforms = {
+	list: () => get<PlatformCoverage[]>('/platforms'),
+	get: (platform: string) => get<PlatformCoverage>(`/platforms/${id(platform)}`),
+	checkAll: () => post<CheckStarted>('/platforms/check'),
+	check: (platform: string) => post<PlatformCoverage>(`/platforms/${id(platform)}/check`),
+	importCookies: (platform: string, body: CookiesImport) =>
+		put<SessionOutcome>(`/platforms/${id(platform)}/cookies`, body),
+	clearCookies: (platform: string) => del<PlatformCoverage>(`/platforms/${id(platform)}/cookies`),
+	checkSession: (platform: string) =>
+		post<PlatformCoverage>(`/platforms/${id(platform)}/session/check`)
 };
 
 export const settings = {

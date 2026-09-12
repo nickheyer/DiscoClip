@@ -18,7 +18,9 @@ use crate::http::Http;
 use crate::job::{Job, JobId, JobStatus, Request, SourceId, StatusKind};
 use crate::pipeline::{self, Context};
 use crate::publish::Publisher;
-use crate::resolve::{Platform, ResolveError, Resolver, ResolverRegistry, SessionCheck};
+use crate::resolve::{
+    Platform, Resolution, ResolveError, Resolver, ResolverRegistry, SessionCheck,
+};
 use crate::store::{JobFilter, JobStore, ResolverStats, Stats, StoreError};
 use crate::transcode::Transcoder;
 
@@ -103,6 +105,10 @@ impl EngineBuilder {
             .ok_or(EngineError::Incomplete("no transcoder registered"))?;
         let (submit, queue) = mpsc::channel(QUEUE_CAPACITY);
         let (events, _) = broadcast::channel(EVENT_CAPACITY);
+        for resolver in &self.resolvers {
+            self.http
+                .seed_cookies(resolver.id(), resolver.consent_cookies());
+        }
         let resolvers = Arc::new(ResolverRegistry::new(self.resolvers));
         let workers = self.config.workers.max(1);
         let config = Arc::new(RwLock::new(self.config));
@@ -365,6 +371,11 @@ impl EngineHandle {
     /// The resolver that would take `url`.
     pub fn resolver_for(&self, url: &Url) -> Option<&'static str> {
         self.shared.resolvers.find(url).map(|r| r.id())
+    }
+
+    /// Resolves `url` without queuing a job: what a fixture run needs, and nothing more.
+    pub async fn resolve(&self, url: &Url) -> Result<Resolution, ResolveError> {
+        self.shared.resolvers.resolve(url).await
     }
 
     pub fn http(&self) -> &Http {

@@ -532,7 +532,7 @@ mod tests {
         let roles = body.as_array().unwrap();
         assert_eq!(roles.len(), 3);
         assert_eq!(roles[0]["role"], "admin");
-        assert_eq!(roles[0]["permissions"].as_array().unwrap().len(), 7);
+        assert_eq!(roles[0]["permissions"].as_array().unwrap().len(), 8);
         assert_eq!(roles[0]["accounts"][0]["username"], "nick");
         assert_eq!(roles[1]["role"], "operator");
         assert_eq!(

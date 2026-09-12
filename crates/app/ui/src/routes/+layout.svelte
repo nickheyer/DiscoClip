@@ -36,7 +36,8 @@
 			label: 'Work',
 			items: [
 				{ href: '/', label: 'Overview', icon: 'dashboard' },
-				{ href: '/jobs', label: 'Jobs', icon: 'activity' }
+				{ href: '/jobs', label: 'Jobs', icon: 'activity' },
+				{ href: '/platforms', label: 'Platforms', icon: 'globe' }
 			]
 		},
 		{
@@ -59,6 +60,9 @@
 		{
 			label: 'Server',
 			items: [
+				{ href: '/health', label: 'Health', icon: 'check-circle' },
+				{ href: '/metrics', label: 'Metrics', icon: 'activity' },
+				{ href: '/logs', label: 'Log', icon: 'file-text', permission: 'view_logs' },
 				{ href: '/settings', label: 'Settings', icon: 'settings', permission: 'manage_settings' },
 				{ href: '/audit', label: 'Audit log', icon: 'audit', permission: 'view_audit_log' }
 			]

@@ -2,13 +2,6 @@
 
 REMOVE EACH ITEM AS YOU FINISH IT. DO NOT PROGRESS UNTIL YOUVE COMPLETED THE CURRENT ITEM IN ITS ENTIRETY. MUST DO IN ORDER.
 
-6. Web: Discord applications, guilds, channels, rules.
-7. Web: platform coverage page with formats and last fixture pass date.
-8. Web: health, metrics, log viewer.
-9. Resolver machinery: per-platform cookie jars and logged-in sessions managed in the app, proxies, rate limiting, retries, JS interpreter for signature ciphers, embed following, short-link unwrapping, age and consent gates.
-10. Resolver: YouTube (videos, shorts, live, premieres, age-gated, playlists, clips).
-11. Resolvers: TikTok, Instagram, Facebook, Twitter/X native.
-12. Resolvers: Twitch, Kick, Vimeo, Dailymotion, Streamable, Imgur, Redgifs.
 13. Resolvers: Bilibili, Niconico, Douyin, Kuaishou, Weibo, Xiaohongshu, VK.
 14. Resolvers: Rumble, Odysee, Bluesky, Mastodon, Threads, Tumblr, Pinterest, LinkedIn, Snapchat, Loom, Telegram.
 15. Resolvers: Discord attachments and CDN, 9GAG, iFunny, Newgrounds, Archive.org, Wikimedia Commons, Coub, Giphy, Tenor, Catbox, Google Drive, Dropbox, OneDrive, Mega.

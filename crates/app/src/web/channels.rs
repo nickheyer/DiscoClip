@@ -1,11 +1,12 @@
 //! A guild as the application's bot sees it: its channels with the rule watching each,
-//! its roles, and its members by name, for choosing what a rule names.
+//! its roles, and its members by name or by id, for choosing what a rule names.
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use serde::{Deserialize, Serialize};
 use twilight_http::Client;
 use twilight_model::channel::ChannelType;
+use twilight_model::guild::Member;
 use twilight_model::id::Id;
 use twilight_model::id::marker::GuildMarker;
 
@@ -76,8 +77,22 @@ pub struct GuildMember {
     pub username: String,
     pub display_name: Option<String>,
     pub nick: Option<String>,
+    /// The account's avatar hash on Discord's CDN, under `avatars/<id>/`.
     pub avatar: Option<String>,
     pub bot: bool,
+}
+
+impl From<Member> for GuildMember {
+    fn from(member: Member) -> Self {
+        GuildMember {
+            id: member.user.id.to_string(),
+            username: member.user.name,
+            display_name: member.user.global_name,
+            nick: member.nick,
+            avatar: member.user.avatar.map(|hash| hash.to_string()),
+            bot: member.user.bot,
+        }
+    }
 }
 
 /// The bot of `id`, and `guild` as an id, once `identity` may see the guild's rules.
@@ -224,22 +239,34 @@ pub async fn search_members(
         .models()
         .await
         .map_err(|e| ApiError::BadGateway(format!("Discord answered unexpectedly: {e}")))?;
-    Ok(Json(
-        members
-            .into_iter()
-            .map(|member| GuildMember {
-                id: member.user.id.to_string(),
-                username: member.user.name,
-                display_name: member.user.global_name,
-                nick: member.nick,
-                avatar: member
-                    .avatar
-                    .or(member.user.avatar)
-                    .map(|hash| hash.to_string()),
-                bot: member.user.bot,
-            })
-            .collect(),
-    ))
+    Ok(Json(members.into_iter().map(GuildMember::from).collect()))
+}
+
+/// One member of the guild by id, for naming the users a rule allows.
+pub async fn get_member(
+    State(state): State<AppState>,
+    Auth(identity): Auth,
+    Path((id, guild, user)): Path<(String, String, String)>,
+) -> Result<Json<GuildMember>, ApiError> {
+    let (http, guild_id) = bot_for(&state, &identity, &id, &guild).await?;
+    let user_id = user
+        .parse::<u64>()
+        .ok()
+        .and_then(Id::new_checked)
+        .ok_or_else(|| ApiError::BadRequest(format!("user {user:?} is not a Discord id")))?;
+    let member = http
+        .guild_member(guild_id, user_id)
+        .await
+        .map_err(|e| match e.kind() {
+            twilight_http::error::ErrorType::Response { status, .. } if status.get() == 404 => {
+                ApiError::NotFound
+            }
+            _ => discord_error("a member", &guild, e),
+        })?
+        .model()
+        .await
+        .map_err(|e| ApiError::BadGateway(format!("Discord answered unexpectedly: {e}")))?;
+    Ok(Json(member.into()))
 }
 
 #[cfg(test)]
@@ -351,6 +378,22 @@ mod tests {
             StatusCode::BAD_REQUEST
         );
 
+        // One member by id, for naming the users a rule already allows.
+        let (status, body) = admin.get(&format!("{base}/members/9")).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["id"], "9");
+        assert_eq!(body["username"], "nick");
+        assert_eq!(body["nick"], "nicky");
+        assert_eq!(body["avatar"], "0123456789abcdef0123456789abcdef");
+        assert_eq!(
+            admin.get(&format!("{base}/members/999")).await.0,
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            admin.get(&format!("{base}/members/x")).await.0,
+            StatusCode::BAD_REQUEST
+        );
+
         // A guild the bot is not in, a bad guild id, and an unknown application.
         let (status, body) = admin
             .get(&format!(
@@ -397,6 +440,10 @@ mod tests {
         );
         assert_eq!(
             viewer.get(&format!("{base}/members?q=n")).await.0,
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            viewer.get(&format!("{base}/members/9")).await.0,
             StatusCode::FORBIDDEN
         );
 

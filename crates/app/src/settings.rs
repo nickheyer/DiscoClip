@@ -26,6 +26,7 @@ use url::Url;
 use crate::audit::{self, Action, Actor, Target};
 use crate::config::{ConfigError, Format, Provisioning};
 use crate::db::{nanos, timestamp, transact};
+use crate::fixtures::FixtureConfig;
 use crate::web::proxy::Network;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -37,6 +38,8 @@ pub struct Settings {
     /// per-host rate limits and proxies.
     pub http: HttpConfig,
     pub local: LocalConfig,
+    /// How often every platform's fixture links are resolved, and how long one may take.
+    pub fixtures: FixtureConfig,
     pub web: WebConfig,
     pub auth: AuthConfig,
 }
@@ -173,6 +176,12 @@ impl Settings {
         }
         if self.local.dir.as_os_str().is_empty() {
             return Err(invalid("local.dir", "cannot be empty".into()));
+        }
+        if self.fixtures.timeout_secs == 0 {
+            return Err(invalid(
+                "fixtures.timeout_secs",
+                "must be at least 1".into(),
+            ));
         }
         if let Some(tls) = &self.web.tls {
             if tls.cert.as_os_str().is_empty() {
@@ -1423,6 +1432,7 @@ mod tests {
             ("http.retry.attempts", json!(0)),
             ("http.proxies.default", json!("ftp://proxy:1")),
             ("local.max_bytes", json!(0)),
+            ("fixtures.timeout_secs", json!(0)),
             ("web.public_url", json!("ftp://clips.example.com")),
             ("web.tls", json!({"cert": "", "key": "k"})),
         ] {

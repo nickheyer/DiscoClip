@@ -1,7 +1,8 @@
 //! HTTP for resolvers and downloaders: one shared [`Http`] with per-platform cookie jars
-//! (the logged-in sessions the app manages), proxies, per-host rate limits, retries,
-//! redirects followed by hand so cookies and short links behave, request counts for the
-//! metrics page, and a transport that tests swap for recorded fixtures.
+//! (the logged-in sessions the app manages) over the consent cookies each resolver seeds,
+//! proxies, per-host rate limits, retries, redirects followed by hand so cookies and short
+//! links behave, request counts for the metrics page, and a transport that tests swap for
+//! recorded fixtures.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -214,6 +215,9 @@ struct Inner {
     transport: Arc<dyn Transport>,
     config: RwLock<HttpConfig>,
     jars: RwLock<HashMap<String, Jar>>,
+    /// Cookies each platform's resolver sends to get past consent and age gates without
+    /// an account; a jar cookie of the same name and domain replaces one.
+    seeds: RwLock<HashMap<String, Vec<Cookie>>>,
     limiter: HostLimiter,
     stats: Stats,
 }
@@ -248,6 +252,7 @@ impl Http {
                 limiter: HostLimiter::new(config.rate_limits.clone()),
                 config: RwLock::new(config),
                 jars: RwLock::new(HashMap::new()),
+                seeds: RwLock::new(HashMap::new()),
                 stats: Stats::default(),
             }),
         }
@@ -346,6 +351,28 @@ impl Http {
         result
     }
 
+    /// Sets the cookies `platform`'s requests carry besides its jar: what gets past the
+    /// platform's consent and age gates without an account.
+    pub fn seed_cookies(&self, platform: &str, cookies: Vec<Cookie>) {
+        let mut seeds = self.inner.seeds.write().unwrap_or_else(|e| e.into_inner());
+        if cookies.is_empty() {
+            seeds.remove(platform);
+        } else {
+            seeds.insert(platform.to_string(), cookies);
+        }
+    }
+
+    /// The consent cookies seeded for `platform`.
+    pub fn seeds(&self, platform: &str) -> Vec<Cookie> {
+        self.inner
+            .seeds
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(platform)
+            .cloned()
+            .unwrap_or_default()
+    }
+
     pub fn platforms_with_cookies(&self) -> Vec<String> {
         let mut platforms: Vec<String> = self
             .inner
@@ -405,9 +432,21 @@ impl Http {
     }
 
     fn cookie_header(&self, platform: Option<&str>, url: &Url) -> Option<String> {
+        let platform = platform.unwrap_or(WEB_PLATFORM);
+        let seeds = self.inner.seeds.read().unwrap_or_else(|e| e.into_inner());
         let jars = self.inner.jars.read().unwrap_or_else(|e| e.into_inner());
-        let jar = jars.get(platform.unwrap_or(WEB_PLATFORM))?;
-        jar.header_for(url, Timestamp::now())
+        match (seeds.get(platform), jars.get(platform)) {
+            (None, None) => None,
+            (None, Some(jar)) => jar.header_for(url, Timestamp::now()),
+            (Some(seeds), jar) => {
+                // The jar's cookies replace seeds of the same name, domain and path.
+                let mut merged = Jar::from_cookies(seeds.clone());
+                for cookie in jar.map(|j| j.cookies()).unwrap_or_default() {
+                    merged.insert(cookie.clone());
+                }
+                merged.header_for(url, Timestamp::now())
+            }
+        }
     }
 
     fn store_cookies(&self, platform: Option<&str>, url: &Url, headers: &HeaderMap) {
@@ -1029,6 +1068,36 @@ mod tests {
         assert_eq!(http.platforms_with_cookies(), vec!["web"]);
         http.set_jar("web", Jar::new());
         assert!(http.platforms_with_cookies().is_empty());
+    }
+
+    #[tokio::test]
+    async fn seeded_consent_cookies_ride_along_until_the_jar_says_otherwise() {
+        let (http, transport) = scripted(vec![(200, vec![], ""), (200, vec![], "")]);
+        http.seed_cookies("reddit", vec![Cookie::new("over18", "1", "reddit.com")]);
+        assert_eq!(http.seeds("reddit").len(), 1);
+        http.get(Url::parse("https://old.reddit.com/r/x.json").unwrap())
+            .platform("reddit")
+            .send()
+            .await
+            .unwrap();
+        http.with_jar("reddit", |jar| {
+            jar.insert(Cookie::new("over18", "0", "reddit.com"));
+            jar.insert(Cookie::new("reddit_session", "abc", "reddit.com"));
+        });
+        http.get(Url::parse("https://old.reddit.com/r/x.json").unwrap())
+            .platform("reddit")
+            .send()
+            .await
+            .unwrap();
+        let seen = transport.seen.lock().unwrap();
+        assert_eq!(seen[0].headers["cookie"], "over18=1");
+        let second = seen[1].headers["cookie"].to_str().unwrap();
+        assert!(second.contains("over18=0"), "{second}");
+        assert!(second.contains("reddit_session=abc"), "{second}");
+        assert!(!second.contains("over18=1"), "{second}");
+        drop(seen);
+        http.seed_cookies("reddit", Vec::new());
+        assert!(http.seeds("reddit").is_empty());
     }
 
     #[test]

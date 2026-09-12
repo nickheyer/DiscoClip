@@ -9,7 +9,8 @@ export type Permission =
 	| 'manage_bots'
 	| 'view_audit_log'
 	| 'manage_jobs'
-	| 'manage_settings';
+	| 'manage_settings'
+	| 'view_logs';
 
 export type Intent = 'login' | 'link';
 
@@ -32,7 +33,7 @@ export type ActorKind = 'user' | 'provisioning';
 
 export type Via = 'session' | 'token';
 
-export type TargetKind = 'setting' | 'application' | 'rule';
+export type TargetKind = 'setting' | 'application' | 'rule' | 'platform';
 
 export type Action =
 	| 'settings.set'
@@ -49,7 +50,9 @@ export type Action =
 	| 'bot.restart'
 	| 'rule.create'
 	| 'rule.update'
-	| 'rule.delete';
+	| 'rule.delete'
+	| 'session.import'
+	| 'session.clear';
 
 export const ROLES: Role[] = ['admin', 'operator', 'viewer'];
 
@@ -60,7 +63,8 @@ export const PERMISSIONS: Permission[] = [
 	'manage_bots',
 	'view_audit_log',
 	'manage_jobs',
-	'manage_settings'
+	'manage_settings',
+	'view_logs'
 ];
 
 export type StatusKind = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
@@ -84,7 +88,7 @@ export const BOT_STATES: BotStateName[] = [
 	'failed'
 ];
 
-export const TARGET_KINDS: TargetKind[] = ['setting', 'application', 'rule'];
+export const TARGET_KINDS: TargetKind[] = ['setting', 'application', 'rule', 'platform'];
 
 export const ACTIONS: Action[] = [
 	'settings.set',
@@ -101,7 +105,9 @@ export const ACTIONS: Action[] = [
 	'bot.restart',
 	'rule.create',
 	'rule.update',
-	'rule.delete'
+	'rule.delete',
+	'session.import',
+	'session.clear'
 ];
 
 // Request schemas
@@ -768,6 +774,200 @@ export type SettingsFormat = 'toml' | 'yaml' | 'json';
 export const SETTINGS_FORMATS: SettingsFormat[] = ['toml', 'yaml', 'json'];
 
 /** A JSON value as the settings hold it. */
+// Platforms
+
+export type SessionSupport = 'none' | 'optional' | 'required';
+
+export type FixtureStatus = 'pass' | 'fail' | 'never';
+
+export interface FixtureResult {
+	url: string;
+	status: FixtureStatus;
+	run_at: string | null;
+	last_pass_at: string | null;
+	error: string | null;
+	title: string | null;
+	duration_ms: number | null;
+}
+
+export type SessionState = 'unsupported' | 'logged_out' | 'logged_in';
+
+export type SessionCheckResult = { at: string } & (
+	| { state: 'unsupported' }
+	| { state: 'logged_out' }
+	| { state: 'logged_in'; account: string }
+);
+
+export interface PlatformCoverage {
+	id: string;
+	name: string;
+	hosts: string[];
+	features: string[];
+	formats: string[];
+	session: SessionSupport;
+	cookies: number;
+	fixtures: FixtureResult[];
+	last_run_at: string | null;
+	last_pass_at: string | null;
+	last_fail_at: string | null;
+	passed: number;
+	failed: number;
+	running: boolean;
+	cookies_updated_at: string | null;
+	session_check: SessionCheckResult | null;
+}
+
+export type CookieFormat = 'netscape' | 'header';
+
+export interface CookiesImport {
+	format: CookieFormat;
+	text: string;
+	domain?: string;
+}
+
+export interface SessionOutcome extends PlatformCoverage {
+	check_error: string | null;
+}
+
+export interface CheckStarted {
+	platforms: string[];
+}
+
+// Health, metrics and the log
+
+export type HealthStatus = 'ok' | 'warn' | 'fail';
+
+export interface HealthCheck {
+	name: string;
+	label: string;
+	status: HealthStatus;
+	detail: string;
+}
+
+export interface Health {
+	status: HealthStatus;
+	version: string;
+	started_at: string;
+	uptime_secs: number;
+	at: string;
+	checks: HealthCheck[];
+}
+
+export interface ProcessMetrics {
+	pid: number;
+	rss_bytes: number;
+	virtual_bytes: number;
+	cpu_percent: number;
+	run_time_secs: number;
+}
+
+export interface DiskMetrics {
+	mount: string;
+	total_bytes: number;
+	available_bytes: number;
+	holds: string[];
+}
+
+export interface SystemMetrics {
+	total_memory_bytes: number;
+	available_memory_bytes: number;
+	load_average: [number, number, number];
+	cpus: number;
+	disks: DiskMetrics[];
+}
+
+export interface RequestCount {
+	host: string;
+	status: number;
+	count: number;
+}
+
+export interface HttpMetrics {
+	requests: RequestCount[];
+	retries: number;
+	rate_limit_waits: number;
+	bytes_received: number;
+}
+
+export interface BotMetrics {
+	applications: number;
+	by_state: Record<string, number>;
+}
+
+export interface CacheMetrics {
+	dir: string;
+	bytes: number;
+	jobs: number;
+}
+
+export interface DatabaseMetrics {
+	path: string;
+	bytes: number;
+}
+
+export interface FixtureMetrics {
+	platforms: number;
+	with_fixtures: number;
+	passing: number;
+	failing: number;
+	never: number;
+	running: number;
+}
+
+export interface LogMetrics {
+	buffered: number;
+	capacity: number;
+}
+
+export interface Metrics {
+	at: string;
+	version: string;
+	started_at: string;
+	uptime_secs: number;
+	process: ProcessMetrics | null;
+	system: SystemMetrics;
+	jobs: JobStats;
+	http: HttpMetrics;
+	bots: BotMetrics;
+	cache: CacheMetrics;
+	database: DatabaseMetrics;
+	fixtures: FixtureMetrics;
+	logs: LogMetrics;
+}
+
+export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error';
+
+export const LOG_LEVELS: LogLevel[] = ['trace', 'debug', 'info', 'warn', 'error'];
+
+export interface LogLine {
+	id: number;
+	at: string;
+	level: LogLevel;
+	target: string;
+	message: string;
+	fields: Record<string, string>;
+}
+
+export interface LogQuery {
+	level?: LogLevel;
+	target?: string;
+	q?: string;
+	before?: number;
+	limit?: number;
+}
+
+export interface LogPage {
+	lines: LogLine[];
+	next: number | null;
+	buffered: number;
+	capacity: number;
+	oldest_id: number | null;
+}
+
+export interface Skipped {
+	count: number;
+}
+
 export type SettingValue =
 	| string
 	| number

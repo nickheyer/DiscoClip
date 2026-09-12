@@ -67,6 +67,7 @@
 | `manage_applications` | yes | no | no |
 | `view_audit_log` | yes | no | no |
 | `manage_settings` | yes | no | no |
+| `view_logs` | yes | no | no |
 | `manage_watch_rules` | yes | yes | no |
 | `manage_bots` | yes | yes | no |
 | `manage_jobs` | yes | yes | no |
@@ -729,6 +730,19 @@ Searches the members of a guild by name through the application's bot.
 | Response | `200` `GuildMember[]` |
 | Errors | `400` `401` `403` `404` `409` `502` |
 
+#### GET /api/discord/applications/{id}/guilds/{guild}/members/{user}
+
+Returns one member of a guild by id through the application's bot.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_watch_rules` or session managing `guild` |
+| Path | `id` `uuid` · `guild` `snowflake` · `user` `snowflake` |
+| Query | — |
+| Body | — |
+| Response | `200` `GuildMember` |
+| Errors | `400` `401` `403` `404` `409` `502` |
+
 ### Slash command registration
 
 #### GET /api/discord/applications/{id}/commands
@@ -1092,6 +1106,157 @@ Lists audit log entries newest first with filters and paging.
 | Response | `200` `Page` |
 | Errors | `400` `401` `403` |
 
+### Platforms
+
+#### GET /api/platforms
+
+Lists every platform with what its resolver covers and what its fixtures last found.
+
+| Field | Value |
+|---|---|
+| Auth | any |
+| Path | — |
+| Query | — |
+| Body | — |
+| Response | `200` `PlatformCoverage[]` |
+| Errors | `401` |
+
+#### GET /api/platforms/{id}
+
+Returns one platform with what its fixtures last found.
+
+| Field | Value |
+|---|---|
+| Auth | any |
+| Path | `id` `string` |
+| Query | — |
+| Body | — |
+| Response | `200` `PlatformCoverage` |
+| Errors | `401` `404` |
+
+#### POST /api/platforms/check
+
+Starts a run of the fixtures of every platform not already running them.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_jobs` |
+| Path | — |
+| Query | — |
+| Body | — |
+| Response | `202` `CheckStarted` |
+| Errors | `400` `401` `403` `409` |
+
+#### POST /api/platforms/{id}/check
+
+Starts a run of one platform's fixtures.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_jobs` |
+| Path | `id` `string` |
+| Query | — |
+| Body | — |
+| Response | `202` `PlatformCoverage` |
+| Errors | `400` `401` `403` `404` `409` |
+
+### Platform sessions
+
+#### PUT /api/platforms/{id}/cookies
+
+Replaces a platform's cookies and asks the platform what session they make.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_settings` |
+| Path | `id` `string` |
+| Query | — |
+| Body | `CookiesImport` |
+| Response | `200` `SessionOutcome` |
+| Errors | `400` `401` `403` `404` |
+
+#### DELETE /api/platforms/{id}/cookies
+
+Removes a platform's cookies.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_settings` |
+| Path | `id` `string` |
+| Query | — |
+| Body | — |
+| Response | `200` `PlatformCoverage` |
+| Errors | `401` `403` `404` |
+
+#### POST /api/platforms/{id}/session/check
+
+Asks the platform what its stored cookies are worth now.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_settings` |
+| Path | `id` `string` |
+| Query | — |
+| Body | — |
+| Response | `200` `PlatformCoverage` |
+| Errors | `401` `403` `404` `502` |
+
+### Health and metrics
+
+#### GET /api/health
+
+Checks every part the server runs on and sums them up.
+
+| Field | Value |
+|---|---|
+| Auth | any |
+| Path | — |
+| Query | — |
+| Body | — |
+| Response | `200` `Health` |
+| Errors | `401` |
+
+#### GET /api/metrics
+
+Measures the process and the machine and the jobs and the HTTP client and the stores.
+
+| Field | Value |
+|---|---|
+| Auth | any |
+| Path | — |
+| Query | — |
+| Body | — |
+| Response | `200` `Metrics` |
+| Errors | `401` `500` |
+
+### Server log
+
+#### GET /api/logs
+
+Lists the newest kept log lines that match the filter with paging.
+
+| Field | Value |
+|---|---|
+| Auth | `view_logs` |
+| Path | — |
+| Query | `LogQuery` |
+| Body | — |
+| Response | `200` `LogPage` |
+| Errors | `400` `401` `403` |
+
+#### GET /api/logs/events
+
+Streams every new log line that matches the filter as server-sent events.
+
+| Field | Value |
+|---|---|
+| Auth | `view_logs` |
+| Path | — |
+| Query | `LogQuery` without `before` and `limit` |
+| Body | — |
+| Response | `200` `text/event-stream` · `event: log` · `data: LogLine` · `event: skipped` · `data: Skipped` |
+| Errors | `400` `401` `403` |
+
 ### Discord slash commands
 
 #### /clip
@@ -1263,6 +1428,24 @@ Rejects a command name the bot does not define.
 | `limit` | `integer` | no · default `50` · max `500` |
 | `offset` | `integer` | no · default `0` |
 | `order` | `JobOrder` | no · default `newest` |
+
+#### CookiesImport
+
+| Field | Type | Required |
+|---|---|---|
+| `format` | `CookieFormat` | yes |
+| `text` | `string` | yes |
+| `domain` | `string` | `header` only · default the platform's first host |
+
+#### LogQuery
+
+| Field | Type | Required |
+|---|---|---|
+| `level` | `LogLevel` | no |
+| `target` | `string` | no |
+| `q` | `string` | no |
+| `before` | `integer` | no |
+| `limit` | `integer` | no · default `200` · max `1000` |
 
 #### AuditQuery
 
@@ -1933,6 +2116,221 @@ Rejects a command name the bot does not define.
 | `target` | `Target` |
 | `details` | `AuditDetails` |
 
+#### PlatformCoverage
+
+| Field | Type |
+|---|---|
+| `id` | `string` |
+| `name` | `string` |
+| `hosts` | `string[]` |
+| `features` | `string[]` |
+| `formats` | `string[]` |
+| `session` | `SessionSupport` |
+| `cookies` | `integer` |
+| `fixtures` | `FixtureResult[]` |
+| `last_run_at` | `timestamp \| null` |
+| `last_pass_at` | `timestamp \| null` |
+| `last_fail_at` | `timestamp \| null` |
+| `passed` | `integer` |
+| `failed` | `integer` |
+| `running` | `bool` |
+| `cookies_updated_at` | `timestamp \| null` |
+| `session_check` | `SessionCheckResult \| null` |
+
+#### SessionCheckResult
+
+| Field | Type | Present for `state` |
+|---|---|---|
+| `state` | `SessionState` | all |
+| `account` | `string` | `logged_in` |
+| `at` | `timestamp` | all |
+
+#### SessionOutcome
+
+| Field | Type |
+|---|---|
+| `...PlatformCoverage` | `PlatformCoverage` |
+| `check_error` | `string \| null` |
+
+#### FixtureResult
+
+| Field | Type |
+|---|---|
+| `url` | `url` |
+| `status` | `FixtureStatus` |
+| `run_at` | `timestamp \| null` |
+| `last_pass_at` | `timestamp \| null` |
+| `error` | `string \| null` |
+| `title` | `string \| null` |
+| `duration_ms` | `integer \| null` |
+
+#### CheckStarted
+
+| Field | Type |
+|---|---|
+| `platforms` | `string[]` |
+
+#### Health
+
+| Field | Type |
+|---|---|
+| `status` | `HealthStatus` |
+| `version` | `string` |
+| `started_at` | `timestamp` |
+| `uptime_secs` | `integer` |
+| `at` | `timestamp` |
+| `checks` | `HealthCheck[]` |
+
+#### HealthCheck
+
+| Field | Type |
+|---|---|
+| `name` | `string` |
+| `label` | `string` |
+| `status` | `HealthStatus` |
+| `detail` | `string` |
+
+| `name` | What is checked |
+|---|---|
+| `database` | SQLite answers a query |
+| `engine` | the workers and their load |
+| `cache` | the cache directory takes a file |
+| `local` | the local publishing directory takes a file |
+| `ffmpeg` | ffmpeg runs and reports its version |
+| `bots` | no bot has failed or is retrying or lacks a token |
+| `fixtures` | no platform has a failing fixture |
+
+#### Metrics
+
+| Field | Type |
+|---|---|
+| `at` | `timestamp` |
+| `version` | `string` |
+| `started_at` | `timestamp` |
+| `uptime_secs` | `integer` |
+| `process` | `ProcessMetrics \| null` |
+| `system` | `SystemMetrics` |
+| `jobs` | `JobStats` |
+| `http` | `HttpMetrics` |
+| `bots` | `BotMetrics` |
+| `cache` | `CacheMetrics` |
+| `database` | `DatabaseMetrics` |
+| `fixtures` | `FixtureMetrics` |
+| `logs` | `LogMetrics` |
+
+#### ProcessMetrics
+
+| Field | Type |
+|---|---|
+| `pid` | `integer` |
+| `rss_bytes` | `integer` |
+| `virtual_bytes` | `integer` |
+| `cpu_percent` | `number` |
+| `run_time_secs` | `integer` |
+
+#### SystemMetrics
+
+| Field | Type |
+|---|---|
+| `total_memory_bytes` | `integer` |
+| `available_memory_bytes` | `integer` |
+| `load_average` | `[number, number, number]` |
+| `cpus` | `integer` |
+| `disks` | `DiskMetrics[]` |
+
+#### DiskMetrics
+
+| Field | Type |
+|---|---|
+| `mount` | `string` |
+| `total_bytes` | `integer` |
+| `available_bytes` | `integer` |
+| `holds` | `string[]` of `cache` `data` `local` `archive` |
+
+#### HttpMetrics
+
+| Field | Type |
+|---|---|
+| `requests` | `RequestCount[]` |
+| `retries` | `integer` |
+| `rate_limit_waits` | `integer` |
+| `bytes_received` | `integer` |
+
+#### RequestCount
+
+| Field | Type |
+|---|---|
+| `host` | `string` |
+| `status` | `integer` |
+| `count` | `integer` |
+
+#### BotMetrics
+
+| Field | Type |
+|---|---|
+| `applications` | `integer` |
+| `by_state` | `object` of `BotState` to `integer` |
+
+#### CacheMetrics
+
+| Field | Type |
+|---|---|
+| `dir` | `string` |
+| `bytes` | `integer` |
+| `jobs` | `integer` |
+
+#### DatabaseMetrics
+
+| Field | Type |
+|---|---|
+| `path` | `string` |
+| `bytes` | `integer` |
+
+#### FixtureMetrics
+
+| Field | Type |
+|---|---|
+| `platforms` | `integer` |
+| `with_fixtures` | `integer` |
+| `passing` | `integer` |
+| `failing` | `integer` |
+| `never` | `integer` |
+| `running` | `integer` |
+
+#### LogMetrics
+
+| Field | Type |
+|---|---|
+| `buffered` | `integer` |
+| `capacity` | `integer` |
+
+#### LogPage
+
+| Field | Type |
+|---|---|
+| `lines` | `LogLine[]` |
+| `next` | `integer \| null` |
+| `buffered` | `integer` |
+| `capacity` | `integer` |
+| `oldest_id` | `integer \| null` |
+
+#### LogLine
+
+| Field | Type |
+|---|---|
+| `id` | `integer` |
+| `at` | `timestamp` |
+| `level` | `LogLevel` |
+| `target` | `string` |
+| `message` | `string` |
+| `fields` | `object` of `string` to `string` |
+
+#### Skipped
+
+| Field | Type |
+|---|---|
+| `count` | `integer` |
+
 #### Actor
 
 | Field | Type | Present for `kind` |
@@ -1957,6 +2355,7 @@ Rejects a command name the bot does not define.
 | `setting` | settings key | `null` |
 | `application` | application `uuid` | application name |
 | `rule` | rule `uuid` | `<guild_id>/<channel_id>` |
+| `platform` | platform id | `null` |
 
 #### AuditDetails
 
@@ -1985,6 +2384,10 @@ Rejects a command name the bot does not define.
 | `rule.create` `rule.update` `rule.delete` | `guild_id` | `snowflake` |
 | `rule.create` `rule.update` `rule.delete` | `rule` | `RuleInput` |
 | `rule.update` | `previous` | `RuleInput` |
+| `session.import` | `cookies` | `integer` |
+| `session.import` | `previous_cookies` | `integer` |
+| `session.import` | `format` | `CookieFormat` |
+| `session.clear` | `cookies` | `integer` |
 
 ### Enumerations
 
@@ -2007,6 +2410,7 @@ Rejects a command name the bot does not define.
 | `view_audit_log` |
 | `manage_jobs` |
 | `manage_settings` |
+| `view_logs` |
 
 #### Intent
 
@@ -2152,6 +2556,55 @@ Rejects a command name the bot does not define.
 | `thread` |
 | `other` |
 
+#### SessionSupport
+
+| Value |
+|---|
+| `none` |
+| `optional` |
+| `required` |
+
+#### FixtureStatus
+
+| Value |
+|---|
+| `pass` |
+| `fail` |
+| `never` |
+
+#### SessionState
+
+| Value |
+|---|
+| `unsupported` |
+| `logged_out` |
+| `logged_in` |
+
+#### CookieFormat
+
+| Value |
+|---|
+| `netscape` |
+| `header` |
+
+#### HealthStatus
+
+| Value |
+|---|
+| `ok` |
+| `warn` |
+| `fail` |
+
+#### LogLevel
+
+| Value |
+|---|
+| `trace` |
+| `debug` |
+| `info` |
+| `warn` |
+| `error` |
+
 #### BotState
 
 | Value |
@@ -2184,6 +2637,7 @@ Rejects a command name the bot does not define.
 | `setting` |
 | `application` |
 | `rule` |
+| `platform` |
 
 #### Action
 
@@ -2204,6 +2658,8 @@ Rejects a command name the bot does not define.
 | `rule.create` |
 | `rule.update` |
 | `rule.delete` |
+| `session.import` |
+| `session.clear` |
 
 #### Install scopes
 

@@ -1,17 +1,25 @@
 <script lang="ts">
+	import ChannelSelect from './ChannelSelect.svelte';
 	import Field from './Field.svelte';
+	import MemberPicker from './MemberPicker.svelte';
+	import RolePicker from './RolePicker.svelte';
 	import TagInput from './TagInput.svelte';
 	import type { RuleInput } from '$lib/api';
+	import type { GuildDirectory } from '$lib/discord';
+	import { memberLookup, memberSearch } from '$lib/discord';
 	import { formatBytes, formatDuration, isSnowflake } from '$lib/format';
 
 	interface Props {
 		id: string;
 		value: RuleInput;
 		disabled?: boolean;
-		/** Channel names the bot knows, when there are any to offer. */
+		/** The guild the rule is for, so channels, roles and members are chosen by name. */
+		directory?: GuildDirectory | null;
+		/** Channels other rules of the guild watch, not offered again. */
+		taken?: Set<string>;
 	}
 
-	let { id, value = $bindable(), disabled = false }: Props = $props();
+	let { id, value = $bindable(), disabled = false, directory = null, taken = new Set() }: Props = $props();
 
 	const snowflakeProblem = (v: string) => (isSnowflake(v) ? null : `${v} is not a Discord id`);
 	const hostProblem = (v: string) =>
@@ -21,6 +29,14 @@
 		{ label: 'MB', factor: 1024 * 1024 },
 		{ label: 'GB', factor: 1024 * 1024 * 1024 }
 	];
+
+	// Channels are picked from the bot's list, or entered by id: for a thread, which the
+	// list leaves out, or when the list could not be fetched.
+	const channels = $derived(directory?.channels ?? null);
+	let byId = $state(false);
+	const pickChannels = $derived(channels !== null && !byId);
+	const search = $derived(directory ? memberSearch(directory) : null);
+	const lookup = $derived(directory ? memberLookup(directory) : null);
 
 	// Size and duration are entered in human units and stored as the API wants them.
 	let sizeUnit = $state<'MB' | 'GB'>(value.max_source_bytes && value.max_source_bytes >= 1024 ** 3 ? 'GB' : 'MB');
@@ -49,9 +65,11 @@
 	const channelProblem = $derived(
 		value.channel_id.trim() === ''
 			? null
-			: isSnowflake(value.channel_id.trim())
-				? null
-				: 'A channel id is a Discord snowflake'
+			: !isSnowflake(value.channel_id.trim())
+				? 'A channel id is a Discord snowflake'
+				: taken.has(value.channel_id.trim())
+					? 'Another rule already watches this channel'
+					: null
 	);
 	const postToProblem = $derived(
 		!value.post_to || value.post_to.trim() === '' || isSnowflake(value.post_to.trim())
@@ -74,6 +92,7 @@
 	export function valid(): boolean {
 		return (
 			isSnowflake(value.channel_id.trim()) &&
+			!channelProblem &&
 			!postToProblem &&
 			!sizeProblem &&
 			!durationProblem &&
@@ -87,21 +106,34 @@
 		<Field
 			label="Watched channel"
 			for={`${id}-channel`}
-			hint="The id of the text channel whose links are picked up. Right-click a channel in Discord with developer mode on and copy its id."
+			hint={pickChannels
+				? 'The channel whose links are picked up.'
+				: 'The id of the channel whose links are picked up. Right-click a channel in Discord with developer mode on and copy its id.'}
 			error={channelProblem}
 		>
-			<input
-				id={`${id}-channel`}
-				class="input mono"
-				bind:value={value.channel_id}
-				placeholder="123456789012345678"
-				inputmode="numeric"
-				autocomplete="off"
-				spellcheck="false"
-				required
-				{disabled}
-				aria-invalid={channelProblem ? 'true' : undefined}
-			/>
+			{#if pickChannels && channels}
+				<ChannelSelect
+					id={`${id}-channel`}
+					bind:value={value.channel_id}
+					{channels}
+					{taken}
+					{disabled}
+					invalid={!!channelProblem}
+				/>
+			{:else}
+				<input
+					id={`${id}-channel`}
+					class="input mono"
+					bind:value={value.channel_id}
+					placeholder="123456789012345678"
+					inputmode="numeric"
+					autocomplete="off"
+					spellcheck="false"
+					required
+					{disabled}
+					aria-invalid={channelProblem ? 'true' : undefined}
+				/>
+			{/if}
 		</Field>
 		<Field
 			label="Post results to"
@@ -110,20 +142,44 @@
 			hint="Where finished clips are posted. Leave empty to post in the watched channel."
 			error={postToProblem}
 		>
-			<input
-				id={`${id}-post`}
-				class="input mono"
-				value={value.post_to ?? ''}
-				oninput={(e) => (value.post_to = (e.currentTarget as HTMLInputElement).value.trim() || null)}
-				placeholder="Same channel"
-				inputmode="numeric"
-				autocomplete="off"
-				spellcheck="false"
-				{disabled}
-				aria-invalid={postToProblem ? 'true' : undefined}
-			/>
+			{#if pickChannels && channels}
+				<ChannelSelect
+					id={`${id}-post`}
+					value={value.post_to ?? ''}
+					onchange={(chosen) => (value.post_to = chosen || null)}
+					{channels}
+					emptyLabel="Same channel"
+					{disabled}
+					invalid={!!postToProblem}
+				/>
+			{:else}
+				<input
+					id={`${id}-post`}
+					class="input mono"
+					value={value.post_to ?? ''}
+					oninput={(e) => (value.post_to = (e.currentTarget as HTMLInputElement).value.trim() || null)}
+					placeholder="Same channel"
+					inputmode="numeric"
+					autocomplete="off"
+					spellcheck="false"
+					{disabled}
+					aria-invalid={postToProblem ? 'true' : undefined}
+				/>
+			{/if}
 		</Field>
 	</div>
+	{#if channels}
+		<p class="hint switch">
+			{#if byId}
+				<button type="button" class="linkish" onclick={() => (byId = false)} {disabled}>Choose channels from the list</button>
+			{:else}
+				Threads are not in the list.
+				<button type="button" class="linkish" onclick={() => (byId = true)} {disabled}>Enter channel ids instead</button>
+			{/if}
+		</p>
+	{:else if directory?.channelsError}
+		<p class="error-text">The bot could not list the guild's channels: {directory.channelsError}</p>
+	{/if}
 
 	<Field
 		label="Allowed hosts"
@@ -146,17 +202,26 @@
 			label="Allowed users"
 			for={`${id}-users`}
 			optional
-			hint="Discord user ids whose links count. Empty, with no roles, means everyone."
+			hint="Members whose links count. Empty, with no roles, means everyone."
 		>
-			<TagInput id={`${id}-users`} bind:values={value.allow_users!} placeholder="User id" validate={snowflakeProblem} {disabled} />
+			{#if search && lookup}
+				<MemberPicker id={`${id}-users`} bind:values={value.allow_users!} {search} {lookup} {disabled} />
+			{:else}
+				<TagInput id={`${id}-users`} bind:values={value.allow_users!} placeholder="User id" validate={snowflakeProblem} {disabled} />
+			{/if}
 		</Field>
 		<Field
 			label="Allowed roles"
 			for={`${id}-roles`}
 			optional
-			hint="Discord role ids whose members' links count."
+			hint="Roles whose members' links count."
+			error={directory && !directory.roles ? `The bot could not list the guild's roles: ${directory.rolesError}` : null}
 		>
-			<TagInput id={`${id}-roles`} bind:values={value.allow_roles!} placeholder="Role id" validate={snowflakeProblem} {disabled} />
+			{#if directory?.roles}
+				<RolePicker id={`${id}-roles`} bind:values={value.allow_roles!} roles={directory.roles} guildId={directory.guildId} {disabled} />
+			{:else}
+				<TagInput id={`${id}-roles`} bind:values={value.allow_roles!} placeholder="Role id" validate={snowflakeProblem} {disabled} />
+			{/if}
 		</Field>
 	</div>
 
@@ -258,5 +323,27 @@
 		color: var(--text-3);
 		font-size: 12.5px;
 		padding: 0 6px;
+	}
+
+	.switch {
+		margin-top: -8px;
+	}
+
+	.linkish {
+		padding: 0;
+		border: none;
+		background: none;
+		color: var(--accent-text);
+		font-size: inherit;
+		cursor: pointer;
+	}
+
+	.linkish:hover:not(:disabled) {
+		text-decoration: underline;
+	}
+
+	.linkish:disabled {
+		cursor: not-allowed;
+		opacity: 0.6;
 	}
 </style>

@@ -336,7 +336,7 @@
 			<div class="table-wrap flush">
 				<table class="table">
 					<thead>
-						<tr><th>Guild</th><th>Members</th><th>Status</th><th>Joined</th><th></th></tr>
+						<tr><th>Guild</th><th>Members</th><th>Watched channels</th><th>Status</th><th>Joined</th><th></th></tr>
 					</thead>
 					<tbody>
 						{#each data.guilds as guild (guild.guild_id)}
@@ -351,6 +351,7 @@
 									</div>
 								</td>
 								<td class="num">{guild.member_count == null ? '—' : formatNumber(guild.member_count)}</td>
+								<td class="num">{data.ruleCounts ? formatNumber(data.ruleCounts.get(guild.guild_id) ?? 0) : '—'}</td>
 								<td>
 									{#if guild.present}
 										<Badge tone="ok" size="sm" dot>Present</Badge>
@@ -360,7 +361,7 @@
 								</td>
 								<td><Time value={guild.joined_at} /></td>
 								<td class="actions">
-									<Button size="sm" variant="ghost" href={`/applications/${app.id}/guilds/${guild.guild_id}`} iconRight="chevron-right">Rules</Button>
+									<Button size="sm" variant="ghost" href={`/applications/${app.id}/guilds/${guild.guild_id}`} iconRight="chevron-right">Channels and rules</Button>
 								</td>
 							</tr>
 						{/each}

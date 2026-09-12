@@ -14,6 +14,7 @@ use discoclip_bot::DiscordEndpoints;
 use discoclip_engine::ffmpeg::Ffmpeg;
 use discoclip_engine::store::sqlite::SqliteStore;
 use discoclip_engine::{EngineHandle, StoreError};
+use jiff::Timestamp;
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
@@ -26,7 +27,9 @@ use url::Url;
 use crate::applications::ApplicationStore;
 use crate::audit::AuditStore;
 use crate::bots::BotManager;
+use crate::cookies::CookieStore;
 use crate::discord::{BotGuildStore, GuildStore};
+use crate::fixtures::FixtureRunner;
 use crate::live::Live;
 use crate::local::SharedLocalConfig;
 use crate::oauth::{OAuthService, OAuthStore, PendingStates, Provider, Registry};
@@ -47,8 +50,12 @@ pub mod auth;
 pub mod channels;
 pub mod discord;
 pub mod error;
+pub mod health;
 pub mod jobs;
+pub mod logs;
+pub mod metrics;
 pub mod oauth;
+pub mod platforms;
 pub mod proxy;
 pub mod rules;
 pub mod settings;
@@ -126,6 +133,10 @@ pub struct AppState {
     pub proxies: Arc<RwLock<Proxies>>,
     /// The job engine: what the jobs pages list, stream and act on.
     pub engine: EngineHandle,
+    /// Runs the platforms' fixtures and keeps what they found.
+    pub fixtures: Arc<FixtureRunner>,
+    /// The platforms' cookie jars, sealed in the database.
+    pub cookies: CookieStore,
     pub settings: SettingsStore,
     /// Where settings changes are applied.
     pub live: Arc<Live>,
@@ -133,6 +144,11 @@ pub struct AppState {
     pub data_dir: PathBuf,
     /// The provisioning file read at startup, when one was.
     pub provisioning_file: Option<PathBuf>,
+    /// The database itself, for the health and metrics pages.
+    pub db: SqliteStore,
+    pub started_at: Timestamp,
+    /// Reads the process and the machine for the metrics page.
+    pub sampler: Arc<metrics::Sampler>,
 }
 
 impl AppState {
@@ -171,6 +187,7 @@ pub struct Services {
     pub rules: RuleStore,
     pub discord: DiscordEndpoints,
     pub engine: EngineHandle,
+    pub fixtures: Arc<FixtureRunner>,
     pub settings: SettingsStore,
     pub log: LogHandle,
     pub ffmpeg: Ffmpeg,
@@ -178,6 +195,8 @@ pub struct Services {
     pub local: SharedLocalConfig,
     pub data_dir: PathBuf,
     pub provisioning_file: Option<PathBuf>,
+    /// When the server started.
+    pub started_at: Timestamp,
 }
 
 pub struct WebApp {
@@ -210,12 +229,14 @@ impl WebApp {
             rules,
             discord,
             engine,
+            fixtures,
             settings: settings_store,
             log,
             ffmpeg,
             local,
             data_dir,
             provisioning_file,
+            started_at,
         } = services;
         let oauth = Arc::new(OAuthService {
             registry: std::sync::RwLock::new(providers),
@@ -233,6 +254,7 @@ impl WebApp {
             engine: engine.clone(),
             ffmpeg,
             local,
+            fixtures: fixtures.config.clone(),
             oauth: oauth.clone(),
             public_url: public_url.clone(),
             proxies: proxies.clone(),
@@ -247,14 +269,19 @@ impl WebApp {
             setup_token: Arc::new(Mutex::new(None)),
             oauth,
             public_url,
-            applications: ApplicationStore::new(store.clone(), keyring),
+            applications: ApplicationStore::new(store.clone(), keyring.clone()),
+            cookies: CookieStore::new(store.clone(), keyring),
             bots,
             bot_guilds: BotGuildStore::new(store.clone()),
             rules,
             discord,
-            audit: AuditStore::new(store),
+            audit: AuditStore::new(store.clone()),
+            db: store,
+            started_at,
+            sampler: Arc::new(metrics::Sampler::new()),
             proxies,
             engine,
+            fixtures,
             settings: settings_store,
             live,
             data_dir,
@@ -532,6 +559,10 @@ fn api(state: AppState) -> Router {
             "/discord/applications/{id}/guilds/{guild}/members",
             get(channels::search_members),
         )
+        .route(
+            "/discord/applications/{id}/guilds/{guild}/members/{user}",
+            get(channels::get_member),
+        )
         .route("/discord/rules", get(rules::list_all))
         .route(
             "/discord/rules/{id}",
@@ -540,6 +571,22 @@ fn api(state: AppState) -> Router {
         .route("/discord/guilds", get(discord::list_guilds))
         .route("/discord/guilds/refresh", post(discord::refresh_guilds))
         .route("/audit", get(audit::list))
+        .route("/platforms", get(platforms::list))
+        .route("/platforms/check", post(platforms::check_all))
+        .route("/platforms/{id}", get(platforms::get))
+        .route("/platforms/{id}/check", post(platforms::check))
+        .route(
+            "/platforms/{id}/cookies",
+            put(platforms::import_cookies).delete(platforms::clear_cookies),
+        )
+        .route(
+            "/platforms/{id}/session/check",
+            post(platforms::check_session),
+        )
+        .route("/health", get(health::get))
+        .route("/metrics", get(metrics::get))
+        .route("/logs", get(logs::list))
+        .route("/logs/events", get(logs::events))
         .route("/jobs", get(jobs::list).post(jobs::submit))
         .route("/jobs/stats", get(jobs::stats))
         .route("/jobs/events", get(jobs::events))

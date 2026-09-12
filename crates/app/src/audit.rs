@@ -139,10 +139,14 @@ pub enum Action {
     RuleCreate,
     RuleUpdate,
     RuleDelete,
+    /// A platform's cookies replaced from the app.
+    SessionImport,
+    /// A platform's cookies removed.
+    SessionClear,
 }
 
 impl Action {
-    pub const ALL: [Action; 15] = [
+    pub const ALL: [Action; 17] = [
         Action::SettingsSet,
         Action::SettingsReset,
         Action::SettingsImport,
@@ -158,6 +162,8 @@ impl Action {
         Action::RuleCreate,
         Action::RuleUpdate,
         Action::RuleDelete,
+        Action::SessionImport,
+        Action::SessionClear,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -177,6 +183,8 @@ impl Action {
             Action::RuleCreate => "rule.create",
             Action::RuleUpdate => "rule.update",
             Action::RuleDelete => "rule.delete",
+            Action::SessionImport => "session.import",
+            Action::SessionClear => "session.clear",
         }
     }
 }
@@ -220,6 +228,8 @@ pub enum TargetKind {
     Setting,
     Application,
     Rule,
+    /// A platform's session, by the platform's id.
+    Platform,
 }
 
 impl TargetKind {
@@ -228,6 +238,7 @@ impl TargetKind {
             TargetKind::Setting => "setting",
             TargetKind::Application => "application",
             TargetKind::Rule => "rule",
+            TargetKind::Platform => "platform",
         }
     }
 
@@ -236,6 +247,7 @@ impl TargetKind {
             "setting" => Some(TargetKind::Setting),
             "application" => Some(TargetKind::Application),
             "rule" => Some(TargetKind::Rule),
+            "platform" => Some(TargetKind::Platform),
             _ => None,
         }
     }
@@ -281,6 +293,14 @@ impl Target {
             kind: TargetKind::Rule,
             id: id.to_string(),
             name: Some(format!("{guild_id}/{channel_id}")),
+        }
+    }
+
+    pub fn platform(id: &str) -> Self {
+        Self {
+            kind: TargetKind::Platform,
+            id: id.to_string(),
+            name: None,
         }
     }
 }

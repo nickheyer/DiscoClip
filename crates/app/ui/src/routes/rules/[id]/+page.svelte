@@ -10,6 +10,7 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import RuleForm from '$lib/components/RuleForm.svelte';
 	import Time from '$lib/components/Time.svelte';
+	import { channelById, channelName, takenChannels } from '$lib/discord';
 	import { shortId } from '$lib/format';
 	import { untrack } from 'svelte';
 	import { cleanInput, emptyRule, sameInput, toInput } from '$lib/rules';
@@ -21,17 +22,21 @@
 	let { data }: { data: PageData } = $props();
 
 	const rule = $derived(data.rule);
+	const channels = $derived(data.directory.channels);
 	const status = $derived(bots.status(rule.application_id) ?? data.app?.bot ?? null);
 	const appName = $derived(
 		data.app?.name ?? (status?.state === 'connected' ? status.user : `Application ${shortId(rule.application_id)}`)
 	);
 	const guildName = $derived(data.botGuild?.name ?? `Guild ${rule.guild_id}`);
 	const guildHref = $derived(`/applications/${rule.application_id}/guilds/${rule.guild_id}`);
+	const listed = $derived(channelById(channels, rule.channel_id) !== null);
+	const title = $derived(listed ? channelName(channels, rule.channel_id) : `Channel ${rule.channel_id}`);
 	const crumbs = $derived([
 		...(session.can('manage_watch_rules') ? [{ label: 'Watch rules', href: '/rules' }] : [{ label: 'My guilds', href: '/guilds' }]),
 		{ label: guildName, href: guildHref },
-		{ label: `Channel ${rule.channel_id}` }
+		{ label: title }
 	]);
+	const taken = $derived(takenChannels(data.guildRules, rule.id));
 
 	let form = $state<RuleInput>(emptyRule());
 	let formKey = $state(0);
@@ -73,7 +78,7 @@
 
 	async function remove() {
 		const ok = await confirm.ask({
-			title: `Stop watching channel ${rule.channel_id}?`,
+			title: `Stop watching ${title}?`,
 			message: 'The rule is removed. Links posted there are no longer picked up.',
 			confirmLabel: 'Remove rule',
 			danger: true
@@ -92,12 +97,13 @@
 </script>
 
 <svelte:head>
-	<title>Channel {rule.channel_id} · Watch rules · DiscoClip</title>
+	<title>{title} · Watch rules · DiscoClip</title>
 </svelte:head>
 
-<PageHeader title={`Channel ${rule.channel_id}`} {crumbs}>
+<PageHeader {title} {crumbs}>
 	{#snippet meta()}
 		{#if rule.enabled}<Badge tone="ok" size="sm" dot>Enabled</Badge>{:else}<Badge size="sm">Disabled</Badge>{/if}
+		{#if listed}<code class="small">{rule.channel_id}</code>{/if}
 		<span class="faint small">in <a href={guildHref}>{guildName}</a> · {appName}</span>
 		{#if status}<BotBadge state={status.state} size="sm" />{/if}
 	{/snippet}
@@ -107,6 +113,10 @@
 </PageHeader>
 
 <div class="stack-lg">
+	{#if status && status.state !== 'connected'}
+		<Alert tone="info" message="Changing a rule goes through the bot, so the bot must be connected." />
+	{/if}
+
 	<section class="card">
 		<div class="card-header">
 			<h2>Rule</h2>
@@ -117,10 +127,10 @@
 				<Alert tone="danger" message={error} onclose={() => (error = null)} />
 			{/if}
 			{#key formKey}
-				<RuleForm id="rule" bind:value={form} bind:this={formRef} disabled={saving} />
+				<RuleForm id="rule" bind:value={form} bind:this={formRef} disabled={saving} directory={data.directory} {taken} />
 			{/key}
 			<div class="row-between">
-				<p class="hint">Changing a channel checks it through the bot, so the bot must be connected.</p>
+				<p class="hint">Saving checks the channels through the bot.</p>
 				<div class="row">
 					<Button variant="ghost" onclick={reset} disabled={!dirty || saving}>Reset</Button>
 					<Button type="submit" variant="primary" loading={saving} disabled={!dirty}>Save rule</Button>
@@ -132,7 +142,7 @@
 	<section class="card card-danger">
 		<div class="card-header"><h2>Remove rule</h2></div>
 		<div class="card-body row-between">
-			<p class="muted">Stops watching channel <code>{rule.channel_id}</code> in {guildName}.</p>
+			<p class="muted">Stops watching {title} in {guildName}.</p>
 			<Button variant="danger" icon="trash" loading={deleting} onclick={remove}>Remove rule</Button>
 		</div>
 	</section>

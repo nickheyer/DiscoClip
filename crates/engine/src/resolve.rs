@@ -12,22 +12,40 @@ use url::Url;
 use crate::http::{Cookie, Http, HttpError, Response, StatusCode};
 use crate::media::{AudioCodec, Container, VideoCodec};
 
+pub mod bilibili;
+pub mod bluesky;
 pub mod dailymotion;
+pub mod douyin;
 pub mod facebook;
 pub mod hls;
 pub mod imgur;
 pub mod instagram;
 pub mod kick;
+pub mod kuaishou;
+pub mod linkedin;
+pub mod loom;
+pub mod mastodon;
+pub mod niconico;
+pub mod odysee;
 pub mod page;
+pub mod pinterest;
 pub mod reddit;
 pub mod redgifs;
+pub mod rumble;
+pub mod snapchat;
 pub mod streamable;
+pub mod telegram;
+pub mod threads;
 pub mod tiktok;
+pub mod tumblr;
 pub mod twitch;
 pub mod twitter;
 pub mod vimeo;
+pub mod vk;
 pub mod web;
+pub mod weibo;
 pub mod x;
+pub mod xiaohongshu;
 pub mod youtube;
 
 const MAX_REDIRECT_HOPS: usize = 5;
@@ -128,15 +146,25 @@ impl ResolverRegistry {
             .map(|r| r.as_ref())
     }
 
-    /// Resolves with the first matching resolver, following resolver level redirects
-    /// (a page that only links to media hosted elsewhere) through the registry again.
+    /// Resolves with the matching resolvers in order: a resolver that finds the link is
+    /// not one of its own after all hands it on to the next one that matches, and a
+    /// resolver level redirect (a page that only links to media hosted elsewhere) goes
+    /// through the registry again.
     pub async fn resolve(&self, url: &Url) -> Result<Resolution, ResolveError> {
         let mut current = url.clone();
         for _ in 0..MAX_REDIRECT_HOPS {
-            let resolver = self
-                .find(&current)
-                .ok_or_else(|| ResolveError::Unsupported(current.clone()))?;
-            match resolver.resolve(&current).await {
+            let mut outcome = Err(ResolveError::Unsupported(current.clone()));
+            for resolver in self.resolvers.iter().filter(|r| r.matches(&current)) {
+                outcome = resolver.resolve(&current).await;
+                if let Err(ResolveError::Unsupported(declined)) = &outcome
+                    && *declined == current
+                {
+                    tracing::debug!(resolver = resolver.id(), url = %current, "resolver passed the link on");
+                    continue;
+                }
+                break;
+            }
+            match outcome {
                 Err(ResolveError::Redirect(next)) if next != current => {
                     tracing::debug!(from = %current, to = %next, "resolver redirect");
                     current = next;
@@ -213,6 +241,8 @@ pub enum SubtitleFormat {
     Ass,
     /// YouTube's `json3` timed text.
     Json3,
+    /// Bilibili's JSON subtitles: a `body` of cues with `from`, `to` and `content`.
+    BilibiliJson,
     /// A playlist of WebVTT segments.
     HlsVtt,
 }
@@ -540,6 +570,25 @@ impl Fetched {
     }
 }
 
+/// The headers a browser sends when a person navigates to a page, beside its user agent.
+/// Several platforms serve a data-less shell to any request without them.
+pub fn navigation_headers() -> Vec<(String, String)> {
+    [
+        (
+            "accept",
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        ),
+        ("accept-language", "en-US,en;q=0.9"),
+        ("sec-fetch-dest", "document"),
+        ("sec-fetch-mode", "navigate"),
+        ("sec-fetch-site", "none"),
+        ("upgrade-insecure-requests", "1"),
+    ]
+    .into_iter()
+    .map(|(name, value)| (name.to_string(), value.to_string()))
+    .collect()
+}
+
 /// GETs `url` as `platform` with `user_agent`, reading at most `limit` bytes.
 pub async fn fetch(
     http: &Http,
@@ -656,6 +705,19 @@ pub fn parse_codecs(codecs: Option<&str>) -> (Option<VideoCodec>, Option<AudioCo
         }
     }
     (video, audio)
+}
+
+/// Parses a frame rate written as a rational such as `30000/1001` or as a decimal.
+pub fn parse_rate(rate: &str) -> Option<f64> {
+    let rate = rate.trim();
+    match rate.split_once('/') {
+        Some((num, den)) => {
+            let num: f64 = num.trim().parse().ok()?;
+            let den: f64 = den.trim().parse().ok()?;
+            (den != 0.0).then(|| num / den)
+        }
+        None => rate.parse().ok(),
+    }
 }
 
 pub fn clean_title(raw: &str) -> Option<String> {

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import Alert from './Alert.svelte';
 	import Badge from './Badge.svelte';
@@ -66,9 +67,11 @@
 		version += 1;
 	}
 
+	// A fresh view, after a save or a reload, replaces the draft. Only `view` is watched:
+	// the reset writes the draft, the toggle and the version, which must not re-run this.
 	$effect.pre(() => {
 		void view;
-		reload();
+		untrack(reload);
 	});
 
 	function useDefault(key: string) {

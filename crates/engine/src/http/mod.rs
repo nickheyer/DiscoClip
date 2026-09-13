@@ -689,14 +689,14 @@ impl RequestBuilder {
                     .get(header::LOCATION)
                     .and_then(|v| v.to_str().ok())
                 else {
-                    return Ok(Response::new(response, requested, url));
+                    return Ok(Response::new(response, requested));
                 };
                 let next = url.join(location).map_err(|_| HttpError::BadRedirect {
                     url: url.to_string(),
                     location: location.to_string(),
                 })?;
                 if !matches!(next.scheme(), "http" | "https") {
-                    return Ok(Response::new(response, requested, url));
+                    return Ok(Response::new(response, requested));
                 }
                 let keep_method = matches!(response.status.as_u16(), 307 | 308)
                     || method == Method::GET
@@ -710,7 +710,7 @@ impl RequestBuilder {
                 continue;
             }
             let stats_bytes = Arc::clone(&http.inner);
-            let mut result = Response::new(response, requested, url);
+            let mut result = Response::new(response, requested);
             let inner = result.body;
             result.body = Box::pin(inner.inspect(move |chunk| {
                 if let Ok(chunk) = chunk {
@@ -748,10 +748,12 @@ impl std::fmt::Debug for Response {
 }
 
 impl Response {
-    fn new(response: TransportResponse, requested: Url, url: Url) -> Self {
+    /// The transport names where the answer came from: the request's URL live, since
+    /// redirects are followed here rather than there, and the recorded one in a replay.
+    fn new(response: TransportResponse, requested: Url) -> Self {
         Self {
             status: response.status,
-            url,
+            url: response.url,
             requested,
             headers: response.headers,
             body: response.body,

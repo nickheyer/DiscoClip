@@ -2,7 +2,6 @@
 
 REMOVE EACH ITEM AS YOU FINISH IT. DO NOT PROGRESS UNTIL YOUVE COMPLETED THE CURRENT ITEM IN ITS ENTIRETY. MUST DO IN ORDER.
 
-13. Resolvers: Bilibili, Niconico, Douyin, Kuaishou, Weibo, Xiaohongshu, VK.
 14. Resolvers: Rumble, Odysee, Bluesky, Mastodon, Threads, Tumblr, Pinterest, LinkedIn, Snapchat, Loom, Telegram.
 15. Resolvers: Discord attachments and CDN, 9GAG, iFunny, Newgrounds, Archive.org, Wikimedia Commons, Coub, Giphy, Tenor, Catbox, Google Drive, Dropbox, OneDrive, Mega.
 16. Resolvers: embedded players: JW Player, Brightcove, Wistia, Kaltura, Vidyard, Cloudflare Stream, Mux, Bunny, YouTube/Vimeo/Twitch/Streamable embeds.

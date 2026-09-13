@@ -1,6 +1,6 @@
-import { jobs as api } from '$lib/api';
 import type { JobEvent, JobStats, JobSummary, LogEntry, Progress, Stage } from '$lib/api';
-import type { FeedState } from './bots.svelte';
+import type { FeedState } from '$lib/live';
+import { live } from './live.svelte';
 
 /** How many jobs the feed keeps around for pages that show what happened lately. */
 const RECENT = 60;
@@ -17,16 +17,19 @@ type Listener = (event: JobEvent) => void;
 
 /**
  * The engine as it runs: the latest counts and load, the jobs seen lately, each running
- * job's progress and log, all kept current by the server's event stream.
+ * job's progress and log, all kept current by the server's live feed.
  */
 class JobFeed {
 	stats = $state<JobStats | null>(null);
 	recent = $state<Record<string, JobSummary>>({});
 	progress = $state<Record<string, StageProgress>>({});
 	logs = $state<Record<string, LogEntry[]>>({});
-	state = $state<FeedState>('idle');
-	private source: EventSource | null = null;
+	private off: (() => void) | null = null;
 	private listeners = new Set<Listener>();
+
+	get state(): FeedState {
+		return live.state;
+	}
 
 	/** The jobs seen lately, newest first. */
 	get recentJobs(): JobSummary[] {
@@ -38,28 +41,19 @@ class JobFeed {
 	}
 
 	start(): void {
-		if (this.source) return;
-		this.state = 'connecting';
-		const source = new EventSource(api.eventsUrl, { withCredentials: true });
-		source.onopen = () => {
-			this.state = 'live';
-		};
-		source.onerror = () => {
-			this.state = source.readyState === EventSource.CLOSED ? 'idle' : 'reconnecting';
-		};
-		source.addEventListener('stats', (event) => {
-			this.stats = JSON.parse((event as MessageEvent).data) as JobStats;
+		if (this.off) return;
+		this.off = live.on((name, data) => {
+			if (name === 'stats') this.stats = JSON.parse(data) as JobStats;
+			else if (name === 'job') this.take(JSON.parse(data) as JobEvent);
 		});
-		source.addEventListener('job', (event) => {
-			this.take(JSON.parse((event as MessageEvent).data) as JobEvent);
-		});
-		this.source = source;
+		live.start();
 	}
 
 	stop(): void {
-		this.source?.close();
-		this.source = null;
-		this.state = 'idle';
+		if (!this.off) return;
+		this.off();
+		this.off = null;
+		live.stop();
 		this.stats = null;
 		this.recent = {};
 		this.progress = {};

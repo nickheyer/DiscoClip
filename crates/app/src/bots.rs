@@ -30,6 +30,9 @@ pub struct BotEvent {
     pub application: ApplicationId,
     #[serde(flatten)]
     pub status: BotStatus,
+    /// The application was removed, and this is the last word on its bot.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub removed: bool,
 }
 
 pub struct BotManager {
@@ -80,6 +83,7 @@ impl BotManager {
             .map(|(id, running)| BotEvent {
                 application: *id,
                 status: running.control.status(),
+                removed: false,
             })
             .collect();
         all.sort_by_key(|event| event.application.0);
@@ -168,21 +172,28 @@ impl BotManager {
         );
     }
 
-    /// Stops and forgets the bot of `id`; whether there was one.
+    /// Stops and forgets the bot of `id`, telling the feed the application is gone;
+    /// whether there was one.
     pub async fn retire(&self, id: ApplicationId) -> bool {
         let running = self.bots.lock().await.remove(&id);
         self.clients
             .write()
             .unwrap_or_else(|e| e.into_inner())
             .remove(&id.0);
-        match running {
+        let was_running = match running {
             Some(running) => {
                 Self::end(running).await;
                 tracing::info!(application = %id, "discord bot retired");
                 true
             }
             None => false,
-        }
+        };
+        let _ = self.events.send(BotEvent {
+            application: id,
+            status: BotControl::disabled().status(),
+            removed: true,
+        });
+        was_running
     }
 
     async fn end(running: Running) {
@@ -282,6 +293,7 @@ async fn forward_status(
         let _ = events.send(BotEvent {
             application,
             status: status.borrow_and_update().clone(),
+            removed: false,
         });
         if status.changed().await.is_err() {
             return;

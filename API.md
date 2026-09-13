@@ -1013,6 +1013,19 @@ Streams the job stats and every job event as server-sent events.
 | Response | `200` `text/event-stream` · `event: stats` · `data: JobStats` · `event: job` · `data: JobEvent` |
 | Errors | `401` |
 
+#### GET /api/events
+
+Streams everything the web app watches live on one connection: the job stats and job events of `GET /api/jobs/events` and the bot statuses of `GET /api/discord/bots/events`. The web app holds one such connection per browser, shared by its tabs, so a tab's other requests never wait for a connection.
+
+| Field | Value |
+|---|---|
+| Auth | any |
+| Path | — |
+| Query | — |
+| Body | — |
+| Response | `200` `text/event-stream` · `event: stats` · `data: JobStats` · `event: job` · `data: JobEvent` · `event: bot` · `data: BotEvent` |
+| Errors | `401` |
+
 #### GET /api/jobs/{id}
 
 Returns one job with its request and stage log and artifacts.
@@ -1624,6 +1637,7 @@ Rejects a command name the bot does not define.
 | `updated_at` | `timestamp` |
 | `bot` | `BotStatus` |
 | `install_url` | `url` |
+| `login_callback_url` | `url` |
 
 #### CommandsState
 
@@ -1676,6 +1690,7 @@ Rejects a command name the bot does not define.
 |---|---|
 | `application` | `uuid` |
 | `...BotStatus` | `BotStatus` |
+| `removed` | `true`, only when the application was removed: the last event about its bot |
 
 #### BotGuild
 

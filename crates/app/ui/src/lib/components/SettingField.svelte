@@ -67,26 +67,26 @@
 		return String(v);
 	}
 
-	// Amounts are entered in a unit of their own and stored in the base unit.
+	// Amounts are entered in a unit of their own and stored in the base unit. The entry
+	// state is set once, from the value the field is created with; the section creates
+	// the field afresh whenever the draft is replaced.
 	const units = $derived(spec.kind === 'bytes' ? BYTE_UNITS : spec.kind === 'seconds' ? TIME_UNITS : null);
-	let unit = $state('');
-	let amount = $state('');
-	let numberText = $state('');
-	let secretDraft = $state('');
-	let initialized = $state(false);
 
-	$effect.pre(() => {
-		if (initialized) return;
-		initialized = true;
+	function entryOf(): { unit: string; amount: string; numberText: string } {
+		const n = typeof value === 'number' ? value : null;
 		if (units) {
-			const n = typeof value === 'number' ? value : null;
-			unit = n === null ? units[0]!.label : unitFor(n, units);
+			const unit = n === null ? units[0]!.label : unitFor(n, units);
 			const factor = units.find((u) => u.label === unit)!.factor;
-			amount = n === null ? '' : String(+(n / factor).toFixed(3));
-		} else if (typeof value === 'number') {
-			numberText = String(value);
+			return { unit, amount: n === null ? '' : String(+(n / factor).toFixed(3)), numberText: '' };
 		}
-	});
+		return { unit: '', amount: '', numberText: n === null ? '' : String(n) };
+	}
+
+	const entry = entryOf();
+	let unit = $state(entry.unit);
+	let amount = $state(entry.amount);
+	let numberText = $state(entry.numberText);
+	let secretDraft = $state('');
 
 	function commitAmount() {
 		if (!units) return;

@@ -50,6 +50,7 @@ pub mod auth;
 pub mod channels;
 pub mod discord;
 pub mod error;
+pub mod events;
 pub mod health;
 pub mod jobs;
 pub mod logs;
@@ -590,6 +591,7 @@ fn api(state: AppState) -> Router {
         .route("/jobs", get(jobs::list).post(jobs::submit))
         .route("/jobs/stats", get(jobs::stats))
         .route("/jobs/events", get(jobs::events))
+        .route("/events", get(events::feed))
         .route("/jobs/bulk", post(jobs::bulk))
         .route("/jobs/{id}", get(jobs::get).delete(jobs::delete))
         .route("/jobs/{id}/children", get(jobs::children))

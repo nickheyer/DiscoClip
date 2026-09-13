@@ -1,5 +1,5 @@
-//! Facebook videos, reels and watch links, read from the data the page hands its player,
-//! with short links unwrapped first.
+//! Facebook videos, reels and watch links, read from the data the page hands its player
+//! when asked for the way a browser navigates to it, with short links unwrapped first.
 
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -11,7 +11,7 @@ use url::Url;
 use super::page::{Page, unescape_json_string};
 use super::{
     MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionCheck, SessionSupport,
-    Variant, VariantKind, clean_title, fetch_ok,
+    Variant, VariantKind, clean_title, fetch_ok, navigation_headers,
 };
 use crate::http::{BROWSER_UA, Http};
 use crate::media::{AudioCodec, Container, VideoCodec};
@@ -34,6 +34,17 @@ static RE_DURATION: LazyLock<Regex> =
 static RE_THUMB: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#""preferred_thumbnail":\{"image":\{"uri":"((?:[^"\\]|\\.)+)""#).unwrap()
 });
+/// The counts a page puts before its title, as `2.8M views · 1.3K reactions | `.
+static RE_COUNTS: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^[\d.,]+[KMB]? (?:views|reactions|comments|shares)(?: · [\d.,]+[KMB]? (?:views|reactions|comments|shares))* \| ")
+        .unwrap()
+});
+
+/// A page title as the video is named: without the site's name and the counts around it.
+fn page_title(title: &str) -> String {
+    let named = title.trim_end_matches(" | Facebook");
+    RE_COUNTS.replace(named, "").trim().to_string()
+}
 
 fn is_facebook_host(host: &str) -> bool {
     host == "facebook.com"
@@ -164,9 +175,13 @@ impl Resolver for FacebookResolver {
         let id = video_id(&target).ok_or_else(|| ResolveError::NotFound(url.clone()))?;
         let page_url =
             Url::parse(&format!("https://www.facebook.com/watch/?v={id}")).expect("valid");
-        let headers = [("accept-language".to_string(), "en-US,en;q=0.9".to_string())];
         let fetched = fetch_ok(
-            &self.http, &page_url, PLATFORM, BROWSER_UA, &headers, MAX_PAGE,
+            &self.http,
+            &page_url,
+            PLATFORM,
+            BROWSER_UA,
+            &navigation_headers(),
+            MAX_PAGE,
         )
         .await?;
         let html = fetched.text();
@@ -195,7 +210,7 @@ impl Resolver for FacebookResolver {
             .captures(&html)
             .and_then(|c| clean_title(&unescape_json_string(&c[1])))
             .or_else(|| page.title())
-            .map(|t| t.trim_end_matches(" | Facebook").to_string());
+            .map(|t| page_title(&t));
         resolved.description = page.meta("og:description").and_then(|d| clean_title(&d));
         resolved.uploader = RE_OWNER
             .captures(&html)
@@ -245,6 +260,17 @@ impl Resolver for FacebookResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn page_titles_lose_the_counts_and_the_site() {
+        assert_eq!(
+            page_title("2.8M views · 1.3K reactions | How to share with just friends. | Facebook"),
+            "How to share with just friends."
+        );
+        assert_eq!(page_title("12 views | A clip | Facebook"), "A clip");
+        assert_eq!(page_title("A clip | Facebook"), "A clip");
+        assert_eq!(page_title("3 reasons | A clip"), "3 reasons | A clip");
+    }
     use crate::http::Cookie;
     use crate::http::transport::{
         Exchange, Fixture, RecordedBody, RecordedRequest, RecordedResponse,

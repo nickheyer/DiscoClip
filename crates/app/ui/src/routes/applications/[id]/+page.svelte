@@ -438,13 +438,18 @@
 						<span class="strong">Offer Discord login through this application</span>
 						<span class="hint">
 							{#if app.has_client_secret}
-								People log in to DiscoClip with Discord; the callback is <code>/api/auth/discord/callback</code> under the public URL. Only one application offers login at a time.
+								People log in to DiscoClip with Discord, and link their Discord account from their account page. Only one application offers login at a time.
 							{:else}
 								Set the client secret first.
 							{/if}
 						</span>
 					</span>
 				</label>
+				<div class="callback">
+					<span class="small strong">Redirect to register at Discord</span>
+					<span class="hint">Discord turns the login away as an invalid OAuth2 URL until this exact URL is listed under OAuth2 → Redirects on the application's page in the Discord Developer Portal. It follows the public URL setting, or the address the app is opened at.</span>
+					<span class="row"><code class="break">{app.login_callback_url}</code><CopyButton text={app.login_callback_url} label="Copy redirect" /></span>
+				</div>
 			</div>
 
 			<form class="setting" onsubmit={replaceToken}>
@@ -478,6 +483,17 @@
 </div>
 
 <style>
+	.callback {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		margin-top: 12px;
+		padding: 10px 12px;
+		border-radius: var(--radius-sm);
+		background: var(--surface-2);
+		border: 1px solid var(--border);
+	}
+
 	.flush {
 		border: none;
 		border-radius: 0 0 var(--radius) var(--radius);

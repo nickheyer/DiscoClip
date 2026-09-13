@@ -1,6 +1,8 @@
 //! Instagram posts, reels and IGTV, through the web app's GraphQL query as a visitor or a
-//! logged-in session, and through the embed page when the query is walled off. A post
-//! carrying several videos becomes a playlist of them.
+//! logged-in session, and through the embed page when the query is walled off, which it
+//! is for visitors from most networks: asked for the way a browser navigates to it, the
+//! embed page carries the post's GraphQL record in its context JSON. A post carrying
+//! several videos becomes a playlist of them.
 
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -13,7 +15,7 @@ use url::Url;
 use super::page::{Page, json_after, unescape_json_string};
 use super::{
     MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved, Resolver,
-    SessionCheck, SessionSupport, Variant, VariantKind, clean_title, fetch_ok,
+    SessionCheck, SessionSupport, Variant, VariantKind, clean_title, fetch_ok, navigation_headers,
 };
 use crate::http::{BROWSER_UA, Http};
 use crate::media::{AudioCodec, Container, VideoCodec};
@@ -31,6 +33,9 @@ static RE_VIDEO_URL: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"\\?"video_url\\?":\\?"((?:[^"\\]|\\.)+?)\\?""#).unwrap());
 static RE_USERNAME: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"\\?"username\\?":\\?"([A-Za-z0-9_.]+)\\?""#).unwrap());
+/// The embed page's context, a JSON document held as a string in the page's script data.
+static RE_CONTEXT_JSON: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#""contextJSON":"((?:[^"\\]|\\.)*)""#).unwrap());
 
 pub fn shortcode(url: &Url) -> Option<String> {
     RE_SHORTCODE.captures(url.path()).map(|c| c[1].to_string())
@@ -104,6 +109,15 @@ fn post_of(media: &Value) -> Post {
             .as_i64()
             .and_then(|t| jiff::Timestamp::from_second(t).ok()),
     }
+}
+
+/// The post's GraphQL record from the embed page's context JSON.
+fn context_media(html: &str) -> Option<Value> {
+    let raw = RE_CONTEXT_JSON.captures(html)?;
+    let text: String = serde_json::from_str(&format!("\"{}\"", &raw[1])).ok()?;
+    let context: Value = serde_json::from_str(&text).ok()?;
+    let media = context.pointer("/gql_data/shortcode_media")?;
+    media.is_object().then(|| media.clone())
 }
 
 pub struct InstagramResolver {
@@ -192,8 +206,19 @@ impl InstagramResolver {
             "https://www.instagram.com/p/{code}/embed/captioned/"
         ))
         .expect("valid");
-        let fetched = fetch_ok(&self.http, &embed_url, PLATFORM, BROWSER_UA, &[], MAX_PAGE).await?;
+        let fetched = fetch_ok(
+            &self.http,
+            &embed_url,
+            PLATFORM,
+            BROWSER_UA,
+            &navigation_headers(),
+            MAX_PAGE,
+        )
+        .await?;
         let html = fetched.text();
+        if let Some(media) = context_media(&html) {
+            return Ok(post_of(&media));
+        }
         if let Some(extra) = json_after(&html, "__additionalDataLoaded('extra',")
             .and_then(|v| v.get("shortcode_media").cloned())
         {
@@ -544,6 +569,51 @@ mod tests {
             "https://scontent.cdninstagram.com/embed.mp4"
         );
         assert_eq!(resolved.uploader.as_deref(), Some("@instagram"));
+
+        // The embed page as it is served today: the post's record in its context JSON.
+        let mut fixture = Fixture::new("instagram", None);
+        fixture.exchanges.push(exchange(
+            "POST",
+            GRAPHQL,
+            401,
+            "application/json",
+            json!({"message": "Please wait a few minutes before you try again.", "require_login": true, "status": "fail"}).to_string(),
+        ));
+        let context = json!({
+            "context": {"type": "GraphVideo", "shortcode": "aye83DjauH", "copyright_blocked": false},
+            "gql_data": {"shortcode_media": {
+                "__typename": "GraphVideo", "shortcode": "aye83DjauH", "is_video": true,
+                "video_url": "https://scontent.cdninstagram.com/o1/v/context.mp4?efg=1&_nc_ht=x",
+                "video_duration": 8.742, "dimensions": {"height": 612, "width": 612},
+                "display_url": "https://scontent.cdninstagram.com/v/t51/thumb.jpg",
+                "edge_media_to_caption": {"edges": [{"node": {"text": "If Abel was a booger"}}]},
+                "owner": {"id": "2815873", "username": "naomipq", "is_verified": false}
+            }}
+        })
+        .to_string();
+        let script = json!({"define": [], "require": [["PolarisEmbedSimple", "init", [], [{"contextJSON": context}]]]}).to_string();
+        fixture.exchanges.push(exchange(
+            "GET",
+            "https://www.instagram.com/p/aye83DjauH/embed/captioned/",
+            200,
+            "text/html",
+            format!(r#"<html><head><title>Instagram</title></head><body><script>requireLazy(["ServerJS"],function(ServerJS){{var s=(new ServerJS());s.handle({script});}});</script></body></html>"#),
+        ));
+        let resolver = InstagramResolver::new(Http::replay(fixture));
+        let resolved = resolver
+            .resolve(&Url::parse("https://www.instagram.com/reel/aye83DjauH/").unwrap())
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
+        assert_eq!(
+            resolved.variants[0].url.as_str(),
+            "https://scontent.cdninstagram.com/o1/v/context.mp4?efg=1&_nc_ht=x"
+        );
+        assert_eq!(resolved.title.as_deref(), Some("If Abel was a booger"));
+        assert_eq!(resolved.uploader.as_deref(), Some("@naomipq"));
+        assert_eq!(resolved.duration, Some(Duration::from_secs_f64(8.742)));
+        assert_eq!(resolved.variants[0].width, Some(612));
 
         // An embed page carrying the video only in its script text still yields it.
         let mut fixture = Fixture::new("instagram", None);

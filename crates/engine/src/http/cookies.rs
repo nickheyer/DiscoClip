@@ -182,7 +182,27 @@ const MONTHS: [&str; 12] = [
 /// GMT`), RFC 850 (`Sunday, 06-Nov-94 08:49:37 GMT`), asctime, and the dashed variants
 /// cookies use, tolerantly as RFC 6265 §5.1.1 asks.
 pub fn parse_http_date(text: &str) -> Option<Timestamp> {
-    let cleaned = text.replace(['-', ','], " ");
+    // A numeric zone such as `+0800`, as the dates of some sites carry, is taken off
+    // before the dashes go, and applied at the end.
+    let mut offset_minutes: i64 = 0;
+    let mut rest = Vec::new();
+    for token in text.split_whitespace() {
+        let digits = &token[token.len().min(1)..];
+        if (token.starts_with('+') || token.starts_with('-'))
+            && digits.len() == 4
+            && digits.chars().all(|c| c.is_ascii_digit())
+        {
+            let hours: i64 = digits[..2].parse().ok()?;
+            let minutes: i64 = digits[2..].parse().ok()?;
+            offset_minutes = hours * 60 + minutes;
+            if token.starts_with('-') {
+                offset_minutes = -offset_minutes;
+            }
+            continue;
+        }
+        rest.push(token);
+    }
+    let cleaned = rest.join(" ").replace(['-', ','], " ");
     let mut time: Option<(i8, i8, i8)> = None;
     let mut day: Option<i8> = None;
     let mut month: Option<i8> = None;
@@ -217,10 +237,9 @@ pub fn parse_http_date(text: &str) -> Option<Timestamp> {
     }
     let (hour, minute, second) = time?;
     let datetime = DateTime::new(year?, month?, day?, hour, minute, second, 0).ok()?;
-    datetime
-        .to_zoned(jiff::tz::TimeZone::UTC)
+    let utc = datetime.to_zoned(jiff::tz::TimeZone::UTC).ok()?.timestamp();
+    utc.checked_sub(jiff::SignedDuration::from_mins(offset_minutes))
         .ok()
-        .map(|z| z.timestamp())
 }
 
 /// One platform's cookies.
@@ -516,5 +535,18 @@ mod tests {
             );
         }
         assert!(parse_http_date("never").is_none());
+        // The dates Twitter and Weibo write, with a numeric zone.
+        assert_eq!(
+            parse_http_date("Fri Jun 09 20:17:12 +0800 2023").unwrap(),
+            "2023-06-09T12:17:12Z".parse::<Timestamp>().unwrap()
+        );
+        assert_eq!(
+            parse_http_date("Thu Dec 07 18:30:00 +0000 2023").unwrap(),
+            "2023-12-07T18:30:00Z".parse::<Timestamp>().unwrap()
+        );
+        assert_eq!(
+            parse_http_date("Thu Dec 07 18:30:00 -0500 2023").unwrap(),
+            "2023-12-07T23:30:00Z".parse::<Timestamp>().unwrap()
+        );
     }
 }

@@ -1,13 +1,17 @@
-import { applications } from '$lib/api';
 import type { BotEvent, BotStatus } from '$lib/api';
+import type { FeedState } from '$lib/live';
+import { live } from './live.svelte';
 
-export type FeedState = 'idle' | 'connecting' | 'live' | 'reconnecting';
+export type { FeedState } from '$lib/live';
 
-/** Every bot's status, kept current by the server's event stream. */
+/** Every bot's status, kept current by the server's live feed. */
 class BotFeed {
 	statuses = $state<Record<string, BotStatus>>({});
-	state = $state<FeedState>('idle');
-	private source: EventSource | null = null;
+	private off: (() => void) | null = null;
+
+	get state(): FeedState {
+		return live.state;
+	}
 
 	get ids(): string[] {
 		return Object.keys(this.statuses).sort();
@@ -18,26 +22,21 @@ class BotFeed {
 	}
 
 	start(): void {
-		if (this.source) return;
-		this.state = 'connecting';
-		const source = new EventSource(applications.eventsUrl, { withCredentials: true });
-		source.onopen = () => {
-			this.state = 'live';
-		};
-		source.onerror = () => {
-			this.state = source.readyState === EventSource.CLOSED ? 'idle' : 'reconnecting';
-		};
-		source.addEventListener('bot', (event) => {
-			const { application, ...status } = JSON.parse((event as MessageEvent).data) as BotEvent;
-			this.statuses[application] = status;
+		if (this.off) return;
+		this.off = live.on((name, data) => {
+			if (name !== 'bot') return;
+			const { application, removed, ...status } = JSON.parse(data) as BotEvent;
+			if (removed) delete this.statuses[application];
+			else this.statuses[application] = status;
 		});
-		this.source = source;
+		live.start();
 	}
 
 	stop(): void {
-		this.source?.close();
-		this.source = null;
-		this.state = 'idle';
+		if (!this.off) return;
+		this.off();
+		this.off = null;
+		live.stop();
 		this.statuses = {};
 	}
 

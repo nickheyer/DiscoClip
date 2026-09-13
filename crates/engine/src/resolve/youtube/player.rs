@@ -1,22 +1,28 @@
-//! The player script: found through the iframe API, fetched once per version, and mined
-//! for its signature timestamp and the two functions that unlock format URLs, the
-//! signature cipher and the throttling parameter, which run in the JavaScript
-//! interpreter as the browser would run them.
+//! The player script: found through the iframe API, fetched once per version, and run
+//! whole in the JavaScript interpreter, where the player's own URL builder applies the
+//! two transforms that unlock format URLs, the signature cipher and the throttling
+//! transform, exactly as it would in a browser. The script is several megabytes of
+//! obfuscated code whose transforms can no longer be cut out of it, so it stays loaded on
+//! a thread of its own between calls and is let go after a while without any.
 
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex};
+use std::time::Duration;
 
 use regex::Regex;
+use tokio::sync::Mutex as AsyncMutex;
 use url::Url;
 
 use super::innertube::{ORIGIN, PLATFORM};
 use crate::http::{BROWSER_UA, Http};
-use crate::js::{JsError, Script};
+use crate::js::{JsError, Resident, literal};
 use crate::resolve::{MAX_PAGE, ResolveError, fetch_ok};
 
 const IFRAME_API: &str = "https://www.youtube.com/iframe_api";
 /// The player script can be several megabytes.
 const MAX_SCRIPT: usize = 12 * 1024 * 1024;
+/// How long the loaded script is kept after its last call.
+const IDLE: Duration = Duration::from_secs(10 * 60);
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum PlayerError {
@@ -24,31 +30,22 @@ pub enum PlayerError {
     NoVersion,
     #[error("the player script has no signature timestamp")]
     NoTimestamp,
-    #[error("the player script's {0} function was not found")]
-    NotFound(&'static str),
-    #[error("the player script's {what} function {name} has no source")]
-    NoSource { what: &'static str, name: String },
-    #[error("the player script's {0} function failed: {1}")]
+    #[error("the player script has no URL builder")]
+    NoBuilder,
+    #[error("the player script does not end in the call that runs it")]
+    NoClosing,
+    #[error("the player script did not load: {0}")]
+    Load(JsError),
+    #[error("the player script's {0} transform failed: {1}")]
     Failed(&'static str, JsError),
-}
-
-/// One unlocking function, ready to run.
-#[derive(Debug, Clone)]
-struct Function {
-    name: String,
-    script: Script,
-}
-
-/// One version of the player script, mined.
-#[derive(Debug)]
-pub struct Player {
-    pub version: String,
-    pub sts: u64,
-    signature: Option<Function>,
-    throttle: Option<Function>,
-    /// Throttling parameters already transformed: the same one comes with every format
-    /// of an answer.
-    transformed: Mutex<HashMap<String, String>>,
+    #[error("the player script's {0} transform handed back nothing")]
+    Empty(&'static str),
+    #[error("the player script's throttling transform threw and handed back {0}")]
+    Untransformed(String),
+    #[error("the format names no URL")]
+    NoUrl,
+    #[error("the signature cipher carries no signature")]
+    NoSignature,
 }
 
 static RE_VERSION: LazyLock<Regex> =
@@ -56,106 +53,195 @@ static RE_VERSION: LazyLock<Regex> =
 static RE_STS: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?:signatureTimestamp|sts)\s*:\s*(\d{5})").unwrap());
 
-/// Where the signature cipher function is named in the script, one pattern per player
-/// generation seen.
-static RE_SIGNATURE: LazyLock<Vec<Regex>> = LazyLock::new(|| {
-    [
-        r#"\b[cs]\s*&&\s*[adf]\.set\([^,]+\s*,\s*encodeURIComponent\s*\(\s*([a-zA-Z0-9$]+)\("#,
-        r#"\b[a-zA-Z0-9]+\s*&&\s*[a-zA-Z0-9]+\.set\([^,]+\s*,\s*encodeURIComponent\s*\(\s*([a-zA-Z0-9$]+)\("#,
-        r#"\bm=([a-zA-Z0-9$]{2,})\(decodeURIComponent\(h\.s\)\)"#,
-        r#"\bc&&\(c=([a-zA-Z0-9$]{2,})\(decodeURIComponent\(c\)\)"#,
-        r#"(?:^|[^a-zA-Z0-9$])([a-zA-Z0-9$]{2,})\s*=\s*function\(\s*a\s*\)\s*\{\s*a\s*=\s*a\.split\(\s*""\s*\)"#,
-        r#"(["'])signature["']\s*,\s*([a-zA-Z0-9$]+)\("#,
-        r#"\.sig\|\|([a-zA-Z0-9$]+)\("#,
-        r#"\b[cs]\s*&&\s*[adf]\.set\([^,]+\s*,\s*([a-zA-Z0-9$]+)\("#,
-        r#"\b[a-zA-Z0-9]+\s*&&\s*[a-zA-Z0-9]+\.set\([^,]+\s*,\s*([a-zA-Z0-9$]+)\("#,
-        r#"\bc\s*&&\s*[a-zA-Z0-9]+\.set\([^,]+\s*,\s*\([^)]*\)\s*\(\s*([a-zA-Z0-9$]+)\("#,
-    ]
-    .into_iter()
-    .map(|pattern| Regex::new(pattern).expect("player patterns are valid"))
-    .collect()
-});
-
-/// Where the throttling function is named: called on the `n` query parameter.
-static RE_THROTTLE: LazyLock<Vec<Regex>> = LazyLock::new(|| {
-    [
-        r#"\.get\("n"\)\)&&\(b=([a-zA-Z0-9_$]+)(?:\[(\d+)\])?\([a-zA-Z0-9]\)"#,
-        r#"b=String\.fromCharCode\(110\),c=a\.get\(b\)\)&&\(a=([a-zA-Z0-9_$]+)(?:\[(\d+)\])?\([a-zA-Z]\)"#,
-        r#"[a-zA-Z0-9_$.]+\[\d+\]\s*&&\s*\(b=a\.get\(b\)\)\s*&&\s*\(a=([a-zA-Z0-9_$]+)(?:\[(\d+)\])?\([a-zA-Z]\)"#,
-        r#"[a-zA-Z0-9_$.]+\[\d+\],c=a\.get\(b\)\)&&\(a=([a-zA-Z0-9_$]+)(?:\[(\d+)\])?\([a-zA-Z]\)"#,
-    ]
-    .into_iter()
-    .map(|pattern| Regex::new(pattern).expect("player patterns are valid"))
-    .collect()
-});
-
-/// An early return the throttling function makes when a global it expects is missing,
-/// which is never the case in a browser and always the case in the interpreter.
-static RE_THROTTLE_GUARD: LazyLock<Regex> = LazyLock::new(|| {
+/// The function that builds a format URL, named as `function NAME(` or `NAME = function(`
+/// (with `NAME` possibly a member such as `g.NAME`): the one with a statement of its own
+/// that marks the URL with `.set("alr","yes")` before applying the transforms.
+static RE_BUILDER: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r#";\s*if\s*\(\s*typeof\s+[a-zA-Z0-9_$]+\s*===?\s*(?:["']undefined["']|[a-zA-Z0-9_$]+\[\d+\])\s*\)\s*return\s+[a-zA-Z0-9_$]+;"#,
+        r#"(?:^|[;{}\s])(?:function\s+([A-Za-z0-9_$]+)\s*\(|((?:[A-Za-z0-9_$]+\.)*[A-Za-z0-9_$]+)\s*=\s*function\s*\()[^)]*\)\s*\{(?:[^{}]*;)?\s*[A-Za-z0-9_$]+(?:\.[A-Za-z0-9_$]+)*\.set\("alr","yes"\)"#,
     )
     .unwrap()
 });
 
+/// How the script's enclosing function is called at its end: the web player passes the
+/// `_yt_player` object, the TV player calls itself on `this`.
+const CLOSINGS: [&str; 2] = ["})(_yt_player);", "}).call(this);"];
+
+/// What the script expects of a browser before it runs: the objects it reads at load,
+/// each doing nothing, as yt-dlp's solver provides them.
+const SHIMS: &str = r#"var _result={n:null,sig:null};
+if (typeof globalThis.XMLHttpRequest === "undefined") { globalThis.XMLHttpRequest = { prototype: {} }; }
+if (typeof URL === "undefined") { globalThis.location = { hash: "", host: "www.youtube.com", hostname: "www.youtube.com", href: "https://www.youtube.com/watch?v=yt-dlp-wins", origin: "https://www.youtube.com", password: "", pathname: "/watch", port: "", protocol: "https:", search: "?v=yt-dlp-wins", username: "" }; } else { globalThis.location = new URL("https://www.youtube.com/watch?v=yt-dlp-wins"); }
+if (typeof globalThis.document === "undefined") { globalThis.document = Object.create(null); }
+if (typeof globalThis.navigator === "undefined") { globalThis.navigator = Object.create(null); }
+if (typeof globalThis.self === "undefined") { globalThis.self = globalThis; }
+if (typeof globalThis.window === "undefined") { globalThis.window = globalThis; }
+if (typeof globalThis.Intl === "undefined") { globalThis.Intl = { NumberFormat: { supportedLocalesOf: function () { return []; } }, DateTimeFormat: { supportedLocalesOf: function () { return []; } } }; }
+"#;
+
+/// The name of the URL builder function in `script`.
+fn builder_name(script: &str) -> Option<String> {
+    RE_BUILDER.captures(script).and_then(|c| {
+        c.get(1)
+            .or_else(|| c.get(2))
+            .map(|m| m.as_str().to_string())
+    })
+}
+
+/// The solver, placed inside the script's enclosing function where `builder` is in
+/// scope: builds a URL with the signature, sets the throttling parameter, then runs the
+/// URL's serializer, the one method of its class that is not `set`, `get` or `clone`,
+/// which is where the player transforms the parameter.
+fn solver(builder: &str) -> String {
+    format!(
+        r#"
+var _solve = function (sig, n) {{
+  var url = {builder}("https://youtube.com/watch?v=yt-dlp-wins", "s", sig === undefined ? undefined : encodeURIComponent(sig));
+  url.set("n", n);
+  var proto = Object.getPrototypeOf(url);
+  var keys = Object.keys(proto).concat(Object.getOwnPropertyNames(proto));
+  for (var i = 0; i < keys.length; i++) {{
+    if (["constructor", "set", "get", "clone"].indexOf(keys[i]) === -1) {{ url[keys[i]](); break; }}
+  }}
+  var s = url.get("s");
+  return {{ sig: s ? decodeURIComponent(s) : null, n: url.get("n") }};
+}};
+_result.n = function (n) {{ return _solve(undefined, n).n; }};
+_result.sig = function (sig) {{ return _solve(sig, undefined).sig; }};
+"#
+    )
+}
+
+/// The script as the interpreter loads it: the shims, then the player with the solver
+/// placed before its closing call.
+fn assemble(script: &str) -> Result<String, PlayerError> {
+    let builder = builder_name(script).ok_or(PlayerError::NoBuilder)?;
+    let (at, _) = CLOSINGS
+        .iter()
+        .filter_map(|closing| script.rfind(closing).map(|at| (at, *closing)))
+        .max_by_key(|(at, _)| *at)
+        .ok_or(PlayerError::NoClosing)?;
+    let mut out = String::with_capacity(SHIMS.len() + script.len() + 1024);
+    out.push_str(SHIMS);
+    out.push_str(&script[..at]);
+    out.push_str(&solver(&builder));
+    out.push_str(&script[at..]);
+    Ok(out)
+}
+
+/// The assembled script, and the interpreter it is loaded in while one is up.
+struct Solver {
+    source: Arc<str>,
+    resident: AsyncMutex<Option<Resident>>,
+}
+
+impl Solver {
+    async fn load(source: Arc<str>) -> Result<Self, PlayerError> {
+        let resident = Resident::load(source.clone(), IDLE)
+            .await
+            .map_err(PlayerError::Load)?;
+        Ok(Self {
+            source,
+            resident: AsyncMutex::new(Some(resident)),
+        })
+    }
+
+    /// Runs `_result.<name>(input)` in the loaded script, loading it again when the
+    /// interpreter was let go, and returns the string it hands back.
+    async fn call(
+        &self,
+        name: &str,
+        what: &'static str,
+        input: &str,
+    ) -> Result<String, PlayerError> {
+        let expression = format!("JSON.stringify(_result.{name}({}))", literal(input));
+        let mut slot = self.resident.lock().await;
+        let mut reloaded = false;
+        loop {
+            if !slot.as_ref().is_some_and(Resident::is_alive) {
+                *slot = Some(
+                    Resident::load(self.source.clone(), IDLE)
+                        .await
+                        .map_err(PlayerError::Load)?,
+                );
+                reloaded = true;
+            }
+            let answer = slot
+                .as_ref()
+                .expect("an interpreter was just loaded")
+                .eval(&expression)
+                .await;
+            let json = match answer {
+                Ok(json) => json,
+                // The thread went idle between the check and the call.
+                Err(JsError::Thread(_)) if !reloaded => {
+                    *slot = None;
+                    continue;
+                }
+                Err(error) => return Err(PlayerError::Failed(what, error)),
+            };
+            let value: Option<String> = serde_json::from_str(&json)
+                .map_err(|e| PlayerError::Failed(what, JsError::Run(e.to_string())))?;
+            return value
+                .filter(|v| !v.is_empty())
+                .ok_or(PlayerError::Empty(what));
+        }
+    }
+}
+
+/// One version of the player script, loaded.
+pub struct Player {
+    pub version: String,
+    pub sts: u64,
+    solver: Solver,
+    deciphered: Mutex<HashMap<String, String>>,
+    /// Throttling parameters already transformed: the same one comes with every format
+    /// of an answer.
+    transformed: Mutex<HashMap<String, String>>,
+}
+
+impl std::fmt::Debug for Player {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Player")
+            .field("version", &self.version)
+            .field("sts", &self.sts)
+            .finish_non_exhaustive()
+    }
+}
+
 impl Player {
-    /// Mines `script`, the player version `version`.
-    pub fn parse(version: &str, script: &str) -> Result<Self, PlayerError> {
+    /// Loads `script`, the player version `version`, into the interpreter.
+    pub async fn load(version: &str, script: &str) -> Result<Self, PlayerError> {
         let sts = RE_STS
             .captures(script)
             .and_then(|c| c[1].parse().ok())
             .ok_or(PlayerError::NoTimestamp)?;
-        let globals = global_variable(script).unwrap_or_default();
-        let signature = signature_name(script).map(|name| {
-            let source = function_source(script, &name).ok_or_else(|| PlayerError::NoSource {
-                what: "signature",
-                name: name.clone(),
-            })?;
-            let helper = helper_object(script, &source).unwrap_or_default();
-            Ok::<_, PlayerError>(Function {
-                script: Script::new(format!("{globals}\n{helper}\nvar {name}={source};")),
-                name,
-            })
-        });
-        let throttle = throttle_name(script).map(|name| {
-            let source = function_source(script, &name).ok_or_else(|| PlayerError::NoSource {
-                what: "throttling",
-                name: name.clone(),
-            })?;
-            let source = RE_THROTTLE_GUARD.replace_all(&source, ";").into_owned();
-            Ok::<_, PlayerError>(Function {
-                script: Script::new(format!("{globals}\nvar {name}={source};")),
-                name,
-            })
-        });
+        let source: Arc<str> = Arc::from(assemble(script)?);
         Ok(Self {
             version: version.to_string(),
             sts,
-            signature: signature.transpose()?,
-            throttle: throttle.transpose()?,
+            solver: Solver::load(source).await?,
+            deciphered: Mutex::new(HashMap::new()),
             transformed: Mutex::new(HashMap::new()),
         })
     }
 
-    pub fn has_signature(&self) -> bool {
-        self.signature.is_some()
-    }
-
-    pub fn has_throttle(&self) -> bool {
-        self.throttle.is_some()
-    }
-
     /// Runs the signature cipher on `s`.
     pub async fn decipher(&self, s: &str) -> Result<String, PlayerError> {
-        let function = self
-            .signature
-            .as_ref()
-            .ok_or(PlayerError::NotFound("signature"))?;
-        function
-            .script
-            .call(&function.name, &[s.to_string()])
-            .await
-            .map_err(|e| PlayerError::Failed("signature", e))
+        if let Some(done) = self
+            .deciphered
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(s)
+        {
+            return Ok(done.clone());
+        }
+        let out = self.solver.call("sig", "signature", s).await?;
+        self.deciphered
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(s.to_string(), out.clone());
+        Ok(out)
     }
 
     /// Runs the throttling transform on `n`.
@@ -168,15 +254,12 @@ impl Player {
         {
             return Ok(done.clone());
         }
-        let function = self
-            .throttle
-            .as_ref()
-            .ok_or(PlayerError::NotFound("throttling"))?;
-        let out = function
-            .script
-            .call(&function.name, &[n.to_string()])
-            .await
-            .map_err(|e| PlayerError::Failed("throttling", e))?;
+        let out = self.solver.call("n", "throttling", n).await?;
+        // The transform catches its own failures and hands back a marker followed by the
+        // parameter untouched, which the servers then throttle.
+        if out.ends_with(n) {
+            return Err(PlayerError::Untransformed(out));
+        }
         self.transformed
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -204,22 +287,20 @@ impl Player {
                         _ => {}
                     }
                 }
-                let mut base = base.ok_or(PlayerError::NotFound("signature"))?;
-                let s = s.ok_or(PlayerError::NotFound("signature"))?;
+                let mut base = base.ok_or(PlayerError::NoUrl)?;
+                let s = s.ok_or(PlayerError::NoSignature)?;
                 let signature = self.decipher(&s).await?;
                 base.query_pairs_mut().append_pair(&sp, &signature);
                 base
             }
-            (Some(url), None) => Url::parse(url).map_err(|_| PlayerError::NotFound("signature"))?,
-            (None, None) => return Err(PlayerError::NotFound("signature")),
+            (Some(url), None) => Url::parse(url).map_err(|_| PlayerError::NoUrl)?,
+            (None, None) => return Err(PlayerError::NoUrl),
         };
         let n = target
             .query_pairs()
             .find(|(k, _)| k == "n")
             .map(|(_, v)| v.into_owned());
-        if let Some(n) = n
-            && self.throttle.is_some()
-        {
+        if let Some(n) = n {
             let transformed = self.throttle(&n).await?;
             let pairs: Vec<(String, String)> = target
                 .query_pairs()
@@ -237,198 +318,21 @@ impl Player {
     }
 }
 
-/// The name of the signature cipher function.
-fn signature_name(script: &str) -> Option<String> {
-    RE_SIGNATURE.iter().find_map(|re| {
-        re.captures(script).and_then(|c| {
-            c.iter()
-                .skip(1)
-                .flatten()
-                .last()
-                .map(|m| m.as_str().to_string())
-        })
-    })
-}
-
-/// The name of the throttling function, following an index into an array of functions
-/// when it is named through one.
-fn throttle_name(script: &str) -> Option<String> {
-    for re in RE_THROTTLE.iter() {
-        if let Some(captures) = re.captures(script) {
-            let name = captures[1].to_string();
-            let Some(index) = captures.get(2) else {
-                return Some(name);
-            };
-            let index: usize = index.as_str().parse().ok()?;
-            let list = Regex::new(&format!(
-                r"var\s+{}\s*=\s*\[([^\]]+)\]",
-                regex::escape(&name)
-            ))
-            .ok()?;
-            let items = list.captures(script)?[1].to_string();
-            return items
-                .split(',')
-                .nth(index)
-                .map(|item| item.trim().to_string());
-        }
-    }
-    None
-}
-
-/// The source of `function NAME(...) {...}` or `NAME = function(...) {...}`, braces
-/// balanced, as a function expression.
-pub fn function_source(script: &str, name: &str) -> Option<String> {
-    let escaped = regex::escape(name);
-    let patterns = [
-        format!(
-            r"(?:^|[^a-zA-Z0-9_$.])(?:var\s+|let\s+|const\s+)?{escaped}\s*=\s*function\s*\(([^)]*)\)\s*\{{"
-        ),
-        format!(r"function\s+{escaped}\s*\(([^)]*)\)\s*\{{"),
-    ];
-    for pattern in patterns {
-        let re = Regex::new(&pattern).ok()?;
-        if let Some(captures) = re.captures(script) {
-            let whole = captures.get(0)?;
-            let args = captures[1].to_string();
-            let open = whole.end() - 1;
-            let close = matching_brace(script, open)?;
-            let body = &script[open..=close];
-            return Some(format!("function({args}){body}"));
-        }
-    }
-    None
-}
-
-/// The index of the `}` closing the `{` at `open`, stepping over strings, template
-/// literals and comments.
-pub fn matching_brace(text: &str, open: usize) -> Option<usize> {
-    let bytes = text.as_bytes();
-    if bytes.get(open) != Some(&b'{') {
-        return None;
-    }
-    let mut depth = 0usize;
-    let mut i = open;
-    while i < bytes.len() {
-        match bytes[i] {
-            b'"' | b'\'' | b'`' => {
-                let quote = bytes[i];
-                i += 1;
-                while i < bytes.len() && bytes[i] != quote {
-                    if bytes[i] == b'\\' {
-                        i += 1;
-                    }
-                    i += 1;
-                }
-            }
-            b'/' if bytes.get(i + 1) == Some(&b'/') => {
-                while i < bytes.len() && bytes[i] != b'\n' {
-                    i += 1;
-                }
-            }
-            b'/' if bytes.get(i + 1) == Some(&b'*') => {
-                i += 2;
-                while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
-                    i += 1;
-                }
-                i += 1;
-            }
-            b'{' => depth += 1,
-            b'}' => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(i);
-                }
-            }
-            _ => {}
-        }
-        i += 1;
-    }
-    None
-}
-
-/// The `var NAME={...};` helper object a cipher function calls methods of.
-fn helper_object(script: &str, function: &str) -> Option<String> {
-    let call = Regex::new(r"([a-zA-Z0-9_$]{2,})\.[a-zA-Z0-9_$]+\(a,").ok()?;
-    let name = call.captures(function)?[1].to_string();
-    let definition = Regex::new(&format!(
-        r"(?:^|[^a-zA-Z0-9_$.])var\s+{}\s*=\s*\{{",
-        regex::escape(&name)
-    ))
-    .ok()?;
-    let start = definition.find(script)?;
-    let open = start.end() - 1;
-    let close = matching_brace(script, open)?;
-    Some(format!("var {name}={};", &script[open..=close]))
-}
-
-/// The array of strings the script declares right after `'use strict'`, which the
-/// throttling function reads; as a statement, or nothing when the script has none.
-pub fn global_variable(script: &str) -> Option<String> {
-    let strict = script
-        .find("'use strict';")
-        .or_else(|| script.find("\"use strict\";"))?;
-    let rest = &script[strict..];
-    let rest = &rest[rest.find(';')? + 1..];
-    let trimmed = rest.trim_start();
-    let after_var = trimmed.strip_prefix("var ")?;
-    let name_end =
-        after_var.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '$'))?;
-    let name = &after_var[..name_end];
-    let after_name = after_var[name_end..].trim_start();
-    let value = after_name.strip_prefix('=')?.trim_start();
-    let value_end = if value.starts_with('"') || value.starts_with('\'') {
-        let quote = value.as_bytes()[0];
-        let mut i = 1;
-        let bytes = value.as_bytes();
-        while i < bytes.len() && bytes[i] != quote {
-            if bytes[i] == b'\\' {
-                i += 1;
-            }
-            i += 1;
-        }
-        let literal_end = i + 1;
-        let tail = &value[literal_end..];
-        let split = tail.strip_prefix(".split(")?;
-        let close = split.find(')')?;
-        literal_end + ".split(".len() + close + 1
-    } else if value.starts_with('[') {
-        let bytes = value.as_bytes();
-        let mut i = 1;
-        while i < bytes.len() && bytes[i] != b']' {
-            if bytes[i] == b'"' || bytes[i] == b'\'' {
-                let quote = bytes[i];
-                i += 1;
-                while i < bytes.len() && bytes[i] != quote {
-                    if bytes[i] == b'\\' {
-                        i += 1;
-                    }
-                    i += 1;
-                }
-            }
-            i += 1;
-        }
-        i + 1
-    } else {
-        return None;
-    };
-    Some(format!("var {name}={};", &value[..value_end]))
-}
-
 /// The player script as it stands, fetched once per version.
 pub struct PlayerCache {
     http: Http,
-    cached: Mutex<Option<Arc<Player>>>,
+    cached: AsyncMutex<Option<Arc<Player>>>,
 }
 
 impl PlayerCache {
     pub fn new(http: Http) -> Self {
         Self {
             http,
-            cached: Mutex::new(None),
+            cached: AsyncMutex::new(None),
         }
     }
 
-    /// The current player script, mined; fetched when its version changed.
+    /// The current player script, loaded; fetched when its version changed.
     pub async fn get(&self, origin: &Url) -> Result<Arc<Player>, ResolveError> {
         let api = Url::parse(IFRAME_API).expect("valid");
         let iframe = fetch_ok(&self.http, &api, PLATFORM, BROWSER_UA, &[], MAX_PAGE).await?;
@@ -437,13 +341,8 @@ impl PlayerCache {
             .captures(&text)
             .map(|c| c[1].to_string())
             .ok_or_else(|| ResolveError::malformed(origin, PlayerError::NoVersion.to_string()))?;
-        if let Some(player) = self
-            .cached
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .as_ref()
-            .filter(|p| p.version == version)
-        {
+        let mut cached = self.cached.lock().await;
+        if let Some(player) = cached.as_ref().filter(|p| p.version == version) {
             return Ok(player.clone());
         }
         let script_url = Url::parse(&format!(
@@ -459,18 +358,19 @@ impl PlayerCache {
             MAX_SCRIPT,
         )
         .await?;
+        let started = std::time::Instant::now();
         let player = Arc::new(
-            Player::parse(&version, &fetched.text())
+            Player::load(&version, &fetched.text())
+                .await
                 .map_err(|e| ResolveError::malformed(origin, e.to_string()))?,
         );
         tracing::info!(
             version,
             sts = player.sts,
-            signature = player.has_signature(),
-            throttle = player.has_throttle(),
-            "youtube player script mined"
+            took_ms = started.elapsed().as_millis(),
+            "youtube player script loaded"
         );
-        *self.cached.lock().unwrap_or_else(|e| e.into_inner()) = Some(player.clone());
+        *cached = Some(player.clone());
         Ok(player)
     }
 }
@@ -479,28 +379,37 @@ impl PlayerCache {
 pub(crate) mod tests {
     use super::*;
 
-    /// A player script with the shapes the real one has: a helper object, a signature
-    /// cipher, a throttling function guarded by a missing global and named through an
-    /// array, and the string table both may read.
+    /// A player script with the shapes the real one has: an enclosing function called
+    /// with `_yt_player`, a string table, a signature cipher over a helper object, a
+    /// throttling transform guarded by a global and wrapped in a catch that hands the
+    /// parameter back marked, a URL class whose serializer runs the transform, and the
+    /// URL builder that marks URLs with `alr` and enciphers the signature.
     pub const SCRIPT: &str = r#"var _yt_player={};(function(g){var window=this;
 'use strict';var Xz="fromCharCode;split;join".split(";");
 var Ya={reverse:function(a){a.reverse()},splice:function(a,b){a.splice(0,b)},swap:function(a,b){var c=a[0];a[0]=a[b%a.length];a[b%a.length]=c}};
-Xa=function(a){a=a.split("");Ya.reverse(a,1);Ya.splice(a,2);Ya.swap(a,3);return a.join("")};
-Wa=function(a){var b=a.split(""),c=[];if(typeof Qz==="undefined")return a;for(var d=0;d<b.length;d++)c.push(b[b.length-1-d]);return c.join("")+"_w8_"+Xz[1]};
-var Za=[Wa];
-g.foo=function(a,c){c&&(c=Xa(decodeURIComponent(c)));var b;c&&(b=a.get("n"))&&(b=Za[0](b),a.set("n",b))};
+var Xa=function(a){a=a.split("");Ya.reverse(a,1);Ya.splice(a,2);Ya.swap(a,3);return a.join("")};
+var Qz=1998932147;
+var Wa=function(a){var b=a.split(""),c=[];if(typeof Qz==="undefined")return a;try{if(a==="boom")throw Error("x");for(var d=0;d<b.length;d++)c.push(b[b.length-1-d]);return c.join("")+"_w8_"+Xz[1]}catch(e){return "enhanced_except_"+a}};
+g.jZ=function(a,b){this.Y=a;this.K={};this.url=""};
+g.jZ.prototype.set=function(a,b){this.K[a]!==b&&(this.K[a]=b,this.url="")};
+g.jZ.prototype.get=function(a){return this.K[a]||null};
+g.jZ.prototype.pB=function(){if(!this.url){var n=this.K.n;n&&(this.K.n=Wa(n));this.url=this.Y+"?s="+this.K.s}return this.url};
+g.jZ.prototype.clone=function(){return new g.jZ(this.Y)};
+Ix=function(K,H,r){H=H===void 0?"":H;r=r===void 0?"":r;K=new g.jZ(K,!0);K.set("alr","yes");r&&K.set(H,encodeURIComponent(Xa(decodeURIComponent(r))));return K};
 g.cfg={signatureTimestamp:19999,x:1};
 })(_yt_player);"#;
 
     #[tokio::test]
-    async fn the_script_is_mined_and_its_functions_run() {
-        let player = Player::parse("abcdef12", SCRIPT).unwrap();
+    async fn the_script_is_loaded_and_its_transforms_run() {
+        let player = Player::load("abcdef12", SCRIPT).await.unwrap();
         assert_eq!(player.sts, 19999);
-        assert!(player.has_signature());
-        assert!(player.has_throttle());
         assert_eq!(player.decipher("abcdefgh").await.unwrap(), "cedfba");
         assert_eq!(player.throttle("xyz").await.unwrap(), "zyx_w8_split");
         assert_eq!(player.throttle("xyz").await.unwrap(), "zyx_w8_split");
+        assert!(matches!(
+            player.throttle("boom").await,
+            Err(PlayerError::Untransformed(out)) if out == "enhanced_except_boom"
+        ));
 
         let unlocked = player
             .unlock(
@@ -527,29 +436,87 @@ g.cfg={signatureTimestamp:19999,x:1};
             .await
             .unwrap();
         assert!(plain.as_str().contains("n=zyx_w8_split"), "{plain}");
+        assert!(matches!(
+            player.unlock(None, None).await,
+            Err(PlayerError::NoUrl)
+        ));
+        assert!(matches!(
+            player.unlock(None, Some("url=https%3A%2F%2Fh%2Fv")).await,
+            Err(PlayerError::NoSignature)
+        ));
+    }
+
+    #[tokio::test]
+    async fn the_interpreter_is_loaded_again_after_going_idle() {
+        let player = Player::load("abcdef12", SCRIPT).await.unwrap();
+        let resident = player.solver.resident.lock().await.take().unwrap();
+        drop(resident);
+        assert_eq!(player.decipher("abcdefgh").await.unwrap(), "cedfba");
+        assert!(player.solver.resident.lock().await.is_some());
     }
 
     #[test]
-    fn pieces_are_found_or_missed_by_name() {
+    fn the_builder_is_found_in_every_shape_it_is_declared_in() {
+        assert_eq!(builder_name(SCRIPT).as_deref(), Some("Ix"));
         assert_eq!(
-            global_variable(SCRIPT).unwrap(),
-            r#"var Xz="fromCharCode;split;join".split(";");"#
+            builder_name(r#"x=1;function wM(K,H,r){H=H===void 0?"":H;K=new v5(K,!0);K.set("alr","yes");return K}"#)
+                .as_deref(),
+            Some("wM")
         );
         assert_eq!(
-            global_variable("'use strict';var Q=[\"a\",'b,c'];x()").unwrap(),
-            "var Q=[\"a\",'b,c'];"
+            builder_name(r#";g.vm=function(K,H,r){K=new g.jZ(K,!0);K.set("alr","yes");return K};"#)
+                .as_deref(),
+            Some("g.vm")
         );
-        assert!(global_variable("var a=1;").is_none());
-        assert_eq!(signature_name(SCRIPT).as_deref(), Some("Xa"));
-        assert_eq!(throttle_name(SCRIPT).as_deref(), Some("Wa"));
-        assert!(function_source(SCRIPT, "Nope").is_none());
-        assert_eq!(matching_brace("{a{b}\"}\"}", 0), Some(8));
+        // A call that is not a whole statement of a function body is another use of the
+        // same marker, not the builder.
+        assert_eq!(
+            builder_name(r#"var f=function(O){return O.get("alr")||O.set("alr","yes")}"#),
+            None
+        );
+        assert!(builder_name("nothing here").is_none());
+    }
+
+    #[test]
+    fn the_solver_goes_inside_the_closing_call() {
+        let assembled = assemble(SCRIPT).unwrap();
+        assert!(assembled.starts_with(SHIMS));
+        let solver_at = assembled.find("_result.sig = function").unwrap();
+        let closing_at = assembled.rfind("})(_yt_player);").unwrap();
+        assert!(solver_at < closing_at);
+        assert!(assembled.contains(r#"var url = Ix("https://youtube.com/watch?v=yt-dlp-wins""#));
+        let tv = SCRIPT.replace("var _yt_player={};(function(g){", "(function(){var g={};")
+            .replace("})(_yt_player);", "}).call(this);");
+        assert!(assemble(&tv).unwrap().ends_with("}).call(this);"));
         assert!(matches!(
-            Player::parse("v", "nothing here"),
+            assemble("sts:12345;"),
+            Err(PlayerError::NoBuilder)
+        ));
+        assert!(matches!(
+            assemble(r#"Ix=function(K){K.set("alr","yes");return K};"#),
+            Err(PlayerError::NoClosing)
+        ));
+    }
+
+    #[tokio::test]
+    async fn scripts_that_cannot_be_loaded_say_why() {
+        assert!(matches!(
+            Player::load("v", "nothing here").await,
             Err(PlayerError::NoTimestamp)
         ));
-        let no_functions = Player::parse("v", "sts:12345;").unwrap();
-        assert!(!no_functions.has_signature());
-        assert!(!no_functions.has_throttle());
+        assert!(matches!(
+            Player::load("v", "sts:12345;").await,
+            Err(PlayerError::NoBuilder)
+        ));
+        let broken = SCRIPT.replace("g.cfg={", "g.cfg=throw {");
+        assert!(matches!(
+            Player::load("v", &broken).await,
+            Err(PlayerError::Load(JsError::Parse(_)))
+        ));
+        let throwing = SCRIPT.replace("var Qz=1998932147;", "var Qz=missing();");
+        assert!(matches!(
+            Player::load("v", &throwing).await,
+            Err(PlayerError::Load(JsError::Run(_)))
+        ));
     }
 }

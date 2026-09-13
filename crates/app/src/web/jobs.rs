@@ -283,12 +283,11 @@ fn carries_summary(kind: &EventKind) -> bool {
 }
 
 /// The engine's counts and load now, then every job event as it happens, with the counts
-/// restated every couple of seconds, as server-sent `stats` and `job` events. A `job`
-/// event carries the job's summary whenever its status changed.
-pub async fn events(
-    State(state): State<AppState>,
-    Auth(_): Auth,
-) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, ApiError> {
+/// restated every couple of seconds, as `stats` and `job` events. A `job` event carries
+/// the job's summary whenever its status changed.
+pub(super) async fn job_events(
+    state: AppState,
+) -> Result<impl Stream<Item = Result<Event, Infallible>> + Send + 'static, ApiError> {
     let first = stats_event(&read_stats(&state).await?);
     let live = BroadcastStream::new(state.engine.subscribe());
     let engine = state.engine.clone();
@@ -334,9 +333,16 @@ pub async fn events(
             }
         }
     });
-    let stream = futures::stream::once(async move { Ok(first) })
-        .chain(tokio_stream::StreamExt::merge(jobs, ticks));
-    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
+    Ok(futures::stream::once(async move { Ok(first) })
+        .chain(tokio_stream::StreamExt::merge(jobs, ticks)))
+}
+
+/// [`job_events`] as server-sent events.
+pub async fn events(
+    State(state): State<AppState>,
+    Auth(_): Auth,
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, ApiError> {
+    Ok(Sse::new(job_events(state).await?).keep_alive(KeepAlive::default()))
 }
 
 /// A link submitted from the web app, published to the local directory.

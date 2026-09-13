@@ -21,6 +21,7 @@ http.workspace = true
 jiff.workspace = true
 linkify.workspace = true
 m3u8-rs.workspace = true
+md-5.workspace = true
 mime.workspace = true
 percent-encoding.workspace = true
 regex.workspace = true
@@ -40,6 +41,9 @@ tracing.workspace = true
 url.workspace = true
 uuid.workspace = true
 zstd.workspace = true
+
+[dev-dependencies]
+tracing-subscriber.workspace = true
 
 [build-dependencies]
 hex.workspace = true

@@ -1,5 +1,5 @@
-//! Fetches subtitle tracks next to the media, converting YouTube's `json3` timed text and
-//! HLS WebVTT playlists to plain WebVTT files ffmpeg reads.
+//! Fetches subtitle tracks next to the media, converting YouTube's `json3` timed text,
+//! Bilibili's JSON cues and HLS WebVTT playlists to plain WebVTT files ffmpeg reads.
 
 use std::path::Path;
 
@@ -14,7 +14,10 @@ const MAX_SUBTITLE: usize = 32 * 1024 * 1024;
 
 fn extension(format: SubtitleFormat) -> &'static str {
     match format {
-        SubtitleFormat::Vtt | SubtitleFormat::Json3 | SubtitleFormat::HlsVtt => "vtt",
+        SubtitleFormat::Vtt
+        | SubtitleFormat::Json3
+        | SubtitleFormat::BilibiliJson
+        | SubtitleFormat::HlsVtt => "vtt",
         SubtitleFormat::Srt => "srt",
         SubtitleFormat::Ttml => "ttml",
         SubtitleFormat::Ass => "ass",
@@ -23,7 +26,9 @@ fn extension(format: SubtitleFormat) -> &'static str {
 
 fn stored_format(format: SubtitleFormat) -> SubtitleFormat {
     match format {
-        SubtitleFormat::Json3 | SubtitleFormat::HlsVtt => SubtitleFormat::Vtt,
+        SubtitleFormat::Json3 | SubtitleFormat::BilibiliJson | SubtitleFormat::HlsVtt => {
+            SubtitleFormat::Vtt
+        }
         other => other,
     }
 }
@@ -98,6 +103,9 @@ async fn fetch_track(
     match track.format {
         SubtitleFormat::Json3 => json3_to_vtt(&text).ok_or_else(|| {
             DownloadError::Manifest(format!("{} is not json3 timed text", track.url))
+        }),
+        SubtitleFormat::BilibiliJson => bilibili_json_to_vtt(&text).ok_or_else(|| {
+            DownloadError::Manifest(format!("{} is not a Bilibili subtitle", track.url))
         }),
         SubtitleFormat::HlsVtt => {
             let playlist = match m3u8_rs::parse_playlist_res(text.as_bytes()) {
@@ -192,9 +200,58 @@ pub fn json3_to_vtt(text: &str) -> Option<String> {
     Some(out)
 }
 
+/// Converts Bilibili's JSON subtitles, a `body` of cues with `from` and `to` in seconds,
+/// to WebVTT; `None` when the text is not one.
+pub fn bilibili_json_to_vtt(text: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(text).ok()?;
+    let cues = value.get("body")?.as_array()?;
+    let mut out = String::from("WEBVTT\n\n");
+    let mut count = 0;
+    for cue in cues {
+        let from = cue.get("from")?.as_f64()?;
+        let to = cue
+            .get("to")
+            .and_then(|t| t.as_f64())
+            .filter(|to| *to > from)
+            .unwrap_or(from + 2.0);
+        let content = cue
+            .get("content")
+            .and_then(|c| c.as_str())
+            .unwrap_or("")
+            .trim();
+        if content.is_empty() {
+            continue;
+        }
+        count += 1;
+        out.push_str(&format!(
+            "{count}\n{} --> {}\n{}\n\n",
+            vtt_time((from.max(0.0) * 1000.0).round() as u64),
+            vtt_time((to.max(0.0) * 1000.0).round() as u64),
+            content
+        ));
+    }
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bilibili_json_becomes_vtt_cues() {
+        let json = r#"{"font_size":0.4,"body":[{"from":0.5,"to":2.25,"location":2,"content":"第一句"},{"from":3,"to":3,"content":"  "},{"from":4.1,"content":"最后一句"}]}"#;
+        let vtt = bilibili_json_to_vtt(json).unwrap();
+        assert!(
+            vtt.starts_with("WEBVTT\n\n1\n00:00:00.500 --> 00:00:02.250\n第一句\n"),
+            "{vtt}"
+        );
+        assert!(
+            vtt.contains("2\n00:00:04.100 --> 00:00:06.100\n最后一句\n"),
+            "{vtt}"
+        );
+        assert!(bilibili_json_to_vtt("{}").is_none());
+        assert!(bilibili_json_to_vtt("nope").is_none());
+    }
 
     #[test]
     fn json3_becomes_vtt_cues() {

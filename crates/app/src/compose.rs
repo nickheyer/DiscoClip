@@ -12,19 +12,37 @@ use discoclip_engine::download::dash::DashDownloader;
 use discoclip_engine::download::hls::HlsDownloader;
 use discoclip_engine::ffmpeg::Ffmpeg;
 use discoclip_engine::resolve::Resolver;
+use discoclip_engine::resolve::bilibili::BilibiliResolver;
+use discoclip_engine::resolve::bluesky::BlueskyResolver;
 use discoclip_engine::resolve::dailymotion::DailymotionResolver;
+use discoclip_engine::resolve::douyin::DouyinResolver;
 use discoclip_engine::resolve::facebook::FacebookResolver;
 use discoclip_engine::resolve::imgur::ImgurResolver;
 use discoclip_engine::resolve::instagram::InstagramResolver;
 use discoclip_engine::resolve::kick::KickResolver;
+use discoclip_engine::resolve::kuaishou::KuaishouResolver;
+use discoclip_engine::resolve::linkedin::LinkedinResolver;
+use discoclip_engine::resolve::loom::LoomResolver;
+use discoclip_engine::resolve::mastodon::MastodonResolver;
+use discoclip_engine::resolve::niconico::NiconicoResolver;
+use discoclip_engine::resolve::odysee::OdyseeResolver;
+use discoclip_engine::resolve::pinterest::PinterestResolver;
 use discoclip_engine::resolve::reddit::RedditResolver;
 use discoclip_engine::resolve::redgifs::RedgifsResolver;
+use discoclip_engine::resolve::rumble::RumbleResolver;
+use discoclip_engine::resolve::snapchat::SnapchatResolver;
 use discoclip_engine::resolve::streamable::StreamableResolver;
+use discoclip_engine::resolve::telegram::TelegramResolver;
+use discoclip_engine::resolve::threads::ThreadsResolver;
 use discoclip_engine::resolve::tiktok::TiktokResolver;
+use discoclip_engine::resolve::tumblr::TumblrResolver;
 use discoclip_engine::resolve::twitch::TwitchResolver;
 use discoclip_engine::resolve::vimeo::VimeoResolver;
+use discoclip_engine::resolve::vk::VkResolver;
 use discoclip_engine::resolve::web::WebResolver;
+use discoclip_engine::resolve::weibo::WeiboResolver;
 use discoclip_engine::resolve::x::XResolver;
+use discoclip_engine::resolve::xiaohongshu::XiaohongshuResolver;
 use discoclip_engine::resolve::youtube::YoutubeResolver;
 use discoclip_engine::store::sqlite::SqliteStore;
 use discoclip_engine::transcode::FfmpegTranscoder;
@@ -143,6 +161,26 @@ fn resolvers(http: &Http) -> Vec<Box<dyn Resolver>> {
         Box::new(StreamableResolver::new(http.clone())),
         Box::new(ImgurResolver::new(http.clone())),
         Box::new(RedgifsResolver::new(http.clone())),
+        Box::new(BilibiliResolver::new(http.clone())),
+        Box::new(NiconicoResolver::new(http.clone())),
+        Box::new(DouyinResolver::new(http.clone())),
+        Box::new(KuaishouResolver::new(http.clone())),
+        Box::new(WeiboResolver::new(http.clone())),
+        Box::new(XiaohongshuResolver::new(http.clone())),
+        Box::new(VkResolver::new(http.clone())),
+        Box::new(RumbleResolver::new(http.clone())),
+        Box::new(OdyseeResolver::new(http.clone())),
+        Box::new(BlueskyResolver::new(http.clone())),
+        Box::new(ThreadsResolver::new(http.clone())),
+        Box::new(TumblrResolver::new(http.clone())),
+        Box::new(PinterestResolver::new(http.clone())),
+        Box::new(LinkedinResolver::new(http.clone())),
+        Box::new(SnapchatResolver::new(http.clone())),
+        Box::new(LoomResolver::new(http.clone())),
+        Box::new(TelegramResolver::new(http.clone())),
+        // Mastodon matches links on any host by their shape and passes the rest on, so it
+        // sits just before the generic web resolver.
+        Box::new(MastodonResolver::new(http.clone())),
         Box::new(WebResolver::new(http.clone())),
     ]
 }

@@ -344,6 +344,8 @@ export interface ApplicationView {
 	updated_at: string;
 	bot: BotStatus;
 	install_url: string;
+	/** Where Discord sends browsers back to after a login; registered at Discord. */
+	login_callback_url: string;
 }
 
 export interface CommandSummary {
@@ -370,7 +372,11 @@ export type BotStatus = { since: string } & (
 	| { state: 'failed'; error: string }
 );
 
-export type BotEvent = BotStatus & { application: string };
+export type BotEvent = BotStatus & {
+	application: string;
+	/** The application was removed, and this is the last word on its bot. */
+	removed?: true;
+};
 
 export interface BotGuild {
 	application_id: string;

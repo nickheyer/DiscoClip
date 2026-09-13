@@ -18,6 +18,7 @@ use twilight_http::error::ErrorType;
 use super::AppState;
 use super::auth::{Auth, parse_id};
 use super::error::ApiError;
+use super::proxy::{Client, ClientInfo};
 use crate::applications::{
     Application, ApplicationId, Changes, CommandsState, Credentials, InstallLink, install_link,
 };
@@ -29,33 +30,47 @@ use crate::users::Permission;
 use twilight_model::id::Id;
 use url::Url;
 
-/// An application with the state of its bot and the link that adds the bot to a guild.
+/// An application with the state of its bot, the link that adds the bot to a guild, and
+/// the redirect Discord sends browsers back to when the application signs people in,
+/// which must be registered on the application's OAuth2 page at Discord.
 #[derive(Debug, Serialize)]
 pub struct ApplicationView {
     #[serde(flatten)]
     pub application: Application,
     pub bot: BotStatus,
     pub install_url: Url,
+    pub login_callback_url: Url,
 }
 
 impl ApplicationView {
-    fn new(state: &AppState, application: Application, bot: BotStatus) -> Self {
+    fn new(
+        state: &AppState,
+        client: &ClientInfo,
+        application: Application,
+        bot: BotStatus,
+    ) -> Result<Self, ApiError> {
         let install_url = install_link(&state.discord, &application.client_id, None).url;
-        Self {
+        let login_callback_url = super::oauth::callback_url(state, client, "discord")?;
+        Ok(Self {
             application,
             bot,
             install_url,
-        }
+            login_callback_url,
+        })
     }
 }
 
-async fn view(state: &AppState, application: Application) -> ApplicationView {
+async fn view(
+    state: &AppState,
+    client: &ClientInfo,
+    application: Application,
+) -> Result<ApplicationView, ApiError> {
     let bot = state
         .bots
         .status(application.id)
         .await
         .unwrap_or_else(|| BotControl::disabled().status());
-    ApplicationView::new(state, application, bot)
+    ApplicationView::new(state, client, application, bot)
 }
 
 /// What Discord says the token belongs to.
@@ -93,22 +108,22 @@ async fn verify_token(endpoints: &DiscordEndpoints, token: &str) -> Result<Verif
 pub async fn list(
     State(state): State<AppState>,
     Auth(identity): Auth,
+    Client(client): Client,
 ) -> Result<Json<Vec<ApplicationView>>, ApiError> {
     identity.require(Permission::ManageApplications)?;
     let statuses = state.bots.statuses().await;
     let applications = state.applications.list().await?;
-    Ok(Json(
-        applications
-            .into_iter()
-            .map(|application| {
-                let bot = statuses
-                    .get(&application.id)
-                    .cloned()
-                    .unwrap_or_else(|| BotControl::disabled().status());
-                ApplicationView::new(&state, application, bot)
-            })
-            .collect(),
-    ))
+    applications
+        .into_iter()
+        .map(|application| {
+            let bot = statuses
+                .get(&application.id)
+                .cloned()
+                .unwrap_or_else(|| BotControl::disabled().status());
+            ApplicationView::new(&state, &client, application, bot)
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Json)
 }
 
 #[derive(Debug, Deserialize)]
@@ -123,6 +138,7 @@ pub struct CreateRequest {
 pub async fn create(
     State(state): State<AppState>,
     Auth(identity): Auth,
+    Client(client): Client,
     Json(request): Json<CreateRequest>,
 ) -> Result<(StatusCode, Json<ApplicationView>), ApiError> {
     identity.require(Permission::ManageApplications)?;
@@ -145,12 +161,13 @@ pub async fn create(
     tracing::info!(by = identity.user.username, application = %application.id, name = application.name, "discord application added");
     let application =
         register_commands(&state, &actor, application, &CommandScope::default()).await?;
-    Ok((StatusCode::CREATED, Json(view(&state, application).await)))
+    Ok((StatusCode::CREATED, Json(view(&state, &client, application).await?)))
 }
 
 pub async fn get(
     State(state): State<AppState>,
     Auth(identity): Auth,
+    Client(client): Client,
     Path(id): Path<String>,
 ) -> Result<Json<ApplicationView>, ApiError> {
     identity.require(Permission::ManageApplications)?;
@@ -160,7 +177,7 @@ pub async fn get(
         .get(id)
         .await?
         .ok_or(ApiError::NotFound)?;
-    Ok(Json(view(&state, application).await))
+    Ok(Json(view(&state, &client, application).await?))
 }
 
 #[derive(Debug, Deserialize)]
@@ -185,6 +202,7 @@ where
 pub async fn update(
     State(state): State<AppState>,
     Auth(identity): Auth,
+    Client(client): Client,
     Path(id): Path<String>,
     Json(request): Json<UpdateRequest>,
 ) -> Result<Json<ApplicationView>, ApiError> {
@@ -222,7 +240,7 @@ pub async fn update(
     }
     state.refresh_discord_login().await?;
     tracing::info!(by = identity.user.username, application = %application.id, "discord application changed");
-    Ok(Json(view(&state, application).await))
+    Ok(Json(view(&state, &client, application).await?))
 }
 
 #[derive(Debug, Deserialize)]
@@ -419,6 +437,7 @@ async fn audit_bot(
 pub async fn start_bot(
     State(state): State<AppState>,
     Auth(identity): Auth,
+    Client(client): Client,
     Path(id): Path<String>,
 ) -> Result<Json<ApplicationView>, ApiError> {
     identity.require(Permission::ManageBots)?;
@@ -427,13 +446,14 @@ pub async fn start_bot(
     state.bots.start(application.id).await?;
     audit_bot(&state, &identity, Action::BotStart, &application).await?;
     tracing::info!(by = identity.user.username, application = %application.id, "bot started");
-    Ok(Json(view(&state, application).await))
+    Ok(Json(view(&state, &client, application).await?))
 }
 
 /// Stops the application's bot until it is started again, across restarts too.
 pub async fn stop_bot(
     State(state): State<AppState>,
     Auth(identity): Auth,
+    Client(client): Client,
     Path(id): Path<String>,
 ) -> Result<Json<ApplicationView>, ApiError> {
     identity.require(Permission::ManageBots)?;
@@ -445,13 +465,14 @@ pub async fn stop_bot(
     state.bots.stop(application.id).await?;
     audit_bot(&state, &identity, Action::BotStop, &application).await?;
     tracing::info!(by = identity.user.username, application = %application.id, "bot stopped");
-    Ok(Json(view(&state, application).await))
+    Ok(Json(view(&state, &client, application).await?))
 }
 
 /// Stops and starts the application's bot, and keeps it meant to run.
 pub async fn restart_bot(
     State(state): State<AppState>,
     Auth(identity): Auth,
+    Client(client): Client,
     Path(id): Path<String>,
 ) -> Result<Json<ApplicationView>, ApiError> {
     identity.require(Permission::ManageBots)?;
@@ -460,14 +481,14 @@ pub async fn restart_bot(
     state.bots.restart(application.id).await?;
     audit_bot(&state, &identity, Action::BotRestart, &application).await?;
     tracing::info!(by = identity.user.username, application = %application.id, "bot restarted");
-    Ok(Json(view(&state, application).await))
+    Ok(Json(view(&state, &client, application).await?))
 }
 
-/// Every bot's status now, then each change as it happens, as server-sent `bot` events.
-pub async fn bot_events(
-    State(state): State<AppState>,
-    Auth(_): Auth,
-) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+/// Every bot's status now, then each change as it happens, as `bot` events; an
+/// application's removal is the last event about its bot.
+pub(super) async fn bot_stream(
+    state: AppState,
+) -> impl Stream<Item = Result<Event, Infallible>> + Send + 'static {
     let live = BroadcastStream::new(state.bots.subscribe());
     let snapshot = state.bots.snapshot().await;
     let event = |bot: BotEvent| {
@@ -484,7 +505,15 @@ pub async fn bot_events(
             Err(BroadcastStreamRecvError::Lagged(_)) => None,
         }
     });
-    Sse::new(first.chain(rest)).keep_alive(KeepAlive::default())
+    first.chain(rest)
+}
+
+/// [`bot_stream`] as server-sent events.
+pub async fn bot_events(
+    State(state): State<AppState>,
+    Auth(_): Auth,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    Sse::new(bot_stream(state).await).keep_alive(KeepAlive::default())
 }
 
 pub async fn delete(

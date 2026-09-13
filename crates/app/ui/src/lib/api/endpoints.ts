@@ -64,6 +64,9 @@ import type {
 
 const id = encodeURIComponent;
 
+/** The live feed of job stats, job events and bot statuses; a plain URL for an EventSource. */
+export const LIVE_EVENTS_URL = '/api/events';
+
 export const auth = {
 	setupStatus: () => get<SetupStatus>('/setup'),
 	setup: (body: SetupRequest) => post<WhoAmI>('/setup', body),

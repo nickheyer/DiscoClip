@@ -39,6 +39,11 @@ PEM the binary serves HTTPS itself, and re-reads the files whenever they change,
 renewed certificate takes effect without a restart. Without it the app speaks plain HTTP,
 which is how it runs behind a reverse proxy that terminates TLS.
 
+The web app watches jobs and bots through one live event stream per browser, shared by
+its tabs, so a browser's few connections to the host stay free for pages, downloads and
+video playback however many tabs are open. A proxy in front of the app must pass
+`text/event-stream` responses through unbuffered.
+
 Behind a proxy, list the proxy's addresses or networks in `web.trusted_proxies`. Requests
 that arrive from one of them are read for `Forwarded`, `X-Forwarded-For`,
 `X-Forwarded-Proto` and `X-Forwarded-Host`, so sessions, rate limits, the audit log, the
@@ -82,9 +87,12 @@ by anyone who manages jobs; `fixtures.timeout_secs` bounds one link.
 
 YouTube links of every shape are taken: videos, shorts, live streams, premieres once they
 start, playlists, channels and clips, with the portion a clip or a `t=` timestamp names.
-The player script's signature and throttling ciphers run in the JavaScript interpreter;
-age-gated videos go through the embedded player and, when that is refused, need a
-logged-in session; a premiere that has not started yet is reported with its start time.
+The player script, several megabytes of obfuscated code, runs whole in the JavaScript
+interpreter, where the player's own URL builder applies the signature cipher and the
+throttling transform to every format URL; it stays loaded between links and is let go
+after ten idle minutes. Age-gated videos go through the embedded player and, when that is
+refused, need a logged-in session; a premiere that has not started yet is reported with
+its start time.
 
 Twitter and X posts are read through the site's own API as a guest or a session, with
 the fxtwitter mirror behind it. TikTok videos come from the page data the web app
@@ -104,6 +112,26 @@ and user pages, and the family filter turned off for age-gated videos. Streamabl
 Imgur videos, animated images, galleries and albums, and Redgifs clips come from the APIs
 their players read.
 
+Bilibili videos, multi-part videos (each part a job, or one part by `p=`), bangumi episodes
+and seasons, favourites folders, collections, series and user spaces come through the web
+API the site itself uses, carrying the device cookie it hands out and the WBI signature it
+checks, with `b23.tv` short links unwrapped; videos locked to a region or to paying members
+are reported as such, and the site's JSON subtitles are fetched. Niconico videos come from
+the watch page's player data and the HLS access rights the delivery API grants, with
+`nico.ms` links, mylists, series and user pages; premium-only videos ask for a session.
+Douyin videos come through the web API when a browser's cookies are stored and from the
+share page the app renders for visitors otherwise, with `v.douyin.com` links unwrapped;
+Kuaishou videos come from the state the desktop page renders, then the mobile share
+page's, with `v.kuaishou.com` links, and the site's request that an unfamiliar client
+verify itself is reported so a browser's session can be stored. Weibo posts, reposts and
+Weibo TV shows come through the site's API with the visitor cookies it hands anonymous
+browsers, and `t.cn` links are unwrapped. Xiaohongshu video notes come from the state the
+note page renders, with `xhslink.com` share links unwrapped and their `xsec_token` carried
+over; the site shows notes only to browsers it knows, so a session is needed. VK videos,
+clips, embeds (`video_ext.php`) and live streams come through the player request the
+site's pages make, after a visit for the visitor cookies it wants, with MP4 files by
+height and HLS and DASH manifests.
+
 Platforms that read more with an account take a logged-in session: admins import a
 browser's cookies for the platform from its row, as a Netscape `cookies.txt` or a `Cookie`
 header, and the platform is asked whom they log in as; the check can be run again and
@@ -115,8 +143,9 @@ age-gate cookies its platform wants, sent whenever the stored session has no say
 Every request a resolver makes goes through one HTTP client: per-platform and per-host
 proxies, per-host rate limits and retries from the `http` settings, redirects followed
 so short links land on the platform's own resolver, and embedded players handed to the
-resolver that knows them. Player scripts that guard media with signature ciphers run in a
-sandboxed JavaScript interpreter with bounds on how long they may take.
+resolver that knows them. Player scripts that guard media with
+signature ciphers run in a sandboxed JavaScript interpreter with bounds on how long they
+may take.
 
 ## Health, metrics and the log
 

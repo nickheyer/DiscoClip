@@ -44,13 +44,9 @@
 		}));
 	}
 
-	let rows = $state<Row[]>([]);
-	let initialized = $state(false);
-	$effect.pre(() => {
-		if (initialized) return;
-		initialized = true;
-		rows = rowsOf(value);
-	});
+	// The rows are set once from the value the map is created with; the section recreates
+	// the map whenever the draft is replaced.
+	let rows = $state<Row[]>(rowsOf(value));
 
 	function commit() {
 		const map: Record<string, SettingValue> = {};

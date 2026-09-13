@@ -19,7 +19,7 @@ async-trait = "0.1"
 axum = { version = "0.8", features = ["macros"] }
 axum-extra = { version = "0.12", features = ["cookie"] }
 base64 = "0.23"
-boa_engine = "0.22"
+boa_engine = { version = "0.22", features = ["annex-b"] }
 bytes = "1"
 cbc = { version = "0.2", features = ["alloc"] }
 clap = { version = "4", features = ["derive", "env", "wrap_help"] }
@@ -35,6 +35,7 @@ ipnet = { version = "2", features = ["serde"] }
 jiff = { version = "0.2", features = ["serde"] }
 linkify = "0.11"
 m3u8-rs = "6"
+md-5 = "0.11"
 mime = "0.3"
 percent-encoding = "2"
 rand = "0.10"
@@ -88,3 +89,18 @@ unsafe_code = "forbid"
 lto = "fat"
 codegen-units = 1
 strip = true
+
+# The JavaScript interpreter loads a player script of several megabytes; unoptimized it
+# takes six times as long, so it is optimized in debug builds too.
+[profile.dev.package.boa_engine]
+opt-level = 3
+[profile.dev.package.boa_parser]
+opt-level = 3
+[profile.dev.package.boa_ast]
+opt-level = 3
+[profile.dev.package.boa_gc]
+opt-level = 3
+[profile.dev.package.boa_interner]
+opt-level = 3
+[profile.dev.package.boa_string]
+opt-level = 3

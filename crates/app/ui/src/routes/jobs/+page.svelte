@@ -424,8 +424,8 @@
 							</td>
 							<td class="job">
 								<a href={`/jobs/${job.id}`} class="row-link truncate title" title={job.url}>{job.title ?? job.url}</a>
-								{#if job.title}<span class="faint small truncate">{job.url}</span>{/if}
-								{#if job.status.status === 'failed'}<span class="error-text small truncate" title={job.status.message}>{job.status.message}</span>{/if}
+								{#if job.title}<span class="faint small truncate block" title={job.url}>{job.url}</span>{/if}
+								{#if job.status.status === 'failed'}<span class="error-text small truncate block" title={job.status.message}>{job.status.message}</span>{/if}
 								{#if job.children > 0}<span class="faint small">Playlist · <a href={`/jobs?parent=${job.id}`}>{pluralize(job.children, 'entry', 'entries')}</a></span>{/if}
 							</td>
 							<td>

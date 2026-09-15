@@ -2,6 +2,7 @@
 //! and every resolver returns the same shape, which the engine picks a variant from.
 
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -12,41 +13,134 @@ use url::Url;
 use crate::http::{Cookie, Http, HttpError, Response, StatusCode};
 use crate::media::{AudioCodec, Container, VideoCodec};
 
+pub mod archive_org;
 pub mod bilibili;
 pub mod bluesky;
+pub mod brightcove;
+pub mod bunny;
+pub mod catbox;
+pub mod cloudflare_stream;
+pub mod coub;
 pub mod dailymotion;
+pub mod discord;
 pub mod douyin;
+pub mod dropbox;
 pub mod facebook;
+pub mod firsttv;
+pub mod giphy;
+pub mod google_drive;
 pub mod hls;
+pub mod ifunny;
 pub mod imgur;
 pub mod instagram;
+pub mod jwplayer;
+pub mod kaltura;
 pub mod kick;
 pub mod kuaishou;
 pub mod linkedin;
 pub mod loom;
 pub mod mastodon;
+pub mod mega;
+pub mod mux;
+pub mod newgrounds;
 pub mod niconico;
+pub mod ninegag;
 pub mod odysee;
+pub mod onedrive;
+pub mod onenewsnz;
 pub mod page;
 pub mod pinterest;
 pub mod reddit;
 pub mod redgifs;
 pub mod rumble;
+pub mod seventeenlive;
 pub mod snapchat;
 pub mod streamable;
 pub mod telegram;
+pub mod tenor;
 pub mod threads;
 pub mod tiktok;
 pub mod tumblr;
+pub mod twentymin;
 pub mod twitch;
 pub mod twitter;
+pub mod vidyard;
 pub mod vimeo;
 pub mod vk;
 pub mod web;
 pub mod weibo;
+pub mod wikimedia;
+pub mod wistia;
 pub mod x;
 pub mod xiaohongshu;
 pub mod youtube;
+
+/// Every resolver, in the order links are offered to them: platforms first, then the
+/// players they embed, Mastodon (which matches links on any host by their shape and
+/// passes the rest on) just before the generic web resolver, which takes whatever is
+/// left. The app, the examples and the fixture recorder all build from this list.
+pub fn standard_resolvers(http: &Http, bots: Arc<dyn discord::BotTokens>) -> Vec<Box<dyn Resolver>> {
+    vec![
+        Box::new(youtube::YoutubeResolver::new(http.clone())),
+        Box::new(x::XResolver::new(http.clone())),
+        Box::new(tiktok::TiktokResolver::new(http.clone())),
+        Box::new(instagram::InstagramResolver::new(http.clone())),
+        Box::new(facebook::FacebookResolver::new(http.clone())),
+        Box::new(reddit::RedditResolver::new(http.clone())),
+        Box::new(twitch::TwitchResolver::new(http.clone())),
+        Box::new(kick::KickResolver::new(http.clone())),
+        Box::new(vimeo::VimeoResolver::new(http.clone())),
+        Box::new(dailymotion::DailymotionResolver::new(http.clone())),
+        Box::new(streamable::StreamableResolver::new(http.clone())),
+        Box::new(imgur::ImgurResolver::new(http.clone())),
+        Box::new(redgifs::RedgifsResolver::new(http.clone())),
+        Box::new(bilibili::BilibiliResolver::new(http.clone())),
+        Box::new(niconico::NiconicoResolver::new(http.clone())),
+        Box::new(douyin::DouyinResolver::new(http.clone())),
+        Box::new(kuaishou::KuaishouResolver::new(http.clone())),
+        Box::new(weibo::WeiboResolver::new(http.clone())),
+        Box::new(xiaohongshu::XiaohongshuResolver::new(http.clone())),
+        Box::new(vk::VkResolver::new(http.clone())),
+        Box::new(rumble::RumbleResolver::new(http.clone())),
+        Box::new(odysee::OdyseeResolver::new(http.clone())),
+        Box::new(bluesky::BlueskyResolver::new(http.clone())),
+        Box::new(threads::ThreadsResolver::new(http.clone())),
+        Box::new(tumblr::TumblrResolver::new(http.clone())),
+        Box::new(pinterest::PinterestResolver::new(http.clone())),
+        Box::new(linkedin::LinkedinResolver::new(http.clone())),
+        Box::new(snapchat::SnapchatResolver::new(http.clone())),
+        Box::new(loom::LoomResolver::new(http.clone())),
+        Box::new(telegram::TelegramResolver::new(http.clone())),
+        Box::new(discord::DiscordResolver::new(http.clone(), bots)),
+        Box::new(ninegag::NinegagResolver::new(http.clone())),
+        Box::new(ifunny::IfunnyResolver::new(http.clone())),
+        Box::new(newgrounds::NewgroundsResolver::new(http.clone())),
+        Box::new(archive_org::ArchiveOrgResolver::new(http.clone())),
+        Box::new(wikimedia::WikimediaResolver::new(http.clone())),
+        Box::new(coub::CoubResolver::new(http.clone())),
+        Box::new(giphy::GiphyResolver::new(http.clone())),
+        Box::new(tenor::TenorResolver::new(http.clone())),
+        Box::new(catbox::CatboxResolver::new(http.clone())),
+        Box::new(google_drive::GoogleDriveResolver::new(http.clone())),
+        Box::new(dropbox::DropboxResolver::new(http.clone())),
+        Box::new(onedrive::OnedriveResolver::new(http.clone())),
+        Box::new(mega::MegaResolver::new(http.clone())),
+        Box::new(jwplayer::JwplayerResolver::new(http.clone())),
+        Box::new(brightcove::BrightcoveResolver::new(http.clone())),
+        Box::new(wistia::WistiaResolver::new(http.clone())),
+        Box::new(kaltura::KalturaResolver::new(http.clone())),
+        Box::new(vidyard::VidyardResolver::new(http.clone())),
+        Box::new(cloudflare_stream::CloudflareStreamResolver::new(http.clone())),
+        Box::new(mux::MuxResolver::new(http.clone())),
+        Box::new(bunny::BunnyResolver::new(http.clone())),
+        Box::new(onenewsnz::OneNewsNzResolver::new(http.clone())),
+        Box::new(seventeenlive::SeventeenLiveResolver::new(http.clone())),
+        Box::new(firsttv::FirstTvResolver::new(http.clone())),
+        Box::new(twentymin::TwentyMinResolver::new(http.clone())),
+        Box::new(mastodon::MastodonResolver::new(http.clone())),
+        Box::new(web::WebResolver::new(http.clone())),
+    ]
+}
 
 const MAX_REDIRECT_HOPS: usize = 5;
 /// The most of a page or API answer a resolver reads.
@@ -353,6 +447,16 @@ impl VariantKind {
     }
 }
 
+/// How a file's bytes are decrypted as they arrive, for hosts that keep files encrypted
+/// end to end and hand out the key in the link.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "scheme", rename_all = "snake_case")]
+pub enum Cipher {
+    /// AES-128 in counter mode: the counter block is `nonce` followed by a 64-bit
+    /// big-endian block counter that starts at zero.
+    Aes128Ctr { key: [u8; 16], nonce: [u8; 8] },
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Variant {
     pub url: Url,
@@ -391,6 +495,10 @@ pub struct Variant {
     /// The DRM system the stream is locked with; such variants cannot be downloaded.
     #[serde(default)]
     pub drm: Option<String>,
+    /// How the bytes are decrypted as they are fetched, when the host stores them
+    /// encrypted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cipher: Option<Cipher>,
 }
 
 impl Variant {
@@ -417,6 +525,7 @@ impl Variant {
             audio_only: false,
             live: false,
             drm: None,
+            cipher: None,
         }
     }
 
@@ -490,6 +599,22 @@ pub enum ResolveError {
 }
 
 impl ResolveError {
+    /// Attribute a platform's manifest failure to the link that requested it, keeping
+    /// transport diagnostics and redirects at their original destinations.
+    fn at(mut self, origin: &Url) -> Self {
+        match &mut self {
+            Self::NotFound(url)
+            | Self::RateLimited(url)
+            | Self::Unavailable { url, .. }
+            | Self::Malformed { url, .. }
+            | Self::Drm { url, .. }
+            | Self::LoginRequired { url, .. }
+            | Self::BrowserUnavailable { url, .. } => *url = origin.clone(),
+            Self::Unsupported(_) | Self::Redirect(_) | Self::Http(_) => {}
+        }
+        self
+    }
+
     pub fn malformed(url: &Url, detail: impl Into<String>) -> Self {
         Self::Malformed {
             url: url.clone(),
@@ -631,6 +756,81 @@ pub async fn fetch_ok(
         return Err(error);
     }
     Ok(fetched)
+}
+
+/// What a direct file link answers to a request for its first byte: where it ends up,
+/// its content type, and its length from `Content-Range` (or `Content-Length` when the
+/// host ignores the range).
+pub struct Probed {
+    pub url: Url,
+    pub status: StatusCode,
+    pub content_type: Option<String>,
+    pub size: Option<u64>,
+    /// The file name the host offers in `Content-Disposition`.
+    pub filename: Option<String>,
+}
+
+/// GETs the first byte of `url` as `platform`, without reading any body.
+pub async fn probe_file(
+    http: &Http,
+    url: &Url,
+    platform: &str,
+    user_agent: &str,
+    headers: &[(String, String)],
+) -> Result<Probed, ResolveError> {
+    let response = http
+        .get(url.clone())
+        .platform(platform)
+        .user_agent(user_agent)
+        .headers(headers)
+        .header("range", "bytes=0-0")
+        .media()
+        .send()
+        .await?;
+    let size = response
+        .header("content-range")
+        .and_then(|v| v.rsplit('/').next())
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .or_else(|| {
+            if response.status.as_u16() == 200 {
+                response.content_length().filter(|n| *n > 0)
+            } else {
+                None
+            }
+        });
+    Ok(Probed {
+        url: response.url.clone(),
+        status: response.status,
+        content_type: response.content_type().map(str::to_owned),
+        size,
+        filename: response
+            .header("content-disposition")
+            .and_then(disposition_filename),
+    })
+}
+
+/// The file name a `Content-Disposition` value carries: the RFC 5987 `filename*` when
+/// there is one, else the quoted or bare `filename`.
+pub fn disposition_filename(value: &str) -> Option<String> {
+    let mut plain = None;
+    for part in value.split(';').map(str::trim) {
+        if let Some(rest) = part.strip_prefix("filename*=") {
+            let rest = rest.trim_matches('"');
+            let encoded = rest.splitn(3, '\'').nth(2).unwrap_or(rest);
+            let decoded = percent_encoding::percent_decode_str(encoded)
+                .decode_utf8_lossy()
+                .into_owned();
+            if !decoded.trim().is_empty() {
+                return Some(decoded);
+            }
+        } else if let Some(rest) = part.strip_prefix("filename=") {
+            let name = rest.trim().trim_matches('"').trim();
+            if !name.is_empty() {
+                plain = Some(name.to_string());
+            }
+        }
+    }
+    plain
 }
 
 /// The `type/subtype` of a `Content-Type` value, lower-cased, without parameters.
@@ -845,6 +1045,27 @@ mod tests {
             Some(Duration::from_secs(10))
         );
         assert_eq!(timestamp_hint(&url("https://v.test/clip")), None);
+    }
+
+    #[test]
+    fn disposition_file_names_are_read_in_both_forms() {
+        assert_eq!(
+            disposition_filename("attachment; filename=\"Big Buck Bunny.mp4\""),
+            Some("Big Buck Bunny.mp4".into())
+        );
+        assert_eq!(
+            disposition_filename(
+                "attachment; filename=\"x.mp4\"; filename*=UTF-8''youtube-dl%20test%20%27%C3%A4.mp4"
+            ),
+            Some("youtube-dl test 'ä.mp4".into())
+        );
+        assert_eq!(
+            disposition_filename(
+                "attachment;filename*=utf-8''Screenbox%20playback%20bug%2Emp4;filename=\"Screenbox playback bug.mp4\""
+            ),
+            Some("Screenbox playback bug.mp4".into())
+        );
+        assert_eq!(disposition_filename("inline"), None);
     }
 
     #[test]

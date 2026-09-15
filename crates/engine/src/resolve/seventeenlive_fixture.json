@@ -1,0 +1,498 @@
+{
+  "name": "17live",
+  "recorded_at": "2026-09-14T08:50:54.988042524Z",
+  "url": "https://17.live/profile/r/1789280/clip/1bHQSK8KUieruFXaCH4A4upCzlN",
+  "notes": "17LIVE: a clip, a recording with its HLS master, live room 29768623 on air, and room 1789280 off air",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api-dsa.17app.co/api/v1/clips/1bHQSK8KUieruFXaCH4A4upCzlN",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ],
+          [
+            "referer",
+            "https://17.live/profile/r/1789280/clip/1bHQSK8KUieruFXaCH4A4upCzlN"
+          ],
+          [
+            "accept",
+            "application/json"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://api-dsa.17app.co/api/v1/clips/1bHQSK8KUieruFXaCH4A4upCzlN",
+        "headers": [
+          [
+            "alt-svc",
+            "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000"
+          ],
+          [
+            "via",
+            "1.1 google"
+          ],
+          [
+            "content-type",
+            "application/json"
+          ],
+          [
+            "date",
+            "Mon, 14 Sep 2026 08:50:55 GMT"
+          ],
+          [
+            "trace-id",
+            "bb1d933e981361d0bb156b3c06dd6c2d"
+          ],
+          [
+            "vary",
+            "Accept-Encoding"
+          ]
+        ],
+        "body": {
+          "text": "{\"clipID\":\"1bHQSK8KUieruFXaCH4A4upCzlN\",\"userID\":\"dea2178c-11a6-478b-807c-ab22744eb8f8\",\"caption\":\"マチ戦隊　第一次　バスターコール\\n総額200万coin！\\n動画制作@うぉーかー🌱Walker🎫\",\"videoURL\":\"http://cdn.17app.co/vod/prod/1bHQSK8KUieruFXaCH4A4upCzlN/3ce5bd7c65452c566d54e5ec31515059.mp4\",\"imageURL\":\"http://cdn.17app.co/go-prod/clip/1bHQSK8KUieruFXaCH4A4upCzlN.jpg\",\"ratio\":0.5625,\"viewCount\":1910,\"likeCount\":1249,\"relLikeCount\":13,\"duration\":58,\"createdAt\":1588286538,\"updatedAt\":0,\"isDeleted\":0,\"userInfo\":{\"userID\":\"dea2178c-11a6-478b-807c-ab22744eb8f8\",\"displayName\":\"マチコ先生🦋Class💋\",\"picture\":\"42DE18C1-8684-473C-A5B7-EFC420FF21D8.jpg\",\"isFollowing\":0,\"followRequestTime\":0,\"privacyMode\":\"private\",\"level\":188,\"name\":\"マチコ先生🦋Class💋\",\"clanStatus\":0,\"liveStreamID\":0,\"showLiveSchedule\":0,\"followerCount\":0,\"roomID\":1789280,\"gloryroadInfo\":{\"point\":980751,\"level\":36,\"iconURL\":\"https://assets-17app.akamaized.net/4f9527a7-f286-4b6f-86f5-b07ba247b25d.png\",\"badgeIconURL\":\"https://assets-17app.akamaized.net/7ecb5f8c-bfd4-4484-bd11-31934dd2abcc.png\"},\"gloryroadMode\":0,\"bio\":\"\",\"region\":\"JP\",\"enableGacha\":0},\"commentCount\":0,\"pinToTop\":0,\"srcVideoURL\":\"http://cdn.17app.co/go-prod/clip/1bHQSK8KUieruFXaCH4A4upCzlN.mp4\",\"transcodeJobID\":738268340,\"transcodeURL\":\"http://17app-vod-prod.s3.amazonaws.com/1bHQSK8KUieruFXaCH4A4upCzlN/3ce5bd7c65452c566d54e5ec31515059.mp4\",\"creatorRegion\":\"JP\",\"eventID\":\"\",\"type\":1,\"visibility\":1,\"collected\":0,\"hasLiked\":false}"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://wap-api.17app.co/api/v1/vods/2cf84520-e65e-4b22-891e-1d3a00b0f068",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ],
+          [
+            "referer",
+            "https://17.live/vod/27323042/2cf84520-e65e-4b22-891e-1d3a00b0f068"
+          ],
+          [
+            "accept",
+            "application/json"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://wap-api.17app.co/api/v1/vods/2cf84520-e65e-4b22-891e-1d3a00b0f068",
+        "headers": [
+          [
+            "akamai-countrycode",
+            "US"
+          ],
+          [
+            "content-type",
+            "application/json"
+          ],
+          [
+            "trace-id",
+            "202b22f50c4b117c50c5d526eed2826b"
+          ],
+          [
+            "vary",
+            "Accept-Encoding"
+          ],
+          [
+            "cache-control",
+            "max-age=0"
+          ],
+          [
+            "date",
+            "Mon, 14 Sep 2026 08:50:55 GMT"
+          ],
+          [
+            "akamai-grn",
+            "0.857b3517.1789375855.1e103043"
+          ],
+          [
+            "server-timing",
+            "edge; dur=1"
+          ],
+          [
+            "server-timing",
+            "origin; dur=52"
+          ],
+          [
+            "server-timing",
+            "cdn-cache; desc=MISS"
+          ],
+          [
+            "server-timing",
+            "ak_p; desc=\"1789375855203_389380997_504377411_5260_7035_14_14_15\";dur=1"
+          ],
+          [
+            "akamai-cache-status",
+            "NotCacheable from child"
+          ]
+        ],
+        "body": {
+          "text": "{\"vodID\":\"2cf84520-e65e-4b22-891e-1d3a00b0f068\",\"title\":\"オールナイトニッポン0アフタートーク(2025/03/03_FRUITS ZIPPER)\",\"description\":\"オールナイトニッポン0×17LIVE タイアップ配信中❣️放送終了後には17LIVE限定でアフタートークをお届け✨ 配信アカウントはこちら⏩オールナイトニッポンOfficial\",\"imageURL\":\"http://cdn.17app.co/go-prod/vod/012d2ebf-fba9-4fa2-bab1-f6e24912eab7.jpg\",\"videoURL\":\"https://storage.googleapis.com/17app-vod-prod/2cf84520-e65e-4b22-891e-1d3a00b0f068.mp4\",\"videoReencode640\":\"http://cdn.17app.co/vod/prod/2cf84520-e65e-4b22-891e-1d3a00b0f068/reencode-640.mp4\",\"videoReencode1280\":\"http://cdn.17app.co/vod/prod/2cf84520-e65e-4b22-891e-1d3a00b0f068/reencode-1280.mp4\",\"vodSrcURL\":\"gcs://17app-vod-prod/2cf84520-e65e-4b22-891e-1d3a00b0f068/playlist.m3u8\",\"vodURL\":\"http://cdn.17app.co/vod/prod/2cf84520-e65e-4b22-891e-1d3a00b0f068/playlist.m3u8\",\"category\":[\"tv:entertainment\"],\"isHot\":1,\"isScheduled\":1,\"scheduleStartTime\":0,\"scheduleEndTime\":0,\"isCarousel\":1,\"duration\":549,\"status\":\"100%\",\"viewCount\":997,\"likeCount\":0,\"commentCount\":0,\"createdAt\":1741058645,\"updatedAt\":1741064518,\"isDeleted\":0,\"creatorID\":\"2b4f85f1-d61e-429d-a901-68d32bdd8645\",\"userInfo\":{\"userID\":\"2b4f85f1-d61e-429d-a901-68d32bdd8645\",\"displayName\":\"オールナイトニッポンOfficial_アーカイブ\",\"picture\":\"7EB1EEBB-E2F1-4157-A9F3-ACA415203F8B.jpg\",\"isFollowing\":0,\"followRequestTime\":0,\"privacyMode\":\"open\",\"level\":3,\"name\":\"🌟オールナイトニッポン アーカイブ🌟\",\"clanStatus\":0,\"liveStreamID\":0,\"showLiveSchedule\":0,\"followerCount\":0,\"roomID\":27323042,\"gloryroadMode\":0,\"bio\":\"📻 オールナイトニッポン0×17LIVE 📻\\n\\n2023/10/2(月)~ #イチナナ で配信決定‼️\\nあのタレントのラジオをリアルタイムで視聴🤩\\n\\n▼\\n(月) #キタニタツヤ\\n(火) #松田好花\\n(水) #佐久間宣行\\n(木) #マヂカルラブリー\\n(金) #三四郎\\n(土) 週替わりパーソナリティー\\n\\nラジオ終了後は\\n17LIVE限定のアフタートークも実施🌟\\nこちらのアカウントでは\\nアフタートークのアーカイブをアップします❣️\\n是非お楽しみください😊\",\"region\":\"JP\",\"enableShop\":0,\"enableGacha\":0},\"regionMode\":\"all\",\"regions\":[],\"expiredTime\":0}"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "http://cdn.17app.co/vod/prod/2cf84520-e65e-4b22-891e-1d3a00b0f068/playlist.m3u8",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ],
+          [
+            "referer",
+            "https://17.live/vod/27323042/2cf84520-e65e-4b22-891e-1d3a00b0f068"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "http://cdn.17app.co/vod/prod/2cf84520-e65e-4b22-891e-1d3a00b0f068/playlist.m3u8",
+        "headers": [
+          [
+            "x-guploader-uploadid",
+            "AJjja9aSUWRJVj_ZV0iQBi5dUxMzW2Oz-OVkvH0z0emEac9aIvXuDonOdPoUWBsoW3-K-oda"
+          ],
+          [
+            "last-modified",
+            "Tue, 04 Mar 2025 03:31:23 GMT"
+          ],
+          [
+            "etag",
+            "\"a81ab44d55b9d3fae3ce914c7effcd00\""
+          ],
+          [
+            "x-goog-generation",
+            "1741059083113694"
+          ],
+          [
+            "x-goog-metageneration",
+            "1"
+          ],
+          [
+            "x-goog-stored-content-encoding",
+            "identity"
+          ],
+          [
+            "x-goog-stored-content-length",
+            "197"
+          ],
+          [
+            "x-goog-hash",
+            "crc32c=dgYArw=="
+          ],
+          [
+            "x-goog-hash",
+            "md5=qBq0TVW50/rjzpFMfv/NAA=="
+          ],
+          [
+            "x-goog-storage-class",
+            "STANDARD"
+          ],
+          [
+            "accept-ranges",
+            "bytes"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "access-control-expose-headers",
+            "*, Content-Length, Date, Server, Transfer-Encoding, X-GUploader-UploadID, X-Google-Trace"
+          ],
+          [
+            "server",
+            "UploadServer"
+          ],
+          [
+            "akamai-grn",
+            "0.f137cb17.1789375855.43b71381"
+          ],
+          [
+            "akamai-grn",
+            "0.f137cb17.1789375855.43b71381"
+          ],
+          [
+            "content-type",
+            "application/x-mpegURL"
+          ],
+          [
+            "cache-control",
+            "public, max-age=31535470"
+          ],
+          [
+            "expires",
+            "Tue, 14 Sep 2027 08:42:05 GMT"
+          ],
+          [
+            "date",
+            "Mon, 14 Sep 2026 08:50:55 GMT"
+          ],
+          [
+            "connection",
+            "keep-alive"
+          ],
+          [
+            "vary",
+            "Accept-Encoding"
+          ],
+          [
+            "akamai-mon-iucid-del",
+            "441734"
+          ]
+        ],
+        "body": {
+          "text": "#EXTM3U\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=864000\nfile-640.m3u8\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=2296000\nfile-960.m3u8\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=5128000\nfile-1280.m3u8\n"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "http://cdn.17app.co/vod/prod/2cf84520-e65e-4b22-891e-1d3a00b0f068/file-1280.m3u8",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ],
+          [
+            "referer",
+            "https://17.live/vod/27323042/2cf84520-e65e-4b22-891e-1d3a00b0f068"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "http://cdn.17app.co/vod/prod/2cf84520-e65e-4b22-891e-1d3a00b0f068/file-1280.m3u8",
+        "headers": [
+          [
+            "x-guploader-uploadid",
+            "AJjja9aIi37WdrUI174c9N4IAOwmxzR6jE9dgZJqGxe1kbu7cHMOqL3qjn7_b9b25EfOYzBgz4ImLjU"
+          ],
+          [
+            "last-modified",
+            "Tue, 04 Mar 2025 03:32:02 GMT"
+          ],
+          [
+            "etag",
+            "\"abf4da951acc3f311ef0194e6d970db8\""
+          ],
+          [
+            "x-goog-generation",
+            "1741059122112020"
+          ],
+          [
+            "x-goog-metageneration",
+            "1"
+          ],
+          [
+            "x-goog-stored-content-encoding",
+            "identity"
+          ],
+          [
+            "x-goog-stored-content-length",
+            "1869"
+          ],
+          [
+            "x-goog-hash",
+            "crc32c=4iWPPA=="
+          ],
+          [
+            "x-goog-hash",
+            "md5=q/TalRrMPzEe8BlObZcNuA=="
+          ],
+          [
+            "x-goog-storage-class",
+            "STANDARD"
+          ],
+          [
+            "accept-ranges",
+            "bytes"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "access-control-expose-headers",
+            "*, Content-Length, Date, Server, Transfer-Encoding, X-GUploader-UploadID, X-Google-Trace"
+          ],
+          [
+            "server",
+            "UploadServer"
+          ],
+          [
+            "vary",
+            "Accept-Encoding"
+          ],
+          [
+            "akamai-grn",
+            "0.f137cb17.1789375855.43b71385"
+          ],
+          [
+            "akamai-grn",
+            "0.f137cb17.1789375855.43b71385"
+          ],
+          [
+            "cache-control",
+            "public, max-age=31536000"
+          ],
+          [
+            "expires",
+            "Tue, 14 Sep 2027 08:50:55 GMT"
+          ],
+          [
+            "date",
+            "Mon, 14 Sep 2026 08:50:55 GMT"
+          ],
+          [
+            "transfer-encoding",
+            "chunked"
+          ],
+          [
+            "connection",
+            "keep-alive"
+          ],
+          [
+            "connection",
+            "Transfer-Encoding"
+          ],
+          [
+            "akamai-mon-iucid-del",
+            "441734"
+          ],
+          [
+            "content-type",
+            "application/x-mpegURL"
+          ]
+        ],
+        "body": {
+          "text": "#EXTM3U\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-TARGETDURATION:10\n#EXTINF:10,\nfile-1280-00001.ts\n#EXTINF:10,\nfile-1280-00002.ts\n#EXTINF:10,\nfile-1280-00003.ts\n#EXTINF:10,\nfile-1280-00004.ts\n#EXTINF:10,\nfile-1280-00005.ts\n#EXTINF:10,\nfile-1280-00006.ts\n#EXTINF:10,\nfile-1280-00007.ts\n#EXTINF:10,\nfile-1280-00008.ts\n#EXTINF:10,\nfile-1280-00009.ts\n#EXTINF:10,\nfile-1280-00010.ts\n#EXTINF:10,\nfile-1280-00011.ts\n#EXTINF:10,\nfile-1280-00012.ts\n#EXTINF:10,\nfile-1280-00013.ts\n#EXTINF:10,\nfile-1280-00014.ts\n#EXTINF:10,\nfile-1280-00015.ts\n#EXTINF:10,\nfile-1280-00016.ts\n#EXTINF:10,\nfile-1280-00017.ts\n#EXTINF:10,\nfile-1280-00018.ts\n#EXTINF:10,\nfile-1280-00019.ts\n#EXTINF:10,\nfile-1280-00020.ts\n#EXTINF:10,\nfile-1280-00021.ts\n#EXTINF:10,\nfile-1280-00022.ts\n#EXTINF:10,\nfile-1280-00023.ts\n#EXTINF:10,\nfile-1280-00024.ts\n#EXTINF:10,\nfile-1280-00025.ts\n#EXTINF:10,\nfile-1280-00026.ts\n#EXTINF:10,\nfile-1280-00027.ts\n#EXTINF:10,\nfile-1280-00028.ts\n#EXTINF:10,\nfile-1280-00029.ts\n#EXTINF:10,\nfile-1280-00030.ts\n#EXTINF:10,\nfile-1280-00031.ts\n#EXTINF:10,\nfile-1280-00032.ts\n#EXTINF:10,\nfile-1280-00033.ts\n#EXTINF:10,\nfile-1280-00034.ts\n#EXTINF:10,\nfile-1280-00035.ts\n#EXTINF:10,\nfile-1280-00036.ts\n#EXTINF:10,\nfile-1280-00037.ts\n#EXTINF:10,\nfile-1280-00038.ts\n#EXTINF:10,\nfile-1280-00039.ts\n#EXTINF:10,\nfile-1280-00040.ts\n#EXTINF:10,\nfile-1280-00041.ts\n#EXTINF:10,\nfile-1280-00042.ts\n#EXTINF:10,\nfile-1280-00043.ts\n#EXTINF:10,\nfile-1280-00044.ts\n#EXTINF:10,\nfile-1280-00045.ts\n#EXTINF:10,\nfile-1280-00046.ts\n#EXTINF:10,\nfile-1280-00047.ts\n#EXTINF:10,\nfile-1280-00048.ts\n#EXTINF:10,\nfile-1280-00049.ts\n#EXTINF:10,\nfile-1280-00050.ts\n#EXTINF:10,\nfile-1280-00051.ts\n#EXTINF:10,\nfile-1280-00052.ts\n#EXTINF:10,\nfile-1280-00053.ts\n#EXTINF:10,\nfile-1280-00054.ts\n#EXTINF:9,\nfile-1280-00055.ts\n#ZEN-TOTAL-DURATION:549.54900\n#ZEN-AVERAGE-BANDWIDTH:2195695\n#ZEN-MAXIMUM-BANDWIDTH:2765856\n#EXT-X-ENDLIST\n"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api-dsa.17app.co/api/v1/lives/29768623",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ],
+          [
+            "referer",
+            "https://17.live/live/29768623"
+          ],
+          [
+            "accept",
+            "application/json"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://api-dsa.17app.co/api/v1/lives/29768623",
+        "headers": [
+          [
+            "alt-svc",
+            "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000"
+          ],
+          [
+            "content-type",
+            "application/json"
+          ],
+          [
+            "date",
+            "Mon, 14 Sep 2026 08:50:55 GMT"
+          ],
+          [
+            "trace-id",
+            "cc656d4411c816411909ca6f44525da0"
+          ],
+          [
+            "vary",
+            "Accept-Encoding"
+          ],
+          [
+            "via",
+            "1.1 google"
+          ]
+        ],
+        "body": {
+          "text": "{\"userID\":\"1210f2fe-5067-400a-8c50-0df0a1b60ca2\",\"streamerType\":0,\"streamType\":\"rtmp\",\"status\":2,\"caption\":\"✨'びあ.....があなたを配信に招待中👀✨\\n今すぐタップして👆配信を楽しみましょう💄🎉\",\"thumbnail\":\"ffc78144-a3b4-40e6-b109-c6ed9f43e1be.jpg\",\"rtmpUrls\":[{\"provider\":17,\"streamType\":\"rtmp\",\"url\":\"http://tencent-global-pull-rtmp.17app.co/live/1210f2fe-5067-400a-8c50-0df0a1b60ca2_enhance003.flv\",\"urlLowQuality\":\"http://tencent-global-pull-rtmp.17app.co/live/1210f2fe-5067-400a-8c50-0df0a1b60ca2.flv\",\"webUrl\":\"http://tencent-global-pull-rtmp.17app.co/live/1210f2fe-5067-400a-8c50-0df0a1b60ca2_enhance003.flv\",\"webUrlLowQuality\":\"http://tencent-global-pull-rtmp.17app.co/live/1210f2fe-5067-400a-8c50-0df0a1b60ca2.flv\",\"urlHighQuality\":\"http://tencent-global-pull-rtmp.17app.co/live/1210f2fe-5067-400a-8c50-0df0a1b60ca2.flv\",\"url264\":\"http://tencent-global-pull-rtmp.17app.co/live/1210f2fe-5067-400a-8c50-0df0a1b60ca2_h264.flv\",\"transcodeType\":1,\"weight\":0,\"throttle\":false,\"urlLowBitrateHD\":\"http://tencent-global-pull-rtmp.17app.co/live/1210f2fe-5067-400a-8c50-0df0a1b60ca2_enhance003.flv\",\"urlQualityEnhancedHD\":\"http://tencent-global-pull-rtmp.17app.co/live/1210f2fe-5067-400a-8c50-0df0a1b60ca2_enhance002.flv\"},{\"provider\":5,\"streamType\":\"rtmp\",\"url\":\"https://wansu-global-pull-rtmp-latency.17app.co/vod/1210f2fe-5067-400a-8c50-0df0a1b60ca2_LBHDSA.flv\",\"urlLowQuality\":\"https://wansu-global-pull-rtmp-latency.17app.co/vod/1210f2fe-5067-400a-8c50-0df0a1b60ca2.flv\",\"webUrl\":\"https://wansu-global-pull-rtmp-latency.17app.co/vod/1210f2fe-5067-400a-8c50-0df0a1b60ca2_LBHDSA.flv\",\"webUrlLowQuality\":\"https://wansu-global-pull-rtmp-latency.17app.co/vod/1210f2fe-5067-400a-8c50-0df0a1b60ca2.flv\",\"urlHighQuality\":\"https://wansu-global-pull-rtmp-latency.17app.co/vod/1210f2fe-5067-400a-8c50-0df0a1b60ca2.flv\",\"url264\":\"https://wansu-global-pull-rtmp-latency.17app.co/vod/1210f2fe-5067-400a-8c50-0df0a1b60ca2_h264.flv\",\"transcodeType\":1,\"weight\":0,\"throttle\":false,\"urlLowBitrateHD\":\"https://wansu-global-pull-rtmp-latency.17app.co/vod/1210f2fe-5067-400a-8c50-0df0a1b60ca2_LBHDSA.flv\",\"urlQualityEnhancedHD\":\"https://wansu-global-pull-rtmp-latency.17app.co/vod/1210f2fe-5067-400a-8c50-0df0a1b60ca2_QEHDSA.flv\"}],\"pullURLsInfo\":{\"rtmpURLs\":[{\"provider\":17,\"streamType\":\"rtmp\",\"url\":\"http://tencent-global-pull-rtmp.17app.co/live/1210f2fe-5067-400a-8c50-0df0a1b60ca2_enhance003.flv\",\"urlLowQuality\":\"http://tencent-global-pull-rtmp.17app.co/live/1210f2fe-5067-400a-8c50-0df0a1b60ca2.flv\",\"webUrl\":\"http://tencent-global-pull-rtmp.17app.co/live/1210f2fe-5067-400a-8c50-0df0a1b60ca2_enhance003.flv\",\"webUrlLowQuality\":\"http://tencent-global-pull-rtmp.17app.co/live/1210f2fe-5067-400a-8c50-0df0a1b60ca2.flv\",\"urlHighQuality\":\"http://tencent-global-pull-rtmp.17app.co/live/1210f2fe-5067-400a-8c50-0df0a1b60ca2.flv\",\"url264\":\"http://tencent-global-pull-rtmp.17app.co/live/1210f2fe-5067-400a-8c50-0df0a1b60ca2_h264.flv\",\"transcodeType\":1,\"weight\":0,\"throttle\":false,\"urlLowBitrateHD\":\"http://tencent-global-pull-rtmp.17app.co/live/1210f2fe-5067-400a-8c50-0df0a1b60ca2_enhance003.flv\",\"urlQualityEnhancedHD\":\"http://tencent-global-pull-rtmp.17app.co/live/1210f2fe-5067-400a-8c50-0df0a1b60ca2_enhance002.flv\"},{\"provider\":5,\"streamType\":\"rtmp\",\"url\":\"https://wansu-global-pull-rtmp-latency.17app.co/vod/1210f2fe-5067-400a-8c50-0df0a1b60ca2_LBHDSA.flv\",\"urlLowQuality\":\"https://wansu-global-pull-rtmp-latency.17app.co/vod/1210f2fe-5067-400a-8c50-0df0a1b60ca2.flv\",\"webUrl\":\"https://wansu-global-pull-rtmp-latency.17app.co/vod/1210f2fe-5067-400a-8c50-0df0a1b60ca2_LBHDSA.flv\",\"webUrlLowQuality\":\"https://wansu-global-pull-rtmp-latency.17app.co/vod/1210f2fe-5067-400a-8c50-0df0a1b60ca2.flv\",\"urlHighQuality\":\"https://wansu-global-pull-rtmp-latency.17app.co/vod/1210f2fe-5067-400a-8c50-0df0a1b60ca2.flv\",\"url264\":\"https://wansu-global-pull-rtmp-latency.17app.co/vod/1210f2fe-5067-400a-8c50-0df0a1b60ca2_h264.flv\",\"transcodeType\":1,\"weight\":0,\"throttle\":false,\"urlLowBitrateHD\":\"https://wansu-global-pull-rtmp-latency.17app.co/vod/1210f2fe-5067-400a-8c50-0df0a1b60ca2_LBHDSA.flv\",\"urlQualityEnhancedHD\":\"https://wansu-global-pull-rtmp-latency.17app.co/vod/1210f2fe-5067-400a-8c50-0df0a1b60ca2_QEHDSA.flv\"}],\"seqNo\":1},\"allowCallin\":0,\"restreamerOpenID\":\"\",\"streamID\":\"215326011\",\"liveStreamID\":29768623,\"endTime\":0,\"beginTime\":1789372806,\"publishSec\":1789372808,\"receivedLikeCount\":28,\"duration\":3037,\"viewerCount\":302,\"totalViewTime\":0,\"liveViewerCount\":50,\"audioOnly\":0,\"locationName\":\"\",\"coverPhoto\":\"http://cdn.17app.co/snapshot/1210f2fe-5067-400a-8c50-0df0a1b60ca2?t=1789375846\",\"latitude\":0,\"longitude\":0,\"shareLocation\":0,\"followerOnlyChat\":0,\"chatAvailable\":0,\"replayCount\":0,\"replayAvailable\":0,\"numberOfChunks\":0,\"canSendGift\":1,\"userInfo\":{\"userID\":\"1210f2fe-5067-400a-8c50-0df0a1b60ca2\",\"openID\":\"びあ.....\",\"displayName\":\"びあ.....\",\"name\":\"１６日からは『進撃VIP集めてます』♥️\",\"bio\":\"📢9/14 17:00予定♥️\\n\\nはじめまして☺️\\n初心者ライバー🔰の【びあ】です🤗\\n\\nライブ配信は本当に初心者🔰なので、優しいコメントやツッコミもらえるとすごく嬉しいです🤭✨\\n\\nいろいろ教えて下さい🫣\\n\\n\\n🤍好きなこと🤍\\n🍺飲むこと\\n🍙食べること\\n🥳遊ぶこと\\n\\nやり方全くわかってないです💦\\n失礼があったらゴメンなさい🙇‍♀️\\n漢字・アルファベット苦手w\\n記憶力なしw\\nENFP/ちゃっかりうさぎ\\nHSS型HSP/ADHD\\n\\nガーディアンは承認制🫰\\n\\nアーミー様は常時募集中🤍\\n\\n今後アーミー限定配信も考え中🫶\\n\\n\\nガーディアン\\n@jin_じん_\\n\\nアーミー様\\n@jin_じん_\\n@yamamotoぱぴぃ \\n@ベイビー_7551\\n\\n\\nDMは全て拝見しますが、\\nアーミー様限定で返信します。⁡\\n⁡\",\"picture\":\"ffc78144-a3b4-40e6-b109-c6ed9f43e1be.jpg\",\"website\":\"\",\"followerCount\":89,\"followingCount\":41,\"receivedLikeCount\":2907,\"likeCount\":0,\"isFollowing\":0,\"isBlocked\":0,\"isAdmin\":0,\"isRemoved\":0,\"isVerified\":0,\"isFreezed\":0,\"isBanned\":0,\"followTime\":0,\"blockTime\":0,\"followRequestTime\":0,\"roomID\":29768623,\"privacyMode\":\"open\",\"postCount\":8,\"age\":0,\"gender\":\"private\",\"isCelebrity\":0,\"isChoice\":0,\"isInternational\":0,\"adsOn\":0,\"subscribeExpireTime\":0,\"baller\":0,\"level\":21,\"experience\":232623,\"version\":\"2.251.1.0\",\"deviceType\":\"ANDROID\",\"followPrivacyMode\":1,\"revenueShareIndicator\":\"\",\"clanStatus\":0,\"createClanID\":\"\",\"clanInfo\":{\"joinCount\":4},\"chatMuteDuration\":0,\"language\":\"JP\",\"region\":\"JP\",\"registerRegion\":\"JP\",\"hideAllPointToLeaderboard\":2,\"vipGroupType\":0,\"lastLiveTimestamp\":1789291769,\"streamerRecapEnable\":true,\"followReminder\":1,\"pictureFrameInfo\":{\"namecardPictureFrameURL\":\"\",\"namecardPictureFrameBeltURL\":\"\",\"namecardPictureFrameDecoURL\":\"\",\"startTime\":0,\"endTime\":0},\"leagueInfo\":{\"leagueDisplayInfo\":{\"ID\":\"81c1cc1d-df07-4248-8860-b8e5692a96c5\",\"name\":\"MASAYA帝国\",\"picture\":\"2EA4F1E3-0FE5-479E-85B4-DE09286B7F38.jpg\",\"iconURL\":\"\",\"background\":\"\"},\"leagueDisplayInfos\":[{\"ID\":\"81c1cc1d-df07-4248-8860-b8e5692a96c5\",\"name\":\"MASAYA帝国\",\"picture\":\"2EA4F1E3-0FE5-479E-85B4-DE09286B7F38.jpg\",\"iconURL\":\"\",\"background\":\"\"}],\"shouldShowEntrance\":true},\"hasVipPurchase\":false,\"newbieDisplayAllGiftTabsToast\":false,\"disableMakeLiveHotToast\":false,\"avatarOnboardingPhase\":0,\"gloryroadInfo\":{\"point\":269,\"level\":7,\"iconURL\":\"https://assets-17app.akamaized.net/1e3bca33-91e9-4d89-b4e9-62d3e0ac470c.png\",\"badgeIconURL\":\"https://assets-17app.akamaized.net/44b1349e-ee1b-4b27-a506-0f9b808a57e4.png\"},\"gloryroadMode\":0,\"enableShop\":0},\"landscape\":false,\"mute\":false,\"birthdayState\":1,\"dayBeforeBirthday\":358,\"achievementValue\":56318,\"mediaMessageReadState\":0,\"region\":\"JP\",\"specialTag\":0,\"guardianUserID\":\"a4349cac-858c-4386-97d7-568199ba96c9\",\"guardianPicture\":\"ea2e0762-72fd-422a-bf0b-8efd9e956090.jpg\",\"campaignIcon\":\"\",\"campaignURL\":\"\",\"campaignEndTime\":0,\"campaignShowTimer\":0,\"campaignSize\":0,\"campaignTitle\":\"\",\"commodityState\":0,\"commodityInfo\":{\"type\":0,\"price\":0,\"amount\":0,\"desc\":\"\",\"endTimeMS\":0},\"canSellCommodity\":false,\"gridStyle\":0,\"device\":\"SM-S942Z_16_2.251.1.0\",\"eventList\":[{\"ID\":25699,\"type\":2,\"icon\":\"https://cdn.17app.co/cd92a01e-3445-48ed-898f-1c08b355b8e4.png\",\"endTime\":1789484400,\"showTimer\":1,\"name\":\"ビギナーイベント\",\"URL\":\"https://event.17.live/25699-2609-jp-beginner1-cg4xt\",\"pageSize\":2,\"webViewTitle\":\"ビギナーイベント\",\"icons\":[{\"language\":\"JP\",\"value\":\"https://cdn.17app.co/cd92a01e-3445-48ed-898f-1c08b355b8e4.png\"}],\"webViewTitles\":[{\"language\":\"JP\",\"value\":\"ビギナーイベント\"}]},{\"ID\":0,\"type\":1,\"icon\":\"213252f6-1b1c-4bc7-be9b-947d41ade26f.png\",\"endTime\":1789398000,\"showTimer\":1,\"name\":\"\",\"URL\":\"https://17.media/event/current/jp?who\",\"pageSize\":2,\"webViewTitle\":\"進行中のイベント一覧\",\"icons\":[{\"language\":\"\",\"value\":\"213252f6-1b1c-4bc7-be9b-947d41ade26f.png\"}],\"webViewTitles\":[{\"language\":\"\",\"value\":\"進行中のイベント一覧\"}]}],\"redEnvelopeData\":\"\",\"redEnvelopeAvailable\":false,\"armyConfigInfo\":{\"enable\":true},\"vipFrameURL\":\"\",\"iosFrameURL\":\"\",\"vipFrameID\":\"\",\"subtabs\":[\"jp_freetalk1\"],\"subtabDisplayName\":\"\",\"sportsCarAccumulatedPoint\":0,\"sportsCarThresholdTip\":0,\"pmInfo\":{\"enable\":false,\"pmThreshold\":0,\"pmHours\":0,\"totalPoint\":0,\"pmStatus\":0},\"superstarAvailable\":false,\"halfHourLeaderboardAvailable\":false,\"decoStickerInfo\":{\"decoStickers\":[{\"type\":0,\"style\":1,\"content\":\"19:00\",\"pos\":{\"x\":0.7,\"y\":0.4},\"scale\":1,\"stickerMetadata\":{\"name\":\"sticker_hollywood\",\"imageURL\":\"https://assets-17app.akamaized.net/07e4d0b1-d565-4f3d-bd7b-d3e6e218d529.png\",\"backgroundURL\":\"https://assets-17app.akamaized.net/07e4d0b1-d565-4f3d-bd7b-d3e6e218d529.png\",\"previewURL\":\"https://assets-17app.akamaized.net/07e4d0b1-d565-4f3d-bd7b-d3e6e218d529.png\",\"profileURL\":\"\",\"textColor\":\"#ff5050\",\"animationID\":\"\",\"end\":0}}]},\"entryTitleType\":0,\"entryIconURL\":\"\",\"defaultGiftTab\":\"\",\"pkID\":\"\",\"liveInfos\":[2],\"followerOnlyCommentMode\":false,\"followerOnlyCommentMins\":0,\"armyOnlyShowOnHotPage\":false,\"armyOnlyPN\":false,\"pkstarAvailable\":false,\"isPredicted\":false,\"risingStarAvailable\":false,\"createdByGroupcall\":false,\"enableOBSGroupCall\":false,\"streamMode\":1,\"audioBackground\":\"\",\"isCustomizedCaption\":false,\"lastRejoinTimestamp\":0,\"gameInfoMsg\":{\"id\":\"\"},\"shoppingCartCount\":0,\"doNotDisturbSetting\":{\"dndPK\":true,\"dndGroupCall\":false},\"archiveConfig\":{\"autoRecording\":true,\"autoPublish\":false,\"clipPermission\":0,\"clipPermissionDownload\":2},\"archiveID\":\"archive-d37883be-004d-4f08-9c25-7760e20889ea\",\"archiveRetention\":7,\"hideGameMarquee\":false,\"aiCohost\":{\"status\":\"INACTIVE\",\"updatedAt\":1789372807},\"lobbyID\":\"\",\"callIn\":{\"isFeatureSupported\":false,\"sessionID\":\"\"}}"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api-dsa.17app.co/api/v1/lives/1789280",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ],
+          [
+            "referer",
+            "https://17.live/live/1789280"
+          ],
+          [
+            "accept",
+            "application/json"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://api-dsa.17app.co/api/v1/lives/1789280",
+        "headers": [
+          [
+            "alt-svc",
+            "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000"
+          ],
+          [
+            "via",
+            "1.1 google"
+          ],
+          [
+            "content-type",
+            "application/json"
+          ],
+          [
+            "date",
+            "Mon, 14 Sep 2026 08:50:55 GMT"
+          ],
+          [
+            "trace-id",
+            "11d582535a8357c1c7c779cdf77e1521"
+          ],
+          [
+            "vary",
+            "Accept-Encoding"
+          ]
+        ],
+        "body": {
+          "text": "{\"userID\":\"dea2178c-11a6-478b-807c-ab22744eb8f8\",\"streamerType\":0,\"streamType\":\"\",\"status\":0,\"caption\":\"\",\"thumbnail\":\"42DE18C1-8684-473C-A5B7-EFC420FF21D8.jpg\",\"allowCallin\":0,\"restreamerOpenID\":\"\",\"streamID\":\"1789280\",\"liveStreamID\":1789280,\"endTime\":0,\"beginTime\":0,\"publishSec\":0,\"receivedLikeCount\":0,\"duration\":0,\"viewerCount\":0,\"totalViewTime\":0,\"liveViewerCount\":0,\"audioOnly\":0,\"locationName\":\"\",\"coverPhoto\":\"\",\"latitude\":0,\"longitude\":0,\"shareLocation\":0,\"followerOnlyChat\":0,\"chatAvailable\":0,\"replayCount\":0,\"replayAvailable\":0,\"numberOfChunks\":0,\"canSendGift\":0,\"userInfo\":{\"userID\":\"dea2178c-11a6-478b-807c-ab22744eb8f8\",\"openID\":\"マチコ先生🦋Class💋\",\"displayName\":\"マチコ先生🦋Class💋\",\"name\":\"\",\"bio\":\"\",\"picture\":\"42DE18C1-8684-473C-A5B7-EFC420FF21D8.jpg\",\"website\":\"\",\"followerCount\":495603,\"followingCount\":16,\"receivedLikeCount\":14689583,\"likeCount\":0,\"isFollowing\":0,\"isBlocked\":0,\"isAdmin\":0,\"isRemoved\":0,\"isVerified\":0,\"isFreezed\":0,\"followTime\":0,\"blockTime\":0,\"followRequestTime\":0,\"roomID\":1789280,\"privacyMode\":\"private\",\"postCount\":1579,\"age\":45,\"gender\":\"female\",\"isCelebrity\":0,\"isChoice\":0,\"isInternational\":0,\"adsOn\":0,\"subscribeExpireTime\":1594312775,\"baller\":1,\"level\":188,\"experience\":1265257463,\"version\":\"3.328.0\",\"deviceType\":\"IOS\",\"followPrivacyMode\":1,\"revenueShareIndicator\":\"\",\"clanStatus\":0,\"createClanID\":\"298874e0-cc82-47fe-8c0a-d1381427bdb8\",\"clanInfo\":{\"displayClans\":[{\"clanID\":\"298874e0-cc82-47fe-8c0a-d1381427bdb8\",\"name\":\"　\",\"type\":1}],\"joinCount\":8},\"chatMuteDuration\":0,\"language\":\"JP\",\"region\":\"JP\",\"registerRegion\":\"JP\",\"hideAllPointToLeaderboard\":2,\"vipGroupType\":0,\"lastLiveTimestamp\":1753701116,\"streamerRecapEnable\":true,\"followReminder\":2,\"pictureFrameInfo\":{\"namecardPictureFrameURL\":\"\",\"namecardPictureFrameBeltURL\":\"\",\"namecardPictureFrameDecoURL\":\"\",\"startTime\":0,\"endTime\":0},\"leagueInfo\":{\"leagueDisplayInfo\":{\"ID\":\"eb3bc36b-b8e6-498b-9623-3276dc533d51\",\"name\":\"トチ戰隊\",\"picture\":\"ED3BD0DC-75AC-439E-B9CF-34FAE561D445.jpg\",\"iconURL\":\"\",\"background\":\"\"},\"leagueDisplayInfos\":[{\"ID\":\"eb3bc36b-b8e6-498b-9623-3276dc533d51\",\"name\":\"トチ戰隊\",\"picture\":\"ED3BD0DC-75AC-439E-B9CF-34FAE561D445.jpg\",\"iconURL\":\"\",\"background\":\"\"}],\"shouldShowEntrance\":true},\"hasVipPurchase\":true,\"newbieDisplayAllGiftTabsToast\":false,\"disableMakeLiveHotToast\":false,\"gloryroadInfo\":{\"point\":980751,\"level\":36,\"iconURL\":\"https://assets-17app.akamaized.net/4f9527a7-f286-4b6f-86f5-b07ba247b25d.png\",\"badgeIconURL\":\"https://assets-17app.akamaized.net/7ecb5f8c-bfd4-4484-bd11-31934dd2abcc.png\"},\"gloryroadMode\":0},\"landscape\":false,\"mute\":false,\"birthdayState\":0,\"dayBeforeBirthday\":0,\"achievementValue\":0,\"mediaMessageReadState\":0,\"region\":\"\",\"specialTag\":0,\"guardianUserID\":\"\",\"guardianPicture\":\"\",\"campaignIcon\":\"\",\"campaignURL\":\"\",\"campaignEndTime\":0,\"campaignShowTimer\":0,\"campaignSize\":0,\"campaignTitle\":\"\",\"commodityState\":0,\"commodityInfo\":{\"type\":0,\"price\":0,\"amount\":0,\"desc\":\"\",\"endTimeMS\":0},\"canSellCommodity\":false,\"gridStyle\":0,\"device\":\"\",\"redEnvelopeData\":\"\",\"redEnvelopeAvailable\":false,\"armyConfigInfo\":{\"enable\":false},\"vipFrameURL\":\"\",\"iosFrameURL\":\"\",\"vipFrameID\":\"\",\"subtabDisplayName\":\"\",\"sportsCarAccumulatedPoint\":0,\"sportsCarThresholdTip\":0,\"pmInfo\":{\"enable\":false,\"pmThreshold\":0,\"pmHours\":0,\"totalPoint\":0,\"pmStatus\":0},\"superstarAvailable\":false,\"halfHourLeaderboardAvailable\":false,\"entryTitleType\":0,\"entryIconURL\":\"\",\"defaultGiftTab\":\"\",\"pkID\":\"\",\"liveInfos\":[0],\"followerOnlyCommentMode\":false,\"followerOnlyCommentMins\":0,\"armyOnlyShowOnHotPage\":false,\"armyOnlyPN\":false,\"pkstarAvailable\":false,\"isPredicted\":false,\"risingStarAvailable\":false,\"createdByGroupcall\":false,\"enableOBSGroupCall\":false,\"streamMode\":0,\"audioBackground\":\"\",\"isCustomizedCaption\":true,\"lastRejoinTimestamp\":0,\"gameInfoMsg\":{\"id\":\"\"},\"shoppingCartCount\":0,\"archiveID\":\"\",\"archiveRetention\":0,\"hideGameMarquee\":false,\"lobbyID\":\"\",\"callIn\":{\"isFeatureSupported\":false,\"sessionID\":\"\"}}"
+        },
+        "truncated": false
+      }
+    }
+  ]
+}

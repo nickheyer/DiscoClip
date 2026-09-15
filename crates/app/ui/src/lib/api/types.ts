@@ -638,6 +638,9 @@ export type VariantKind = 'file' | 'hls' | 'dash' | 'ism' | 'rtmp' | 'rtsp' | 'w
 
 export type Codec = string | { other: string };
 
+/** How a file's bytes are decrypted as they download, when the host stores them encrypted. */
+export type Cipher = { scheme: 'aes128_ctr'; key: number[]; nonce: number[] };
+
 export interface Variant {
 	url: string;
 	kind: VariantKind;
@@ -660,6 +663,7 @@ export interface Variant {
 	audio_only: boolean;
 	live: boolean;
 	drm: string | null;
+	cipher?: Cipher | null;
 }
 
 export interface SubtitleTrack {

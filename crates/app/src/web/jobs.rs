@@ -334,7 +334,8 @@ pub(super) async fn job_events(
         }
     });
     Ok(futures::stream::once(async move { Ok(first) })
-        .chain(tokio_stream::StreamExt::merge(jobs, ticks)))
+        .chain(tokio_stream::StreamExt::merge(jobs, ticks))
+        .take_until(state.shutdown.cancelled_owned()))
 }
 
 /// [`job_events`] as server-sent events.

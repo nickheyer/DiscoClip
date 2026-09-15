@@ -43,6 +43,12 @@ pub fn parse_link(url: &Url) -> Option<Link> {
         return None;
     }
     let host = url.host_str()?.to_ascii_lowercase();
+    let query = |key: &str| {
+        url.query_pairs()
+            .find(|(k, _)| k == key)
+            .map(|(_, value)| value.into_owned())
+            .filter(|value| !value.is_empty())
+    };
     let segments: Vec<&str> = url
         .path_segments()
         .into_iter()
@@ -50,10 +56,29 @@ pub fn parse_link(url: &Url) -> Option<Link> {
         .filter(|s| !s.is_empty())
         .collect();
     if host == "clips.twitch.tv" {
+        if segments.as_slice() == ["embed"] {
+            return query("clip")
+                .filter(|slug| RE_CLIP_SLUG.is_match(slug))
+                .map(Link::Clip);
+        }
         return segments
             .first()
             .filter(|s| RE_CLIP_SLUG.is_match(s))
             .map(|s| Link::Clip(s.to_string()));
+    }
+    if matches!(host.as_str(), "player.twitch.tv" | "embed.twitch.tv") {
+        if !segments.is_empty() {
+            return None;
+        }
+        if let Some(channel) =
+            query("channel").filter(|s| s.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_'))
+        {
+            return Some(Link::Channel(channel.to_ascii_lowercase()));
+        }
+        return query("video")
+            .map(|id| id.strip_prefix('v').unwrap_or(&id).to_string())
+            .filter(|id| !id.is_empty() && id.bytes().all(|c| c.is_ascii_digit()))
+            .map(Link::Video);
     }
     if !(host == "twitch.tv" || host.ends_with(".twitch.tv")) {
         return None;
@@ -298,7 +323,13 @@ impl TwitchResolver {
             .and_then(|t| Url::parse(t).ok());
         resolved.webpage_url = Url::parse(&format!("{SITE}videos/{id}")).ok();
         resolved.live = expanded.live;
-        resolved.clip = timestamp_hint(url).map(|start| ClipRange { start, end: None });
+        resolved.clip = timestamp_hint(url)
+            .or_else(|| {
+                url.query_pairs()
+                    .find(|(key, _)| key == "time")
+                    .and_then(|(_, value)| super::parse_time_stamp(&value))
+            })
+            .map(|start| ClipRange { start, end: None });
         resolved.subtitles = expanded.subtitles;
         resolved.variants = expanded.variants;
         Ok(resolved)
@@ -457,12 +488,18 @@ impl Resolver for TwitchResolver {
         Platform {
             id: PLATFORM,
             name: "Twitch",
-            hosts: &["twitch.tv", "clips.twitch.tv"],
+            hosts: &[
+                "twitch.tv",
+                "clips.twitch.tv",
+                "player.twitch.tv",
+                "embed.twitch.tv",
+            ],
             features: &[
                 "recordings",
                 "highlights",
                 "clips",
                 "live",
+                "player embeds",
                 "subscriber-only with a session",
             ],
             formats: &["hls", "mp4"],
@@ -470,6 +507,8 @@ impl Resolver for TwitchResolver {
             examples: &[
                 "https://www.twitch.tv/videos/40791111",
                 "https://clips.twitch.tv/FaintLightGullWholeWheat",
+                "https://player.twitch.tv/?video=40791111&parent=twitch.tv",
+                "https://clips.twitch.tv/embed?clip=FaintLightGullWholeWheat&parent=twitch.tv",
             ],
         }
     }
@@ -566,6 +605,31 @@ mod tests {
         );
         assert_eq!(link("https://www.twitch.tv/directory/game/x"), None);
         assert_eq!(link("https://www.twitch.tv/someone/videos"), None);
+        assert_eq!(
+            link("https://embed.twitch.tv/?channel=SomeOne"),
+            Some(Link::Channel("someone".into()))
+        );
+        assert_eq!(
+            link("https://player.twitch.tv/?video=40791111"),
+            Some(Link::Video("40791111".into()))
+        );
+        assert_eq!(
+            link("https://player.twitch.tv/?video=v40791111"),
+            Some(Link::Video("40791111".into()))
+        );
+        assert_eq!(link("https://player.twitch.tv/?video=v"), None);
+        assert_eq!(link("https://player.twitch.tv/?video="), None);
+        assert_eq!(link("https://player.twitch.tv/?channel="), None);
+        assert_eq!(
+            link("https://player.twitch.tv/?channel=not/a/channel"),
+            None
+        );
+        assert_eq!(link("https://clips.twitch.tv/embed?clip="), None);
+        assert_eq!(link("https://clips.twitch.tv/embed"), None);
+        assert_eq!(
+            link("https://player.twitch.tv.evil.test/?channel=someone"),
+            None
+        );
     }
 
     #[tokio::test]
@@ -602,6 +666,19 @@ mod tests {
         assert_eq!(resolved.variants[0].height, Some(1080));
         assert!(!resolved.live);
 
+        let embedded = resolver
+            .resolve(
+                &Url::parse("https://player.twitch.tv/?video=v1&time=1h2m3s&parent=site.test")
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
+        assert_eq!(embedded.title, resolved.title);
+        assert_eq!(embedded.variants, resolved.variants);
+        assert_eq!(embedded.clip.unwrap().start, Duration::from_secs(3723));
+
         let mut fixture = Fixture::new("twitch", None);
         fixture.exchanges.push(exchange("POST", GQL, "application/json", json!([
             {"data": {"clip": {"playbackAccessToken": {"value": "{\"clip_uri\":\"x\"}", "signature": "sig2"}, "videoQualities": [
@@ -631,6 +708,11 @@ mod tests {
         );
         assert_eq!(resolved.duration, Some(Duration::from_secs_f64(30.5)));
 
+        let embedded = resolver
+            .resolve(&Url::parse("https://clips.twitch.tv/embed?clip=AwkwardHelplessSalamanderSwiftRage&parent=site.test").unwrap())
+            .await.unwrap().media().unwrap();
+        assert_eq!(embedded.variants, resolved.variants);
+
         let mut fixture = Fixture::new("twitch", None);
         fixture.exchanges.push(exchange("POST", GQL, "application/json", json!([
             {"data": {"streamPlaybackAccessToken": {"value": "{\"channel\":\"someone\"}", "signature": "sig3"}}},
@@ -658,6 +740,17 @@ mod tests {
         assert!(resolved.live);
         assert_eq!(resolved.title.as_deref(), Some("Live now"));
         assert!(resolved.variants[0].live);
+
+        let embedded = resolver
+            .resolve(
+                &Url::parse("https://player.twitch.tv/?channel=someone&parent=site.test").unwrap(),
+            )
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
+        assert!(embedded.live);
+        assert_eq!(embedded.variants, resolved.variants);
 
         let mut fixture = Fixture::new("twitch", None);
         fixture.exchanges.push(exchange("POST", GQL, "application/json", json!([

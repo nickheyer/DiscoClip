@@ -127,7 +127,10 @@ pub async fn events(
         };
         async move { event.map(Ok) }
     });
-    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
+    Ok(
+        Sse::new(stream.take_until(state.shutdown.cancelled_owned()))
+            .keep_alive(KeepAlive::default()),
+    )
 }
 
 #[cfg(test)]

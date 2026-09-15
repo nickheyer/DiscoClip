@@ -54,9 +54,11 @@
 	.crumbs {
 		display: flex;
 		align-items: center;
+		flex-wrap: wrap;
 		gap: 6px;
 		font-size: 12.5px;
 		color: var(--text-3);
+		overflow-wrap: anywhere;
 	}
 
 	.crumbs a {

@@ -23,13 +23,12 @@ use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;
 use tokio_util::sync::CancellationToken;
 
+use super::DRAIN;
 use super::proxy::Tls;
 use crate::settings::TlsConfig;
 
 /// How often the files are looked at for a change.
 const RELOAD_INTERVAL: Duration = Duration::from_secs(30);
-/// How long open connections get to finish once shutdown begins.
-const DRAIN: Duration = Duration::from_secs(10);
 
 #[derive(Debug, thiserror::Error)]
 pub enum TlsError {

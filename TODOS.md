@@ -2,9 +2,6 @@
 
 REMOVE EACH ITEM AS YOU FINISH IT. DO NOT PROGRESS UNTIL YOUVE COMPLETED THE CURRENT ITEM IN ITS ENTIRETY. MUST DO IN ORDER.
 
-14. Resolvers: Rumble, Odysee, Bluesky, Mastodon, Threads, Tumblr, Pinterest, LinkedIn, Snapchat, Loom, Telegram.
-15. Resolvers: Discord attachments and CDN, 9GAG, iFunny, Newgrounds, Archive.org, Wikimedia Commons, Coub, Giphy, Tenor, Catbox, Google Drive, Dropbox, OneDrive, Mega.
-16. Resolvers: embedded players: JW Player, Brightcove, Wistia, Kaltura, Vidyard, Cloudflare Stream, Mux, Bunny, YouTube/Vimeo/Twitch/Streamable embeds.
 17. Resolvers: every remaining yt-dlp extractor, alphabetically, each with fixtures.
 18. Download: progressive HTTP with ranges, resume, parallel chunks.
 19. Download: HLS SAMPLE-AES, live and event playlists with refresh, discontinuities, subtitle renditions, live-to-VOD capture.

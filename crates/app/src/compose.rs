@@ -11,39 +11,8 @@ use discoclip_engine::download::HttpDownloader;
 use discoclip_engine::download::dash::DashDownloader;
 use discoclip_engine::download::hls::HlsDownloader;
 use discoclip_engine::ffmpeg::Ffmpeg;
-use discoclip_engine::resolve::Resolver;
-use discoclip_engine::resolve::bilibili::BilibiliResolver;
-use discoclip_engine::resolve::bluesky::BlueskyResolver;
-use discoclip_engine::resolve::dailymotion::DailymotionResolver;
-use discoclip_engine::resolve::douyin::DouyinResolver;
-use discoclip_engine::resolve::facebook::FacebookResolver;
-use discoclip_engine::resolve::imgur::ImgurResolver;
-use discoclip_engine::resolve::instagram::InstagramResolver;
-use discoclip_engine::resolve::kick::KickResolver;
-use discoclip_engine::resolve::kuaishou::KuaishouResolver;
-use discoclip_engine::resolve::linkedin::LinkedinResolver;
-use discoclip_engine::resolve::loom::LoomResolver;
-use discoclip_engine::resolve::mastodon::MastodonResolver;
-use discoclip_engine::resolve::niconico::NiconicoResolver;
-use discoclip_engine::resolve::odysee::OdyseeResolver;
-use discoclip_engine::resolve::pinterest::PinterestResolver;
-use discoclip_engine::resolve::reddit::RedditResolver;
-use discoclip_engine::resolve::redgifs::RedgifsResolver;
-use discoclip_engine::resolve::rumble::RumbleResolver;
-use discoclip_engine::resolve::snapchat::SnapchatResolver;
-use discoclip_engine::resolve::streamable::StreamableResolver;
-use discoclip_engine::resolve::telegram::TelegramResolver;
-use discoclip_engine::resolve::threads::ThreadsResolver;
-use discoclip_engine::resolve::tiktok::TiktokResolver;
-use discoclip_engine::resolve::tumblr::TumblrResolver;
-use discoclip_engine::resolve::twitch::TwitchResolver;
-use discoclip_engine::resolve::vimeo::VimeoResolver;
-use discoclip_engine::resolve::vk::VkResolver;
-use discoclip_engine::resolve::web::WebResolver;
-use discoclip_engine::resolve::weibo::WeiboResolver;
-use discoclip_engine::resolve::x::XResolver;
-use discoclip_engine::resolve::xiaohongshu::XiaohongshuResolver;
-use discoclip_engine::resolve::youtube::YoutubeResolver;
+use discoclip_engine::resolve::{Resolver, standard_resolvers};
+use discoclip_engine::resolve::discord::BotTokens;
 use discoclip_engine::store::sqlite::SqliteStore;
 use discoclip_engine::transcode::FfmpegTranscoder;
 use discoclip_engine::{Engine, EngineBuilder, Http};
@@ -146,49 +115,34 @@ pub fn run(args: Args) -> ExitCode {
     }
 }
 
-fn resolvers(http: &Http) -> Vec<Box<dyn Resolver>> {
-    vec![
-        Box::new(YoutubeResolver::new(http.clone())),
-        Box::new(XResolver::new(http.clone())),
-        Box::new(TiktokResolver::new(http.clone())),
-        Box::new(InstagramResolver::new(http.clone())),
-        Box::new(FacebookResolver::new(http.clone())),
-        Box::new(RedditResolver::new(http.clone())),
-        Box::new(TwitchResolver::new(http.clone())),
-        Box::new(KickResolver::new(http.clone())),
-        Box::new(VimeoResolver::new(http.clone())),
-        Box::new(DailymotionResolver::new(http.clone())),
-        Box::new(StreamableResolver::new(http.clone())),
-        Box::new(ImgurResolver::new(http.clone())),
-        Box::new(RedgifsResolver::new(http.clone())),
-        Box::new(BilibiliResolver::new(http.clone())),
-        Box::new(NiconicoResolver::new(http.clone())),
-        Box::new(DouyinResolver::new(http.clone())),
-        Box::new(KuaishouResolver::new(http.clone())),
-        Box::new(WeiboResolver::new(http.clone())),
-        Box::new(XiaohongshuResolver::new(http.clone())),
-        Box::new(VkResolver::new(http.clone())),
-        Box::new(RumbleResolver::new(http.clone())),
-        Box::new(OdyseeResolver::new(http.clone())),
-        Box::new(BlueskyResolver::new(http.clone())),
-        Box::new(ThreadsResolver::new(http.clone())),
-        Box::new(TumblrResolver::new(http.clone())),
-        Box::new(PinterestResolver::new(http.clone())),
-        Box::new(LinkedinResolver::new(http.clone())),
-        Box::new(SnapchatResolver::new(http.clone())),
-        Box::new(LoomResolver::new(http.clone())),
-        Box::new(TelegramResolver::new(http.clone())),
-        // Mastodon matches links on any host by their shape and passes the rest on, so it
-        // sits just before the generic web resolver.
-        Box::new(MastodonResolver::new(http.clone())),
-        Box::new(WebResolver::new(http.clone())),
-    ]
+/// The bot tokens of the running applications, for the Discord resolver to read message
+/// links with; they come and go as applications are added and removed.
+struct RunningBots(Clients);
+
+impl BotTokens for RunningBots {
+    fn tokens(&self) -> Vec<String> {
+        self.0
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .values()
+            .filter_map(|client| {
+                client
+                    .token()
+                    .map(|t| t.trim_start_matches("Bot ").to_string())
+            })
+            .collect()
+    }
+}
+
+fn resolvers(http: &Http, bots: Arc<dyn BotTokens>) -> Vec<Box<dyn Resolver>> {
+    standard_resolvers(http, bots)
 }
 
 /// The engine as the settings shape it, with the ffmpeg handle it runs on.
 async fn builder(
     settings: &Settings,
     store: SqliteStore,
+    clients: &Clients,
 ) -> Result<(EngineBuilder, Ffmpeg), Error> {
     let engine_config = settings.engine.clone();
     tokio::fs::create_dir_all(&engine_config.cache_dir).await?;
@@ -200,14 +154,14 @@ async fn builder(
         .downloader(HlsDownloader::new(http.clone(), ffmpeg.clone()))
         .downloader(DashDownloader::new(http.clone(), ffmpeg.clone()))
         .transcoder(FfmpegTranscoder::new(ffmpeg.clone()));
-    for resolver in resolvers(&http) {
+    for resolver in resolvers(&http, Arc::new(RunningBots(clients.clone()))) {
         builder = builder.resolver_boxed(resolver);
     }
     builder = builder.archiver(FsArchiver::new(engine_config.archive));
     Ok((builder, ffmpeg))
 }
 
-/// Cancels `token` once SIGINT or SIGTERM (Unix) or Ctrl-C (Windows) arrives.
+/// Cancels `token` on the first shutdown signal and forces exit on the second.
 fn cancel_on_signal(token: CancellationToken) -> std::io::Result<()> {
     #[cfg(unix)]
     {
@@ -221,6 +175,12 @@ fn cancel_on_signal(token: CancellationToken) -> std::io::Result<()> {
             }
             tracing::info!("shutdown requested");
             token.cancel();
+            let code = tokio::select! {
+                _ = interrupt.recv() => 130,
+                _ = terminate.recv() => 143,
+            };
+            tracing::warn!("second shutdown signal received; forcing exit");
+            std::process::exit(code);
         });
     }
     #[cfg(windows)]
@@ -230,6 +190,9 @@ fn cancel_on_signal(token: CancellationToken) -> std::io::Result<()> {
             ctrl_c.recv().await;
             tracing::info!("shutdown requested");
             token.cancel();
+            ctrl_c.recv().await;
+            tracing::warn!("second shutdown signal received; forcing exit");
+            std::process::exit(130);
         });
     }
     Ok(())
@@ -262,7 +225,7 @@ async fn serve(startup: Startup) -> Result<ExitCode, Error> {
 
     let endpoints = DiscordEndpoints::default();
     let clients: Clients = Clients::default();
-    let (mut builder, ffmpeg) = builder(&settings, store.clone()).await?;
+    let (mut builder, ffmpeg) = builder(&settings, store.clone(), &clients).await?;
     let local: SharedLocalConfig = Arc::new(std::sync::RwLock::new(settings.local.clone()));
     builder = builder
         .publisher(LocalPublisher::new(local.clone()))
@@ -364,4 +327,77 @@ async fn serve(startup: Startup) -> Result<ExitCode, Error> {
     shutdown.cancel();
     bots.stop_all().await;
     Ok(code)
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use std::process::Stdio;
+    use std::time::Duration;
+
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    use tokio::process::Command;
+    use tokio_util::sync::CancellationToken;
+
+    #[test]
+    fn shutdown_signal_child() {
+        if std::env::var_os("DISCOCLIP_TEST_SHUTDOWN_SIGNAL").is_none() {
+            return;
+        }
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let shutdown = CancellationToken::new();
+            super::cancel_on_signal(shutdown.clone()).unwrap();
+            println!("signal handler ready");
+            shutdown.cancelled().await;
+            println!("shutdown started");
+            std::future::pending::<()>().await;
+        });
+    }
+
+    #[tokio::test]
+    async fn shutdown_second_ctrl_c_forces_exit() {
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "compose::tests::shutdown_signal_child",
+                "--nocapture",
+            ])
+            .env("DISCOCLIP_TEST_SHUTDOWN_SIGNAL", "1")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let mut output = BufReader::new(child.stdout.take().unwrap()).lines();
+        tokio::time::timeout(Duration::from_secs(10), async {
+            // Wait for the handler before the first signal, and for graceful shutdown
+            // before the second so the operating system cannot coalesce them.
+            for expected in ["signal handler ready", "shutdown started"] {
+                loop {
+                    let line = output
+                        .next_line()
+                        .await
+                        .unwrap()
+                        .expect("child remains alive until the second Ctrl-C");
+                    if line == expected {
+                        break;
+                    }
+                }
+                assert!(
+                    Command::new("kill")
+                        .args(["-INT", &child.id().unwrap().to_string()])
+                        .status()
+                        .await
+                        .unwrap()
+                        .success()
+                );
+            }
+            assert_eq!(child.wait().await.unwrap().code(), Some(130));
+        })
+        .await
+        .expect("the second Ctrl-C exits even while graceful shutdown is stuck");
+    }
 }

@@ -78,9 +78,6 @@
 		gap: 6px;
 		flex-wrap: wrap;
 		min-width: 0;
-	}
-
-	.target code {
 		overflow-wrap: anywhere;
 	}
 

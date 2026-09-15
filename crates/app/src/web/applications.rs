@@ -161,7 +161,10 @@ pub async fn create(
     tracing::info!(by = identity.user.username, application = %application.id, name = application.name, "discord application added");
     let application =
         register_commands(&state, &actor, application, &CommandScope::default()).await?;
-    Ok((StatusCode::CREATED, Json(view(&state, &client, application).await?)))
+    Ok((
+        StatusCode::CREATED,
+        Json(view(&state, &client, application).await?),
+    ))
 }
 
 pub async fn get(
@@ -505,7 +508,9 @@ pub(super) async fn bot_stream(
             Err(BroadcastStreamRecvError::Lagged(_)) => None,
         }
     });
-    first.chain(rest)
+    first
+        .chain(rest)
+        .take_until(state.shutdown.cancelled_owned())
 }
 
 /// [`bot_stream`] as server-sent events.

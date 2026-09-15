@@ -14,7 +14,7 @@ use crate::event::{Progress, ProgressSender};
 use crate::ffmpeg::Ffmpeg;
 use crate::http::{Http, HttpError};
 use crate::media::{AudioCodec, Container, LocalFile};
-use crate::resolve::{ClipRange, SubtitleFormat, Variant, VariantKind};
+use crate::resolve::{Cipher, ClipRange, SubtitleFormat, Variant, VariantKind};
 
 pub mod dash;
 pub mod hls;
@@ -149,22 +149,51 @@ impl Tally<'_> {
     }
 }
 
+/// A stream cipher run over a file's bytes in the order they arrive.
+enum Decryptor {
+    Aes128Ctr(ctr::Ctr128BE<aes::Aes128>),
+}
+
+impl Decryptor {
+    fn new(cipher: &Cipher) -> Self {
+        use ctr::cipher::KeyIvInit;
+        match cipher {
+            Cipher::Aes128Ctr { key, nonce } => {
+                let mut iv = [0u8; 16];
+                iv[..8].copy_from_slice(nonce);
+                Decryptor::Aes128Ctr(ctr::Ctr128BE::<aes::Aes128>::new(key.into(), &iv.into()))
+            }
+        }
+    }
+
+    fn apply(&mut self, data: &mut [u8]) {
+        use ctr::cipher::StreamCipher;
+        match self {
+            Decryptor::Aes128Ctr(ctr) => ctr.apply_keystream(data),
+        }
+    }
+}
+
 impl HttpDownloader {
     pub fn new(http: Http, ffmpeg: Ffmpeg) -> Self {
         Self { http, ffmpeg }
     }
 
-    /// Streams `url` into `path`, failing once it is longer than `max_bytes`; the bytes
-    /// written and the content type served.
+    /// Streams `url` into `path`, decrypting with `cipher` when the host stores the file
+    /// encrypted, failing once it is longer than `max_bytes`; the bytes written and the
+    /// content type served.
+    #[allow(clippy::too_many_arguments)]
     async fn fetch(
         &self,
         url: &Url,
         headers: &[(String, String)],
         platform: &str,
+        cipher: Option<&Cipher>,
         path: &Path,
         max_bytes: u64,
         tally: &mut Tally<'_>,
     ) -> Result<(u64, Option<String>), DownloadError> {
+        let mut decryptor = cipher.map(Decryptor::new);
         let response = self
             .http
             .get(url.clone())
@@ -207,7 +236,14 @@ impl HttpDownloader {
                     limit: max_bytes,
                 });
             }
-            file.write_all(&chunk).await?;
+            match decryptor.as_mut() {
+                Some(decryptor) => {
+                    let mut plain = chunk.to_vec();
+                    decryptor.apply(&mut plain);
+                    file.write_all(&plain).await?;
+                }
+                None => file.write_all(&chunk).await?,
+            }
             tally.advance(chunk.len() as u64);
         }
         file.flush().await?;
@@ -256,6 +292,7 @@ impl Downloader for HttpDownloader {
                     &variant.url,
                     &variant.headers,
                     &context.platform,
+                    variant.cipher.as_ref(),
                     &part,
                     context.max_bytes,
                     &mut tally,
@@ -283,6 +320,7 @@ impl Downloader for HttpDownloader {
                 &variant.url,
                 &variant.headers,
                 &context.platform,
+                variant.cipher.as_ref(),
                 &video_path,
                 context.max_bytes,
                 &mut tally,
@@ -295,6 +333,7 @@ impl Downloader for HttpDownloader {
             audio_url,
             &variant.headers,
             &context.platform,
+            None,
             &audio_path,
             remaining,
             &mut tally,
@@ -452,6 +491,43 @@ mod tests {
             .unwrap();
         assert!(downloaded.file.path.ends_with("source.mp4"));
         assert_eq!(downloaded.file.size, video_bytes.len() as u64);
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
+    async fn an_encrypted_file_is_decrypted_as_it_arrives() {
+        use ctr::cipher::{KeyIvInit, StreamCipher};
+        let dir = std::env::temp_dir().join(format!("discoclip-ctr-{}", uuid::Uuid::now_v7()));
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let ffmpeg = Ffmpeg::provision(&dir.join("tools")).await.unwrap();
+        let key = [7u8; 16];
+        let nonce = [1, 2, 3, 4, 5, 6, 7, 8];
+        let plain: Vec<u8> = (0..100_000u32).map(|i| (i % 251) as u8).collect();
+        let mut encrypted = plain.clone();
+        let mut iv = [0u8; 16];
+        iv[..8].copy_from_slice(&nonce);
+        ctr::Ctr128BE::<aes::Aes128>::new(&key.into(), &iv.into()).apply_keystream(&mut encrypted);
+        let mut fixture = Fixture::new("ctr", None);
+        fixture.exchanges.push(serve(
+            "https://cdn.test/locked",
+            "application/octet-stream",
+            &encrypted,
+        ));
+        let downloader = HttpDownloader::new(Http::replay(fixture), ffmpeg);
+        let mut variant = Variant::file(Url::parse("https://cdn.test/locked").unwrap());
+        variant.container = Some(Container::Mp4);
+        variant.cipher = Some(Cipher::Aes128Ctr { key, nonce });
+        let (progress, _) = tokio::sync::watch::channel(Progress::default());
+        let downloaded = downloader
+            .download(
+                &variant,
+                &dir.join("job"),
+                &DownloadContext::new(50_000_000),
+                progress,
+            )
+            .await
+            .unwrap();
+        assert_eq!(tokio::fs::read(&downloaded.file.path).await.unwrap(), plain);
         let _ = tokio::fs::remove_dir_all(&dir).await;
     }
 }

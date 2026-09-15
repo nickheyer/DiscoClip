@@ -1,48 +1,24 @@
 //! Resolves links from the command line against the live network, printing what each
 //! resolver found: `cargo run -p discoclip-engine --example resolve -- <url>...`.
+//! Discord message links are read with the bot tokens in `DISCOCLIP_DISCORD_TOKENS`,
+//! comma separated.
 
 use std::sync::Arc;
 
 use discoclip_engine::http::{Http, HttpConfig};
-use discoclip_engine::resolve::{Resolution, Resolver, ResolverRegistry};
+use discoclip_engine::resolve::{Resolution, ResolverRegistry, standard_resolvers};
 use url::Url;
 
-fn resolvers(http: &Http) -> Vec<Box<dyn Resolver>> {
-    use discoclip_engine::resolve::*;
-    vec![
-        Box::new(youtube::YoutubeResolver::new(http.clone())),
-        Box::new(x::XResolver::new(http.clone())),
-        Box::new(tiktok::TiktokResolver::new(http.clone())),
-        Box::new(instagram::InstagramResolver::new(http.clone())),
-        Box::new(facebook::FacebookResolver::new(http.clone())),
-        Box::new(reddit::RedditResolver::new(http.clone())),
-        Box::new(twitch::TwitchResolver::new(http.clone())),
-        Box::new(kick::KickResolver::new(http.clone())),
-        Box::new(vimeo::VimeoResolver::new(http.clone())),
-        Box::new(dailymotion::DailymotionResolver::new(http.clone())),
-        Box::new(streamable::StreamableResolver::new(http.clone())),
-        Box::new(imgur::ImgurResolver::new(http.clone())),
-        Box::new(redgifs::RedgifsResolver::new(http.clone())),
-        Box::new(bilibili::BilibiliResolver::new(http.clone())),
-        Box::new(niconico::NiconicoResolver::new(http.clone())),
-        Box::new(douyin::DouyinResolver::new(http.clone())),
-        Box::new(kuaishou::KuaishouResolver::new(http.clone())),
-        Box::new(weibo::WeiboResolver::new(http.clone())),
-        Box::new(xiaohongshu::XiaohongshuResolver::new(http.clone())),
-        Box::new(vk::VkResolver::new(http.clone())),
-        Box::new(rumble::RumbleResolver::new(http.clone())),
-        Box::new(odysee::OdyseeResolver::new(http.clone())),
-        Box::new(bluesky::BlueskyResolver::new(http.clone())),
-        Box::new(threads::ThreadsResolver::new(http.clone())),
-        Box::new(tumblr::TumblrResolver::new(http.clone())),
-        Box::new(pinterest::PinterestResolver::new(http.clone())),
-        Box::new(linkedin::LinkedinResolver::new(http.clone())),
-        Box::new(snapchat::SnapchatResolver::new(http.clone())),
-        Box::new(loom::LoomResolver::new(http.clone())),
-        Box::new(telegram::TelegramResolver::new(http.clone())),
-        Box::new(mastodon::MastodonResolver::new(http.clone())),
-        Box::new(web::WebResolver::new(http.clone())),
-    ]
+
+fn bot_tokens() -> Arc<dyn discoclip_engine::resolve::discord::BotTokens> {
+    let tokens: Vec<String> = std::env::var("DISCOCLIP_DISCORD_TOKENS")
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(String::from)
+        .collect();
+    Arc::new(tokens)
 }
 
 #[tokio::main]
@@ -54,7 +30,7 @@ async fn main() {
         )
         .init();
     let http = Http::new(HttpConfig::default());
-    let list = resolvers(&http);
+    let list = standard_resolvers(&http, bot_tokens());
     for resolver in &list {
         http.seed_cookies(resolver.id(), resolver.consent_cookies());
     }

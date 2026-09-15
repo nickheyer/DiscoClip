@@ -65,7 +65,7 @@
 >
 	<div class="panel">
 		<header class="head">
-			<div>
+			<div class="head-text">
 				<h2 id="dialog-title">{title}</h2>
 				{#if description}<p class="muted small">{description}</p>{/if}
 			</div>
@@ -120,6 +120,11 @@
 		justify-content: space-between;
 		gap: 12px;
 		padding: 18px 20px 12px;
+	}
+
+	.head-text {
+		min-width: 0;
+		overflow-wrap: anywhere;
 	}
 
 	.head h2 {

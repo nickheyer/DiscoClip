@@ -66,6 +66,9 @@ pub mod tls;
 pub mod tokens;
 pub mod users;
 
+/// How long open connections get to finish once their listener stops.
+const DRAIN: Duration = Duration::from_secs(10);
+
 #[derive(Debug, thiserror::Error)]
 pub enum WebError {
     #[error("could not listen on {addr}: {source}")]
@@ -150,6 +153,8 @@ pub struct AppState {
     pub started_at: Timestamp,
     /// Reads the process and the machine for the metrics page.
     pub sampler: Arc<metrics::Sampler>,
+    /// Ends live responses when their listener stops.
+    pub shutdown: CancellationToken,
 }
 
 impl AppState {
@@ -287,6 +292,7 @@ impl WebApp {
             live,
             data_dir,
             provisioning_file,
+            shutdown: CancellationToken::new(),
         };
         state.refresh_discord_login().await?;
         Ok(Self { state })
@@ -338,7 +344,7 @@ impl WebApp {
     /// where it was; when `web.tls` changes, the same address is listened on again with the
     /// new files. Open connections get a moment to finish at each change and at shutdown.
     pub async fn run(
-        self,
+        mut self,
         listener: TcpListener,
         shutdown: CancellationToken,
     ) -> Result<(), WebError> {
@@ -363,6 +369,7 @@ impl WebApp {
                 );
             }
             let stop = shutdown.child_token();
+            self.state.shutdown = stop.clone();
             let server = tokio::spawn(serve_on(
                 socket,
                 config.tls.clone(),
@@ -447,12 +454,22 @@ async fn serve_on(
             tls::serve(listener, server, router, stop).await?;
         }
         None => {
-            axum::serve(
-                listener,
-                router.into_make_service_with_connect_info::<SocketAddr>(),
-            )
-            .with_graceful_shutdown(stop.cancelled_owned())
-            .await?;
+            let signal = stop.clone();
+            let server = async move {
+                axum::serve(
+                    listener,
+                    router.into_make_service_with_connect_info::<SocketAddr>(),
+                )
+                .with_graceful_shutdown(signal.cancelled_owned())
+                .await
+            };
+            tokio::select! {
+                result = server => result?,
+                _ = async {
+                    stop.cancelled().await;
+                    tokio::time::sleep(DRAIN).await;
+                } => tracing::warn!("some http connections were still open at shutdown"),
+            }
         }
     }
     Ok(())
@@ -613,8 +630,11 @@ async fn api_not_found() -> error::ApiError {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use axum::http::StatusCode;
     use serde_json::{Value as Json, json};
+    use tokio_util::sync::CancellationToken;
 
     use super::testing::{Client, app, app_with, app_with_admin};
     use crate::oauth::Registry;
@@ -626,6 +646,103 @@ mod tests {
             trusted_proxies: nets.iter().map(|n| n.parse().unwrap()).collect(),
             ..WebConfig::default()
         }
+    }
+
+    #[tokio::test]
+    async fn shutdown_closes_live_feeds_with_the_browser_still_connected() {
+        for https in [false, true] {
+            let dir = super::testing::test_dir("shutdown");
+            let config = WebConfig {
+                bind: "127.0.0.1:0".parse().unwrap(),
+                tls: https.then(|| write_certificate(&dir)),
+                ..WebConfig::default()
+            };
+            let app = app_with(config, Registry::default(), false).await;
+            app.state
+                .users
+                .set_up("nick", "correct horse")
+                .await
+                .unwrap();
+            let mut admin = Client::new(&app);
+            assert_eq!(admin.login("nick", "correct horse").await.0, StatusCode::OK);
+            let cookie = format!("{}={}", super::auth::COOKIE, admin.cookie.unwrap());
+            let listener = app.bind().await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            let shutdown = CancellationToken::new();
+            let server = tokio::spawn(app.run(listener, shutdown.clone()));
+            let browser = discoclip_engine::reqwest::Client::builder()
+                .danger_accept_invalid_certs(true)
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap();
+            let scheme = if https { "https" } else { "http" };
+            let mut responses = Vec::new();
+            for path in [
+                "/api/events",
+                "/api/jobs/events",
+                "/api/discord/bots/events",
+                "/api/logs/events",
+            ] {
+                let response = browser
+                    .get(format!("{scheme}://{addr}{path}"))
+                    .header("cookie", &cookie)
+                    .send()
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), 200, "{scheme} {path}");
+                assert_eq!(response.headers()["content-type"], "text/event-stream");
+                responses.push(response);
+            }
+
+            shutdown.cancel();
+            tokio::time::timeout(Duration::from_secs(3), async {
+                for response in responses {
+                    response.text().await.expect("live feed ends cleanly");
+                }
+                server.await.unwrap().unwrap();
+            })
+            .await
+            .expect("shutdown closes every live feed before the drain deadline");
+            if https {
+                std::fs::remove_dir_all(dir).unwrap();
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn shutdown_bounds_http_drain_for_an_unfinished_response() {
+        let router = axum::Router::new().route(
+            "/unfinished",
+            axum::routing::get(|| async {
+                axum::body::Body::from_stream(futures::stream::pending::<
+                    Result<String, std::convert::Infallible>,
+                >())
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let shutdown = CancellationToken::new();
+        let server = tokio::spawn(super::serve_on(listener, None, router, shutdown.clone()));
+        let browser = discoclip_engine::reqwest::Client::builder()
+            .timeout(super::DRAIN + Duration::from_secs(5))
+            .build()
+            .unwrap();
+        let response = browser
+            .get(format!("http://{addr}/unfinished"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+
+        let began = std::time::Instant::now();
+        shutdown.cancel();
+        tokio::time::timeout(super::DRAIN + Duration::from_secs(2), server)
+            .await
+            .expect("an unfinished response cannot hold shutdown indefinitely")
+            .unwrap()
+            .unwrap();
+        assert!(began.elapsed() >= super::DRAIN);
+        drop(response);
     }
 
     #[tokio::test]

@@ -469,7 +469,7 @@
 								{@const live = feed.summary(child.id) ?? child}
 								<tr>
 									<td><JobStatusBadge status={live.status} size="sm" short /></td>
-									<td><a href={`/jobs/${child.id}`} class="row-link">{childTitle(live)}</a></td>
+									<td class="entry"><a href={`/jobs/${child.id}`} class="row-link truncate entry-title" title={live.url}>{childTitle(live)}</a></td>
 									<td class="nowrap">{live.duration_secs != null ? formatClock(live.duration_secs) : '—'}</td>
 									<td class="nowrap"><Time value={live.finished_at ?? live.created_at} /></td>
 								</tr>
@@ -588,6 +588,7 @@
 
 	.description {
 		white-space: pre-wrap;
+		overflow-wrap: anywhere;
 		max-height: 8lh;
 		overflow: auto;
 	}
@@ -621,6 +622,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 4px;
+		overflow-wrap: anywhere;
 	}
 
 	.block {
@@ -631,6 +633,15 @@
 		border: none;
 		border-radius: 0 0 var(--radius) var(--radius);
 		box-shadow: none;
+	}
+
+	td.entry {
+		max-width: 480px;
+	}
+
+	.entry-title {
+		display: block;
+		max-width: 100%;
 	}
 
 	.log {

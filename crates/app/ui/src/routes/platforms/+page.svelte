@@ -385,11 +385,11 @@
 																<td><Time value={fixture.run_at} empty="never" /></td>
 																<td><Time value={fixture.last_pass_at} empty="never" /></td>
 																<td class="num">{duration(fixture.duration_ms)}</td>
-																<td>
+																<td class="found">
 																	{#if fixture.status === 'fail' && fixture.error}
-																		<span class="error-text">{fixture.error}</span>
+																		<span class="error-text truncate-2" title={fixture.error}>{fixture.error}</span>
 																	{:else if fixture.title}
-																		<span class="truncate-2">{fixture.title}</span>
+																		<span class="truncate-2" title={fixture.title}>{fixture.title}</span>
 																	{:else}
 																		<span class="faint">—</span>
 																	{/if}
@@ -553,11 +553,16 @@
 		padding: 8px 12px;
 	}
 
+	td.found {
+		max-width: 360px;
+	}
+
 	.truncate-2 {
 		display: -webkit-box;
 		-webkit-line-clamp: 2;
 		line-clamp: 2;
 		-webkit-box-orient: vertical;
 		overflow: hidden;
+		overflow-wrap: anywhere;
 	}
 </style>

@@ -47,17 +47,19 @@ pub const TV: Client = Client {
     os: None,
 };
 
-pub const IOS: Client = Client {
-    id: "ios",
-    name: "IOS",
-    version: "20.10.4",
-    number: 5,
-    user_agent: "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
+/// The native VisionOS player exposes media without the iOS client's required
+/// proof-of-origin token. Keep its API identity and media user agent together.
+pub const VISIONOS: Client = Client {
+    id: "visionos",
+    name: "VISIONOS",
+    version: "1.02",
+    number: 101,
+    user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15",
     needs_player: false,
     embedded: false,
     takes_session: false,
-    device: Some(("Apple", "iPhone16,2")),
-    os: Some(("iPhone", "18.3.2.22D82")),
+    device: Some(("Apple", "RealityDevice17,1")),
+    os: Some(("visionOS", "26.5.23O471")),
 };
 
 pub const WEB: Client = Client {
@@ -87,7 +89,7 @@ pub const TV_EMBEDDED: Client = Client {
 };
 
 /// The apps asked for a video, in order, until one plays it.
-pub const CLIENTS: [Client; 3] = [TV, IOS, WEB];
+pub const CLIENTS: [Client; 3] = [TV, VISIONOS, WEB];
 
 /// Talks to the API as one app or another, with the platform's cookies.
 #[derive(Clone)]
@@ -136,14 +138,29 @@ impl InnerTube {
         &self,
         endpoint: &str,
         client: &Client,
+        body: Value,
+        watch_url: &Url,
+    ) -> Result<Value, ResolveError> {
+        self.call_with_visitor(endpoint, client, body, watch_url, None)
+            .await
+    }
+
+    async fn call_with_visitor(
+        &self,
+        endpoint: &str,
+        client: &Client,
         mut body: Value,
         watch_url: &Url,
+        visitor_data: Option<&str>,
     ) -> Result<Value, ResolveError> {
         let url = Url::parse(&format!(
             "{ORIGIN}/youtubei/v1/{endpoint}?prettyPrint=false"
         ))
         .expect("the endpoint url is valid");
         body["context"] = Self::context(client, watch_url.as_str());
+        if let Some(visitor_data) = visitor_data {
+            body["context"]["client"]["visitorData"] = json!(visitor_data);
+        }
         let mut request = self
             .http
             .post(url)
@@ -154,6 +171,9 @@ impl InnerTube {
             .header("origin", ORIGIN)
             .header("referer", &format!("{ORIGIN}/"))
             .json(&body);
+        if let Some(visitor_data) = visitor_data {
+            request = request.header("x-goog-visitor-id", visitor_data);
+        }
         if client.takes_session
             && let Some(authorization) = self.authorization()
         {
@@ -178,6 +198,7 @@ impl InnerTube {
         video_id: &str,
         sts: Option<u64>,
         watch_url: &Url,
+        visitor_data: Option<&str>,
     ) -> Result<Value, ResolveError> {
         let mut body = json!({
             "videoId": video_id,
@@ -189,7 +210,8 @@ impl InnerTube {
                 "contentPlaybackContext": { "signatureTimestamp": sts, "html5Preference": "HTML5_PREF_WANTS" }
             });
         }
-        self.call("player", client, body, watch_url).await
+        self.call_with_visitor("player", client, body, watch_url, visitor_data)
+            .await
     }
 
     /// Whether the jar holds a logged-in session.
@@ -237,9 +259,9 @@ mod tests {
 
     #[test]
     fn contexts_carry_the_app_and_the_embedding_page() {
-        let context = InnerTube::context(&IOS, "https://www.youtube.com/watch?v=x");
-        assert_eq!(context["client"]["clientName"], "IOS");
-        assert_eq!(context["client"]["deviceModel"], "iPhone16,2");
+        let context = InnerTube::context(&VISIONOS, "https://www.youtube.com/watch?v=x");
+        assert_eq!(context["client"]["clientName"], "VISIONOS");
+        assert_eq!(context["client"]["deviceModel"], "RealityDevice17,1");
         assert!(context.get("thirdParty").is_none());
         let context = InnerTube::context(&TV_EMBEDDED, "https://www.youtube.com/watch?v=x");
         assert_eq!(

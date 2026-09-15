@@ -11,6 +11,7 @@ use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use futures::{StreamExt, stream};
 use regex::Regex;
 use serde_json::{Value, json};
 use url::Url;
@@ -19,7 +20,7 @@ pub use innertube::PLATFORM;
 use innertube::{CLIENTS, Client, InnerTube, ORIGIN, TV_EMBEDDED, WEB};
 use player::{Player, PlayerCache};
 
-use super::page::json_after;
+use super::page::{Page, json_after};
 use super::{
     ClipRange, MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionCheck,
     SessionSupport, Variant, VariantKind, fetch_ok, hls, timestamp_hint,
@@ -137,6 +138,7 @@ impl YoutubeResolver {
     ) -> Result<Resolution, ResolveError> {
         let watch = Url::parse(&format!("{ORIGIN}/watch?v={id}")).expect("valid");
         let mut player: Option<Arc<Player>> = None;
+        let mut visitor_data: Option<String> = None;
         let mut gated: Option<String> = None;
         let mut login: Option<String> = None;
         let mut refusals: Vec<String> = Vec::new();
@@ -146,11 +148,45 @@ impl YoutubeResolver {
             let client = queue[index];
             index += 1;
             let sts = if client.needs_player {
-                Some(self.player_for(&watch, &mut player).await?.sts)
+                match self.player_for(&watch, &mut player).await {
+                    Ok(player) => Some(player.sts),
+                    Err(error) => {
+                        refusals.push(format!("{}: {error}", client.id));
+                        continue;
+                    }
+                }
             } else {
                 None
             };
-            let response = self.tube.player(&client, id, sts, &watch).await?;
+            if !client.needs_player && visitor_data.is_none() {
+                match fetch_ok(
+                    &self.http,
+                    &watch,
+                    PLATFORM,
+                    client.user_agent,
+                    &[],
+                    MAX_PAGE,
+                )
+                .await
+                {
+                    Ok(fetched) => visitor_data = visitor_from_page(&fetched.text(), &watch),
+                    Err(error) => {
+                        tracing::debug!(client = client.id, %error, "youtube visitor context unavailable")
+                    }
+                }
+            }
+            let response = match self
+                .tube
+                .player(&client, id, sts, &watch, visitor_data.as_deref())
+                .await
+            {
+                Ok(response) => response,
+                Err(error @ ResolveError::RateLimited(_)) => return Err(error),
+                Err(error) => {
+                    refusals.push(format!("{}: {error}", client.id));
+                    continue;
+                }
+            };
             match formats::playability(&response) {
                 formats::Playability::Ok => {
                     let answered = response
@@ -161,7 +197,13 @@ impl YoutubeResolver {
                         continue;
                     }
                     match self
-                        .build(&response, &client, player.as_deref(), clip, gated.is_some())
+                        .build(
+                            &response,
+                            &client,
+                            player.as_deref().filter(|_| client.needs_player),
+                            clip,
+                            gated.is_some(),
+                        )
                         .await
                     {
                         Ok(resolved) => return Ok(resolved.into()),
@@ -213,12 +255,58 @@ impl YoutubeResolver {
     ) -> Result<Resolved, String> {
         let mut resolved = Resolved::new(PLATFORM);
         formats::details(response, &mut resolved);
-        let (mut variants, mut problems) = formats::variants(response, client, player).await;
+        let (listed, mut problems) = formats::variants(response, client, player).await;
+        let had_audio = listed.iter().any(|variant| variant.audio_only);
+        let mut variants = Vec::new();
+        // A successful player response can still contain media the CDN refuses
+        // (notably iOS URLs without a proof token). Read only the first byte with
+        // the same client headers the downloader will use before accepting them.
+        let mut probes = stream::iter(listed.into_iter().map(|variant| async move {
+            let name = variant.format_id.as_deref().unwrap_or("unknown");
+            if let Some(drm) = &variant.drm {
+                return Err(format!("itag {name}: protected by {drm} DRM"));
+            }
+            let response = self
+                .http
+                .get(variant.url.clone())
+                .platform(PLATFORM)
+                .headers(&variant.headers)
+                .header("range", "bytes=0-0")
+                .timeout(Duration::from_secs(15))
+                .send()
+                .await
+                .map_err(|error| format!("itag {name}: {error}"))?;
+            if !response.status.is_success() {
+                return Err(format!(
+                    "itag {name}: media server returned HTTP {}",
+                    response.status
+                ));
+            }
+            let (body, _) = response
+                .bytes_up_to(1)
+                .await
+                .map_err(|error| format!("itag {name}: {error}"))?;
+            if body.is_empty() {
+                return Err(format!("itag {name}: empty media response"));
+            }
+            Ok(variant)
+        }))
+        .buffered(4);
+        while let Some(result) = probes.next().await {
+            match result {
+                Ok(variant) => variants.push(variant),
+                Err(problem) => problems.push(problem),
+            }
+        }
+        if had_audio && !variants.iter().any(|variant| variant.audio_only) {
+            variants.retain(|variant| !variant.video_only);
+            problems.push("the separate audio streams could not be downloaded".into());
+        }
         let streaming = &response["streamingData"];
         if let Some(manifest) = streaming["hlsManifestUrl"]
             .as_str()
             .and_then(|u| Url::parse(u).ok())
-            && (resolved.live || variants.is_empty())
+            && (resolved.live || !variants.iter().any(|v| !v.audio_only))
         {
             let headers = [("user-agent".to_string(), client.user_agent.to_string())];
             match hls::expand(&self.http, &manifest, PLATFORM, client.user_agent, &headers).await {
@@ -243,7 +331,7 @@ impl YoutubeResolver {
             variant.headers = vec![("user-agent".to_string(), client.user_agent.to_string())];
             variants.push(variant);
         }
-        if variants.is_empty() {
+        if !variants.iter().any(|v| !v.audio_only) {
             return Err(if problems.is_empty() {
                 "no playable format".to_string()
             } else {
@@ -301,6 +389,25 @@ impl YoutubeResolver {
         )
         .await
     }
+}
+
+/// The guest context issued with the watch page must accompany the player request
+/// in both its JSON context and its X-Goog-Visitor-Id header.
+fn visitor_from_page(html: &str, watch: &Url) -> Option<String> {
+    Page::parse(html, watch)
+        .script_json_all("ytcfg.set(")
+        .iter()
+        .find_map(|config| {
+            config["VISITOR_DATA"]
+                .as_str()
+                .or_else(|| {
+                    config
+                        .pointer("/INNERTUBE_CONTEXT/client/visitorData")
+                        .and_then(Value::as_str)
+                })
+                .filter(|value| !value.is_empty())
+                .map(String::from)
+        })
 }
 
 #[async_trait]
@@ -511,7 +618,231 @@ mod tests {
                 "text/javascript",
                 SCRIPT,
             ),
+            get(
+                "https://rr1.googlevideo.com/videoplayback?id=1&n=zyx_w8_split",
+                "video/mp4",
+                "media",
+            ),
+            get(
+                "https://rr1.googlevideo.com/videoplayback?id=2&n=zyx_w8_split&sig=cedfba",
+                "video/mp4",
+                "media",
+            ),
+            get(
+                "https://rr1.googlevideo.com/videoplayback?id=3&n=zyx_w8_split",
+                "audio/mp4",
+                "media",
+            ),
         ]
+    }
+
+    fn native_playable(id: &str) -> Value {
+        let mut response = playable(id);
+        response["streamingData"] = json!({
+            "adaptiveFormats": [
+                {"itag": 137, "url": "https://media.test/native-video", "mimeType": "video/mp4; codecs=\"avc1.640028\"", "height": 1080, "width": 1920},
+                {"itag": 140, "url": "https://media.test/native-audio", "mimeType": "audio/mp4; codecs=\"mp4a.40.2\""}
+            ]
+        });
+        response
+    }
+
+    fn native_exchanges(id: &str) -> Vec<Exchange> {
+        vec![
+            get(
+                &format!("{ORIGIN}/watch?v={id}"),
+                "text/html",
+                r#"<script>ytcfg.set({"OTHER_CONFIG":true});ytcfg.set({"VISITOR_DATA":"guest-context"});</script>"#,
+            ),
+            get("https://media.test/native-video", "video/mp4", "video"),
+            get("https://media.test/native-audio", "audio/mp4", "audio"),
+        ]
+    }
+
+    #[tokio::test]
+    async fn refused_media_falls_back_with_the_watch_pages_visitor_context() {
+        use crate::http::transport::{
+            ReplayTransport, Transport, TransportRequest, TransportResponse,
+        };
+        use crate::http::{HttpConfig, HttpError};
+
+        struct VisitorRequired(ReplayTransport);
+        #[async_trait]
+        impl Transport for VisitorRequired {
+            async fn send(
+                &self,
+                request: TransportRequest,
+            ) -> Result<TransportResponse, HttpError> {
+                if request.url.path() == "/youtubei/v1/player" {
+                    let body: Value =
+                        serde_json::from_slice(request.body.as_ref().unwrap()).unwrap();
+                    if body["context"]["client"]["clientName"] == "VISIONOS" {
+                        assert_eq!(body["context"]["client"]["visitorData"], "guest-context");
+                        assert_eq!(request.headers["x-goog-visitor-id"], "guest-context");
+                        assert_eq!(
+                            request.headers["user-agent"],
+                            innertube::VISIONOS.user_agent
+                        );
+                    }
+                }
+                if request.url.host_str() == Some("media.test") {
+                    assert_eq!(request.headers["range"], "bytes=0-0");
+                }
+                self.0.send(request).await
+            }
+            fn name(&self) -> &'static str {
+                "visitor-required"
+            }
+        }
+
+        let id = "2KztkwBYD68";
+        let mut fixture = Fixture::new("youtube", None);
+        fixture.exchanges.extend(player_script_exchanges());
+        let mut refused = native_playable(id);
+        refused["streamingData"]["adaptiveFormats"][0]["url"] =
+            json!("https://media.test/refused-video");
+        refused["streamingData"]["adaptiveFormats"][1]["url"] =
+            json!("https://media.test/refused-audio");
+        fixture.exchanges.push(post(PLAYER, refused));
+        fixture.exchanges.push(post(PLAYER, native_playable(id)));
+        fixture.exchanges.extend(native_exchanges(id));
+        for path in ["refused-video", "refused-audio"] {
+            let mut refused = get(
+                &format!("https://media.test/{path}"),
+                "text/plain",
+                "Forbidden",
+            );
+            refused.response.status = 403;
+            fixture.exchanges.push(refused);
+        }
+        let http = Http::with_transport(
+            Arc::new(VisitorRequired(ReplayTransport::new(fixture))),
+            HttpConfig::default(),
+        );
+        let resolved = YoutubeResolver::new(http)
+            .resolve(&Url::parse(&format!("{ORIGIN}/watch?v={id}")).unwrap())
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
+        assert_eq!(resolved.variants.len(), 2);
+        assert!(
+            resolved
+                .variants
+                .iter()
+                .all(|v| v.url.path().starts_with("/native-"))
+        );
+        assert!(resolved.variants.iter().all(|v| {
+            v.headers
+                .contains(&("user-agent".into(), innertube::VISIONOS.user_agent.into()))
+        }));
+        let chosen = crate::plan::select_variant(
+            &resolved.variants,
+            &crate::config::Limits::default(),
+            PLATFORM,
+        )
+        .unwrap();
+        assert_eq!(chosen.audio_url.unwrap().path(), "/native-audio");
+    }
+
+    #[tokio::test]
+    async fn native_playback_survives_a_broken_javascript_player() {
+        let id = "2KztkwBYD68";
+        let mut fixture = Fixture::new("youtube", None);
+        fixture.exchanges.push(get(
+            "https://www.youtube.com/iframe_api",
+            "text/javascript",
+            "no player version",
+        ));
+        fixture.exchanges.extend(native_exchanges(id));
+        fixture.exchanges.push(post(PLAYER, native_playable(id)));
+        let resolved = YoutubeResolver::new(Http::replay(fixture))
+            .resolve(&Url::parse(&format!("{ORIGIN}/watch?v={id}")).unwrap())
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
+        assert_eq!(resolved.variants.len(), 2);
+        assert!(resolved.variants.iter().any(|v| v.audio_only));
+    }
+
+    #[tokio::test]
+    async fn an_audio_only_remainder_does_not_stop_client_fallback() {
+        let id = "2KztkwBYD68";
+        let mut fixture = Fixture::new("youtube", None);
+        fixture.exchanges.extend(player_script_exchanges());
+        let mut first = native_playable(id);
+        first["streamingData"]["adaptiveFormats"][0]["url"] =
+            json!("https://media.test/refused-video");
+        let mut refused = get(
+            "https://media.test/refused-video",
+            "text/plain",
+            "Forbidden",
+        );
+        refused.response.status = 403;
+        fixture.exchanges.push(refused);
+        fixture.exchanges.push(post(PLAYER, first));
+        fixture.exchanges.push(post(PLAYER, native_playable(id)));
+        fixture.exchanges.extend(native_exchanges(id));
+        let resolved = YoutubeResolver::new(Http::replay(fixture))
+            .resolve(&Url::parse(&format!("{ORIGIN}/watch?v={id}")).unwrap())
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
+        assert!(
+            resolved
+                .variants
+                .iter()
+                .any(|v| v.url.path() == "/native-video")
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires live YouTube and media CDN access"]
+    async fn live_reported_video_downloads_media() {
+        let http = Http::new(crate::http::HttpConfig::default());
+        let resolver = YoutubeResolver::new(http.clone());
+        http.seed_cookies(PLATFORM, resolver.consent_cookies());
+        let url = Url::parse("https://www.youtube.com/watch?v=2KztkwBYD68").unwrap();
+        let resolved = tokio::time::timeout(Duration::from_secs(120), resolver.resolve(&url))
+            .await
+            .expect("resolution timed out")
+            .unwrap()
+            .media()
+            .unwrap();
+        let limits = crate::config::Limits {
+            max_height: 1080,
+            ..Default::default()
+        };
+        let variant = crate::plan::select_variant(&resolved.variants, &limits, PLATFORM).unwrap();
+        assert_eq!(variant.kind, VariantKind::File);
+        assert_eq!(variant.height, Some(1080));
+        assert!(variant.audio_url.is_some() || !variant.video_only);
+        println!(
+            "{}: selected {:?} at {:?}p",
+            resolved.id.unwrap(),
+            variant.format_id,
+            variant.height
+        );
+        for (name, target) in std::iter::once(("video", &variant.url))
+            .chain(variant.audio_url.as_ref().map(|url| ("audio", url)))
+        {
+            // Match the downloader's ordinary GET, without the probe's Range header.
+            let response = http
+                .get(target.clone())
+                .platform(PLATFORM)
+                .headers(&variant.headers)
+                .timeout(Duration::from_secs(30))
+                .send()
+                .await
+                .unwrap();
+            let status = response.status;
+            assert!(status.is_success(), "{name}: HTTP {status}");
+            let (sample, _) = response.bytes_up_to(64 * 1024).await.unwrap();
+            assert!(!sample.is_empty());
+            println!("{name}: HTTP {status}, {} media bytes read", sample.len());
+        }
     }
 
     fn playable(id: &str) -> Value {

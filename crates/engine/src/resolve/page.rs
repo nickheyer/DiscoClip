@@ -256,6 +256,34 @@ pub fn unescape_json_string(text: &str) -> String {
     serde_json::from_str::<String>(&format!("\"{text}\"")).unwrap_or_else(|_| text.to_string())
 }
 
+/// The React Server Components payload a Next.js app-router page streams through its
+/// `self.__next_f.push([1, "…"])` calls, unescaped and joined in order: lines of
+/// `<id>:<json>` that resolvers search for the records they need.
+pub fn next_flight_data(html: &str) -> Option<String> {
+    const START: &str = "self.__next_f.push([1,\"";
+    let mut out = String::new();
+    let mut rest = html;
+    while let Some(at) = rest.find(START) {
+        let body = &rest[at + START.len()..];
+        let mut end = None;
+        let mut escaped = false;
+        for (index, byte) in body.bytes().enumerate() {
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == b'"' {
+                end = Some(index);
+                break;
+            }
+        }
+        let Some(end) = end else { break };
+        out.push_str(&unescape_json_string(&body[..end]));
+        rest = &body[end..];
+    }
+    (!out.is_empty()).then_some(out)
+}
+
 /// Every value at `pointer` in a tree of JSON-LD objects, searching arrays and `@graph`.
 pub fn ld_objects_of_type<'a>(values: &'a [Value], type_name: &str) -> Vec<&'a Value> {
     let mut found = Vec::new();

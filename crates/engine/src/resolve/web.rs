@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use jiff::{Span, SpanRelativeTo};
+use scraper::Selector;
 use url::Url;
 
 use super::page::{Page, ld_objects_of_type};
@@ -15,6 +16,10 @@ use super::{
     ClipRange, MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport,
     Variant, VariantKind, clean_title, essence, hls, is_dash_type, is_hls_type, is_ism_type,
     path_extension, status_error, timestamp_hint,
+};
+use super::{
+    brightcove, bunny, cloudflare_stream, jwplayer, kaltura, mux, streamable, twitch, vidyard,
+    vimeo, wistia, youtube,
 };
 use crate::http::{BROWSER_UA, EMBED_BOT_UA, Http, WEB_PLATFORM};
 use crate::media::Container;
@@ -103,6 +108,72 @@ pub struct PageMedia {
     pub uploader: Option<String>,
     candidates: Vec<Candidate>,
     pub iframes: Vec<Url>,
+    pub embeds: Vec<Url>,
+}
+
+fn known_player(url: &Url) -> bool {
+    jwplayer::parse_link(url).is_some()
+        || brightcove::parse_link(url).is_some()
+        || wistia::parse_link(url).is_some()
+        || kaltura::parse_link(url).is_some()
+        || vidyard::parse_link(url).is_some()
+        || cloudflare_stream::parse_link(url).is_some()
+        || mux::parse_link(url).is_some()
+        || bunny::parse_link(url).is_some()
+        || youtube::parse_link(url).is_some()
+        || vimeo::parse_link(url).is_some()
+        || twitch::parse_link(url).is_some()
+        || streamable::video_id(url).is_some()
+}
+
+/// Player links in frames, scripts, metadata and each provider's inline markup.
+fn embedded_players(page: &Page) -> Vec<Url> {
+    let mut links = page.iframes();
+    for element in page
+        .document()
+        .select(&Selector::parse("script[src], object[data]").expect("valid"))
+    {
+        if let Some(url) = element
+            .value()
+            .attr("src")
+            .or_else(|| element.value().attr("data"))
+            .and_then(|src| page.url().join(src).ok())
+        {
+            links.push(url);
+        }
+    }
+    for key in [
+        "twitter:player",
+        "og:video",
+        "og:video:url",
+        "og:video:secure_url",
+    ] {
+        links.extend(
+            page.meta_all(key)
+                .iter()
+                .filter_map(|src| page.url().join(src).ok()),
+        );
+    }
+    let ld = page.ld_json();
+    for object in ld_objects_of_type(&ld, "VideoObject") {
+        if let Some(url) = object["embedUrl"]
+            .as_str()
+            .and_then(|src| page.url().join(src).ok())
+        {
+            links.push(url);
+        }
+    }
+    links.extend(brightcove::embeds_in(page));
+    links.extend(wistia::embeds_in(page));
+    links.extend(kaltura::embeds_in(page));
+    links.extend(vidyard::embeds_in(page));
+    links.extend(cloudflare_stream::embeds_in(page));
+    links.extend(mux::embeds_in(page));
+    let mut seen = HashSet::new();
+    links
+        .into_iter()
+        .filter(|u| u != page.url() && known_player(u) && seen.insert(u.clone()))
+        .collect()
 }
 
 /// Everything a page says about its video.
@@ -189,6 +260,7 @@ pub fn extract(html: &str, base: &Url) -> PageMedia {
         uploader,
         candidates,
         iframes: page.iframes(),
+        embeds: embedded_players(&page),
     }
 }
 
@@ -316,11 +388,17 @@ impl WebResolver {
                 let media = extract(&html, &final_url);
                 let mut variants = Vec::new();
                 for candidate in &media.candidates {
+                    if candidate.url != final_url && known_player(&candidate.url) {
+                        return Err(ResolveError::Redirect(candidate.url.clone()));
+                    }
                     if let Some(found) = self.probe_candidate(candidate).await {
                         variants.extend(found);
                     }
                 }
                 if variants.is_empty() {
+                    if let Some(embed) = media.embeds.first() {
+                        return Err(ResolveError::Redirect(embed.clone()));
+                    }
                     // A page whose only video is an embedded player another resolver knows.
                     if let Some(embed) = media
                         .iframes
@@ -400,6 +478,7 @@ mod tests {
     use crate::http::transport::{
         Exchange, Fixture, RecordedBody, RecordedRequest, RecordedResponse,
     };
+    use crate::resolve::ResolverRegistry;
 
     #[test]
     fn parses_time_and_day_durations() {
@@ -469,6 +548,145 @@ mod tests {
                 truncated: false,
             },
         }
+    }
+
+    #[tokio::test]
+    async fn embedded_players_resolve_through_the_registry_with_recorded_responses() {
+        let cases = [
+            (
+                include_str!("jwplayer_fixture.json"),
+                "jwplayer",
+                r#"<script src="https://cdn.jwplayer.com/players/nPripu9l-ALJ3XQCI.js"></script>"#,
+            ),
+            (
+                include_str!("brightcove_fixture.json"),
+                "brightcove",
+                r#"<video-js data-account="1752604059001" data-player="default" data-video-id="4457254747001"></video-js>"#,
+            ),
+            (
+                include_str!("wistia_fixture.json"),
+                "wistia",
+                r#"<div class="wistia_embed wistia_async_cmst5825to"></div>"#,
+            ),
+            (
+                include_str!("kaltura_fixture.json"),
+                "kaltura",
+                r#"<script>kWidget.embed({wid: '_243342', entry_id: '1_sf5ovm7u'});</script>"#,
+            ),
+            (
+                include_str!("vidyard_fixture.json"),
+                "vidyard",
+                r#"<img class="vidyard-player-embed" data-uuid="oTDMPlUv--51Th455G5u7Q">"#,
+            ),
+            (
+                include_str!("cloudflare_stream_fixture.json"),
+                "cloudflare_stream",
+                r#"<stream src="6b9e68b07dfee8cc2d116e4c51d6a957" customer-domain-prefix="customer-f33zs165nr7gyfy4"></stream>"#,
+            ),
+            (
+                include_str!("mux_fixture.json"),
+                "mux",
+                r#"<mux-player playback-id="DS00Spx1CV902MCtPj5WknGlR102V5HFkDe" metadata-video-title="Demo"></mux-player>"#,
+            ),
+            (
+                include_str!("bunny_fixture.json"),
+                "bunny",
+                r#"<iframe data-src="https://iframe.mediadelivery.net/embed/136145/32e34c4b-0d72-437c-9abb-05e67657da34"></iframe>"#,
+            ),
+        ];
+        for (recording, platform, embed) in cases {
+            let mut fixture = Fixture::parse(recording).unwrap();
+            let url = Url::parse("https://site.test/article").unwrap();
+            // An unrelated frame often appears before the article's actual video.
+            let page =
+                format!(r#"<html><iframe src="https://ads.test/frame"></iframe>{embed}</html>"#);
+            fixture
+                .exchanges
+                .push(exchange(url.as_str(), "text/html", &page, 200, &[]));
+            let http = Http::replay(fixture);
+            let registry = ResolverRegistry::new(vec![
+                Box::new(jwplayer::JwplayerResolver::new(http.clone())),
+                Box::new(brightcove::BrightcoveResolver::new(http.clone())),
+                Box::new(wistia::WistiaResolver::new(http.clone())),
+                Box::new(kaltura::KalturaResolver::new(http.clone())),
+                Box::new(vidyard::VidyardResolver::new(http.clone())),
+                Box::new(cloudflare_stream::CloudflareStreamResolver::new(
+                    http.clone(),
+                )),
+                Box::new(mux::MuxResolver::new(http.clone())),
+                Box::new(bunny::BunnyResolver::new(http.clone())),
+                Box::new(WebResolver::new(http)),
+            ]);
+            let media = registry
+                .resolve(&url)
+                .await
+                .unwrap_or_else(|e| panic!("{platform}: {e}"))
+                .media()
+                .expect("one video");
+            assert_eq!(media.resolver, platform);
+            assert!(!media.variants.is_empty(), "{platform}");
+            if platform == "mux" {
+                assert_eq!(media.title.as_deref(), Some("Demo"));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn social_player_embeds_take_precedence_over_unrelated_frames() {
+        for target in [
+            "https://www.youtube.com/embed/BaW_jenozKc",
+            "https://www.youtube-nocookie.com/embed/BaW_jenozKc",
+            "https://player.vimeo.com/video/76979871?h=abc123",
+            "https://player.twitch.tv/?video=v40791111&parent=site.test",
+            "https://player.twitch.tv/?channel=someone&parent=site.test",
+            "https://clips.twitch.tv/embed?clip=FaintLightGullWholeWheat&parent=site.test",
+            "https://streamable.com/e/moo",
+        ] {
+            let html = format!(
+                r#"<iframe src="https://ads.test/frame"></iframe><iframe src="{target}"></iframe>"#
+            );
+            let mut fixture = Fixture::new("web", None);
+            fixture.exchanges.push(exchange(
+                "https://site.test/article",
+                "text/html",
+                &html,
+                200,
+                &[],
+            ));
+            let error = WebResolver::new(Http::replay(fixture))
+                .resolve(&Url::parse("https://site.test/article").unwrap())
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(error, ResolveError::Redirect(ref url) if url.as_str() == target),
+                "{target}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn metadata_players_and_brightcove_playlists_are_detected() {
+        let url = Url::parse("https://site.test/article").unwrap();
+        let target = "https://www.youtube.com/embed/BaW_jenozKc";
+        for html in [
+            format!(r#"<meta name="twitter:player" content="{target}">"#),
+            format!(
+                r#"<script type="application/ld+json">{{"@type":"VideoObject","embedUrl":"{target}"}}</script>"#
+            ),
+        ] {
+            assert_eq!(
+                extract(&html, &url).embeds,
+                vec![Url::parse(target).unwrap()]
+            );
+        }
+        let html =
+            r#"<video data-account="1752604059001" data-playlist-id="5743160747001"></video>"#;
+        let embeds = extract(html, &url).embeds;
+        assert_eq!(embeds.len(), 1);
+        assert!(matches!(
+            brightcove::parse_link(&embeds[0]).unwrap().content,
+            brightcove::Content::Playlist(_)
+        ));
     }
 
     #[tokio::test]

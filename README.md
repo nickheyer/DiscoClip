@@ -126,11 +126,84 @@ page's, with `v.kuaishou.com` links, and the site's request that an unfamiliar c
 verify itself is reported so a browser's session can be stored. Weibo posts, reposts and
 Weibo TV shows come through the site's API with the visitor cookies it hands anonymous
 browsers, and `t.cn` links are unwrapped. Xiaohongshu video notes come from the state the
-note page renders, with `xhslink.com` share links unwrapped and their `xsec_token` carried
-over; the site shows notes only to browsers it knows, so a session is needed. VK videos,
+note page renders, with `xhslink.com` share links followed hop by hop to the note they name
+and their `xsec_token` carried over; the token opens the note to visitors while it lasts,
+a note the site cannot serve is read off the explore page it falls back to, and a session
+unlocks the rest. VK videos,
 clips, embeds (`video_ext.php`) and live streams come through the player request the
 site's pages make, after a visit for the visitor cookies it wants, with MP4 files by
 height and HLS and DASH manifests.
+
+Rumble videos, embeds and live streams come from the embed data the player loads, with
+their subtitles, and channel and user pages as playlists. Odysee videos, reposts, embeds
+and `lbry://` links come through the site's own API, with channels as playlists. Bluesky
+posts with video, quote posts included, come from the public AT Protocol API. Mastodon
+posts and boosts come through the Mastodon API on any server of the fediverse that
+speaks it, Pleroma, Akkoma and GoToSocial among them, with every attachment of a post;
+a page shaped like a post on a server that does not speak it is handed on to the next
+resolver. Threads posts come from the data the page renders, with carousels as playlists.
+Tumblr posts and reblogs come through the site's API with the token its web app carries,
+a blog's video posts as a playlist and a video hosted elsewhere handed to its host's
+resolver. Pinterest video pins and idea pins come through the resource API the site's
+pages call, with `pin.it` links unwrapped. LinkedIn posts and feed updates come from the
+page the site serves visitors. Snapchat Spotlight snaps and public stories come from the
+data the web pages render, a story of several snaps as a playlist. Loom recordings,
+embeds and password-protected recordings come through the share page's API, with the
+stream's CloudFront credentials kept as cookies so every segment is let through.
+Telegram posts in public channels come through the embed the site renders, an album of
+several videos as a playlist.
+
+Discord attachment links on the CDN and the media proxy resolve as the files they are,
+and a link to a message is read through whichever running bot can see its channel: the
+message's video attachments, several of them as a playlist, or the embed of a video hosted
+elsewhere handed to that host's resolver; a signed attachment link that has expired says
+so. 9GAG animated posts come through the API the site's pages call, in every codec the
+site keeps, with a post hosting a YouTube video handed to YouTube. iFunny videos come from
+the page the site renders. Newgrounds movies come from the video sources the site hands
+its player, by height, completing NG Guard's proof of work and retaining its clearance
+cookie when requested. Internet Archive items come through the metadata API: each video with
+its derivatives as variants, an item holding several videos as a playlist, and a link to
+one file resolving that file. Wikimedia Commons and Wikipedia file pages come through the
+MediaWiki API's video info, the original upload with every transcode, and a direct link to
+an upload resolves the same way. Coub loops come through the API the player reads, as the
+shareable MP4 with sound when the site rendered one and otherwise the silent loop paired
+with its audio track. GIPHY GIFs, stickers and clips come from the page's data, the clips
+with their sound in several sizes, with `gph.is` links unwrapped and direct media links
+taken by their id; Tenor GIFs come from the store the view page renders, `tenor.com/….gif`
+links unwrapped and direct media links probed. Catbox files are probed for their length,
+and an album's video files become a playlist. Google Drive files come with the original
+upload from the download endpoint and the player's streams from its video info, folders
+as playlists from the embeddable folder view. Dropbox shared files resolve through their
+download link, with the file's name and length. OneDrive shared files and folders come
+through the share API the web app calls with the anonymous token it asks for first, a
+folder's videos as a playlist. MEGA files and folders come through the API with the key
+the link carries: the file's name decrypted from its attributes, a folder's nodes with
+their keys, and the file's bytes decrypted with AES-128 in counter mode as they download.
+
+Embedded players resolve through the APIs and manifests their players read. JW Player
+provides its media renditions, captions and playlists through the delivery API.
+Brightcove uses the policy key in the player's script to read videos, reference IDs and
+playlists, with MP4, HLS, DASH, text tracks and DRM status. Wistia provides its media
+assets, originals and captions, and turns playlists and channels into lists of videos.
+Kaltura starts the player's widget session to read entries, ready renditions and captions.
+Vidyard provides MP4 and HLS renditions with its player referer, and players with several
+chapters become playlists.
+
+Cloudflare Stream and Mux expand their HLS manifests and preserve signed playback links;
+Cloudflare also offers DASH and an MP4 download when available, while Mux probes for its
+static renditions. Bunny Stream reads the embed page for HLS, available MP4 fallbacks,
+original uploads and captions, carrying the player's referer to the media. Web pages
+recognize these players in iframes, embed scripts, metadata and inline player elements,
+then hand the link to its resolver. YouTube, including its nocookie embeds, Vimeo,
+Twitch recordings, clips and live channels, and Streamable embeds use their existing
+platform resolvers. Recorded responses cover each new player and its routing from a page.
+
+1News articles list the players their content carries, Brightcove videos through the
+site's player and YouTube embeds: one player is handed to its resolver, several become a
+playlist. 17LIVE rooms on air list their HTTP-FLV pulls from every CDN by quality, with
+the streamer's caption as the title, and a room off air says so, with when its last
+stream ended; clips come with their source upload and transcode, and recordings with
+their HLS renditions beside the source and re-encoded MP4 files.
 
 Platforms that read more with an account take a logged-in session: admins import a
 browser's cookies for the platform from its row, as a Netscape `cookies.txt` or a `Cookie`

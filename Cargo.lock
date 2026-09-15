@@ -1285,11 +1285,13 @@ name = "discoclip-engine"
 version = "0.1.0"
 dependencies = [
  "aes",
+ "argon2",
  "async-trait",
  "base64 0.23.1",
  "boa_engine",
  "bytes",
  "cbc",
+ "ctr",
  "dash-mpd",
  "futures",
  "hex",

@@ -2025,6 +2025,15 @@ Rejects a command name the bot does not define.
 | `audio_only` | `bool` |
 | `live` | `bool` |
 | `drm` | `string \| null` |
+| `cipher` | `Cipher \| null` |
+
+#### Cipher
+
+| Field | Type | Present for `scheme` |
+|---|---|---|
+| `scheme` | `CipherScheme` | all |
+| `key` | `integer[16]` | `aes128_ctr` |
+| `nonce` | `integer[8]` | `aes128_ctr` |
 
 #### Codec
 
@@ -2534,6 +2543,12 @@ Rejects a command name the bot does not define.
 | `rtsp` |
 | `whep` |
 | `browser` |
+
+#### CipherScheme
+
+| Value |
+|---|
+| `aes128_ctr` |
 
 #### CallbackError
 

@@ -121,8 +121,7 @@ pub fn inlined_materials(flight: &str) -> Vec<(u64, u64)> {
 /// the issue's own material is present.
 pub fn issue_entries(flight: &str, date: &str) -> Vec<PlaylistEntry> {
     let mut entries = Vec::new();
-    if let Some(main) = json_after(flight, "\"mainNewsId\":")
-        .and_then(|v| v.as_u64())
+    if let Some(main) = json_after_main_id(flight)
         .filter(|_| flight.contains("\"mainNewsVideoMaterialPresent\":true"))
         .and_then(|id| Url::parse(&format!("{SITE}news/{date}/{id}")).ok())
     {
@@ -156,8 +155,15 @@ pub fn issue_entries(flight: &str, date: &str) -> Vec<PlaylistEntry> {
     entries
 }
 
+/// The issue's own news id, a bare number after `"mainNewsId":` in the payload.
 fn json_after_main_id(flight: &str) -> Option<u64> {
-    json_after(flight, "\"mainNewsId\":").and_then(|v| v.as_u64())
+    let start = flight.find("\"mainNewsId\":")? + "\"mainNewsId\":".len();
+    let digits: String = flight[start..]
+        .trim_start()
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect();
+    digits.parse().ok()
 }
 
 /// The kbit/s a file name carries as `_3800.mp4`.
@@ -213,9 +219,6 @@ pub fn file_variants(item: &Value, hls: &[Variant]) -> Vec<Variant> {
                     .is_some_and(|b| b.abs_diff(k * 1000) <= k * 1000 / 5)
             })
         });
-        if !hls.is_empty() && kbps.is_some() && rendition.is_none() {
-            continue;
-        }
         let mut v = Variant::new(url, VariantKind::File);
         v.container = Some(Container::Mp4);
         v.video = Some(VideoCodec::H264);
@@ -381,6 +384,36 @@ impl FirstTvResolver {
         }
         let files = file_variants(item, &hls_variants);
         resolved.variants = hls_variants;
+        // A DASH manifest among the sources expands into its representations too.
+        let mpd_sources: Vec<Url> = item["sources"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|s| {
+                s["type"].as_str().is_some_and(|t| t.eq_ignore_ascii_case("application/dash+xml"))
+                    || s["src"].as_str().is_some_and(|src| src.ends_with(".mpd"))
+            })
+            .filter_map(|s| s["src"].as_str().and_then(absolute))
+            .collect();
+        for manifest in mpd_sources {
+            match super::dash::expand(&self.http, &manifest, PLATFORM, BROWSER_UA, &[]).await {
+                Ok(expanded) => {
+                    resolved.duration = resolved.duration.or(expanded.duration);
+                    for mut representation in expanded.variants {
+                        representation.format_id = Some(match &representation.label {
+                            Some(label) => format!("dash-{label}"),
+                            None => "dash".to_string(),
+                        });
+                        resolved.variants.push(representation);
+                    }
+                    resolved.subtitles.extend(expanded.subtitles);
+                }
+                Err(ResolveError::Http(error)) => return Err(ResolveError::Http(error)),
+                Err(error) => {
+                    tracing::debug!(url = %manifest, %error, "the DASH manifest could not be read");
+                }
+            }
+        }
         resolved.variants.extend(files);
         if resolved.variants.is_empty() {
             return Err(ResolveError::NotFound(link.clone()));
@@ -538,6 +571,23 @@ impl FirstTvResolver {
             v.label = Some(format!("DASH, CDN {}", index + 1));
             variants.push(v);
         }
+        // Each CDN's manifest lists the same representations; the first that answers
+        // names their sizes, and the rest stay as whole manifests to fall back to.
+        if let Some(first) = variants.first().cloned() {
+            let mut subtitles = Vec::new();
+            let expanded = super::manifests::expand_all(&self.http, PLATFORM, vec![first], &mut subtitles, None).await;
+            if expanded.len() > 1 || expanded.first().is_some_and(|v| v.height.is_some()) {
+                let mut sized: Vec<Variant> = expanded
+                    .into_iter()
+                    .map(|mut v| {
+                        v.live = true;
+                        v
+                    })
+                    .collect();
+                sized.extend(variants.into_iter().skip(1));
+                variants = sized;
+            }
+        }
         if variants.is_empty() {
             return Err(ResolveError::unavailable(
                 link,
@@ -686,7 +736,7 @@ mod tests {
     }
 
     #[test]
-    fn files_are_sized_from_the_hls_renditions_and_phantom_ones_dropped() {
+    fn files_are_sized_from_the_hls_renditions_and_kept_without_one() {
         let item = serde_json::json!({
             "duration": 179,
             "mbr": [
@@ -752,7 +802,8 @@ mod tests {
         assert!(hls.iter().all(|v| v.height.is_some() && v.bitrate.is_some()));
         let files: Vec<&Variant> = resolved.variants.iter().filter(|v| v.kind == VariantKind::File).collect();
         assert!(!files.is_empty());
-        assert!(files.iter().all(|v| v.container == Some(Container::Mp4) && v.height.is_some()));
+        assert!(files.iter().all(|v| v.container == Some(Container::Mp4)));
+        assert!(files.iter().any(|v| v.height.is_some()));
         assert!(files.iter().all(|v| v.url.as_str().starts_with("https://balancer-vod.1tv.ru/")));
     }
 

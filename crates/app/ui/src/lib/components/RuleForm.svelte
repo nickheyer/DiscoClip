@@ -38,7 +38,7 @@
 	const search = $derived(directory ? memberSearch(directory) : null);
 	const lookup = $derived(directory ? memberLookup(directory) : null);
 
-	// Size and duration are entered in human units and stored as the API wants them.
+	// Size and duration are entered in human units and stored as the API wants them
 	let sizeUnit = $state<'MB' | 'GB'>(value.max_source_bytes && value.max_source_bytes >= 1024 ** 3 ? 'GB' : 'MB');
 	let sizeText = $state(
 		value.max_source_bytes == null
@@ -240,7 +240,8 @@
 					type="number"
 					min="0"
 					step="any"
-					bind:value={sizeText}
+					value={sizeText}
+					oninput={(e) => (sizeText = (e.currentTarget as HTMLInputElement).value)}
 					placeholder="No limit"
 					{disabled}
 					aria-invalid={sizeProblem ? 'true' : undefined}
@@ -266,7 +267,8 @@
 					type="number"
 					min="0"
 					step="any"
-					bind:value={durationText}
+					value={durationText}
+					oninput={(e) => (durationText = (e.currentTarget as HTMLInputElement).value)}
 					placeholder="No limit"
 					{disabled}
 					aria-invalid={durationProblem ? 'true' : undefined}
@@ -288,7 +290,8 @@
 					type="number"
 					min="0"
 					step="1"
-					bind:value={heightText}
+					value={heightText}
+					oninput={(e) => (heightText = (e.currentTarget as HTMLInputElement).value)}
 					placeholder="Server limit"
 					{disabled}
 					aria-invalid={heightProblem ? 'true' : undefined}

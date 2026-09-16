@@ -65,10 +65,13 @@ pub fn parse_link(url: &Url) -> Option<Link> {
                 .filter(|s| is_id(s))
                 .map(String::from)
         })?;
+    // Every domain but bytehighway.net serves the manifests from cloudflarestream.com.
     let host = if host.starts_with("customer-") {
-        host
-    } else {
+        host.replace("videodelivery.net", "cloudflarestream.com")
+    } else if *domain == "bytehighway.net" {
         domain.to_string()
+    } else {
+        "cloudflarestream.com".to_string()
     };
     Some(Link { host, id })
 }
@@ -167,6 +170,10 @@ impl CloudflareStreamResolver {
 
 #[async_trait]
 impl Resolver for CloudflareStreamResolver {
+    fn embeds_in(&self, page: &Page) -> Vec<Url> {
+        embeds_in(page)
+    }
+
     fn id(&self) -> &'static str {
         PLATFORM
     }
@@ -203,16 +210,55 @@ impl Resolver for CloudflareStreamResolver {
 
     async fn resolve(&self, url: &Url) -> Result<Resolution, ResolveError> {
         let link = parse_link(url).ok_or_else(|| ResolveError::NotFound(url.clone()))?;
+        // Either manifest may be withheld while the other serves.
         let master = link.resource("manifest/video.m3u8");
-        let expanded = hls::expand(&self.http, &master, PLATFORM, BROWSER_UA, &[])
-            .await
-            .map_err(|e| e.at(url))?;
-        let mut variants = expanded.variants;
-        let mut dash = Variant::new(link.resource("manifest/video.mpd"), VariantKind::Dash);
-        dash.duration = expanded.duration;
-        dash.live = expanded.live;
-        dash.format_id = Some("dash".into());
-        variants.push(dash);
+        let (mut variants, mut subtitles, mut duration, mut live, mut failure) =
+            match hls::expand(&self.http, &master, PLATFORM, BROWSER_UA, &[]).await {
+                Ok(expanded) => (
+                    expanded.variants,
+                    expanded.subtitles,
+                    expanded.duration,
+                    expanded.live,
+                    None,
+                ),
+                Err(error) => (Vec::new(), Vec::new(), None, false, Some(error.at(url))),
+            };
+        match super::dash::expand(&self.http, &link.resource("manifest/video.mpd"), PLATFORM, BROWSER_UA, &[]).await {
+            Ok(expanded) => {
+                duration = duration.or(expanded.duration);
+                live |= expanded.live;
+                for mut representation in expanded.variants {
+                    representation.format_id = Some(match &representation.label {
+                        Some(label) => format!("dash-{label}"),
+                        None => "dash".to_string(),
+                    });
+                    variants.push(representation);
+                }
+                for track in expanded.subtitles {
+                    if !subtitles.iter().any(|t| t.url == track.url) {
+                        subtitles.push(track);
+                    }
+                }
+            }
+            Err(error) => {
+                if variants.is_empty() {
+                    failure = Some(error.at(url));
+                } else {
+                    tracing::debug!(%url, "Cloudflare Stream DASH manifest not read: {error}");
+                }
+            }
+        }
+        if variants.is_empty()
+            && let Some(error) = failure
+        {
+            return Err(error);
+        }
+        let expanded = hls::Expanded {
+            variants: Vec::new(),
+            subtitles,
+            duration,
+            live,
+        };
         let download = link.resource("downloads/default.mp4");
         let probed = probe_file(&self.http, &download, PLATFORM, BROWSER_UA, &[]).await?;
         if probed.status.is_success() {
@@ -228,6 +274,7 @@ impl Resolver for CloudflareStreamResolver {
         }
         let mut resolved = Resolved::new(PLATFORM);
         resolved.id = Some(video_id(&link.id));
+        resolved.title = Some(video_id(&link.id));
         resolved.duration = expanded.duration;
         resolved.live = expanded.live;
         resolved.thumbnail = Some(link.resource("thumbnails/thumbnail.jpg"));
@@ -282,13 +329,13 @@ mod tests {
         );
         assert_eq!(
             link("https://iframe.videodelivery.net/81d80727f3022488598f68d323c1ad5e"),
-            on("videodelivery.net", "81d80727f3022488598f68d323c1ad5e")
+            on("cloudflarestream.com", "81d80727f3022488598f68d323c1ad5e")
         );
         assert_eq!(
             link(
                 "https://embed.videodelivery.net/embed/r4xu.fla9.latest.js?video=81d80727f3022488598f68d323c1ad5e"
             ),
-            on("videodelivery.net", "81d80727f3022488598f68d323c1ad5e")
+            on("cloudflarestream.com", "81d80727f3022488598f68d323c1ad5e")
         );
         let token = "eyJhbGciOiJSUzI1NiIsImtpZCI6ImsxIn0.eyJzdWIiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsImtpZCI6ImsxIn0.c2lnbmF0dXJl";
         assert_eq!(
@@ -356,7 +403,7 @@ mod tests {
         );
         assert_eq!(
             resolved.variants.len(),
-            6,
+            10,
             "{:?}",
             resolved
                 .variants
@@ -407,7 +454,7 @@ mod tests {
             Some("https://watch.cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957")
         );
         let error = resolver
-            .resolve(&Url::parse("https://customer-f33zs165nr7gyfy4.cloudflarestream.com/00000000000000000000000000000000/iframe").unwrap())
+            .resolve(&Url::parse("https://watch.cloudflarestream.com/00000000000000000000000000000000").unwrap())
             .await
             .unwrap_err();
         assert!(matches!(error, ResolveError::NotFound(_)), "{error}");

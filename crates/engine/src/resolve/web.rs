@@ -4,6 +4,7 @@
 //! as short links are, is handed back to the registry so the host's own resolver takes it.
 
 use std::collections::HashSet;
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -17,10 +18,6 @@ use super::{
     Variant, VariantKind, clean_title, essence, hls, is_dash_type, is_hls_type, is_ism_type,
     path_extension, status_error, timestamp_hint,
 };
-use super::{
-    brightcove, bunny, cloudflare_stream, jwplayer, kaltura, mux, streamable, twitch, vidyard,
-    vimeo, wistia, youtube,
-};
 use crate::http::{BROWSER_UA, EMBED_BOT_UA, Http, WEB_PLATFORM};
 use crate::media::Container;
 
@@ -28,11 +25,13 @@ const MAX_CANDIDATES: usize = 8;
 
 pub struct WebResolver {
     http: Http,
+    /// The resolvers whose players a page may embed; a page carrying one is handed to it.
+    players: Vec<Arc<dyn Resolver>>,
 }
 
 impl WebResolver {
-    pub fn new(http: Http) -> Self {
-        Self { http }
+    pub fn new(http: Http, players: Vec<Arc<dyn Resolver>>) -> Self {
+        Self { http, players }
     }
 }
 
@@ -111,23 +110,13 @@ pub struct PageMedia {
     pub embeds: Vec<Url>,
 }
 
-fn known_player(url: &Url) -> bool {
-    jwplayer::parse_link(url).is_some()
-        || brightcove::parse_link(url).is_some()
-        || wistia::parse_link(url).is_some()
-        || kaltura::parse_link(url).is_some()
-        || vidyard::parse_link(url).is_some()
-        || cloudflare_stream::parse_link(url).is_some()
-        || mux::parse_link(url).is_some()
-        || bunny::parse_link(url).is_some()
-        || youtube::parse_link(url).is_some()
-        || vimeo::parse_link(url).is_some()
-        || twitch::parse_link(url).is_some()
-        || streamable::video_id(url).is_some()
+/// Whether one of `players` takes `url`.
+fn known_player(players: &[Arc<dyn Resolver>], url: &Url) -> bool {
+    players.iter().any(|p| p.matches(url))
 }
 
 /// Player links in frames, scripts, metadata and each provider's inline markup.
-fn embedded_players(page: &Page) -> Vec<Url> {
+fn embedded_players(page: &Page, players: &[Arc<dyn Resolver>]) -> Vec<Url> {
     let mut links = page.iframes();
     for element in page
         .document()
@@ -163,21 +152,18 @@ fn embedded_players(page: &Page) -> Vec<Url> {
             links.push(url);
         }
     }
-    links.extend(brightcove::embeds_in(page));
-    links.extend(wistia::embeds_in(page));
-    links.extend(kaltura::embeds_in(page));
-    links.extend(vidyard::embeds_in(page));
-    links.extend(cloudflare_stream::embeds_in(page));
-    links.extend(mux::embeds_in(page));
+    for player in players {
+        links.extend(player.embeds_in(page));
+    }
     let mut seen = HashSet::new();
     links
         .into_iter()
-        .filter(|u| u != page.url() && known_player(u) && seen.insert(u.clone()))
+        .filter(|u| u != page.url() && known_player(players, u) && seen.insert(u.clone()))
         .collect()
 }
 
-/// Everything a page says about its video.
-pub fn extract(html: &str, base: &Url) -> PageMedia {
+/// Everything a page says about its video, with the players among `players` it embeds.
+pub fn extract(html: &str, base: &Url, players: &[Arc<dyn Resolver>]) -> PageMedia {
     let page = Page::parse(html, base);
     let mut urls: Vec<String> = Vec::new();
     for key in [
@@ -260,7 +246,7 @@ pub fn extract(html: &str, base: &Url) -> PageMedia {
         uploader,
         candidates,
         iframes: page.iframes(),
-        embeds: embedded_players(&page),
+        embeds: embedded_players(&page, players),
     }
 }
 
@@ -385,10 +371,10 @@ impl WebResolver {
                 }
                 let (body, _) = response.bytes_up_to(MAX_PAGE).await?;
                 let html = String::from_utf8_lossy(&body).into_owned();
-                let media = extract(&html, &final_url);
+                let media = extract(&html, &final_url, &self.players);
                 let mut variants = Vec::new();
                 for candidate in &media.candidates {
-                    if candidate.url != final_url && known_player(&candidate.url) {
+                    if candidate.url != final_url && known_player(&self.players, &candidate.url) {
                         return Err(ResolveError::Redirect(candidate.url.clone()));
                     }
                     if let Some(found) = self.probe_candidate(candidate).await {
@@ -478,7 +464,20 @@ mod tests {
     use crate::http::transport::{
         Exchange, Fixture, RecordedBody, RecordedRequest, RecordedResponse,
     };
-    use crate::resolve::ResolverRegistry;
+    use crate::resolve::{
+        ResolverRegistry, brightcove, builtin_resolvers, bunny, cloudflare_stream, jwplayer,
+        kaltura, mux, vidyard, wistia,
+    };
+
+    /// Every resolver of the crate, for the players a page may embed.
+    fn players(http: &Http) -> Vec<Arc<dyn Resolver>> {
+        builtin_resolvers(http, Arc::new(Vec::<String>::new()))
+    }
+
+    fn web(http: Http) -> WebResolver {
+        let players = players(&http);
+        WebResolver::new(http, players)
+    }
 
     #[test]
     fn parses_time_and_day_durations() {
@@ -604,19 +603,21 @@ mod tests {
                 .exchanges
                 .push(exchange(url.as_str(), "text/html", &page, 200, &[]));
             let http = Http::replay(fixture);
-            let registry = ResolverRegistry::new(vec![
-                Box::new(jwplayer::JwplayerResolver::new(http.clone())),
-                Box::new(brightcove::BrightcoveResolver::new(http.clone())),
-                Box::new(wistia::WistiaResolver::new(http.clone())),
-                Box::new(kaltura::KalturaResolver::new(http.clone())),
-                Box::new(vidyard::VidyardResolver::new(http.clone())),
-                Box::new(cloudflare_stream::CloudflareStreamResolver::new(
+            let players: Vec<Arc<dyn Resolver>> = vec![
+                Arc::new(jwplayer::JwplayerResolver::new(http.clone())),
+                Arc::new(brightcove::BrightcoveResolver::new(http.clone())),
+                Arc::new(wistia::WistiaResolver::new(http.clone())),
+                Arc::new(kaltura::KalturaResolver::new(http.clone())),
+                Arc::new(vidyard::VidyardResolver::new(http.clone())),
+                Arc::new(cloudflare_stream::CloudflareStreamResolver::new(
                     http.clone(),
                 )),
-                Box::new(mux::MuxResolver::new(http.clone())),
-                Box::new(bunny::BunnyResolver::new(http.clone())),
-                Box::new(WebResolver::new(http)),
-            ]);
+                Arc::new(mux::MuxResolver::new(http.clone())),
+                Arc::new(bunny::BunnyResolver::new(http.clone())),
+            ];
+            let mut list = players.clone();
+            list.push(Arc::new(WebResolver::new(http, players)));
+            let registry = ResolverRegistry::new(list);
             let media = registry
                 .resolve(&url)
                 .await
@@ -653,7 +654,7 @@ mod tests {
                 200,
                 &[],
             ));
-            let error = WebResolver::new(Http::replay(fixture))
+            let error = web(Http::replay(fixture))
                 .resolve(&Url::parse("https://site.test/article").unwrap())
                 .await
                 .unwrap_err();
@@ -668,6 +669,7 @@ mod tests {
     fn metadata_players_and_brightcove_playlists_are_detected() {
         let url = Url::parse("https://site.test/article").unwrap();
         let target = "https://www.youtube.com/embed/BaW_jenozKc";
+        let players = players(&Http::replay(Fixture::new("web", None)));
         for html in [
             format!(r#"<meta name="twitter:player" content="{target}">"#),
             format!(
@@ -675,13 +677,13 @@ mod tests {
             ),
         ] {
             assert_eq!(
-                extract(&html, &url).embeds,
+                extract(&html, &url, &players).embeds,
                 vec![Url::parse(target).unwrap()]
             );
         }
         let html =
             r#"<video data-account="1752604059001" data-playlist-id="5743160747001"></video>"#;
-        let embeds = extract(html, &url).embeds;
+        let embeds = extract(html, &url, &players).embeds;
         assert_eq!(embeds.len(), 1);
         assert!(matches!(
             brightcove::parse_link(&embeds[0]).unwrap().content,
@@ -706,7 +708,7 @@ mod tests {
             200,
             &[],
         ));
-        let resolver = WebResolver::new(Http::replay(fixture));
+        let resolver = web(Http::replay(fixture));
         let error = resolver
             .resolve(&Url::parse("https://t.co/abc").unwrap())
             .await
@@ -735,7 +737,7 @@ mod tests {
             206,
             &[("content-range", "bytes 0-0/5000")],
         ));
-        let resolver = WebResolver::new(Http::replay(fixture));
+        let resolver = web(Http::replay(fixture));
         let resolved = resolver
             .resolve(&Url::parse("https://site.test/watch?t=5").unwrap())
             .await
@@ -763,7 +765,7 @@ mod tests {
             200,
             &[],
         ));
-        let resolver = WebResolver::new(Http::replay(fixture));
+        let resolver = web(Http::replay(fixture));
         let error = resolver
             .resolve(&Url::parse("https://blog.test/post").unwrap())
             .await
@@ -786,7 +788,7 @@ mod tests {
         fixture
             .exchanges
             .push(exchange("https://cdn.test/gone", "text/html", "", 404, &[]));
-        let resolver = WebResolver::new(Http::replay(fixture));
+        let resolver = web(Http::replay(fixture));
         let resolved = resolver
             .resolve(&Url::parse("https://cdn.test/My%20Clip.webm").unwrap())
             .await

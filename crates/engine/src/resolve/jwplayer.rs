@@ -15,7 +15,7 @@ use url::Url;
 use super::{
     MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved, Resolver,
     SessionSupport, SubtitleFormat, SubtitleTrack, Variant, VariantKind, clean_title, essence,
-    fetch, is_dash_type, is_hls_type,
+    fetch, is_dash_type, is_hls_type, manifests,
 };
 use crate::http::{BROWSER_UA, Http};
 use crate::media::{AudioCodec, Container, VideoCodec};
@@ -204,6 +204,67 @@ fn resolved_of(item: &Value) -> Resolved {
     resolved
 }
 
+
+/// The delivery API's answer for `url`, read as `platform`; its statuses become the
+/// resolver errors they mean for `origin`.
+async fn api_json(http: &Http, platform: &str, url: Url, origin: &Url) -> Result<Value, ResolveError> {
+    let fetched = fetch(http, &url, platform, BROWSER_UA, &[], MAX_PAGE).await?;
+    match fetched.status.as_u16() {
+        200..=299 => fetched.json(origin),
+        404 | 410 => Err(ResolveError::NotFound(origin.clone())),
+        403 => Err(ResolveError::unavailable(
+            origin,
+            "the media is not published for playback here",
+        )),
+        429 => Err(ResolveError::RateLimited(origin.clone())),
+        status => Err(ResolveError::unavailable(
+            origin,
+            format!("the delivery API answered HTTP {status}"),
+        )),
+    }
+}
+
+/// The media `id` names, read from the delivery API as `platform`: its title, poster and
+/// time, every MP4 and WebM rendition, the streams of its HLS and DASH manifests, and its
+/// caption tracks. The result is attributed to `platform`, with `origin` as its page.
+pub async fn media(
+    http: &Http,
+    platform: &str,
+    id: &str,
+    origin: &Url,
+) -> Result<Resolved, ResolveError> {
+    let api = Url::parse(&format!("{MEDIA_API}{id}")).expect("valid");
+    let feed = api_json(http, platform, api, origin).await?;
+    let item = feed["playlist"]
+        .as_array()
+        .and_then(|items| {
+            items
+                .iter()
+                .find(|i| i["mediaid"].as_str() == Some(id))
+                .or_else(|| items.first())
+        })
+        .ok_or_else(|| ResolveError::NotFound(origin.clone()))?;
+    let mut resolved = resolved_of(item);
+    resolved.resolver = platform.to_string();
+    if resolved.variants.is_empty() {
+        return Err(ResolveError::unavailable(
+            origin,
+            "the media has no playable sources",
+        ));
+    }
+    if resolved.title.is_none() {
+        resolved.title = feed["title"].as_str().and_then(clean_title);
+    }
+    if resolved.webpage_url.is_none() || platform != PLATFORM {
+        resolved.webpage_url = Some(origin.clone());
+    }
+    let duration = resolved.duration;
+    let variants = std::mem::take(&mut resolved.variants);
+    resolved.variants =
+        manifests::expand_all(http, platform, variants, &mut resolved.subtitles, duration).await;
+    Ok(resolved)
+}
+
 pub struct JwplayerResolver {
     http: Http,
 }
@@ -213,22 +274,6 @@ impl JwplayerResolver {
         Self { http }
     }
 
-    async fn api(&self, url: Url, origin: &Url) -> Result<Value, ResolveError> {
-        let fetched = fetch(&self.http, &url, PLATFORM, BROWSER_UA, &[], MAX_PAGE).await?;
-        match fetched.status.as_u16() {
-            200..=299 => fetched.json(origin),
-            404 | 410 => Err(ResolveError::NotFound(origin.clone())),
-            403 => Err(ResolveError::unavailable(
-                origin,
-                "the media is not published for playback here",
-            )),
-            429 => Err(ResolveError::RateLimited(origin.clone())),
-            status => Err(ResolveError::unavailable(
-                origin,
-                format!("the delivery API answered HTTP {status}"),
-            )),
-        }
-    }
 }
 
 #[async_trait]
@@ -265,36 +310,10 @@ impl Resolver for JwplayerResolver {
 
     async fn resolve(&self, url: &Url) -> Result<Resolution, ResolveError> {
         match parse_link(url).ok_or_else(|| ResolveError::NotFound(url.clone()))? {
-            Link::Media(id) => {
-                let api = Url::parse(&format!("{MEDIA_API}{id}")).expect("valid");
-                let feed = self.api(api, url).await?;
-                let item = feed["playlist"]
-                    .as_array()
-                    .and_then(|items| {
-                        items
-                            .iter()
-                            .find(|i| i["mediaid"].as_str() == Some(&id))
-                            .or_else(|| items.first())
-                    })
-                    .ok_or_else(|| ResolveError::NotFound(url.clone()))?;
-                let mut resolved = resolved_of(item);
-                if resolved.variants.is_empty() {
-                    return Err(ResolveError::unavailable(
-                        url,
-                        "the media has no playable sources",
-                    ));
-                }
-                if resolved.title.is_none() {
-                    resolved.title = feed["title"].as_str().and_then(clean_title);
-                }
-                if resolved.webpage_url.is_none() {
-                    resolved.webpage_url = Some(url.clone());
-                }
-                Ok(Resolution::from(resolved))
-            }
+            Link::Media(id) => Ok(Resolution::from(media(&self.http, PLATFORM, &id, url).await?)),
             Link::Playlist(id) => {
                 let api = Url::parse(&format!("{PLAYLIST_API}{id}")).expect("valid");
-                let feed = self.api(api, url).await?;
+                let feed = api_json(&self.http, PLATFORM, api, url).await?;
                 let entries: Vec<PlaylistEntry> = feed["playlist"]
                     .as_array()
                     .into_iter()

@@ -53,8 +53,22 @@ pub fn parse_link(url: &Url) -> Option<Link> {
     None
 }
 
+const AUDIO_EXTENSIONS: &[&str] = &["mp3", "ogg", "oga", "opus", "flac", "m4a", "wav", "aac", "wma", "aiff"];
+
+/// The container a file name's extension names: a video container, or an audio one.
 fn media_container(name: &str) -> Option<Container> {
-    name.rsplit('.').next().and_then(Container::from_extension)
+    let ext = name.rsplit('.').next()?.to_ascii_lowercase();
+    Container::from_extension(&ext).or_else(|| {
+        AUDIO_EXTENSIONS
+            .contains(&ext.as_str())
+            .then(|| Container::Other(ext.clone()))
+    })
+}
+
+fn is_audio_name(name: &str) -> bool {
+    name.rsplit('.')
+        .next()
+        .is_some_and(|ext| AUDIO_EXTENSIONS.contains(&ext.to_ascii_lowercase().as_str()))
 }
 
 fn parse_created(text: &str) -> Option<Timestamp> {
@@ -79,7 +93,7 @@ impl CatboxResolver {
             .decode_utf8_lossy()
             .into_owned();
         let container = media_container(&name).ok_or_else(|| {
-            ResolveError::unavailable(origin, format!("{name} is not a video file"))
+            ResolveError::unavailable(origin, format!("{name} is not a video or audio file"))
         })?;
         let probed = probe_file(&self.http, file, PLATFORM, BROWSER_UA, &[]).await?;
         match probed.status.as_u16() {
@@ -100,7 +114,17 @@ impl CatboxResolver {
         }
         let mut v = Variant::new(file.clone(), VariantKind::File);
         v.container = Some(container.clone());
-        if container == Container::Mp4 {
+        if is_audio_name(&name) {
+            v.audio_only = true;
+            v.audio = Some(match name.rsplit('.').next().map(|e| e.to_ascii_lowercase()).as_deref() {
+                Some("mp3") => AudioCodec::Mp3,
+                Some("m4a") | Some("aac") => AudioCodec::Aac,
+                Some("ogg") | Some("oga") => AudioCodec::Vorbis,
+                Some("opus") => AudioCodec::Opus,
+                Some(other) => AudioCodec::Other(other.to_string()),
+                None => AudioCodec::Other("audio".to_string()),
+            });
+        } else if container == Container::Mp4 {
             v.video = Some(VideoCodec::H264);
             v.audio = Some(AudioCodec::Aac);
         }
@@ -198,9 +222,9 @@ impl Resolver for CatboxResolver {
         Platform {
             id: PLATFORM,
             name: "Catbox",
-            hosts: &["catbox.moe", "files.catbox.moe", "litter.catbox.moe"],
-            features: &["files", "litterbox files", "albums"],
-            formats: &["mp4", "webm", "mkv", "mov", "gif"],
+            hosts: &["catbox.moe", "files.catbox.moe", "de.catbox.moe", "litter.catbox.moe", "litterbox.catbox.moe"],
+            features: &["files", "litterbox files", "albums", "audio"],
+            formats: &["mp4", "webm", "mkv", "mov", "gif", "mp3", "ogg", "flac"],
             session: SessionSupport::None,
             examples: &[
                 "https://files.catbox.moe/safuz8.mp4",

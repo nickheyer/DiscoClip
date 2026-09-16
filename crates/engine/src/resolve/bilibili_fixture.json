@@ -1,0 +1,1254 @@
+{
+  "name": "bilibili",
+  "recorded_at": "2026-09-16T03:36:03.57901918Z",
+  "url": "https://www.bilibili.com/audio/au1003142",
+  "notes": "Bilibili: a song, a bangumi by media id, a course episode, a dynamic post sharing a video, a case-insensitive av link and an offline live room",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://www.bilibili.com/audio/music-service-c/web/url?sid=1003142&privilege=2&quality=2",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ],
+          [
+            "referer",
+            "https://www.bilibili.com/"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://www.bilibili.com/audio/music-service-c/web/url?sid=1003142&privilege=2&quality=2",
+        "headers": [
+          [
+            "date",
+            "Wed, 16 Sep 2026 03:36:03 GMT"
+          ],
+          [
+            "content-type",
+            "application/json; charset=utf-8"
+          ],
+          [
+            "bili-status-code",
+            "0"
+          ],
+          [
+            "bili-trace-id",
+            "5839964df56aaa0e"
+          ],
+          [
+            "cpu_usage",
+            "108"
+          ],
+          [
+            "x-bili-trace-id",
+            "28084dcd5bf1261a5839964df56aaa0e"
+          ],
+          [
+            "vary",
+            "Origin,Accept-Encoding"
+          ],
+          [
+            "expires",
+            "Wed, 16 Sep 2026 03:36:02 GMT"
+          ],
+          [
+            "cache-control",
+            "no-cache"
+          ],
+          [
+            "x-cache-webcdn",
+            "MISS from blzone02"
+          ],
+          [
+            "x-cache-time",
+            "0"
+          ],
+          [
+            "x-save-date",
+            "Wed, 16 Sep 2026 03:36:03 GMT"
+          ]
+        ],
+        "body": {
+          "text": "{\"code\":0,\"data\":{\"sid\":1003142,\"title\":\"\",\"cover\":\"\",\"type\":1,\"info\":\"\",\"timeout\":10800,\"size\":4428595,\"cdns\":[\"https://upos-sz-mirrorcos.bilivideo.com/ugaxcode/m190803ws1km1tod6301g71oln0pwltu-192k.m4a?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=\\u0026uipk=5\\u0026nbs=1\\u0026deadline=1789536963\\u0026gen=playurlv2\\u0026os=cosbv\\u0026oi=410064093\\u0026trid=9d4f18652eae450a9592d1dfb01eb160B\\u0026mid=0\\u0026platform=pc\\u0026og=cos\\u0026upsig=aec75146bd12eebc1dcae3632a71cc7e\\u0026uparams=e,uipk,nbs,deadline,gen,os,oi,trid,mid,platform,og\\u0026bvc=vod\\u0026nettype=0\\u0026orderid=0,1\\u0026logo=00000000\"],\"qualities\":null},\"message\":\"OK\",\"msg\":\"success\"}"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://www.bilibili.com/audio/music-service-c/web/song/info?sid=1003142",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ],
+          [
+            "referer",
+            "https://www.bilibili.com/"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://www.bilibili.com/audio/music-service-c/web/song/info?sid=1003142",
+        "headers": [
+          [
+            "date",
+            "Wed, 16 Sep 2026 03:36:03 GMT"
+          ],
+          [
+            "content-type",
+            "application/json; charset=utf-8"
+          ],
+          [
+            "bili-status-code",
+            "0"
+          ],
+          [
+            "bili-trace-id",
+            "3f835a7af56aaa0e"
+          ],
+          [
+            "cpu_usage",
+            "122"
+          ],
+          [
+            "x-bili-trace-id",
+            "3fa7e7da7974fa2e3f835a7af56aaa0e"
+          ],
+          [
+            "vary",
+            "Origin,Accept-Encoding"
+          ],
+          [
+            "expires",
+            "Wed, 16 Sep 2026 03:36:02 GMT"
+          ],
+          [
+            "cache-control",
+            "no-cache"
+          ],
+          [
+            "x-cache-webcdn",
+            "MISS from blzone02"
+          ],
+          [
+            "x-cache-time",
+            "0"
+          ],
+          [
+            "x-save-date",
+            "Wed, 16 Sep 2026 03:36:04 GMT"
+          ]
+        ],
+        "body": {
+          "text": "{\"code\":0,\"data\":{\"id\":1003142,\"uid\":13943828,\"uname\":\"十六夜tsukimiつきみぐ\",\"author\":\"tsukimi\",\"title\":\"【tsukimi】YELLOW / 神山羊\",\"cover\":\"http://i0.hdslb.com/bfs/music/59444d4279c5aef3e3303a84560b83974dd1a003.jpg\",\"intro\":\"YELLOW的mp3版！\",\"lyric\":\"http://i0.hdslb.com/bfs/music/15648361161003142.lrc\",\"crtype\":1,\"duration\":183,\"passtime\":1564836614,\"curtime\":1789529764,\"aid\":61970612,\"bvid\":\"BV1Yt411u7UD\",\"cid\":107743870,\"msid\":0,\"attr\":0,\"limit\":0,\"activityId\":0,\"limitdesc\":\"\",\"coin_num\":370,\"ctime\":1564836116000,\"statistic\":{\"sid\":1003142,\"play\":274962,\"collect\":3428,\"comment\":52,\"share\":126},\"vipInfo\":{\"type\":1,\"status\":0,\"due_date\":1648137600000,\"vip_pay_type\":0},\"collectIds\":[],\"is_cooper\":0},\"message\":\"OK\",\"msg\":\"success\"}"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.bilibili.com/x/frontend/finger/spi",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://api.bilibili.com/x/frontend/finger/spi",
+        "headers": [
+          [
+            "date",
+            "Wed, 16 Sep 2026 03:36:04 GMT"
+          ],
+          [
+            "content-type",
+            "application/json; charset=utf-8"
+          ],
+          [
+            "vary",
+            "Origin"
+          ],
+          [
+            "expires",
+            "Wed, 16 Sep 2026 03:36:03 GMT"
+          ],
+          [
+            "cache-control",
+            "no-cache"
+          ],
+          [
+            "x-cache-webcdn",
+            "BYPASS from blzone02"
+          ]
+        ],
+        "body": {
+          "text": "{\"code\":0,\"data\":{\"b_3\":\"23C901B0-0C48-0426-B576-455A31A0C16A64565infoc\",\"b_4\":\"BD5C5348-C4A7-8088-DACD-C34E9F302B8664565-026091611-uK2EPD2ONeGwdbSwWaoZ3w==\"},\"message\":\"ok\"}"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.bilibili.com/pgc/review/user?media_id=28229233",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ],
+          [
+            "referer",
+            "https://www.bilibili.com/"
+          ],
+          [
+            "origin",
+            "https://www.bilibili.com"
+          ],
+          [
+            "cookie",
+            "<redacted>"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://api.bilibili.com/pgc/review/user?media_id=28229233",
+        "headers": [
+          [
+            "date",
+            "Wed, 16 Sep 2026 03:36:04 GMT"
+          ],
+          [
+            "content-type",
+            "application/json"
+          ],
+          [
+            "access-control-allow-credentials",
+            "true"
+          ],
+          [
+            "access-control-allow-headers",
+            "origin,no-cache,x-requested-with,if-modified-since,pragma,last-modified,cache-control,expires,content-type,access-control-allow-credentials,dnt,x-customheader,keep-alive,user-agent,x-hassan-ip,x1-bilispy-color,apptype,deviceid,devicetype,network,refer,currtime,failcount,totaltime,trail,content-encoding,x-cache-webcdn,x-bilibili-key-real-ip,x-event-traceid,x-risk-header,x-backend-bili-real-ip"
+          ],
+          [
+            "access-control-allow-methods",
+            "POST,PUT,OPTIONS,GET,DELETE"
+          ],
+          [
+            "access-control-expose-headers",
+            "origin,no-cache,x-requested-with,if-modified-since,pragma,last-modified,cache-control,expires,content-type,access-control-allow-credentials,dnt,x-customheader,keep-alive,user-agent,x-client-ip,x-slb-ip,x-upstream-ip,x-app-name,x-hassan-ip,x-bilispy-color,x-bili-gaia-vvoucher,x-bili-trace-id,x-bili-gaia-param"
+          ],
+          [
+            "access-control-max-age",
+            "60"
+          ],
+          [
+            "bili-status-code",
+            "0"
+          ],
+          [
+            "x-bili-trace-id",
+            "3ac3d04f370222d971f99ce1376aaa0e"
+          ],
+          [
+            "cross-origin-resource-policy",
+            "cross-origin"
+          ],
+          [
+            "access-control-allow-origin",
+            "https://www.bilibili.com"
+          ],
+          [
+            "expires",
+            "Wed, 16 Sep 2026 03:36:03 GMT"
+          ],
+          [
+            "cache-control",
+            "no-cache"
+          ],
+          [
+            "x-cache-webcdn",
+            "BYPASS from blzone02"
+          ]
+        ],
+        "body": {
+          "text": "{\"code\":0,\"message\":\"success\",\"result\":{\"media\":{\"areas\":[{\"id\":2,\"name\":\"日本\"}],\"cover\":\"http://i0.hdslb.com/bfs/bangumi/image/f2425cbdb07cc93bd0d3ba1c0099bfe78f5dc58a.png\",\"horizontal_picture\":\"http://i0.hdslb.com/bfs/bangumi/image/f2425cbdb07cc93bd0d3ba1c0099bfe78f5dc58a.png\",\"media_id\":28229233,\"new_ep\":{\"id\":338299,\"index\":\"13\",\"index_show\":\"全13话\"},\"rating\":{\"count\":125813,\"score\":9.7},\"season_id\":33802,\"share_url\":\"https://www.bilibili.com/bangumi/media/md28229233\",\"title\":\"Re：从零开始的异世界生活 第二季 前半\",\"type\":1,\"type_name\":\"番剧\"}}}"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.bilibili.com/pgc/view/web/season?season_id=33802",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ],
+          [
+            "referer",
+            "https://www.bilibili.com/"
+          ],
+          [
+            "origin",
+            "https://www.bilibili.com"
+          ],
+          [
+            "cookie",
+            "<redacted>"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://api.bilibili.com/pgc/view/web/season?season_id=33802",
+        "headers": [
+          [
+            "date",
+            "Wed, 16 Sep 2026 03:36:05 GMT"
+          ],
+          [
+            "content-type",
+            "application/json"
+          ],
+          [
+            "access-control-allow-credentials",
+            "true"
+          ],
+          [
+            "access-control-allow-methods",
+            "GET,POST,PUT,DELETE"
+          ],
+          [
+            "access-control-allow-origin",
+            "https://www.bilibili.com"
+          ],
+          [
+            "bili-status-code",
+            "0"
+          ],
+          [
+            "vary",
+            "Origin"
+          ],
+          [
+            "x-bili-trace-id",
+            "42c1660228c83fda07331b365c6aaa0e"
+          ],
+          [
+            "access-control-allow-headers",
+            "origin,no-cache,x-requested-with,if-modified-since,pragma,last-modified,cache-control,expires,content-type,access-control-allow-credentials,dnt,x-customheader,keep-alive,user-agent,x-cache-webcdn,x-bilibili-key-real-ip,x-backend-bili-real-ip,x-risk-header,x-event-traceid"
+          ],
+          [
+            "cross-origin-resource-policy",
+            "cross-origin"
+          ],
+          [
+            "access-control-expose-headers",
+            "x-bili-gaia-vvoucher,x-bili-trace-id,x-bili-gaia-param"
+          ],
+          [
+            "x-cache-webcdn",
+            "BYPASS from blzone02"
+          ],
+          [
+            "expires",
+            "Wed, 16 Sep 2026 03:36:04 GMT"
+          ],
+          [
+            "cache-control",
+            "no-cache"
+          ]
+        ],
+        "body": {
+          "text": "{\"code\":0,\"message\":\"success\",\"result\":{\"activity\":{\"head_bg_url\":\"\",\"id\":0,\"title\":\"\"},\"actors\":\"菜月昴：小林裕介\\n爱蜜莉雅：高桥李依\\n帕克：内山夕实\\n雷姆：水濑祈\\n拉姆：村川梨衣\\n碧翠丝：新井里美\\n罗兹瓦尔·L·梅札斯：子安武人\\n嘉飞尔·汀泽尔：冈本信彦\\n奥托·苏文：天崎滉平\\n弗雷德莉卡·鲍尔曼：名冢佳织\\n佩特拉·雷蒂：高野麻里佳\\n琉兹·毕尔玛：田中爱美\\n艾尔莎·葛兰西尔特：能登麻美子\\n艾姬多娜：坂本真绫\",\"alias\":\"\",\"areas\":[{\"id\":2,\"name\":\"日本\"}],\"bkg_cover\":\"\",\"cover\":\"http://i0.hdslb.com/bfs/bangumi/image/f2425cbdb07cc93bd0d3ba1c0099bfe78f5dc58a.png\",\"delivery_fragment_video\":false,\"enable_vt\":false,\"episodes\":[{\"aid\":626339509,\"badge\":\"会员\",\"badge_info\":{\"bg_color\":\"#999999\",\"bg_color_night\":\"#727272\",\"text\":\"受限\"},\"badge_type\":0,\"bvid\":\"BV1mt4y1Q74Q\",\"cid\":210288241,\"cover\":\"http://i0.hdslb.com/bfs/archive/417d16c9ee4d496f69319987d0a26683e651c106.jpg\",\"dimension\":{\"height\":1080,\"rotate\":0,\"width\":1920},\"duration\":1721000,\"enable_vt\":false,\"ep_id\":330798,\"from\":\"bangumi\",\"id\":330798,\"is_view_hide\":false,\"link\":\"https://www.bilibili.com/bangumi/play/ep330798\",\"long_title\":\"各自的誓言\",\"pub_time\":1594220400,\"pv\":0,\"release_date\":\"\",\"rights\":{\"allow_dm\":0,\"allow_download\":0,\"area_limit\":1,\"cache_auth\":0},\"section_type\":0,\"share_copy\":\"《Re：从零开始的异世界生活 第二季 前半》第1话 各自的誓言\",\"share_url\":\"https://www.bilibili.com/bangumi/play/ep330798\",\"short_link\":\"https://b23.tv/ep330798\",\"showDrmLoginDialog\":false,\"show_title\":\"第1话 各自的誓言\",\"skip\":{\"ed\":{\"end\":0,\"start\":0},\"op\":{\"end\":0,\"start\":0}},\"status\":13,\"subtitle\":\"已观看1.7亿次\",\"title\":\"1\",\"vid\":\"\"},{\"aid\":498851287,\"badge\":\"会员\",\"badge_info\":{\"bg_color\":\"#999999\",\"bg_color_night\":\"#727272\",\"text\":\"受限\"},\"badge_type\":0,\"bvid\":\"BV1qK411H7QF\",\"cid\":212844570,\"cover\":\"http://i0.hdslb.com/bfs/archive/a9ddf39402010e0432b2c4033a790719752ec187.jpg\",\"dimension\":{\"height\":1080,\"rotate\":0,\"width\":1920},\"duration\":1541000,\"enable_vt\":false,\"ep_id\":330799,\"from\":\"bangumi\",\"id\":330799,\"is_view_hide\":false,\"link\":\"https://www.bilibili.com/bangumi/play/ep330799\",\"long_title\":\"下一个地方\",\"pub_time\":1594825201,\"pv\":0,\"release_date\":\"\",\"rights\":{\"allow_dm\":0,\"allow_download\":0,\"area_limit\":1,\"cache_auth\":0},\"section_type\":0,\"share_copy\":\"《Re：从零开始的异世界生活 第二季 前半》第2话 下一个地方\",\"share_url\":\"https://www.bilibili.com/bangumi/play/ep330799\",\"short_link\":\"https://b23.tv/ep330799\",\"showDrmLoginDialog\":false,\"show_title\":\"第2话 下一个地方\",\"skip\":{\"ed\":{\"end\":1540,\"start\":1450},\"op\":{\"end\":0,\"start\":0}},\"status\":13,\"subtitle\":\"已观看1.7亿次\",\"title\":\"2\",\"vid\":\"\"},{\"aid\":328997408,\"badge\":\"会员\",\"badge_info\":{\"bg_color\":\"#999999\",\"bg_color_night\":\"#727272\",\"text\":\"受限\"},\"badge_type\":0,\"bvid\":\"BV1ZA411a7R7\",\"cid\":215462618,\"cover\":\"http://i0.hdslb.com/bfs/archive/73f7a28a765fe1536295c2e6311b285743f54d9a.jpg\",\"dimension\":{\"height\":1080,\"rotate\":0,\"width\":1920},\"duration\":1531000,\"enable_vt\":false,\"ep_id\":330800,\"from\":\"bangumi\",\"id\":330800,\"is_view_hide\":false,\"link\":\"https://www.bilibili.com/bangumi/play/ep330800\",\"long_title\":\"久候多时的重逢\",\"pub_time\":1595430000,\"pv\":0,\"release_date\":\"\",\"rights\":{\"allow_dm\":0,\"allow_download\":0,\"area_limit\":1,\"cache_auth\":0},\"section_type\":0,\"share_copy\":\"《Re：从零开始的异世界生活 第二季 前半》第3话 久候多时的重逢\",\"share_url\":\"https://www.bilibili.com/bangumi/play/ep330800\",\"short_link\":\"https://b23.tv/ep330800\",\"showDrmLoginDialog\":false,\"show_title\":\"第3话 久候多时的重逢\",\"skip\":{\"ed\":{\"end\":0,\"start\":0},\"op\":{\"end\":0,\"start\":0}},\"status\":13,\"subtitle\":\"已观看1.7亿次\",\"title\":\"3\",\"vid\":\"\"},{\"aid\":371612893,\"badge\":\"会员\",\"badge_info\":{\"bg_color\":\"#999999\",\"bg_color_night\":\"#727272\",\"text\":\"受限\"},\"badge_type\":0,\"bvid\":\"BV1uZ4y1M7Ch\",\"cid\":218424302,\"cover\":\"http://i0.hdslb.com/bfs/archive/e3ace71c46ca99465273c95d4c9848aa6b84260b.jpg\",\"dimension\":{\"height\":1080,\"rotate\":0,\"width\":1920},\"duration\":1771000,\"enable_vt\":false,\"ep_id\":330801,\"from\":\"bangumi\",\"id\":330801,\"is_view_hide\":false,\"link\":\"https://www.bilibili.com/bangumi/play/ep330801\",\"long_title\":\"亲子\",\"pub_time\":1596034801,\"pv\":0,\"release_date\":\"\",\"rights\":{\"allow_dm\":0,\"allow_download\":0,\"area_limit\":1,\"cache_auth\":0},\"section_type\":0,\"share_copy\":\"《Re：从零开始的异世界生活 第二季 前半》第4话 亲子\",\"share_url\":\"https://www.bilibili.com/bangumi/play/ep330801\",\"short_link\":\"https://b23.tv/ep330801\",\"showDrmLoginDialog\":false,\"show_title\":\"第4话 亲子\",\"skip\":{\"ed\":{\"end\":1769,\"start\":1680},\"op\":{\"end\":0,\"start\":0}},\"status\":13,\"subtitle\":\"已观看1.7亿次\",\"title\":\"4\",\"vid\":\"\"},{\"aid\":969061597,\"badge\":\"会员\",\"badge_info\":{\"bg_color\":\"#999999\",\"bg_color_night\":\"#727272\",\"text\":\"受限\"},\"badge_type\":0,\"bvid\":\"BV1np4y1q7Ar\",\"cid\":223818557,\"cover\":\"http://i0.hdslb.com/bfs/archive/2f5bf4840747fc7c09932d2793e96a178cd05905.jpg\",\"dimension\":{\"height\":1080,\"rotate\":0,\"width\":1920},\"duration\":1570000,\"enable_vt\":false,\"ep_id\":330802,\"from\":\"bangumi\",\"id\":330802,\"is_view_hide\":false,\"link\":\"https://www.bilibili.com/bangumi/play/ep330802\",\"long_title\":\"踏出的一步\",\"pub_time\":1596639601,\"pv\":0,\"release_date\":\"\",\"rights\":{\"allow_dm\":0,\"allow_download\":0,\"area_limit\":1,\"cache_auth\":0},\"section_type\":0,\"share_copy\":\"《Re：从零开始的异世界生活 第二季 前半》第5话 踏出的一步\",\"share_url\":\"https://www.bilibili.com/bangumi/play/ep330802\",\"short_link\":\"https://b23.tv/ep330802\",\"showDrmLoginDialog\":false,\"show_title\":\"第5话 踏出的一步\",\"skip\":{\"ed\":{\"end\":0,\"start\":0},\"op\":{\"end\":100,\"start\":12}},\"status\":13,\"subtitle\":\"已观看1.7亿次\",\"title\":\"5\",\"vid\":\"\"},{\"aid\":201689081,\"badge\":\"会员\",\"badge_info\":{\"bg_color\":\"#999999\",\"bg_color_night\":\"#727272\",\"text\":\"受限\"},\"badge_type\":0,\"bvid\":\"BV1Yh411d7NS\",\"cid\":223703773,\"cover\":\"http://i0.hdslb.com/bfs/archive/cd0d822900707dda303bb689bf9fef0326b32d64.jpg\",\"dimension\":{\"height\":1080,\"rotate\":0,\"width\":1920},\"duration\":1571000,\"enable_vt\":false,\"ep_id\":330803,\"from\":\"bangumi\",\"id\":330803,\"is_view_hide\":false,\"link\":\"https://www.bilibili.com/bangumi/play/ep330803\",\"long_title\":\"少女的福音\",\"pub_time\":1597244400,\"pv\":0,\"release_date\":\"\",\"rights\":{\"allow_dm\":0,\"allow_download\":0,\"area_limit\":1,\"cache_auth\":0},\"section_type\":0,\"share_copy\":\"《Re：从零开始的异世界生活 第二季 前半》第6话 少女的福音\",\"share_url\":\"https://www.bilibili.com/bangumi/play/ep330803\",\"short_link\":\"https://b23.tv/ep330803\",\"showDrmLoginDialog\":false,\"show_title\":\"第6话 少女的福音\",\"skip\":{\"ed\":{\"end\":0,\"start\":0},\"op\":{\"end\":0,\"start\":0}},\"status\":13,\"subtitle\":\"已观看1.7亿次\",\"title\":\"6\",\"vid\":\"\"},{\"aid\":754286064,\"badge\":\"会员\",\"badge_info\":{\"bg_color\":\"#999999\",\"bg_color_night\":\"#727272\",\"text\":\"受限\"},\"badge_type\":0,\"bvid\":\"BV1Qk4y117tR\",\"cid\":226475114,\"cover\":\"http://i0.hdslb.com/bfs/archive/4f45c9ee92cbc19efef3912d761717be992be03b.jpg\",\"dimension\":{\"height\":1080,\"rotate\":0,\"width\":1920},\"duration\":1591000,\"enable_vt\":false,\"ep_id\":330804,\"from\":\"bangumi\",\"id\":330804,\"is_view_hide\":false,\"link\":\"https://www.bilibili.com/bangumi/play/ep330804\",\"long_title\":\"朋友\",\"pub_time\":1597849201,\"pv\":0,\"release_date\":\"\",\"rights\":{\"allow_dm\":0,\"allow_download\":0,\"area_limit\":1,\"cache_auth\":0},\"section_type\":0,\"share_copy\":\"《Re：从零开始的异世界生活 第二季 前半》第7话 朋友\",\"share_url\":\"https://www.bilibili.com/bangumi/play/ep330804\",\"short_link\":\"https://b23.tv/ep330804\",\"showDrmLoginDialog\":false,\"show_title\":\"第7话 朋友\",\"skip\":{\"ed\":{\"end\":1550,\"start\":1480},\"op\":{\"end\":0,\"start\":0}},\"status\":13,\"subtitle\":\"已观看1.7亿次\",\"title\":\"7\",\"vid\":\"\"},{\"aid\":754435859,\"badge\":\"会员\",\"badge_info\":{\"bg_color\":\"#999999\",\"bg_color_night\":\"#727272\",\"text\":\"受限\"},\"badge_type\":0,\"bvid\":\"BV1zk4y127JC\",\"cid\":229141443,\"cover\":\"http://i0.hdslb.com/bfs/archive/dd3100d3169cc20a88e895d433a40ccd24817ec3.jpg\",\"dimension\":{\"height\":1080,\"rotate\":0,\"width\":1920},\"duration\":1451000,\"enable_vt\":false,\"ep_id\":330805,\"from\":\"bangumi\",\"id\":330805,\"is_view_hide\":false,\"link\":\"https://www.bilibili.com/bangumi/play/ep330805\",\"long_title\":\"生命的价值\",\"pub_time\":1598454001,\"pv\":0,\"release_date\":\"\",\"rights\":{\"allow_dm\":0,\"allow_download\":0,\"area_limit\":1,\"cache_auth\":0},\"section_type\":0,\"share_copy\":\"《Re：从零开始的异世界生活 第二季 前半》第8话 生命的价值\",\"share_url\":\"https://www.bilibili.com/bangumi/play/ep330805\",\"short_link\":\"https://b23.tv/ep330805\",\"showDrmLoginDialog\":false,\"show_title\":\"第8话 生命的价值\",\"skip\":{\"ed\":{\"end\":1450,\"start\":1409},\"op\":{\"end\":157,\"start\":68}},\"status\":13,\"subtitle\":\"已观看1.7亿次\",\"title\":\"8\",\"vid\":\"\"},{\"aid\":841982831,\"badge\":\"会员\",\"badge_info\":{\"bg_color\":\"#999999\",\"bg_color_night\":\"#727272\",\"text\":\"受限\"},\"badge_type\":0,\"bvid\":\"BV1454y1v7bq\",\"cid\":231562313,\"cover\":\"http://i0.hdslb.com/bfs/archive/fa883dc59caad2d51ea257f724678fb3b0f0907c.jpg\",\"dimension\":{\"height\":1080,\"rotate\":0,\"width\":1920},\"duration\":1481000,\"enable_vt\":false,\"ep_id\":330806,\"from\":\"bangumi\",\"id\":330806,\"is_view_hide\":false,\"link\":\"https://www.bilibili.com/bangumi/play/ep330806\",\"long_title\":\"Love love love love love love YOU\",\"pub_time\":1599058801,\"pv\":0,\"release_date\":\"\",\"rights\":{\"allow_dm\":0,\"allow_download\":0,\"area_limit\":1,\"cache_auth\":0},\"section_type\":0,\"share_copy\":\"《Re：从零开始的异世界生活 第二季 前半》第9话 Love love love love love love YOU\",\"share_url\":\"https://www.bilibili.com/bangumi/play/ep330806\",\"short_link\":\"https://b23.tv/ep330806\",\"showDrmLoginDialog\":false,\"show_title\":\"第9话 Love love love love love love YOU\",\"skip\":{\"ed\":{\"end\":1446,\"start\":1357},\"op\":{\"end\":0,\"start\":0}},\"status\":13,\"subtitle\":\"已观看1.7亿次\",\"title\":\"9\",\"vid\":\"\"},{\"aid\":712077252,\"badge\":\"会员\",\"badge_info\":{\"bg_color\":\"#999999\",\"bg_color_night\":\"#727272\",\"text\":\"受限\"},\"badge_type\":0,\"bvid\":\"BV1TD4y1o7pa\",\"cid\":233762365,\"cover\":\"http://i0.hdslb.com/bfs/archive/d13461e7b98db3655cf42847ec27ddf09f5a80a0.jpg\",\"dimension\":{\"height\":1080,\"rotate\":0,\"width\":1920},\"duration\":1591000,\"enable_vt\":false,\"ep_id\":330807,\"from\":\"bangumi\",\"id\":330807,\"is_view_hide\":false,\"link\":\"https://www.bilibili.com/bangumi/play/ep330807\",\"long_title\":\"我可是知道地狱的\",\"pub_time\":1599663600,\"pv\":0,\"release_date\":\"\",\"rights\":{\"allow_dm\":0,\"allow_download\":0,\"area_limit\":1,\"cache_auth\":0},\"section_type\":0,\"share_copy\":\"《Re：从零开始的异世界生活 第二季 前半》第10话 我可是知道地狱的\",\"share_url\":\"https://www.bilibili.com/bangumi/play/ep330807\",\"short_link\":\"https://b23.tv/ep330807\",\"showDrmLoginDialog\":false,\"show_title\":\"第10话 我可是知道地狱的\",\"skip\":{\"ed\":{\"end\":0,\"start\":0},\"op\":{\"end\":0,\"start\":0}},\"status\":13,\"subtitle\":\"已观看1.7亿次\",\"title\":\"10\",\"vid\":\"\"},{\"aid\":414507204,\"badge\":\"会员\",\"badge_info\":{\"bg_color\":\"#999999\",\"bg_color_night\":\"#727272\",\"text\":\"受限\"},\"badge_type\":0,\"bvid\":\"BV1dV41127Uu\",\"cid\":235949355,\"cover\":\"http://i0.hdslb.com/bfs/archive/8b533115b56eade5b86b6c1a21340381559a59ff.jpg\",\"dimension\":{\"height\":1080,\"rotate\":0,\"width\":1920},\"duration\":1571000,\"enable_vt\":false,\"ep_id\":330808,\"from\":\"bangumi\",\"id\":330808,\"is_view_hide\":false,\"link\":\"https://www.bilibili.com/bangumi/play/ep330808\",\"long_title\":\"死亡的味道\",\"pub_time\":1600268400,\"pv\":0,\"release_date\":\"\",\"rights\":{\"allow_dm\":0,\"allow_download\":0,\"area_limit\":1,\"cache_auth\":0},\"section_type\":0,\"share_copy\":\"《Re：从零开始的异世界生活 第二季 前半》第11话 死亡的味道\",\"share_url\":\"https://www.bilibili.com/bangumi/play/ep330808\",\"short_link\":\"https://b23.tv/ep330808\",\"showDrmLoginDialog\":false,\"show_title\":\"第11话 死亡的味道\",\"skip\":{\"ed\":{\"end\":0,\"start\":0},\"op\":{\"end\":0,\"start\":0}},\"status\":13,\"subtitle\":\"已观看1.7亿次\",\"title\":\"11\",\"vid\":\"\"},{\"aid\":372248375,\"badge\":\"会员\",\"badge_info\":{\"bg_color\":\"#999999\",\"bg_color_night\":\"#727272\",\"text\":\"受限\"},\"badge_type\":0,\"bvid\":\"BV1jZ4y157nn\",\"cid\":238364892,\"cover\":\"http://i0.hdslb.com/bfs/archive/b6e0c1c79b193a845342b7aa61e450fca0f681ee.jpg\",\"dimension\":{\"height\":1080,\"rotate\":0,\"width\":1920},\"duration\":1621000,\"enable_vt\":false,\"ep_id\":330809,\"from\":\"bangumi\",\"id\":330809,\"is_view_hide\":false,\"link\":\"https://www.bilibili.com/bangumi/play/ep330809\",\"long_title\":\"魔女们的茶会\",\"pub_time\":1600873200,\"pv\":0,\"release_date\":\"\",\"rights\":{\"allow_dm\":0,\"allow_download\":0,\"area_limit\":1,\"cache_auth\":0},\"section_type\":0,\"share_copy\":\"《Re：从零开始的异世界生活 第二季 前半》第12话 魔女们的茶会\",\"share_url\":\"https://www.bilibili.com/bangumi/play/ep330809\",\"short_link\":\"https://b23.tv/ep330809\",\"showDrmLoginDialog\":false,\"show_title\":\"第12话 魔女们的茶会\",\"skip\":{\"ed\":{\"end\":0,\"start\":0},\"op\":{\"end\":0,\"start\":0}},\"status\":13,\"subtitle\":\"已观看1.7亿次\",\"title\":\"12\",\"vid\":\"\"},{\"aid\":797253680,\"badge\":\"会员\",\"badge_info\":{\"bg_color\":\"#999999\",\"bg_color_night\":\"#727272\",\"text\":\"受限\"},\"badge_type\":0,\"bvid\":\"BV1my4y1k7St\",\"cid\":240588887,\"cover\":\"http://i0.hdslb.com/bfs/bangumi/475874041f64c3658d90d8c4b47c8f294d14d0ec.jpg\",\"dimension\":{\"height\":1080,\"rotate\":0,\"width\":1920},\"duration\":1621000,\"enable_vt\":false,\"ep_id\":338299,\"from\":\"bangumi\",\"id\":338299,\"is_view_hide\":false,\"link\":\"https://www.bilibili.com/bangumi/play/ep338299\",\"long_title\":\"想哭的声音\",\"pub_time\":1601478000,\"pv\":0,\"release_date\":\"\",\"rights\":{\"allow_dm\":0,\"allow_download\":0,\"area_limit\":1,\"cache_auth\":0},\"section_type\":0,\"share_copy\":\"《Re：从零开始的异世界生活 第二季 前半》第13话 想哭的声音\",\"share_url\":\"https://www.bilibili.com/bangumi/play/ep338299\",\"short_link\":\"https://b23.tv/ep338299\",\"showDrmLoginDialog\":false,\"show_title\":\"第13话 想哭的声音\",\"skip\":{\"ed\":{\"end\":0,\"start\":0},\"op\":{\"end\":0,\"start\":0}},\"status\":13,\"subtitle\":\"已观看1.7亿次\",\"title\":\"13\",\"vid\":\"\"}],\"evaluate\":\"我一定会拯救你。\\n在打倒了魔女教大罪司教「怠惰」担当——培提其乌斯·罗曼尼康帝之后，菜月昴和爱蜜莉雅又得以重新开始。\\n克服了艰难的诀别，两人终于和解，然而这只是新一轮风波的序幕。\\n超乎想象的绝境危机，接踵而至的残酷现实。\\n少年将再次直面残酷的命运。\",\"freya\":{\"bubble_desc\":\"\",\"bubble_show_cnt\":0,\"icon_show\":1},\"hide_ep_vv_vt_dm\":1,\"icon_font\":{\"name\":\"playdata-square-line@500\",\"text\":\"1.7亿\"},\"jp_title\":\"\",\"link\":\"http://www.bilibili.com/bangumi/media/md28229233/\",\"media_id\":28229233,\"mode\":2,\"new_ep\":{\"desc\":\"已完结, 全13话\",\"id\":338299,\"is_new\":0,\"title\":\"13\"},\"payment\":{\"discount\":100,\"pay_type\":{\"allow_discount\":0,\"allow_pack\":0,\"allow_ticket\":0,\"allow_time_limit\":0,\"allow_vip_discount\":0,\"forbid_bb\":0},\"price\":\"0.0\",\"promotion\":\"\",\"tip\":\"大会员专享观看特权哦~\",\"view_start_time\":0,\"vip_discount\":100,\"vip_first_promotion\":\"\",\"vip_price\":\"0\",\"vip_promotion\":\"开通大会员观看\"},\"play_strategy\":{\"strategies\":[\"common_section-formal_first_ep\",\"common_section-common_section\",\"common_section-next_season\",\"formal-finish-next_season\",\"formal-end-other_section\",\"formal-end-next_season\",\"ord\"]},\"positive\":{\"id\":48379,\"title\":\"正片\"},\"publish\":{\"is_finish\":1,\"is_started\":1,\"pub_time\":\"2020-07-08 23:00:00\",\"pub_time_show\":\"2020年07月08日23:00\",\"unknow_pub_date\":0,\"weekday\":0},\"rating\":{\"count\":125813,\"score\":9.7},\"record\":\"登记号：10417060172852407\",\"rights\":{\"allow_bp\":0,\"allow_bp_rank\":0,\"allow_download\":0,\"allow_review\":1,\"area_limit\":328,\"ban_area_show\":1,\"can_watch\":1,\"copyright\":\"bilibili\",\"forbid_pre\":0,\"freya_white\":0,\"is_cover_show\":0,\"is_preview\":1,\"is_sponsor\":0,\"only_vip_download\":0,\"resource\":\"\",\"watch_platform\":0},\"season_id\":33802,\"season_title\":\"Re：从零开始的异世界生活 第二季 前半\",\"seasons\":[{\"badge\":\"大会员\",\"badge_info\":{\"bg_color\":\"#FB7299\",\"bg_color_night\":\"#D44E7D\",\"text\":\"大会员\"},\"badge_type\":0,\"cover\":\"http://i0.hdslb.com/bfs/bangumi/image/3c125e1aad08643e3eff2fb7d45e740c1a052725.png\",\"enable_vt\":false,\"horizontal_cover_1610\":\"\",\"horizontal_cover_169\":\"\",\"icon_font\":{\"name\":\"playdata-square-line@500\",\"text\":\"1.3亿\"},\"media_id\":28224394,\"new_ep\":{\"cover\":\"http://i0.hdslb.com/bfs/archive/469c23e1f352030fafd4ecccbc87bd686724640f.jpg\",\"id\":307068,\"index_show\":\"全13话\"},\"season_id\":29590,\"season_title\":\"第一季（新编集版）\",\"season_type\":1,\"stat\":{\"favorites\":7065683,\"series_follow\":10500401,\"views\":128867231,\"vt\":0}},{\"badge\":\"大会员\",\"badge_info\":{\"bg_color\":\"#FB7299\",\"bg_color_night\":\"#D44E7D\",\"text\":\"大会员\"},\"badge_type\":0,\"cover\":\"http://i0.hdslb.com/bfs/bangumi/image/f2425cbdb07cc93bd0d3ba1c0099bfe78f5dc58a.png\",\"enable_vt\":false,\"horizontal_cover_1610\":\"\",\"horizontal_cover_169\":\"\",\"icon_font\":{\"name\":\"playdata-square-line@500\",\"text\":\"1.7亿\"},\"media_id\":28229233,\"new_ep\":{\"cover\":\"http://i0.hdslb.com/bfs/bangumi/475874041f64c3658d90d8c4b47c8f294d14d0ec.jpg\",\"id\":338299,\"index_show\":\"全13话\"},\"season_id\":33802,\"season_title\":\"第二季（前半）\",\"season_type\":1,\"stat\":{\"favorites\":8086455,\"series_follow\":10500401,\"views\":171292329,\"vt\":0}},{\"badge\":\"大会员\",\"badge_info\":{\"bg_color\":\"#FB7299\",\"bg_color_night\":\"#D44E7D\",\"text\":\"大会员\"},\"badge_type\":0,\"cover\":\"http://i0.hdslb.com/bfs/bangumi/image/4f3edbede7fc0bdb52842075cf8faaa1c5953eaa.png\",\"enable_vt\":false,\"horizontal_cover_1610\":\"\",\"horizontal_cover_169\":\"\",\"icon_font\":{\"name\":\"playdata-square-line@500\",\"text\":\"1.4亿\"},\"media_id\":28232073,\"new_ep\":{\"cover\":\"http://i0.hdslb.com/bfs/archive/3f39f1e9cfd573d1cf1689ebf4a988163621a08a.jpg\",\"id\":373935,\"index_show\":\"全12话\"},\"season_id\":36429,\"season_title\":\"第二季（后半）\",\"season_type\":1,\"stat\":{\"favorites\":8828637,\"series_follow\":10500401,\"views\":137119581,\"vt\":0}},{\"badge\":\"大会员\",\"badge_info\":{\"bg_color\":\"#FB7299\",\"bg_color_night\":\"#D44E7D\",\"text\":\"大会员\"},\"badge_type\":0,\"cover\":\"http://i0.hdslb.com/bfs/bangumi/image/137c9c239aed5d7666f35ab1d28528547d05544f.png\",\"enable_vt\":false,\"horizontal_cover_1610\":\"\",\"horizontal_cover_169\":\"\",\"icon_font\":{\"name\":\"playdata-square-line@500\",\"text\":\"2038.6万\"},\"media_id\":28226008,\"new_ep\":{\"cover\":\"http://i0.hdslb.com/bfs/archive/faa816ee387ebd328ad1528ac6d5dd71bbd1f829.jpg\",\"id\":308153,\"index_show\":\"全1话\"},\"season_id\":31150,\"season_title\":\"OVA1\",\"season_type\":1,\"stat\":{\"favorites\":5027808,\"series_follow\":10500401,\"views\":20385935,\"vt\":0}},{\"badge\":\"大会员\",\"badge_info\":{\"bg_color\":\"#FB7299\",\"bg_color_night\":\"#D44E7D\",\"text\":\"大会员\"},\"badge_type\":0,\"cover\":\"http://i0.hdslb.com/bfs/bangumi/image/05859fac3ad9be31373e2d2b548a2f14fd472de2.png\",\"enable_vt\":false,\"horizontal_cover_1610\":\"\",\"horizontal_cover_169\":\"\",\"icon_font\":{\"name\":\"playdata-square-line@500\",\"text\":\"1828.9万\"},\"media_id\":28226009,\"new_ep\":{\"cover\":\"http://i0.hdslb.com/bfs/archive/3201cc1f46ce14c06c95b9a0fdc240a7f6081ef9.jpg\",\"id\":324180,\"index_show\":\"全1话\"},\"season_id\":31151,\"season_title\":\"OVA2\",\"season_type\":1,\"stat\":{\"favorites\":4983839,\"series_follow\":10500401,\"views\":18288868,\"vt\":0}},{\"badge\":\"\",\"badge_info\":{\"bg_color\":\"#FB7299\",\"bg_color_night\":\"#D44E7D\",\"text\":\"\"},\"badge_type\":0,\"cover\":\"http://i0.hdslb.com/bfs/bangumi/image/2cca349c8ecb67b81c08907709a0e9b4a96a060d.jpg\",\"enable_vt\":false,\"horizontal_cover_1610\":\"\",\"horizontal_cover_169\":\"\",\"icon_font\":{\"name\":\"playdata-square-line@500\",\"text\":\"5701.8万\"},\"media_id\":4026,\"new_ep\":{\"cover\":\"http://i0.hdslb.com/bfs/bangumi/31a8e5cb3c0433178e23f24a847fede0b1b5f416.jpg\",\"id\":95991,\"index_show\":\"全25话\"},\"season_id\":4026,\"season_title\":\"SP\",\"season_type\":1,\"stat\":{\"favorites\":616818,\"series_follow\":10500401,\"views\":57017810,\"vt\":0}}],\"section\":[{\"attr\":0,\"episode_id\":0,\"episode_ids\":[],\"episodes\":[{\"aid\":630071931,\"badge\":\"\",\"badge_info\":{\"bg_color\":\"#999999\",\"bg_color_night\":\"#727272\",\"text\":\"受限\"},\"badge_type\":0,\"bvid\":\"BV1eb4y1D72w\",\"cid\":323635924,\"cover\":\"http://i0.hdslb.com/bfs/archive/8af0058e8debfb695fba4e6d0d3d10f8a6c3dd14.jpg\",\"dimension\":{\"height\":1080,\"rotate\":0,\"width\":1920},\"duration\":88000,\"enable_vt\":false,\"ep_id\":400065,\"from\":\"bangumi\",\"icon_font\":{\"name\":\"playdata-square-line@500\",\"text\":\"26.6万\"},\"id\":400065,\"is_view_hide\":false,\"link\":\"https://www.bilibili.com/bangumi/play/ep400065\",\"long_title\":\"\",\"pub_time\":1618304400,\"pv\":0,\"release_date\":\"\",\"rights\":{\"allow_dm\":0,\"allow_download\":0,\"area_limit\":1,\"cache_auth\":0},\"section_type\":1,\"share_copy\":\"《Re：从零开始的异世界生活 第二季 前半》NCOP \",\"share_url\":\"https://www.bilibili.com/bangumi/play/ep400065\",\"short_link\":\"https://b23.tv/ep400065\",\"showDrmLoginDialog\":false,\"show_title\":\"NCOP\",\"skip\":{\"ed\":{\"end\":0,\"start\":0},\"op\":{\"end\":0,\"start\":0}},\"stat\":{\"coin\":1183,\"danmakus\":59,\"likes\":4832,\"play\":266292,\"reply\":159,\"vt\":0},\"stat_for_unity\":{\"coin\":1183,\"danmaku\":{\"icon\":\"danmu-square-line@500\",\"pure_text\":\"\",\"text\":\"59\",\"value\":59},\"likes\":4832,\"reply\":159,\"vt\":{\"icon\":\"playdata-square-line@500\",\"pure_text\":\"26.6万播放\",\"text\":\"26.6万\",\"value\":266292}},\"status\":2,\"subtitle\":\"已观看1.7亿次\",\"title\":\"NCOP\",\"vid\":\"\"},{\"aid\":887506995,\"badge\":\"\",\"badge_info\":{\"bg_color\":\"#999999\",\"bg_color_night\":\"#727272\",\"text\":\"受限\"},\"badge_type\":0,\"bvid\":\"BV1PK4y1K7TE\",\"cid\":323637894,\"cover\":\"http://i0.hdslb.com/bfs/bangumi/5567a993ec2bf236c5fdca41fd89e0b191bd762b.jpg\",\"dimension\":{\"height\":1080,\"rotate\":0,\"width\":1920},\"duration\":95000,\"enable_vt\":false,\"ep_id\":400066,\"from\":\"bangumi\",\"icon_font\":{\"name\":\"playdata-square-line@500\",\"text\":\"34.9万\"},\"id\":400066,\"is_view_hide\":false,\"link\":\"https://www.bilibili.com/bangumi/play/ep400066\",\"long_title\":\"\",\"pub_time\":1618304400,\"pv\":0,\"release_date\":\"\",\"rights\":{\"allow_dm\":0,\"allow_download\":0,\"area_limit\":1,\"cache_auth\":0},\"section_type\":1,\"share_copy\":\"《Re：从零开始的异世界生活 第二季 前半》NCED \",\"share_url\":\"https://www.bilibili.com/bangumi/play/ep400066\",\"short_link\":\"https://b23.tv/ep400066\",\"showDrmLoginDialog\":false,\"show_title\":\"NCED\",\"skip\":{\"ed\":{\"end\":0,\"start\":0},\"op\":{\"end\":0,\"start\":0}},\"stat\":{\"coin\":1388,\"danmakus\":62,\"likes\":8051,\"play\":348593,\"reply\":275,\"vt\":0},\"stat_for_unity\":{\"coin\":1388,\"danmaku\":{\"icon\":\"danmu-square-line@500\",\"pure_text\":\"\",\"text\":\"62\",\"value\":62},\"likes\":8051,\"reply\":275,\"vt\":{\"icon\":\"playdata-square-line@500\",\"pure_text\":\"34.9万播放\",\"text\":\"34.9万\",\"value\":348593}},\"status\":2,\"subtitle\":\"已观看1.7亿次\",\"title\":\"NCED\",\"vid\":\"\"},{\"aid\":455889505,\"badge\":\"\",\"badge_info\":{\"bg_color\":\"#999999\",\"bg_color_night\":\"#727272\",\"text\":\"受限\"},\"badge_type\":0,\"bvid\":\"BV1r5411p7T9\",\"cid\":205208133,\"cover\":\"http://i0.hdslb.com/bfs/archive/23578c063dc238524b428f28f9d20087fcbb0be5.jpg\",\"dimension\":{\"height\":1080,\"rotate\":0,\"width\":1920},\"duration\":177000,\"enable_vt\":false,\"ep_id\":329553,\"from\":\"bangumi\",\"icon_font\":{\"name\":\"playdata-square-line@500\",\"text\":\"706万\"},\"id\":329553,\"is_view_hide\":false,\"link\":\"https://www.bilibili.com/bangumi/play/ep329553\",\"long_title\":\"\",\"pub_time\":1592996400,\"pv\":0,\"release_date\":\"\",\"rights\":{\"allow_dm\":0,\"allow_download\":0,\"area_limit\":1,\"cache_auth\":0},\"section_type\":1,\"share_copy\":\"《Re：从零开始的异世界生活 第二季 前半》正式PV \",\"share_url\":\"https://www.bilibili.com/bangumi/play/ep329553\",\"short_link\":\"https://b23.tv/ep329553\",\"showDrmLoginDialog\":false,\"show_title\":\"正式PV\",\"skip\":{\"ed\":{\"end\":0,\"start\":0},\"op\":{\"end\":0,\"start\":0}},\"stat\":{\"coin\":37506,\"danmakus\":35589,\"likes\":46446,\"play\":7059618,\"reply\":17141,\"vt\":0},\"stat_for_unity\":{\"coin\":37506,\"danmaku\":{\"icon\":\"danmu-square-line@500\",\"pure_text\":\"\",\"text\":\"3.6万\",\"value\":35589},\"likes\":46446,\"reply\":17141,\"vt\":{\"icon\":\"playdata-square-line@500\",\"pure_text\":\"706万播放\",\"text\":\"706万\",\"value\":7059618}},\"status\":2,\"subtitle\":\"已观看1.7亿次\",\"title\":\"正式PV\",\"vid\":\"\"},{\"aid\":413575139,\"badge\":\"\",\"badge_info\":{\"bg_color\":\"#999999\",\"bg_color_night\":\"#727272\",\"text\":\"受限\"},\"badge_type\":0,\"bvid\":\"BV1EV411k7Qq\",\"cid\":203194650,\"cover\":\"http://i0.hdslb.com/bfs/archive/e43fe78becc700ca40070dc8e4640d55eac73cb0.jpg\",\"dimension\":{\"height\":1080,\"rotate\":0,\"width\":1920},\"duration\":92000,\"enable_vt\":false,\"ep_id\":329552,\"from\":\"bangumi\",\"icon_font\":{\"name\":\"playdata-square-line@500\",\"text\":\"162.6万\"},\"id\":329552,\"is_view_hide\":false,\"link\":\"https://www.bilibili.com/bangumi/play/ep329552\",\"long_title\":\"\",\"pub_time\":1592996400,\"pv\":0,\"release_date\":\"\",\"rights\":{\"allow_dm\":0,\"allow_download\":0,\"area_limit\":1,\"cache_auth\":0},\"section_type\":1,\"share_copy\":\"《Re：从零开始的异世界生活 第二季 前半》制作决定PV \",\"share_url\":\"https://www.bilibili.com/bangumi/play/ep329552\",\"short_link\":\"https://b23.tv/ep329552\",\"showDrmLoginDialog\":false,\"show_title\":\"制作决定PV\",\"skip\":{\"ed\":{\"end\":0,\"start\":0},\"op\":{\"end\":0,\"start\":0}},\"stat\":{\"coin\":11086,\"danmakus\":3290,\"likes\":2891,\"play\":1626453,\"reply\":2907,\"vt\":0},\"stat_for_unity\":{\"coin\":11086,\"danmaku\":{\"icon\":\"danmu-square-line@500\",\"pure_text\":\"\",\"text\":\"3290\",\"value\":3290},\"likes\":2891,\"reply\":2907,\"vt\":{\"icon\":\"playdata-square-line@500\",\"pure_text\":\"162.6万播放\",\"text\":\"162.6万\",\"value\":1626453}},\"status\":2,\"subtitle\":\"已观看1.7亿次\",\"title\":\"制作决定PV\",\"vid\":\"\"},{\"aid\":584029176,\"badge\":\"\",\"badge_info\":{\"bg_color\":\"#999999\",\"bg_color_night\":\"#727272\",\"text\":\"受限\"},\"badge_type\":0,\"bvid\":\"BV1tz4y1Q7ZW\",\"cid\":218682822,\"cover\":\"http://i0.hdslb.com/bfs/bangumi/8ea1e5e71388c19ef187bb47cb8e5c2fc8e6885d.jpg\",\"dimension\":{\"height\":1080,\"rotate\":0,\"width\":1920},\"duration\":41000,\"enable_vt\":false,\"ep_id\":333963,\"from\":\"bangumi\",\"icon_font\":{\"name\":\"playdata-square-line@500\",\"text\":\"134.1万\"},\"id\":333963,\"is_view_hide\":false,\"link\":\"https://www.bilibili.com/bangumi/play/ep333963\",\"long_title\":\"菜月昴篇\",\"pub_time\":1596173400,\"pv\":0,\"release_date\":\"\",\"rights\":{\"allow_dm\":0,\"allow_download\":0,\"area_limit\":1,\"cache_auth\":0},\"section_type\":1,\"share_copy\":\"《Re：从零开始的异世界生活 第二季 前半》角色PV1 菜月昴篇\",\"share_url\":\"https://www.bilibili.com/bangumi/play/ep333963\",\"short_link\":\"https://b23.tv/ep333963\",\"showDrmLoginDialog\":false,\"show_title\":\"角色PV1 菜月昴篇\",\"skip\":{\"ed\":{\"end\":0,\"start\":0},\"op\":{\"end\":0,\"start\":0}},\"stat\":{\"coin\":8598,\"danmakus\":950,\"likes\":5536,\"play\":1341412,\"reply\":251,\"vt\":0},\"stat_for_unity\":{\"coin\":8598,\"danmaku\":{\"icon\":\"danmu-square-line@500\",\"pure_text\":\"\",\"text\":\"950\",\"value\":950},\"likes\":5536,\"reply\":251,\"vt\":{\"icon\":\"playdata-square-line@500\",\"pure_text\":\"134.1万播放\",\"text\":\"134.1万\",\"value\":1341412}},\"status\":2,\"subtitle\":\"已观看1.7亿次\",\"title\":\"角色PV1\",\"vid\":\"\"},{\"aid\":584029176,\"badge\":\"\",\"badge_info\":{\"bg_color\":\"#999999\",\"bg_color_night\":\"#727272\",\"text\":\"受限\"},\"badge_type\":0,\"bvid\":\"BV1tz4y1Q7ZW\",\"cid\":218682899,\"cover\":\"http://i0.hdslb.com/bfs/bangumi/883f7363071d1cf6982d547798ffa45975834229.jpg\",\"dimension\":{\"height\":1080,\"rotate\":0,\"width\":1920},\"duration\":36000,\"enable_vt\":false,\"ep_id\":333964,\"from\":\"bangumi\",\"icon_font\":{\"name\":\"playdata-square-line@500\",\"text\":\"134.1万\"},\"id\":333964,\"is_view_hide\":false,\"link\":\"https://www.bilibili.com/bangumi/play/ep333964\",\"long_title\":\"雷姆篇\",\"pub_time\":1596173400,\"pv\":0,\"release_date\":\"\",\"rights\":{\"allow_dm\":0,\"allow_download\":0,\"area_limit\":1,\"cache_auth\":0},\"section_type\":1,\"share_copy\":\"《Re：从零开始的异世界生活 第二季 前半》角色PV2 雷姆篇\",\"share_url\":\"https://www.bilibili.com/bangumi/play/ep333964\",\"short_link\":\"https://b23.tv/ep333964\",\"showDrmLoginDialog\":false,\"show_title\":\"角色PV2 雷姆篇\",\"skip\":{\"ed\":{\"end\":0,\"start\":0},\"op\":{\"end\":0,\"start\":0}},\"stat\":{\"coin\":8598,\"danmakus\":950,\"likes\":5536,\"play\":1341412,\"reply\":251,\"vt\":0},\"stat_for_unity\":{\"coin\":8598,\"danmaku\":{\"icon\":\"danmu-square-line@500\",\"pure_text\":\"\",\"text\":\"950\",\"value\":950},\"likes\":5536,\"reply\":251,\"vt\":{\"icon\":\"playdata-square-line@500\",\"pure_text\":\"134.1万播放\",\"text\":\"134.1万\",\"value\":1341412}},\"status\":2,\"subtitle\":\"已观看1.7亿次\",\"title\":\"角色PV2\",\"vid\":\"\"},{\"aid\":584029176,\"badge\":\"\",\"badge_info\":{\"bg_color\":\"#999999\",\"bg_color_night\":\"#727272\",\"text\":\"受限\"},\"badge_type\":0,\"bvid\":\"BV1tz4y1Q7ZW\",\"cid\":218683004,\"cover\":\"http://i0.hdslb.com/bfs/bangumi/05243aa4a00e28ba9aa44d5ac4d948c0070f86c9.jpg\",\"dimension\":{\"height\":1080,\"rotate\":0,\"width\":1920},\"duration\":31000,\"enable_vt\":false,\"ep_id\":333965,\"from\":\"bangumi\",\"icon_font\":{\"name\":\"playdata-square-line@500\",\"text\":\"134.1万\"},\"id\":333965,\"is_view_hide\":false,\"link\":\"https://www.bilibili.com/bangumi/play/ep333965\",\"long_title\":\"拉姆篇\",\"pub_time\":1596173400,\"pv\":0,\"release_date\":\"\",\"rights\":{\"allow_dm\":0,\"allow_download\":0,\"area_limit\":1,\"cache_auth\":0},\"section_type\":1,\"share_copy\":\"《Re：从零开始的异世界生活 第二季 前半》角色PV3 拉姆篇\",\"share_url\":\"https://www.bilibili.com/bangumi/play/ep333965\",\"short_link\":\"https://b23.tv/ep333965\",\"showDrmLoginDialog\":false,\"show_title\":\"角色PV3 拉姆篇\",\"skip\":{\"ed\":{\"end\":0,\"start\":0},\"op\":{\"end\":0,\"start\":0}},\"stat\":{\"coin\":8598,\"danmakus\":950,\"likes\":5536,\"play\":1341412,\"reply\":251,\"vt\":0},\"stat_for_unity\":{\"coin\":8598,\"danmaku\":{\"icon\":\"danmu-square-line@500\",\"pure_text\":\"\",\"text\":\"950\",\"value\":950},\"likes\":5536,\"reply\":251,\"vt\":{\"icon\":\"playdata-square-line@500\",\"pure_text\":\"134.1万播放\",\"text\":\"134.1万\",\"value\":1341412}},\"status\":2,\"subtitle\":\"已观看1.7亿次\",\"title\":\"角色PV3\",\"vid\":\"\"},{\"aid\":584029176,\"badge\":\"\",\"badge_info\":{\"bg_color\":\"#999999\",\"bg_color_night\":\"#727272\",\"text\":\"受限\"},\"badge_type\":0,\"bvid\":\"BV1tz4y1Q7ZW\",\"cid\":218683067,\"cover\":\"http://i0.hdslb.com/bfs/bangumi/80480e9032b1dfaf9fd8c754d4f8c31ace8b6c9e.jpg\",\"dimension\":{\"height\":1080,\"rotate\":0,\"width\":1920},\"duration\":36000,\"enable_vt\":false,\"ep_id\":333966,\"from\":\"bangumi\",\"icon_font\":{\"name\":\"playdata-square-line@500\",\"text\":\"134.1万\"},\"id\":333966,\"is_view_hide\":false,\"link\":\"https://www.bilibili.com/bangumi/play/ep333966\",\"long_title\":\"爱蜜莉雅篇\",\"pub_time\":1596173400,\"pv\":0,\"release_date\":\"\",\"rights\":{\"allow_dm\":0,\"allow_download\":0,\"area_limit\":1,\"cache_auth\":0},\"section_type\":1,\"share_copy\":\"《Re：从零开始的异世界生活 第二季 前半》角色PV4 爱蜜莉雅篇\",\"share_url\":\"https://www.bilibili.com/bangumi/play/ep333966\",\"short_link\":\"https://b23.tv/ep333966\",\"showDrmLoginDialog\":false,\"show_title\":\"角色PV4 爱蜜莉雅篇\",\"skip\":{\"ed\":{\"end\":0,\"start\":0},\"op\":{\"end\":0,\"start\":0}},\"stat\":{\"coin\":8598,\"danmakus\":950,\"likes\":5536,\"play\":1341412,\"reply\":251,\"vt\":0},\"stat_for_unity\":{\"coin\":8598,\"danmaku\":{\"icon\":\"danmu-square-line@500\",\"pure_text\":\"\",\"text\":\"950\",\"value\":950},\"likes\":5536,\"reply\":251,\"vt\":{\"icon\":\"playdata-square-line@500\",\"pure_text\":\"134.1万播放\",\"text\":\"134.1万\",\"value\":1341412}},\"status\":2,\"subtitle\":\"已观看1.7亿次\",\"title\":\"角色PV4\",\"vid\":\"\"}],\"id\":48655,\"title\":\"PV\",\"type\":1,\"type2\":0}],\"series\":{\"display_type\":0,\"series_id\":2118,\"series_title\":\"Re：从零开始的异世界生活\"},\"share_copy\":\"《Re：从零开始的异世界生活 第二季 前半》圣域篇，来了来了\",\"share_sub_title\":\"圣域篇，来了来了\",\"share_url\":\"https://www.bilibili.com/bangumi/play/ss33802\",\"show\":{\"wide_screen\":0},\"show_season_type\":1,\"square_cover\":\"http://i0.hdslb.com/bfs/bangumi/image/08e401fa1e02cfb1be175a1bc3ac819b2e1e3a0b.jpg\",\"staff\":\"原作: 长月达平\\n导演: 渡边政治\\n音乐: 末广健一郎\\n人物原案: 大塚真一郎\\n人物设定: 坂井久太\\n系列构成: 横谷昌宏\\n美术监督: 高峯义人\\n色彩设计: 坂本いづみ\\n总作画监督: 坂井久太\\n摄影监督: 峰岸健太郎\\n道具设计: 岩畑刚一、铃木典孝\\n剪辑: 须藤瞳\\n音响监督: 明田川仁\\n音效: 古谷友二\\n音乐制作: KADOKAWA\\n动画制作: WHITE FOX\\nCG 导演: 轻部优\\n美术设计: 金城沙绫\",\"stat\":{\"coins\":1446650,\"danmakus\":2197447,\"favorite\":76841,\"favorites\":8086455,\"follow_text\":\"1050万系列追番\",\"likes\":2014046,\"reply\":458712,\"share\":142357,\"views\":171292329,\"vt\":0},\"status\":13,\"styles\":[\"小说改\",\"穿越\",\"奇幻\",\"冒险\"],\"subtitle\":\"已观看1.7亿次\",\"title\":\"Re：从零开始的异世界生活 第二季 前半\",\"total\":13,\"type\":1,\"up_info\":{\"avatar\":\"https://i1.hdslb.com/bfs/face/040528a1ec634b9907ba3a9ba957819bb07def06.jpg\",\"avatar_subscript_url\":\"\",\"follower\":9040828,\"is_follow\":0,\"mid\":928123,\"nickname_color\":\"#FB7299\",\"pendant\":{\"image\":\"\",\"name\":\"\",\"pid\":0},\"theme_type\":0,\"uname\":\"哔哩哔哩番剧\",\"verify_type\":3,\"vip_label\":{\"bg_color\":\"#FB7299\",\"bg_style\":1,\"border_color\":\"\",\"text\":\"十年大会员\",\"text_color\":\"#FFFFFF\"},\"vip_status\":1,\"vip_type\":2},\"user_status\":{\"area_limit\":0,\"ban_area_show\":0,\"follow\":0,\"follow_status\":0,\"login\":0,\"pay\":0,\"pay_pack_paid\":0,\"sponsor\":0}}}"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.bilibili.com/pugv/view/web/season?ep_id=229832",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ],
+          [
+            "referer",
+            "https://www.bilibili.com/"
+          ],
+          [
+            "origin",
+            "https://www.bilibili.com"
+          ],
+          [
+            "cookie",
+            "<redacted>"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://api.bilibili.com/pugv/view/web/season?ep_id=229832",
+        "headers": [
+          [
+            "date",
+            "Wed, 16 Sep 2026 03:36:05 GMT"
+          ],
+          [
+            "content-type",
+            "application/json"
+          ],
+          [
+            "bili-status-code",
+            "0"
+          ],
+          [
+            "x-bili-trace-id",
+            "42536dd8b46acc397a57bb89c96aaa0e"
+          ],
+          [
+            "x-pugv-trace-id",
+            "42536dd8b46acc397a57bb89c96aaa0e"
+          ],
+          [
+            "access-control-allow-methods",
+            "GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS"
+          ],
+          [
+            "access-control-allow-headers",
+            "origin,no-cache,x-requested-with,if-modified-since,pragma,last-modified,cache-control,expires,content-type,access-control-allow-credentials,dnt,x-customheader,keep-alive,user-agent,x-cache-webcdn,x-bilibili-key-real-ip,x-backend-bili-real-ip,x-risk-header,x-event-traceid"
+          ],
+          [
+            "cross-origin-resource-policy",
+            "cross-origin"
+          ],
+          [
+            "access-control-allow-origin",
+            "https://www.bilibili.com"
+          ],
+          [
+            "access-control-allow-credentials",
+            "true"
+          ],
+          [
+            "access-control-expose-headers",
+            "x-bili-gaia-vvoucher,x-bili-trace-id,x-bili-gaia-param"
+          ],
+          [
+            "x-cache-webcdn",
+            "BYPASS from blzone02"
+          ],
+          [
+            "expires",
+            "Wed, 16 Sep 2026 03:36:04 GMT"
+          ],
+          [
+            "cache-control",
+            "no-cache"
+          ]
+        ],
+        "body": {
+          "text": "{\"code\":0,\"data\":{\"abtest_info\":{\"style_abtest\":0},\"active_market\":[1],\"activity_list\":[],\"be_subscription\":false,\"brief\":{\"content\":\"\",\"img\":[{\"aspect_ratio\":3.071875,\"url\":\"http://i0.hdslb.com/bfs/album/26b13181d0d2faa3666734e3506e5661316568752.jpg\"},{\"aspect_ratio\":2.553125,\"url\":\"http://i0.hdslb.com/bfs/album/a42bb9041aa19fa36f9112f58ced8e22316568752.jpg\"},{\"aspect_ratio\":3.2171875,\"url\":\"http://i0.hdslb.com/bfs/album/da0bede5afb1981fe030210183d1becd316568752.jpg\"}],\"title\":\"课程概述\",\"type\":2},\"consulting\":{\"consulting_flag\":false,\"consulting_url\":\"\"},\"cooperation\":{\"link\":\"https://www.bilibili.com/cheese/cooperate?from=web_detail\"},\"cooperators\":[{\"avatar\":\"https://i1.hdslb.com/bfs/face/1c56737dfc0deffffc31c78e0cefb0c3ecf7e000.jpg\",\"is_follow\":0,\"mid\":316568752,\"nick_name\":\"马督工\",\"publisher\":true,\"role\":\"发布者\",\"user_link\":\"https://space.bilibili.com/316568752/pugv?defaultTab=cheese\"},{\"avatar\":\"https://i0.hdslb.com/bfs/face/01fc599bc87d7dc20ac09bb941dfd100a63bc28b.jpg\",\"is_follow\":0,\"mid\":1556651916,\"nick_name\":\"小黛晨读\",\"publisher\":false,\"role\":\"特邀嘉宾\",\"user_link\":\"https://space.bilibili.com/1556651916/pugv?defaultTab=cheese\"}],\"coupon\":{\"amount\":0.5,\"coupon_type\":1,\"discount_amount\":\"领券立减88\",\"discount_message\":\"【立减88】【限时特惠】仅限《新闻系学不到：马督工教你做自媒体》领用\",\"expire_minute\":\"2026-10-31 23:59\",\"expire_time\":\"2026-10-31 23:59:59\",\"is_frequenter\":false,\"receive_expire_time\":1793462399,\"scene_background_img\":\"\",\"scene_benefit_img\":\"\",\"scene_countdown\":false,\"scene_mark\":\"\",\"short_title\":\"5折优惠券\",\"show_amount\":\"5\",\"start_time\":\"2026-09-01 00:00:00\",\"status\":2,\"title\":\"【限时特惠】仅限《新闻系学不到：马督工教你做自媒体》领用\",\"token\":\"B20260826174802502846100\",\"use_expire_time\":1793462399,\"use_scope\":\"仅限当前课程使用\"},\"course_content\":\"本课程附赠随堂练习，点击下载\",\"courses\":[],\"cover\":\"https://archive.biliimg.com/bfs/archive/b5397e537243f03f7301f718463cffa99d8341d3.jpg\",\"ep_catalogue\":[],\"ep_count\":16,\"episode_page\":{\"next\":false,\"num\":1,\"size\":16,\"total\":16},\"episode_sort\":1,\"episode_tag\":{\"part_preview_tag\":\"部分试看\",\"pay_tag\":\"付费\",\"preview_tag\":\"全集试看\"},\"episodes\":[{\"aid\":406145765,\"catalogue_index\":0,\"cid\":1277541203,\"cover\":\"https://archive.biliimg.com/bfs/archive/3ee196b7616fbced1a082c6ed67180163f68cadc.jpg\",\"duration\":221,\"ep_status\":0,\"episode_can_view\":true,\"from\":\"pugv\",\"id\":229832,\"index\":1,\"label\":\"全集试看\",\"page\":1,\"play\":964171,\"play_way\":1,\"playable\":true,\"release_date\":1695549606,\"show_vt\":false,\"status\":1,\"subtitle\":\"视频课 · 3分41秒\",\"title\":\"课程先导片\",\"watched\":false,\"watchedHistory\":0},{\"aid\":788744567,\"catalogue_index\":0,\"cid\":1277561707,\"cover\":\"https://archive.biliimg.com/bfs/archive/45e037eae58b139eee30deb6fe1859b1792515c0.jpg\",\"duration\":819,\"ep_status\":0,\"episode_can_view\":true,\"from\":\"pugv\",\"id\":229829,\"index\":2,\"label\":\"部分试看\",\"page\":1,\"play\":338696,\"play_way\":1,\"playable\":true,\"release_date\":1695549606,\"show_vt\":false,\"status\":3,\"subtitle\":\"视频课 · 13分39秒\",\"title\":\"新媒体课程的意义\",\"watched\":false,\"watchedHistory\":0},{\"aid\":703736702,\"catalogue_index\":0,\"cid\":1277565767,\"cover\":\"https://archive.biliimg.com/bfs/archive/3706c81f7c716a5fd623253ba5979bb2c43e94d6.jpg\",\"duration\":1449,\"ep_status\":0,\"episode_can_view\":true,\"from\":\"pugv\",\"id\":229188,\"index\":3,\"page\":1,\"play\":65061,\"play_way\":1,\"playable\":false,\"release_date\":1695549606,\"show_vt\":false,\"status\":2,\"subtitle\":\"视频课 · 24分9秒\",\"title\":\"第一讲 重视普通人的生活\",\"watched\":false,\"watchedHistory\":0},{\"aid\":276151458,\"catalogue_index\":0,\"cid\":1277572910,\"cover\":\"https://archive.biliimg.com/bfs/archive/aff6707401d36d1828bcbecf9b362bbf5a214c5b.jpg\",\"duration\":1710,\"ep_status\":0,\"episode_can_view\":true,\"from\":\"pugv\",\"id\":229189,\"index\":4,\"page\":1,\"play\":54320,\"play_way\":1,\"playable\":false,\"release_date\":1695549606,\"show_vt\":false,\"status\":2,\"subtitle\":\"视频课 · 28分30秒\",\"title\":\"第二讲 关注人民内部矛盾\",\"watched\":false,\"watchedHistory\":0},{\"aid\":704538237,\"catalogue_index\":0,\"cid\":1296862683,\"cover\":\"https://archive.biliimg.com/bfs/archive/c4b5dcbdb806a0f48d9c671bc82dd29fe3bba1aa.jpg\",\"duration\":1186,\"ep_status\":0,\"episode_can_view\":true,\"from\":\"pugv\",\"id\":229190,\"index\":5,\"page\":1,\"play\":41236,\"play_way\":1,\"playable\":false,\"release_date\":1697105723,\"show_vt\":false,\"status\":2,\"subtitle\":\"视频课 · 19分46秒\",\"title\":\"第三讲 打通历史和现实\",\"watched\":false,\"watchedHistory\":0},{\"aid\":832724745,\"catalogue_index\":0,\"cid\":1311895984,\"cover\":\"https://archive.biliimg.com/bfs/archive/c2c56ff3c21cc611bc460efa03644a9519fbeac7.jpg\",\"duration\":1748,\"ep_status\":0,\"episode_can_view\":true,\"from\":\"pugv\",\"id\":229191,\"index\":6,\"page\":1,\"play\":34508,\"play_way\":1,\"playable\":false,\"release_date\":1698325982,\"show_vt\":false,\"status\":2,\"subtitle\":\"视频课 · 29分8秒\",\"title\":\"第四讲 欢迎合订本\",\"watched\":false,\"watchedHistory\":0},{\"aid\":963220937,\"catalogue_index\":0,\"cid\":1326578898,\"cover\":\"https://archive.biliimg.com/bfs/archive/2a0dc189a512cda8f13fd71e939ab97cdb37bf13.jpg\",\"duration\":1038,\"ep_status\":0,\"episode_can_view\":true,\"from\":\"pugv\",\"id\":229192,\"index\":7,\"page\":1,\"play\":37565,\"play_way\":1,\"playable\":false,\"release_date\":1699525980,\"show_vt\":false,\"status\":2,\"subtitle\":\"视频课 · 17分18秒\",\"title\":\"第五讲 不影响传播\",\"watched\":false,\"watchedHistory\":0},{\"aid\":493882699,\"catalogue_index\":0,\"cid\":1347141880,\"cover\":\"https://archive.biliimg.com/bfs/archive/12de74b0-18c15cecdbd.jpeg\",\"duration\":985,\"ep_status\":0,\"episode_can_view\":true,\"from\":\"pugv\",\"id\":323364,\"index\":8,\"page\":1,\"play\":23249,\"play_way\":1,\"playable\":false,\"release_date\":1701178464,\"show_vt\":false,\"status\":2,\"subtitle\":\"视频课 · 16分25秒\",\"title\":\"第六讲 不急于反驳\",\"watched\":false,\"watchedHistory\":0},{\"aid\":921880787,\"catalogue_index\":0,\"cid\":1358019371,\"cover\":\"https://archive.biliimg.com/bfs/archive/b833f39583d5a7d393dcfb5694d7920dd22bd221.jpg\",\"duration\":1100,\"ep_status\":0,\"episode_can_view\":true,\"from\":\"pugv\",\"id\":349642,\"index\":9,\"page\":1,\"play\":27333,\"play_way\":1,\"playable\":false,\"release_date\":1702017056,\"show_vt\":false,\"status\":2,\"subtitle\":\"视频课 · 18分20秒\",\"title\":\"第七讲 控制内容深度\",\"watched\":false,\"watchedHistory\":0},{\"aid\":923362343,\"catalogue_index\":0,\"cid\":1395018297,\"cover\":\"https://archive.biliimg.com/bfs/archive/12de74b0-18cd85d6dde.jpeg\",\"duration\":948,\"ep_status\":0,\"episode_can_view\":true,\"from\":\"pugv\",\"id\":229194,\"index\":10,\"page\":1,\"play\":19150,\"play_way\":1,\"playable\":false,\"release_date\":1704442416,\"show_vt\":false,\"status\":2,\"subtitle\":\"视频课 · 15分48秒\",\"title\":\"第八讲 叙事结构只能改一次\",\"watched\":false,\"watchedHistory\":0},{\"aid\":1250388545,\"catalogue_index\":0,\"cid\":1431990218,\"cover\":\"https://archive.biliimg.com/bfs/archive/12de74b0-18d7d489297.jpeg\",\"duration\":968,\"ep_status\":0,\"episode_can_view\":true,\"from\":\"pugv\",\"id\":229195,\"index\":11,\"page\":1,\"play\":16836,\"play_way\":1,\"playable\":false,\"release_date\":1707206849,\"show_vt\":false,\"status\":2,\"subtitle\":\"视频课 · 16分8秒\",\"title\":\"第九讲 搜索技巧（上）\",\"watched\":false,\"watchedHistory\":0},{\"aid\":1650475256,\"catalogue_index\":0,\"cid\":1431994053,\"cover\":\"https://archive.biliimg.com/bfs/archive/12de74b0-18d7d4c1211.jpeg\",\"duration\":1200,\"ep_status\":0,\"episode_can_view\":true,\"from\":\"pugv\",\"id\":229196,\"index\":12,\"page\":1,\"play\":17360,\"play_way\":1,\"playable\":false,\"release_date\":1707206849,\"show_vt\":false,\"status\":2,\"subtitle\":\"视频课 · 20分\",\"title\":\"第十讲 搜索技巧（下）\",\"watched\":false,\"watchedHistory\":0},{\"aid\":1002334989,\"catalogue_index\":0,\"cid\":1485668992,\"cover\":\"https://archive.biliimg.com/bfs/archive/98f73a18e4f7f45880bf4bddca4ca4a7829babfb.jpg\",\"duration\":935,\"ep_status\":0,\"episode_can_view\":true,\"from\":\"pugv\",\"id\":229198,\"index\":13,\"page\":1,\"play\":20562,\"play_way\":1,\"playable\":false,\"release_date\":1711683902,\"show_vt\":false,\"status\":2,\"subtitle\":\"视频课 · 15分35秒\",\"title\":\"第十一讲 完整的叙事逻辑\",\"watched\":false,\"watchedHistory\":0},{\"aid\":1906552942,\"catalogue_index\":0,\"cid\":25910903264,\"cover\":\"https://archive.biliimg.com/bfs/archive/d405f4b801442d777dd8224ae3699690f5eae39a.jpg\",\"duration\":1372,\"ep_status\":0,\"episode_can_view\":true,\"from\":\"pugv\",\"id\":1089438,\"index\":14,\"page\":1,\"play\":9370,\"play_way\":1,\"playable\":false,\"release_date\":1726711176,\"show_vt\":false,\"status\":2,\"subtitle\":\"视频课 · 22分52秒\",\"title\":\"第十二讲 练好中学作文\",\"watched\":false,\"watchedHistory\":0},{\"aid\":1906667552,\"catalogue_index\":0,\"cid\":25910903265,\"cover\":\"https://archive.biliimg.com/bfs/archive/bf96d47f3c19c5ca5f90f27228b076ba3faef334.jpg\",\"duration\":914,\"ep_status\":0,\"episode_can_view\":true,\"from\":\"pugv\",\"id\":1089439,\"index\":15,\"page\":1,\"play\":6850,\"play_way\":1,\"playable\":false,\"release_date\":1726711176,\"show_vt\":false,\"status\":2,\"subtitle\":\"视频课 · 15分14秒\",\"title\":\"第十三讲 运用口语风格\",\"watched\":false,\"watchedHistory\":0},{\"aid\":1256605276,\"catalogue_index\":0,\"cid\":25910903266,\"cover\":\"https://archive.biliimg.com/bfs/archive/a2bce1bab0b078231029fcaec1dc8d62f7beda10.jpg\",\"duration\":320,\"ep_status\":0,\"episode_can_view\":true,\"from\":\"pugv\",\"id\":1089440,\"index\":16,\"page\":1,\"play\":8795,\"play_way\":1,\"playable\":false,\"release_date\":1726711176,\"show_vt\":false,\"status\":2,\"subtitle\":\"视频课 · 5分20秒\",\"title\":\"第十四讲 抓住机会做媒体\",\"watched\":false,\"watchedHistory\":0}],\"expiry_day\":0,\"expiry_info_content\":\"长期有效\",\"faq\":{\"content\":\"Q：课程在什么时间更新？\\nA：课程更新频次以页面前端展示为准。购买成功后，课程更新将通过账号动态提示，方便及时观看。\\n\\nQ：课程购买后有收看时间限制吗？\\nA：购买后除不可抗力因素外，本课程长期有效，请您放心购买。\\n\\nQ：原价购买课程后，如遇到优惠折扣，是否可以退还差价或重新购买？\\nA：虚拟商品付款后无法返还，请您随时留意各类课程折扣信息，按需购买。\\n\\nQ：购买课程后是否可以加入老师的粉丝群或者用户群？\\nA：如老师设置用户群，我们将邀您加入，但我们无法承诺所有老师均提供用户群服务，感谢理解。\",\"link\":\"http://m.bilibili.com\",\"title\":\"常见问题\"},\"faq1\":{\"items\":[{\"answer\":\"课程更新频次以页面前端展示为准。购买成功后，课程更新将通过账号动态提示，方便及时观看。\",\"question\":\"课程在什么时间更新？\"},{\"answer\":\"购买后除不可抗力因素外，本课程长期有效，请您放心购买。\",\"question\":\"课程购买后有收看时间限制吗？\"},{\"answer\":\"虚拟商品付款后无法返还，请您随时留意各类课程折扣信息，按需购买。\",\"question\":\"原价购买课程后，如遇到优惠折扣，是否可以退还差价或重新购买？\"},{\"answer\":\"如老师设置用户群，我们将邀您加入，但我们无法承诺所有老师均提供用户群服务，感谢理解。\",\"question\":\"购买课程后是否可以加入老师的粉丝群或者用户群？\"}],\"title\":\"常见问题\"},\"is_enable_cash\":true,\"is_series\":false,\"live_ep_count\":0,\"notice\":{},\"opened_ep_count\":16,\"pack_info\":{\"pack_item_list\":[],\"pack_notice2\":\"联报限时折上折\",\"show_packs_right\":false,\"title\":\"套餐优惠\"},\"paid_jump\":{\"jump_url_for_app\":\"bilibili://cheese/pay-guide?season_id=5918&has_phone=0\",\"url\":\"\"},\"paid_view\":false,\"payment\":{\"bp_enough\":0,\"desc\":\"券后 88 元起/16课时\",\"discount_desc\":\"88 元\",\"discount_prefix\":\"券后\",\"my_bp\":0,\"pay_shade\":\"券后支付 88 元即可观看所有视频\",\"price\":176.0,\"price_format\":\"176\",\"price_unit\":\"元\",\"refresh_text\":\"立即购买\",\"select_text\":\"立即购买\"},\"previewed_purchase_note\":{\"long_watch_text\":\"试看5分钟，购买后即可观看完整内容\",\"pay_text\":\"券后支付\",\"price_format\":\" 88 元\",\"watch_text\":\"即可观看所有视频\",\"watching_text\":\"试看中，购买即可观看完整内容\"},\"purchase_format_note\":{\"content_list\":[{\"bold\":false,\"content\":\"本内容为付费内容，购买成功后方可观看。\",\"number\":\"1.\"},{\"bold\":true,\"content\":\"本内容为虚拟服务，已购买内容不支持退款，敬请谅解。\",\"number\":\"2.\"},{\"bold\":false,\"content\":\"实际购买价格以页面展示的价格及订单结算页显示价格为准。\",\"number\":\"3.\"}],\"link\":\"https://www.bilibili.com/blackboard/agreement-class-pc.html\",\"title\":\"购买须知\"},\"purchase_note\":{\"content\":\"1. 本内容为付费内容，购买成功后方可观看。<br/>2. 本内容为虚拟服务，已购买内容不支持退款，敬请谅解。<br/>3. 实际购买价格以页面展示的价格及订单结算页显示价格为准。\",\"link\":\"https://www.bilibili.com/blackboard/agreement-class-pc.html\",\"title\":\"购买须知\"},\"purchase_protocol\":{\"link\":\"https://www.bilibili.com/blackboard/agreement-class-pc.html\",\"title\":\"付费内容购买协议\"},\"recommend_seasons\":[{\"cover\":\"https://archive.biliimg.com/bfs/archive/b4d1021ecbcd5d374a66f3796d4d59db48d69326.jpg\",\"ep_count\":\"共6课时\",\"id\":796929923,\"season_url\":\"https://m.bilibili.com/cheese/play/ss796929923?csource=Detail_relevantclass\",\"subtitle\":\"基于Fluent直接通油内部冷却 电机热仿真\",\"title\":\"基于Fluent直接通油内部冷却 电机热仿真\",\"view\":67},{\"cover\":\"https://archive.biliimg.com/bfs/archive/cd6c5472716168df8cdf2ba6ab336fba2a5a0733.jpg\",\"ep_count\":\"共128课时\",\"id\":444455542,\"season_url\":\"https://m.bilibili.com/cheese/play/ss444455542?csource=Detail_relevantclass\",\"subtitle\":\"舞出优雅，舞出个性，舞出健康，舞出快乐。人生的美丽蔓延至足尖\",\"title\":\"《体育舞蹈》\",\"view\":721},{\"cover\":\"https://archive.biliimg.com/bfs/archive/46cf83964a8cf717665d08538dac224b1d1e0650.jpg\",\"ep_count\":\"共14课时\",\"id\":685287671,\"season_url\":\"https://m.bilibili.com/cheese/play/ss685287671?csource=Detail_relevantclass\",\"subtitle\":\"解装配约束的配合使用，达到元件简单运动和位置变化\",\"title\":\"Creo 13.4 装配基本教程 约束篇\",\"view\":443},{\"cover\":\"https://archive.biliimg.com/bfs/archive/746d635f9df8393bf522bce08cfd3ccfc17d2633.jpg\",\"ep_count\":\"共95课时\",\"id\":565109148,\"season_url\":\"https://m.bilibili.com/cheese/play/ss565109148?csource=Detail_relevantclass\",\"subtitle\":\"获取学术论文的撰写方法，投稿流程\",\"title\":\"学术规范与论文写作_电子科技大学\",\"view\":39},{\"cover\":\"https://archive.biliimg.com/bfs/archive/8531e622a61b3c223fdd0d7bd040e7d9c776e8c2.jpg\",\"ep_count\":\"共6课时\",\"id\":668035050,\"season_url\":\"https://m.bilibili.com/cheese/play/ss668035050?csource=Detail_relevantclass\",\"subtitle\":\"系统掌握8D八步法，提升问题解决能力，实战案例驱动，快速落地\",\"title\":\"8D问题解决法精品培训课程\",\"view\":2272},{\"cover\":\"https://archive.biliimg.com/bfs/archive/d27d87598bcff9f0bcc0d9d9844a973ce8ddff7c.jpg\",\"ep_count\":\"共7课时\",\"id\":175032872,\"season_url\":\"https://m.bilibili.com/cheese/play/ss175032872?csource=Detail_relevantclass\",\"subtitle\":\"基于Fluent MRF方法压缩泵流场模拟\",\"title\":\"基于Fluent MRF方法压缩泵流场模拟\",\"view\":124},{\"cover\":\"https://archive.biliimg.com/bfs/archive/e09225e50ca0352b10d98d7d91c3700cf0243cfc.jpg\",\"ep_count\":\"共11课时\",\"id\":846590475,\"season_url\":\"https://m.bilibili.com/cheese/play/ss846590475?csource=Detail_relevantclass\",\"subtitle\":\"CSI CSiPlant v10.1.0.1796管道应力分\",\"title\":\"CSI CSiPlant v10.1最新课程！\",\"view\":157},{\"cover\":\"https://archive.biliimg.com/bfs/archive/1deb062876452ff66b310b293fd26f2e5e4380f8.jpg\",\"ep_count\":\"共9课时\",\"id\":485104673,\"season_url\":\"https://m.bilibili.com/cheese/play/ss485104673?csource=Detail_relevantclass\",\"subtitle\":\"基于Fluent水冷轴向电机/盘式电机热仿真\",\"title\":\"基于Fluent水冷轴向电机/盘式电机热仿真\",\"view\":66},{\"cover\":\"https://archive.biliimg.com/bfs/archive/026a453fa72112bb7fc7eaf671027ebb91552d9c.jpg\",\"ep_count\":\"共32课时\",\"id\":257019802,\"season_url\":\"https://m.bilibili.com/cheese/play/ss257019802?csource=Detail_relevantclass\",\"subtitle\":\"课程秉持零基础可学、理论通俗、实操为主、项目落地的教学理念\",\"title\":\"发那科工业机器人课程\",\"view\":396},{\"cover\":\"https://archive.biliimg.com/bfs/archive/de18badb2501c08381fff7b9782b91c1a9423513.jpg\",\"ep_count\":\"共31课时\",\"id\":189090743,\"season_url\":\"https://m.bilibili.com/cheese/play/ss189090743?csource=Detail_relevantclass\",\"subtitle\":\"品牌设计师必备技能\",\"title\":\"课程2：《iPad板绘设计课程》\",\"view\":489},{\"cover\":\"https://archive.biliimg.com/bfs/archive/97503acced4358c06295bff03ee5e830a9fea374.jpg\",\"ep_count\":\"共4课时\",\"id\":566616374,\"season_url\":\"https://m.bilibili.com/cheese/play/ss566616374?csource=Detail_relevantclass\",\"subtitle\":\"强化信驾驭数字时代的安全挑战——为您的职业道路铺设坚固基石\",\"title\":\"知识守护者：知识密集型企业员工信息安全必修课\",\"view\":315},{\"cover\":\"https://archive.biliimg.com/bfs/archive/b25dcf96ad776a0f939d117e4da9fb9d8f248fd5.jpg\",\"ep_count\":\"共16课时\",\"id\":16648,\"season_url\":\"https://m.bilibili.com/cheese/play/ss16648?csource=Detail_relevantclass\",\"subtitle\":\"使用实际案例讲解土方量外业测量和内业南方CASS三角网法计算\",\"title\":\"南方 CASS 三角网法土方量计算笔记-测绘梁工\",\"view\":9483},{\"cover\":\"https://archive.biliimg.com/bfs/archive/baf7c7717de30e405be7c23ad640b119f7112f1d.jpg\",\"ep_count\":\"共16课时\",\"id\":215272896,\"season_url\":\"https://m.bilibili.com/cheese/play/ss215272896?csource=Detail_relevantclass\",\"subtitle\":\"从诊断访谈、数据复盘到高层汇报的薪酬设计全案\",\"title\":\"8步搞定薪酬设计全流程\",\"view\":501},{\"cover\":\"https://archive.biliimg.com/bfs/archive/163843e6e8ecf5be65b2c8396ee4d42247ea622b.jpg\",\"ep_count\":\"共1课时\",\"id\":16687,\"season_url\":\"https://m.bilibili.com/cheese/play/ss16687?csource=Detail_relevantclass\",\"subtitle\":\"含ICEM网格划分及FLUENT模拟设置教学视频\",\"title\":\"气液固多相流-欧拉-四叶片搅拌旋转\",\"view\":1847},{\"cover\":\"https://archive.biliimg.com/bfs/archive/33d1a45f06625e8dbf44655cc58c7f686b73e506.jpg\",\"ep_count\":\"共7课时\",\"id\":605037860,\"season_url\":\"https://m.bilibili.com/cheese/play/ss605037860?csource=Detail_relevantclass\",\"subtitle\":\"基于Fluent设备真空辐射换热模拟\",\"title\":\"基于Fluent设备真空辐射换热模拟\",\"view\":75}],\"release_bottom_info\":\"没有更多啦~\",\"release_info\":\"已完结 | 共16课时\",\"release_info2\":\"共16课时\",\"release_status\":\"已完结\",\"season_id\":5918,\"season_selected_ranks\":[],\"season_tag\":0,\"share_url\":\"https://m.bilibili.com/cheese/play/ss5918\",\"short_link\":\"bilibili://cheese/season/5918\",\"show_watermark\":true,\"stat\":{\"play\":1685062,\"play_desc\":\"168.5万播放\",\"show_vt\":false},\"status\":10,\"stop_sell\":false,\"subscription_update_count_cycle_text\":\"\",\"subtitle\":\"帮普通人建立世界模型，降低人与人的沟通门槛\",\"title\":\"【限时五折】新闻系学不到：马督工教你做自媒体\",\"up_info\":{\"avatar\":\"https://i1.hdslb.com/bfs/face/1c56737dfc0deffffc31c78e0cefb0c3ecf7e000.jpg\",\"brief\":\"观察者网前主笔、新闻总监；《睡前消息》栏目负责人，视频总播放量超过5亿，全网粉丝总量超过500万；热河人\",\"follower\":2194721,\"is_follow\":0,\"is_living\":false,\"link\":\"https://space.bilibili.com/316568752/pugv?defaultTab=cheese\",\"mid\":316568752,\"pendant\":{\"image\":\"\",\"name\":\"\",\"pid\":0},\"season_count\":1,\"uname\":\"马督工\"},\"update_status\":2,\"user_status\":{\"bp\":0,\"expire_at\":0,\"favored\":0,\"favored_count\":0,\"is_expired\":false,\"is_first_paid\":true,\"payed\":0,\"user_expiry_content\":\"长期有效\"},\"watermark_interval\":300},\"message\":\"success\"}"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.bilibili.com/pugv/player/web/playurl?avid=406145765&cid=1277541203&ep_id=229832&fnval=16&fourk=1",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ],
+          [
+            "referer",
+            "https://www.bilibili.com/"
+          ],
+          [
+            "origin",
+            "https://www.bilibili.com"
+          ],
+          [
+            "cookie",
+            "<redacted>"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://api.bilibili.com/pugv/player/web/playurl?avid=406145765&cid=1277541203&ep_id=229832&fnval=16&fourk=1",
+        "headers": [
+          [
+            "date",
+            "Wed, 16 Sep 2026 03:36:05 GMT"
+          ],
+          [
+            "content-type",
+            "application/json"
+          ],
+          [
+            "bili-status-code",
+            "0"
+          ],
+          [
+            "x-bili-trace-id",
+            "7cd1ba023c8c553d32ad4a773b6aaa0e"
+          ],
+          [
+            "access-control-allow-headers",
+            "origin,no-cache,x-requested-with,if-modified-since,pragma,last-modified,cache-control,expires,content-type,access-control-allow-credentials,dnt,x-customheader,keep-alive,user-agent,x-cache-webcdn,x-bilibili-key-real-ip,x-backend-bili-real-ip,x-risk-header,x-event-traceid"
+          ],
+          [
+            "cross-origin-resource-policy",
+            "cross-origin"
+          ],
+          [
+            "access-control-allow-credentials",
+            "true"
+          ],
+          [
+            "access-control-allow-origin",
+            "https://www.bilibili.com"
+          ],
+          [
+            "access-control-allow-methods",
+            "GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS"
+          ],
+          [
+            "access-control-expose-headers",
+            "x-bili-gaia-vvoucher,x-bili-trace-id,x-bili-gaia-param"
+          ],
+          [
+            "x-cache-webcdn",
+            "BYPASS from blzone02"
+          ],
+          [
+            "expires",
+            "Wed, 16 Sep 2026 03:36:04 GMT"
+          ],
+          [
+            "cache-control",
+            "no-cache"
+          ]
+        ],
+        "body": {
+          "text": "{\"code\":0,\"data\":{\"accept_format\":\"hdflv2,hdflv2,flv,flv720,flv480,mp4\",\"code\":0,\"seek_param\":\"start\",\"is_preview\":0,\"fnval\":16,\"video_project\":true,\"fnver\":0,\"type\":\"DASH\",\"result\":\"suee\",\"seek_type\":\"offset\",\"from\":\"local\",\"video_codecid\":7,\"no_rexcode\":0,\"format\":\"hdflv2\",\"support_formats\":[{\"display_desc\":\"4K\",\"superscript\":\"\",\"need_login\":true,\"codecs\":[\"avc1.640033\",\"hev1.1.6.L153.90\"],\"format\":\"hdflv2\",\"description\":\"超清 4K\",\"quality\":120,\"new_description\":\"4K 超高清\"},{\"display_desc\":\"1080P\",\"superscript\":\"高码率\",\"need_login\":true,\"codecs\":[\"avc1.640033\",\"hev1.1.6.L150.90\"],\"format\":\"hdflv2\",\"description\":\"高清 1080P+\",\"quality\":112,\"new_description\":\"1080P 高码率\"},{\"display_desc\":\"1080P\",\"superscript\":\"\",\"need_login\":true,\"codecs\":[\"avc1.640032\",\"hev1.1.6.L150.90\"],\"format\":\"flv\",\"description\":\"高清 1080P\",\"quality\":80,\"new_description\":\"1080P 高清\"},{\"display_desc\":\"720P\",\"superscript\":\"\",\"need_login\":true,\"codecs\":[\"avc1.640028\",\"hev1.1.6.L120.90\"],\"format\":\"flv720\",\"description\":\"高清 720P\",\"quality\":64,\"new_description\":\"720P 准高清\"},{\"display_desc\":\"480P\",\"superscript\":\"\",\"need_login\":false,\"codecs\":[\"avc1.64001F\",\"hev1.1.6.L120.90\"],\"format\":\"flv480\",\"description\":\"清晰 480P\",\"quality\":32,\"new_description\":\"480P 标清\"},{\"display_desc\":\"360P\",\"superscript\":\"\",\"need_login\":false,\"codecs\":[\"avc1.64001E\",\"hev1.1.6.L120.90\"],\"format\":\"mp4\",\"description\":\"流畅 360P\",\"quality\":16,\"new_description\":\"360P 流畅\"}],\"message\":\"Success\",\"accept_quality\":[120,112,80,64,32,16],\"quality\":112,\"timelength\":220244,\"durls\":[],\"has_paid\":false,\"dash\":{\"duration\":221,\"solution\":{},\"min_buffer_time\":1.5,\"video\":[{\"start_with_sap\":1,\"bandwidth\":7793071,\"sar\":\"1:1\",\"codecs\":\"avc1.640033\",\"base_url\":\"https://upos-sz-mirrorcosov.bilivideo.com/upgcxcode/03/12/1277541203/1277541203_sr1-1-100035.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=&nbs=1&platform=pc&trid=21887181163e40b69b04c697e4e2625u&oi=410064093&mid=0&gen=playurlv3&os=cosovbv&uipk=5&deadline=1789536965&og=hw&upsig=0c89f5b32c0154495fde5b6b704709d1&uparams=e,nbs,platform,trid,oi,mid,gen,os,uipk,deadline,og&bvc=vod&nettype=0&bw=7795905&lrs=0&f=u_0_0&qn_dyeid=0fbfc09665c0f10100b36c8f6aaa0ea5&allo_id=130759_0_1&agrr=0&buvid=&build=0&dl=0&orderid=0,2\",\"backup_url\":[\"https://upos-hz-mirrorakam.akamaized.net/upgcxcode/03/12/1277541203/1277541203_sr1-1-100035.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=&nbs=1&platform=pc&mid=0&os=akam&uipk=5&trid=21887181163e40b69b04c697e4e2625u&oi=410064093&deadline=1789536965&gen=playurlv3&og=hw&upsig=122302f4982c07bd757a4a0868ba5a80&uparams=e,nbs,platform,mid,os,uipk,trid,oi,deadline,gen,og&hdnts=exp=1789536965~hmac=1a18f493268b3a6db1727d9a0efa0a52d25b9fdaaffd4984240c14cad1d1cbc1&bvc=vod&nettype=0&bw=7795905&lrs=0&buvid=&build=0&dl=0&f=u_0_0&qn_dyeid=0fbfc09665c0f10100b36c8f6aaa0ea5&allo_id=130759_0_1&agrr=0&orderid=1,2\"],\"segment_base\":{\"initialization\":\"0-1015\",\"index_range\":\"1016-1575\"},\"frame_rate\":\"25\",\"codecid\":7,\"size\":214387395,\"mime_type\":\"video/mp4\",\"width\":3840,\"id\":120,\"noRexcode\":0,\"height\":2160,\"md5\":\"3bc48e43a986fb8032ffa58615caa562\"},{\"start_with_sap\":1,\"bandwidth\":4096076,\"sar\":\"1:1\",\"codecs\":\"hev1.1.6.L153.90\",\"base_url\":\"https://upos-sz-mirrorcosov.bilivideo.com/upgcxcode/03/12/1277541203/1277541203_sr1-1-100036.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=&mid=0&nbs=1&uipk=5&gen=playurlv3&og=cos&platform=pc&trid=21887181163e40b69b04c697e4e2625u&oi=410064093&deadline=1789536965&os=cosovbv&upsig=e721f6f15859b1a832134ac036e0602a&uparams=e,mid,nbs,uipk,gen,og,platform,trid,oi,deadline,os&bvc=vod&nettype=0&bw=4097566&lrs=0&agrr=0&buvid=&build=0&dl=0&f=u_0_0&qn_dyeid=0fbfc09665c0f10100b36c8f6aaa0ea5&allo_id=130759_0_1&orderid=0,2\",\"backup_url\":[\"https://upos-hz-mirrorakam.akamaized.net/upgcxcode/03/12/1277541203/1277541203_sr1-1-100036.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=&oi=410064093&deadline=1789536965&platform=pc&mid=0&gen=playurlv3&os=akam&og=cos&nbs=1&uipk=5&trid=21887181163e40b69b04c697e4e2625u&upsig=ca0d6ded3b63d3336ca397f7f38723ed&uparams=e,oi,deadline,platform,mid,gen,os,og,nbs,uipk,trid&hdnts=exp=1789536965~hmac=34e05cbf5c9c5fc16107fa1b937597058279a481d72647769acb412fe73d69e5&bvc=vod&nettype=0&bw=4097566&lrs=0&allo_id=130759_0_1&agrr=0&buvid=&build=0&dl=0&f=u_0_0&qn_dyeid=0fbfc09665c0f10100b36c8f6aaa0ea5&orderid=1,2\"],\"segment_base\":{\"initialization\":\"0-1178\",\"index_range\":\"1179-1738\"},\"frame_rate\":\"25\",\"codecid\":12,\"size\":112683073,\"mime_type\":\"video/mp4\",\"width\":3840,\"id\":120,\"noRexcode\":0,\"height\":2160,\"md5\":\"fc66e037fdece3753b9d6fee81af0115\"},{\"start_with_sap\":1,\"bandwidth\":699858,\"sar\":\"1:1\",\"codecs\":\"hev1.1.6.L150.90\",\"base_url\":\"https://upos-sz-mirrorcosov.bilivideo.com/upgcxcode/03/12/1277541203/1277541203-1-100143.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=&oi=410064093&deadline=1789536965&platform=pc&trid=21887181163e40b69b04c697e4e2625u&gen=playurlv3&os=cosovbv&og=cos&mid=0&nbs=1&uipk=5&upsig=8283c267a1a2703613fe11184bed4e1b&uparams=e,oi,deadline,platform,trid,gen,os,og,mid,nbs,uipk&bvc=vod&nettype=0&bw=700113&lrs=0&f=u_0_0&qn_dyeid=0fbfc09665c0f10100b36c8f6aaa0ea5&allo_id=130759_0_1&agrr=0&buvid=&build=0&dl=0&orderid=0,2\",\"backup_url\":[\"https://upos-hz-mirrorakam.akamaized.net/upgcxcode/03/12/1277541203/1277541203-1-100143.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=&deadline=1789536965&mid=0&nbs=1&platform=pc&trid=21887181163e40b69b04c697e4e2625u&gen=playurlv3&os=akam&og=cos&uipk=5&oi=410064093&upsig=0f9965d2a95d35176f0baf58175c9c32&uparams=e,deadline,mid,nbs,platform,trid,gen,os,og,uipk,oi&hdnts=exp=1789536965~hmac=9319818d0a4c0e9bac7143244acb255210bab13b9b9c1fc7041f08857394569a&bvc=vod&nettype=0&bw=700113&lrs=0&dl=0&f=u_0_0&qn_dyeid=0fbfc09665c0f10100b36c8f6aaa0ea5&allo_id=130759_0_1&agrr=0&buvid=&build=0&orderid=1,2\"],\"segment_base\":{\"initialization\":\"0-1171\",\"index_range\":\"1172-1731\"},\"frame_rate\":\"25\",\"codecid\":12,\"size\":19253112,\"mime_type\":\"video/mp4\",\"width\":1920,\"id\":112,\"noRexcode\":0,\"height\":1080,\"md5\":\"a0adf5db4d03a7742e5fae8da314f26a\"},{\"start_with_sap\":1,\"bandwidth\":1422473,\"sar\":\"1:1\",\"codecs\":\"avc1.640033\",\"base_url\":\"https://upos-sz-mirrorcosov.bilivideo.com/upgcxcode/03/12/1277541203/1277541203-1-30112.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=&os=cosovbv&platform=pc&og=hw&trid=21887181163e40b69b04c697e4e2625u&oi=410064093&deadline=1789536965&mid=0&nbs=1&uipk=5&gen=playurlv3&upsig=15ce1da6c5653c63528e9c019ac2d0ae&uparams=e,os,platform,og,trid,oi,deadline,mid,nbs,uipk,gen&bvc=vod&nettype=0&bw=1422990&lrs=0&allo_id=130759_0_1&agrr=0&buvid=&build=0&dl=0&f=u_0_0&qn_dyeid=0fbfc09665c0f10100b36c8f6aaa0ea5&orderid=0,2\",\"backup_url\":[\"https://upos-hz-mirrorakam.akamaized.net/upgcxcode/03/12/1277541203/1277541203-1-30112.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=&platform=pc&trid=21887181163e40b69b04c697e4e2625u&mid=0&uipk=5&oi=410064093&deadline=1789536965&nbs=1&gen=playurlv3&os=akam&og=hw&upsig=cb738dfa3d8118c2db64082c68be904a&uparams=e,platform,trid,mid,uipk,oi,deadline,nbs,gen,os,og&hdnts=exp=1789536965~hmac=6b300e2d18b287943fbddd7697323654248ce235bdc4159ea5b985334ec8e33e&bvc=vod&nettype=0&bw=1422990&lrs=0&qn_dyeid=0fbfc09665c0f10100b36c8f6aaa0ea5&allo_id=130759_0_1&agrr=0&buvid=&build=0&dl=0&f=u_0_0&orderid=1,2\"],\"segment_base\":{\"initialization\":\"0-993\",\"index_range\":\"994-1553\"},\"frame_rate\":\"25\",\"codecid\":7,\"size\":39132249,\"mime_type\":\"video/mp4\",\"width\":1920,\"id\":112,\"noRexcode\":0,\"height\":1080,\"md5\":\"55348593a3d20b4a36f1230fcd678d87\"},{\"start_with_sap\":1,\"bandwidth\":374642,\"sar\":\"1:1\",\"codecs\":\"hev1.1.6.L150.90\",\"base_url\":\"https://upos-sz-mirrorcosov.bilivideo.com/upgcxcode/03/12/1277541203/1277541203-1-100113.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=&mid=0&nbs=1&oi=410064093&deadline=1789536965&gen=playurlv3&og=cos&uipk=5&platform=pc&trid=21887181163e40b69b04c697e4e2625u&os=cosovbv&upsig=787ca742b665c3719133182f99c06244&uparams=e,mid,nbs,oi,deadline,gen,og,uipk,platform,trid,os&bvc=vod&nettype=0&bw=374778&lrs=0&dl=0&f=u_0_0&qn_dyeid=0fbfc09665c0f10100b36c8f6aaa0ea5&allo_id=130759_0_1&agrr=0&buvid=&build=0&orderid=0,2\",\"backup_url\":[\"https://upos-hz-mirrorakam.akamaized.net/upgcxcode/03/12/1277541203/1277541203-1-100113.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=&mid=0&uipk=5&oi=410064093&deadline=1789536965&gen=playurlv3&nbs=1&platform=pc&trid=21887181163e40b69b04c697e4e2625u&os=akam&og=cos&upsig=bde66196d410252a1c2853185e9ca05e&uparams=e,mid,uipk,oi,deadline,gen,nbs,platform,trid,os,og&hdnts=exp=1789536965~hmac=32638f0627518af1ee4abc0b911a8f47dda3296c59620f60138080d5a40e598b&bvc=vod&nettype=0&bw=374778&lrs=0&qn_dyeid=0fbfc09665c0f10100b36c8f6aaa0ea5&allo_id=130759_0_1&agrr=0&buvid=&build=0&dl=0&f=u_0_0&orderid=1,2\"],\"segment_base\":{\"initialization\":\"0-1171\",\"index_range\":\"1172-1731\"},\"frame_rate\":\"25\",\"codecid\":12,\"size\":10306416,\"mime_type\":\"video/mp4\",\"width\":1920,\"id\":80,\"noRexcode\":0,\"height\":1080,\"md5\":\"dbdf5723043c9b218044fc417c4c2c4a\"},{\"start_with_sap\":1,\"bandwidth\":584476,\"sar\":\"1:1\",\"codecs\":\"avc1.640032\",\"base_url\":\"https://upos-sz-mirrorcosov.bilivideo.com/upgcxcode/03/12/1277541203/1277541203-1-100050.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=&platform=pc&gen=playurlv3&trid=21887181163e40b69b04c697e4e2625u&oi=410064093&mid=0&nbs=1&os=cosovbv&og=hw&deadline=1789536965&uipk=5&upsig=790663c02231ff5f0e12602161586ab1&uparams=e,platform,gen,trid,oi,mid,nbs,os,og,deadline,uipk&bvc=vod&nettype=0&bw=584688&lrs=0&build=0&dl=0&f=u_0_0&qn_dyeid=0fbfc09665c0f10100b36c8f6aaa0ea5&allo_id=130759_0_1&agrr=0&buvid=&orderid=0,2\",\"backup_url\":[\"https://upos-hz-mirrorakam.akamaized.net/upgcxcode/03/12/1277541203/1277541203-1-100050.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=&uipk=5&platform=pc&oi=410064093&deadline=1789536965&gen=playurlv3&os=akam&trid=21887181163e40b69b04c697e4e2625u&mid=0&nbs=1&og=hw&upsig=dc27f2839d2336d619c53c0f85d30b49&uparams=e,uipk,platform,oi,deadline,gen,os,trid,mid,nbs,og&hdnts=exp=1789536965~hmac=a7377d529068412747b0806af5c1b6fb1eed44666025eb20b5a9ea714e202cd3&bvc=vod&nettype=0&bw=584688&lrs=0&agrr=0&buvid=&build=0&dl=0&f=u_0_0&qn_dyeid=0fbfc09665c0f10100b36c8f6aaa0ea5&allo_id=130759_0_1&orderid=1,2\"],\"segment_base\":{\"initialization\":\"0-1008\",\"index_range\":\"1009-1568\"},\"frame_rate\":\"25\",\"codecid\":7,\"size\":16078942,\"mime_type\":\"video/mp4\",\"width\":1920,\"id\":80,\"noRexcode\":0,\"height\":1080,\"md5\":\"092e8b4f9152fdd4bb3deb38e46eee0e\"},{\"start_with_sap\":1,\"bandwidth\":205770,\"sar\":\"1:1\",\"codecs\":\"hev1.1.6.L120.90\",\"base_url\":\"https://upos-hz-mirrorakam.akamaized.net/upgcxcode/03/12/1277541203/1277541203-1-100111.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=&uipk=5&trid=21887181163e40b69b04c697e4e2625u&os=akam&mid=0&platform=pc&oi=410064093&deadline=1789536965&gen=playurlv3&og=hw&nbs=1&upsig=7fb3c6d313882fb2bffe4a404f06d940&uparams=e,uipk,trid,os,mid,platform,oi,deadline,gen,og,nbs&hdnts=exp=1789536965~hmac=01c1fb447b1d4dec309f1ecd4c60e03f013c5b44648a60cfa3d6910f4eb2c474&bvc=vod&nettype=0&bw=205845&lrs=0&qn_dyeid=0fbfc09665c0f10100b36c8f6aaa0ea5&allo_id=130759_0_1&agrr=0&buvid=&build=0&dl=0&f=u_0_0&orderid=0,2\",\"backup_url\":[\"https://upos-sz-mirrorcosov.bilivideo.com/upgcxcode/03/12/1277541203/1277541203-1-100111.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=&nbs=1&platform=pc&os=cosovbv&uipk=5&trid=21887181163e40b69b04c697e4e2625u&oi=410064093&deadline=1789536965&mid=0&gen=playurlv3&og=hw&upsig=38fc522eb4d177830bdf8607f03143c3&uparams=e,nbs,platform,os,uipk,trid,oi,deadline,mid,gen,og&bvc=vod&nettype=0&bw=205845&lrs=0&build=0&dl=0&f=u_0_0&qn_dyeid=0fbfc09665c0f10100b36c8f6aaa0ea5&allo_id=130759_0_1&agrr=0&buvid=&orderid=1,2\"],\"segment_base\":{\"initialization\":\"0-1171\",\"index_range\":\"1172-1731\"},\"frame_rate\":\"25\",\"codecid\":12,\"size\":5660739,\"mime_type\":\"video/mp4\",\"width\":1280,\"id\":64,\"noRexcode\":0,\"height\":720,\"md5\":\"688573a1ded42ab1ea982d2cbe099aaf\"},{\"start_with_sap\":1,\"bandwidth\":350381,\"sar\":\"1:1\",\"codecs\":\"avc1.640028\",\"base_url\":\"https://upos-sz-mirrorcosov.bilivideo.com/upgcxcode/03/12/1277541203/1277541203-1-100048.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=&trid=21887181163e40b69b04c697e4e2625u&deadline=1789536965&nbs=1&uipk=5&og=ali&oi=410064093&mid=0&platform=pc&gen=playurlv3&os=cosovbv&upsig=1fd728c3477115b6ae75c54205848364&uparams=e,trid,deadline,nbs,uipk,og,oi,mid,platform,gen,os&bvc=vod&nettype=0&bw=350508&lrs=0&buvid=&build=0&dl=0&f=u_0_0&qn_dyeid=0fbfc09665c0f10100b36c8f6aaa0ea5&allo_id=130759_0_1&agrr=0&orderid=0,2\",\"backup_url\":[\"https://upos-hz-mirrorakam.akamaized.net/upgcxcode/03/12/1277541203/1277541203-1-100048.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=&oi=410064093&deadline=1789536965&platform=pc&gen=playurlv3&mid=0&nbs=1&uipk=5&os=akam&og=ali&trid=21887181163e40b69b04c697e4e2625u&upsig=3727f4ed39ac4c7075d2092034eaf8f5&uparams=e,oi,deadline,platform,gen,mid,nbs,uipk,os,og,trid&hdnts=exp=1789536965~hmac=b3fca1f0522c614c8d5179766e6bf810ead6d0a191ef51fa263fcf524eee4ed6&bvc=vod&nettype=0&bw=350508&lrs=0&build=0&dl=0&f=u_0_0&qn_dyeid=0fbfc09665c0f10100b36c8f6aaa0ea5&allo_id=130759_0_1&agrr=0&buvid=&orderid=1,2\"],\"segment_base\":{\"initialization\":\"0-1008\",\"index_range\":\"1009-1568\"},\"frame_rate\":\"25\",\"codecid\":7,\"size\":9638987,\"mime_type\":\"video/mp4\",\"width\":1280,\"id\":64,\"noRexcode\":0,\"height\":720,\"md5\":\"ff14cf3ca879e1d9edb097ee52ecf7ae\"},{\"start_with_sap\":1,\"bandwidth\":137633,\"sar\":\"640:639\",\"codecs\":\"hev1.1.6.L120.90\",\"base_url\":\"https://upos-hz-mirrorakam.akamaized.net/upgcxcode/03/12/1277541203/1277541203-1-100110.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=&mid=0&platform=pc&trid=21887181163e40b69b04c697e4e2625u&oi=410064093&deadline=1789536965&os=akam&og=ali&nbs=1&uipk=5&gen=playurlv3&upsig=534dd7f8c7fab42e5369b590d67fd016&uparams=e,mid,platform,trid,oi,deadline,os,og,nbs,uipk,gen&hdnts=exp=1789536965~hmac=e6366b2d01213fe73cb6e547f8b94fb1414d30664f6d816655e83bd5ab4ce7f5&bvc=vod&nettype=0&bw=137683&lrs=0&dl=0&f=u_0_0&qn_dyeid=0fbfc09665c0f10100b36c8f6aaa0ea5&allo_id=130759_0_1&agrr=0&buvid=&build=0&orderid=0,2\",\"backup_url\":[\"https://upos-sz-mirrorcosov.bilivideo.com/upgcxcode/03/12/1277541203/1277541203-1-100110.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=&oi=410064093&deadline=1789536965&og=ali&trid=21887181163e40b69b04c697e4e2625u&mid=0&nbs=1&uipk=5&platform=pc&gen=playurlv3&os=cosovbv&upsig=4000cdc65436319c34b537bf18914460&uparams=e,oi,deadline,og,trid,mid,nbs,uipk,platform,gen,os&bvc=vod&nettype=0&bw=137683&lrs=0&agrr=0&buvid=&build=0&dl=0&f=u_0_0&qn_dyeid=0fbfc09665c0f10100b36c8f6aaa0ea5&allo_id=130759_0_1&orderid=1,2\"],\"segment_base\":{\"initialization\":\"0-1175\",\"index_range\":\"1176-1735\"},\"frame_rate\":\"25\",\"codecid\":12,\"size\":3786292,\"mime_type\":\"video/mp4\",\"width\":852,\"id\":32,\"noRexcode\":0,\"height\":480,\"md5\":\"20b5e5cffa624f6415bf7f7be67604f3\"},{\"start_with_sap\":1,\"bandwidth\":184045,\"sar\":\"640:639\",\"codecs\":\"avc1.64001F\",\"base_url\":\"https://upos-sz-mirrorcosov.bilivideo.com/upgcxcode/03/12/1277541203/1277541203-1-100047.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=&gen=playurlv3&os=cosovbv&trid=21887181163e40b69b04c697e4e2625u&og=hw&mid=0&nbs=1&uipk=5&platform=pc&oi=410064093&deadline=1789536965&upsig=1b5bbbf7572d23b5f7ca9187d7028167&uparams=e,gen,os,trid,og,mid,nbs,uipk,platform,oi,deadline&bvc=vod&nettype=0&bw=184112&lrs=0&buvid=&build=0&dl=0&f=u_0_0&qn_dyeid=0fbfc09665c0f10100b36c8f6aaa0ea5&allo_id=130759_0_1&agrr=0&orderid=0,2\",\"backup_url\":[\"https://upos-hz-mirrorakam.akamaized.net/upgcxcode/03/12/1277541203/1277541203-1-100047.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=&platform=pc&gen=playurlv3&deadline=1789536965&uipk=5&trid=21887181163e40b69b04c697e4e2625u&oi=410064093&os=akam&og=hw&mid=0&nbs=1&upsig=fb2afc1bd554f7e7837ea31aa67d4799&uparams=e,platform,gen,deadline,uipk,trid,oi,os,og,mid,nbs&hdnts=exp=1789536965~hmac=da9f1c75fee4975785646ea099ae603fec41316cc1e988e50d42fb296b878c05&bvc=vod&nettype=0&bw=184112&lrs=0&dl=0&f=u_0_0&qn_dyeid=0fbfc09665c0f10100b36c8f6aaa0ea5&allo_id=130759_0_1&agrr=0&buvid=&build=0&orderid=1,2\"],\"segment_base\":{\"initialization\":\"0-1011\",\"index_range\":\"1012-1571\"},\"frame_rate\":\"25\",\"codecid\":7,\"size\":5063096,\"mime_type\":\"video/mp4\",\"width\":852,\"id\":32,\"noRexcode\":0,\"height\":480,\"md5\":\"45c0ff22265dbf180c35989cb1602038\"},{\"start_with_sap\":1,\"bandwidth\":99068,\"sar\":\"1:1\",\"codecs\":\"hev1.1.6.L120.90\",\"base_url\":\"https://upos-sz-mirrorcosov.bilivideo.com/upgcxcode/03/12/1277541203/1277541203-1-100109.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=&deadline=1789536965&mid=0&uipk=5&platform=pc&og=hw&nbs=1&trid=21887181163e40b69b04c697e4e2625u&oi=410064093&gen=playurlv3&os=cosovbv&upsig=1111f7a6b0b0dceb6d2d22e85b37c5a1&uparams=e,deadline,mid,uipk,platform,og,nbs,trid,oi,gen,os&bvc=vod&nettype=0&bw=99104&lrs=0&buvid=&build=0&dl=0&f=u_0_0&qn_dyeid=0fbfc09665c0f10100b36c8f6aaa0ea5&allo_id=130759_0_1&agrr=0&orderid=0,2\",\"backup_url\":[\"https://upos-hz-mirrorakam.akamaized.net/upgcxcode/03/12/1277541203/1277541203-1-100109.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=&platform=pc&og=hw&mid=0&uipk=5&trid=21887181163e40b69b04c697e4e2625u&oi=410064093&gen=playurlv3&os=akam&deadline=1789536965&nbs=1&upsig=eda097222fd4918237ab4a2063e80ea0&uparams=e,platform,og,mid,uipk,trid,oi,gen,os,deadline,nbs&hdnts=exp=1789536965~hmac=2a29012612504b3b84405495dda5e273b821fe98e993834aef53e22f0f4a8a7d&bvc=vod&nettype=0&bw=99104&lrs=0&dl=0&f=u_0_0&qn_dyeid=0fbfc09665c0f10100b36c8f6aaa0ea5&allo_id=130759_0_1&agrr=0&buvid=&build=0&orderid=1,2\"],\"segment_base\":{\"initialization\":\"0-1169\",\"index_range\":\"1170-1729\"},\"frame_rate\":\"25\",\"codecid\":12,\"size\":2725372,\"mime_type\":\"video/mp4\",\"width\":640,\"id\":16,\"noRexcode\":0,\"height\":360,\"md5\":\"1ce1864085d5db68250f9f067c3a7f84\"},{\"start_with_sap\":1,\"bandwidth\":108409,\"sar\":\"1:1\",\"codecs\":\"avc1.64001E\",\"base_url\":\"https://upos-sz-mirrorcosov.bilivideo.com/upgcxcode/03/12/1277541203/1277541203-1-100046.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=&os=cosovbv&og=cos&mid=0&uipk=5&platform=pc&oi=410064093&nbs=1&trid=21887181163e40b69b04c697e4e2625u&deadline=1789536965&gen=playurlv3&upsig=2b2cd972f1822087fc0857375e410fb9&uparams=e,os,og,mid,uipk,platform,oi,nbs,trid,deadline,gen&bvc=vod&nettype=0&bw=108448&lrs=0&allo_id=130759_0_1&agrr=0&buvid=&build=0&dl=0&f=u_0_0&qn_dyeid=0fbfc09665c0f10100b36c8f6aaa0ea5&orderid=0,2\",\"backup_url\":[\"https://upos-hz-mirrorakam.akamaized.net/upgcxcode/03/12/1277541203/1277541203-1-100046.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=&os=akam&oi=410064093&deadline=1789536965&mid=0&nbs=1&og=cos&trid=21887181163e40b69b04c697e4e2625u&uipk=5&platform=pc&gen=playurlv3&upsig=1304898c11f8e1d566925dbd321d7759&uparams=e,os,oi,deadline,mid,nbs,og,trid,uipk,platform,gen&hdnts=exp=1789536965~hmac=41a0c1a998a869be55b07e1e2c5c578ba69b34a9ad2cee6e629f24ca7646b781&bvc=vod&nettype=0&bw=108448&lrs=0&build=0&dl=0&f=u_0_0&qn_dyeid=0fbfc09665c0f10100b36c8f6aaa0ea5&allo_id=130759_0_1&agrr=0&buvid=&orderid=1,2\"],\"segment_base\":{\"initialization\":\"0-1015\",\"index_range\":\"1016-1575\"},\"frame_rate\":\"25\",\"codecid\":7,\"size\":2982342,\"mime_type\":\"video/mp4\",\"width\":640,\"id\":16,\"noRexcode\":0,\"height\":360,\"md5\":\"9fefecdb05e769c508e1f2584d7b1a0e\"}],\"audio\":[{\"start_with_sap\":0,\"bandwidth\":125896,\"sar\":\"\",\"codecs\":\"mp4a.40.2\",\"base_url\":\"https://upos-sz-mirrorcosov.bilivideo.com/upgcxcode/03/12/1277541203/1277541203-1-30280.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=&platform=pc&trid=21887181163e40b69b04c697e4e2625u&deadline=1789536965&gen=playurlv3&og=ali&mid=0&nbs=1&uipk=5&oi=410064093&os=cosovbv&upsig=07478d9f4ba67425d7d49bce304a387b&uparams=e,platform,trid,deadline,gen,og,mid,nbs,uipk,oi,os&bvc=vod&nettype=0&bw=126000&lrs=0&buvid=&build=0&dl=0&f=u_0_0&qn_dyeid=0fbfc09665c0f10100b36c8f6aaa0ea5&allo_id=130759_0_1&agrr=0&orderid=0,2\",\"backup_url\":[\"https://upos-hz-mirrorakam.akamaized.net/upgcxcode/03/12/1277541203/1277541203-1-30280.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=&gen=playurlv3&os=akam&og=ali&mid=0&uipk=5&deadline=1789536965&nbs=1&platform=pc&trid=21887181163e40b69b04c697e4e2625u&oi=410064093&upsig=4c3b502eeba19199083961383f3127a5&uparams=e,gen,os,og,mid,uipk,deadline,nbs,platform,trid,oi&hdnts=exp=1789536965~hmac=02ac7f6347db5ad918151789c6d526001752af3516347cbadc5fcd1c08a9bfc6&bvc=vod&nettype=0&bw=126000&lrs=0&build=0&dl=0&f=u_0_0&qn_dyeid=0fbfc09665c0f10100b36c8f6aaa0ea5&allo_id=130759_0_1&agrr=0&buvid=&orderid=1,2\"],\"segment_base\":{\"initialization\":\"0-933\",\"index_range\":\"934-1505\"},\"frame_rate\":\"\",\"codecid\":0,\"size\":3465008,\"mime_type\":\"audio/mp4\",\"width\":0,\"id\":30280,\"noRexcode\":0,\"height\":0,\"md5\":\"98ea15865e5500f038f33f9c55edb284\"},{\"start_with_sap\":0,\"bandwidth\":76502,\"sar\":\"\",\"codecs\":\"mp4a.40.2\",\"base_url\":\"https://upos-hz-mirrorakam.akamaized.net/upgcxcode/03/12/1277541203/1277541203-1-30232.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=&uipk=5&platform=pc&trid=21887181163e40b69b04c697e4e2625u&oi=410064093&gen=playurlv3&os=akam&deadline=1789536965&og=hw&mid=0&nbs=1&upsig=9a05c1430c2da1d3956c3ac024a62139&uparams=e,uipk,platform,trid,oi,gen,os,deadline,og,mid,nbs&hdnts=exp=1789536965~hmac=035aedf95bdbe86ec22c5926e70748cb93aace57854b56dd2248327480b9f696&bvc=vod&nettype=0&bw=76565&lrs=0&build=0&dl=0&f=u_0_0&qn_dyeid=0fbfc09665c0f10100b36c8f6aaa0ea5&allo_id=130759_0_1&agrr=0&buvid=&orderid=0,2\",\"backup_url\":[\"https://upos-sz-mirrorcosov.bilivideo.com/upgcxcode/03/12/1277541203/1277541203-1-30232.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=&mid=0&nbs=1&platform=pc&og=hw&uipk=5&trid=21887181163e40b69b04c697e4e2625u&gen=playurlv3&os=cosovbv&oi=410064093&deadline=1789536965&upsig=e103d9c73bacf61c4985ad21e1e55e81&uparams=e,mid,nbs,platform,og,uipk,trid,gen,os,oi,deadline&bvc=vod&nettype=0&bw=76565&lrs=0&dl=0&f=u_0_0&qn_dyeid=0fbfc09665c0f10100b36c8f6aaa0ea5&allo_id=130759_0_1&agrr=0&buvid=&build=0&orderid=1,2\"],\"segment_base\":{\"initialization\":\"0-933\",\"index_range\":\"934-1505\"},\"frame_rate\":\"\",\"codecid\":0,\"size\":2105558,\"mime_type\":\"audio/mp4\",\"width\":0,\"id\":30232,\"noRexcode\":0,\"height\":0,\"md5\":\"87c9f08ea31e88adf4f09455b73e462c\"},{\"start_with_sap\":0,\"bandwidth\":36016,\"sar\":\"\",\"codecs\":\"mp4a.40.5\",\"base_url\":\"https://upos-sz-mirrorcosov.bilivideo.com/upgcxcode/03/12/1277541203/1277541203-1-30216.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=&mid=0&nbs=1&platform=pc&trid=21887181163e40b69b04c697e4e2625u&gen=playurlv3&os=cosovbv&oi=410064093&uipk=5&og=cos&deadline=1789536965&upsig=46f9b83a52cf3a37289a31e34f0bf215&uparams=e,mid,nbs,platform,trid,gen,os,oi,uipk,og,deadline&bvc=vod&nettype=0&bw=36056&lrs=0&f=u_0_0&qn_dyeid=0fbfc09665c0f10100b36c8f6aaa0ea5&allo_id=130759_0_1&agrr=0&buvid=&build=0&dl=0&orderid=0,2\",\"backup_url\":[\"https://upos-hz-mirrorakam.akamaized.net/upgcxcode/03/12/1277541203/1277541203-1-30216.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=&nbs=1&uipk=5&gen=playurlv3&os=akam&mid=0&platform=pc&trid=21887181163e40b69b04c697e4e2625u&oi=410064093&deadline=1789536965&og=cos&upsig=032beb70166bf46ff3a5e36e83500ebf&uparams=e,nbs,uipk,gen,os,mid,platform,trid,oi,deadline,og&hdnts=exp=1789536965~hmac=06d0ceff8a5e96e68b12018573c785cab37680a6e48332767ff024ad7b2a2add&bvc=vod&nettype=0&bw=36056&lrs=0&agrr=0&buvid=&build=0&dl=0&f=u_0_0&qn_dyeid=0fbfc09665c0f10100b36c8f6aaa0ea5&allo_id=130759_0_1&orderid=1,2\"],\"segment_base\":{\"initialization\":\"0-943\",\"index_range\":\"944-1515\"},\"frame_rate\":\"\",\"codecid\":0,\"size\":991551,\"mime_type\":\"audio/mp4\",\"width\":0,\"id\":30216,\"noRexcode\":0,\"height\":0,\"md5\":\"e6607b18c1b4f2eadb68a11d21c87b69\"}]},\"fragment_videos\":[],\"accept_description\":[\"超清 4K\",\"高清 1080P+\",\"高清 1080P\",\"高清 720P\",\"清晰 480P\",\"流畅 360P\"],\"status\":0},\"message\":\"success\"}"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.bilibili.com/x/web-interface/nav",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ],
+          [
+            "referer",
+            "https://www.bilibili.com/"
+          ],
+          [
+            "cookie",
+            "<redacted>"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://api.bilibili.com/x/web-interface/nav",
+        "headers": [
+          [
+            "date",
+            "Wed, 16 Sep 2026 03:36:05 GMT"
+          ],
+          [
+            "content-type",
+            "application/json; charset=utf-8"
+          ],
+          [
+            "bili-status-code",
+            "-101"
+          ],
+          [
+            "bili-trace-id",
+            "236ca44f346aaa0e"
+          ],
+          [
+            "cpu_usage",
+            "212"
+          ],
+          [
+            "x-bili-metadata-ip-region",
+            "US"
+          ],
+          [
+            "x-bili-trace-id",
+            "32a1dd9371d16b90236ca44f346aaa0e"
+          ],
+          [
+            "access-control-expose-headers",
+            "X-Cache-Webcdn"
+          ],
+          [
+            "expires",
+            "Wed, 16 Sep 2026 03:36:04 GMT"
+          ],
+          [
+            "cache-control",
+            "no-cache"
+          ],
+          [
+            "x-cache-webcdn",
+            "BYPASS from blzone02"
+          ]
+        ],
+        "body": {
+          "text": "{\"code\":-101,\"message\":\"账号未登录\",\"ttl\":1,\"data\":{\"isLogin\":false,\"wbi_img\":{\"img_url\":\"https://i0.hdslb.com/bfs/wbi/7cd084941338484aae1ad9425b84077c.png\",\"sub_url\":\"https://i0.hdslb.com/bfs/wbi/4932caff0ff746eab6f01bf08b70ac45.png\"},\"ip_region\":\"US\"}}"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.bilibili.com/x/player/wbi/v2?aid=406145765&cid=1277541203&wts=1789529765&w_rid=0e85fb76fe217b00fc97ab6acd85998e",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ],
+          [
+            "referer",
+            "https://www.bilibili.com/"
+          ],
+          [
+            "origin",
+            "https://www.bilibili.com"
+          ],
+          [
+            "cookie",
+            "<redacted>"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://api.bilibili.com/x/player/wbi/v2?aid=406145765&cid=1277541203&wts=1789529765&w_rid=0e85fb76fe217b00fc97ab6acd85998e",
+        "headers": [
+          [
+            "date",
+            "Wed, 16 Sep 2026 03:36:06 GMT"
+          ],
+          [
+            "content-type",
+            "application/json; charset=utf-8"
+          ],
+          [
+            "access-control-allow-credentials",
+            "true"
+          ],
+          [
+            "access-control-allow-methods",
+            "GET,POST,PUT,DELETE"
+          ],
+          [
+            "access-control-allow-origin",
+            "https://www.bilibili.com"
+          ],
+          [
+            "bili-status-code",
+            "0"
+          ],
+          [
+            "bili-trace-id",
+            "45c244ea4f6aaa0e"
+          ],
+          [
+            "cpu_usage",
+            "171"
+          ],
+          [
+            "set-cookie",
+            "<redacted>"
+          ],
+          [
+            "vary",
+            "Origin"
+          ],
+          [
+            "x-bili-metadata-ip-region",
+            "US"
+          ],
+          [
+            "x-bili-trace-id",
+            "7d60f442965b024a45c244ea4f6aaa0e"
+          ],
+          [
+            "x-rid-result",
+            "0"
+          ],
+          [
+            "access-control-allow-headers",
+            "origin,no-cache,x-requested-with,if-modified-since,pragma,last-modified,cache-control,expires,content-type,access-control-allow-credentials,dnt,x-customheader,keep-alive,user-agent,x-cache-webcdn,x-bilibili-key-real-ip,x-backend-bili-real-ip,x-risk-header,x-event-traceid"
+          ],
+          [
+            "cross-origin-resource-policy",
+            "cross-origin"
+          ],
+          [
+            "access-control-expose-headers",
+            "x-bili-gaia-vvoucher,x-bili-trace-id,x-bili-gaia-param"
+          ],
+          [
+            "x-cache-webcdn",
+            "BYPASS from blzone02"
+          ],
+          [
+            "expires",
+            "Wed, 16 Sep 2026 03:36:05 GMT"
+          ],
+          [
+            "cache-control",
+            "no-cache"
+          ]
+        ],
+        "body": {
+          "text": "{\"code\":0,\"message\":\"OK\",\"ttl\":1,\"data\":{\"aid\":406145765,\"bvid\":\"BV1PV411A7c1\",\"allow_bp\":false,\"no_share\":false,\"cid\":1277541203,\"max_limit\":1000,\"page_no\":1,\"has_next\":false,\"ip_info\":{\"ip\":\"24.113.20.221\",\"zone_ip\":\" 10.155.50.25\",\"zone_id\":29425664,\"country\":\"美国\",\"province\":\"华盛顿州\",\"city\":\"汤森港\"},\"login_mid\":0,\"login_mid_hash\":\"\",\"is_owner\":false,\"name\":\"\",\"permission\":\"0\",\"level_info\":{\"current_level\":0,\"current_min\":0,\"current_exp\":0,\"next_exp\":0,\"level_up\":0},\"vip\":{\"type\":0,\"status\":0,\"due_date\":0,\"vip_pay_type\":0,\"theme_type\":0,\"label\":{\"path\":\"\",\"text\":\"\",\"label_theme\":\"\",\"text_color\":\"\",\"bg_style\":0,\"bg_color\":\"\",\"border_color\":\"\",\"use_img_label\":false,\"img_label_uri_hans\":\"\",\"img_label_uri_hant\":\"\",\"img_label_uri_hans_static\":\"\",\"img_label_uri_hant_static\":\"\",\"label_id\":0,\"label_goto\":null,\"img_label_uri_i18n\":\"\",\"img_label_uri_i18n_static\":\"\",\"label_type\":0},\"avatar_subscript\":0,\"nickname_color\":\"\",\"role\":0,\"avatar_subscript_url\":\"\",\"tv_vip_status\":0,\"tv_vip_pay_type\":0,\"tv_due_date\":0,\"avatar_icon\":{\"icon_resource\":{}},\"ott_info\":{\"vip_type\":0,\"pay_type\":0,\"pay_channel_id\":\"\",\"status\":0,\"overdue_time\":0},\"super_vip\":{\"is_super_vip\":false}},\"answer_status\":0,\"block_time\":0,\"role\":\"\",\"last_play_time\":0,\"last_play_cid\":0,\"now_time\":1789529765,\"online_count\":1,\"dm_mask\":{\"cid\":1277541203,\"plat\":0,\"fps\":25,\"time\":0,\"mask_url\":\"//upos-sz-staticcos-cmask.bilivideo.com/cmaskboss/1277541203_25_0.webmask?trid=c13a29afa62242f785f31eae02532b8eB\\u0026orderid=0,1\\u0026logo=00000000\"},\"need_login_subtitle\":false,\"subtitle\":{\"allow_submit\":false,\"lan\":\"\",\"lan_doc\":\"\",\"subtitles\":[],\"subtitle_position\":null,\"font_size_type\":0},\"view_points\":[],\"preview_toast\":\"为创作付费，购买观看完整视频|购买观看\",\"pugv\":{\"watch_status\":1,\"pay_status\":2,\"season_status\":1},\"options\":{\"is_360\":false,\"without_vip\":false},\"guide_attention\":[],\"jump_card\":[],\"operation_card\":[],\"online_switch\":{\"enable_gray_dash_playback\":\"500\",\"new_broadcast\":\"1\",\"realtime_dm\":\"1\",\"subtitle_submit_switch\":\"1\"},\"fawkes\":{\"config_version\":38487,\"ff_version\":21289},\"show_switch\":{\"long_progress\":false},\"bgm_info\":null,\"toast_block\":false,\"is_upower_exclusive\":false,\"is_upower_play\":false,\"is_ugc_pay_preview\":false,\"elec_high_level\":{\"privilege_type\":0,\"title\":\"\",\"sub_title\":\"\",\"show_button\":false,\"button_text\":\"\",\"jump_url\":\"\",\"intro\":\"\",\"new\":false,\"question_text\":\"\",\"qa_title\":\"\"},\"disable_show_up_info\":false,\"is_upower_exclusive_with_qa\":false,\"arc_aigc\":null,\"self_visible\":null,\"script_pace_exp\":\"0\",\"asr_language\":\"\",\"ocr_language\":\"\"}}"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.bilibili.com/x/polymer/web-dynamic/v1/detail?id=998134289197432852",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ],
+          [
+            "referer",
+            "https://www.bilibili.com/"
+          ],
+          [
+            "origin",
+            "https://www.bilibili.com"
+          ],
+          [
+            "cookie",
+            "<redacted>"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://api.bilibili.com/x/polymer/web-dynamic/v1/detail?id=998134289197432852",
+        "headers": [
+          [
+            "date",
+            "Wed, 16 Sep 2026 03:36:06 GMT"
+          ],
+          [
+            "content-type",
+            "application/json; charset=utf-8"
+          ],
+          [
+            "bili-status-code",
+            "0"
+          ],
+          [
+            "bili-trace-id",
+            "66c75099276aaa0e"
+          ],
+          [
+            "cpu_usage",
+            "49"
+          ],
+          [
+            "x-bili-trace-id",
+            "43d9a3111cfa1a8166c75099276aaa0e"
+          ],
+          [
+            "x-rid-result",
+            "2"
+          ],
+          [
+            "x-ticket-status",
+            "1"
+          ],
+          [
+            "access-control-allow-headers",
+            "origin,no-cache,x-requested-with,if-modified-since,pragma,last-modified,cache-control,expires,content-type,access-control-allow-credentials,dnt,x-customheader,keep-alive,user-agent,x-cache-webcdn,x-bilibili-key-real-ip,x-backend-bili-real-ip,x-risk-header,x-event-traceid"
+          ],
+          [
+            "cross-origin-resource-policy",
+            "cross-origin"
+          ],
+          [
+            "access-control-allow-origin",
+            "https://www.bilibili.com"
+          ],
+          [
+            "access-control-allow-credentials",
+            "true"
+          ],
+          [
+            "access-control-expose-headers",
+            "x-bili-gaia-vvoucher,x-bili-trace-id,x-bili-gaia-param"
+          ],
+          [
+            "access-control-allow-methods",
+            "GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS"
+          ],
+          [
+            "x-cache-webcdn",
+            "BYPASS from blzone02"
+          ],
+          [
+            "expires",
+            "Wed, 16 Sep 2026 03:36:05 GMT"
+          ],
+          [
+            "cache-control",
+            "no-cache"
+          ]
+        ],
+        "body": {
+          "text": "{\"code\":0,\"message\":\"0\",\"ttl\":1,\"data\":{\"item\":{\"basic\":{\"comment_id_str\":\"998134289197432852\",\"comment_type\":17,\"like_icon\":{\"action_url\":\"\",\"end_url\":\"\",\"id\":0,\"start_url\":\"\"},\"rid_str\":\"998134289197432852\"},\"id_str\":\"998134289197432852\",\"modules\":{\"module_author\":{\"avatar\":{\"container_size\":{\"height\":1.35,\"width\":1.35},\"fallback_layers\":{\"is_critical_group\":true,\"layers\":[{\"general_spec\":{\"pos_spec\":{\"axis_x\":0.675,\"axis_y\":0.675,\"coordinate_pos\":2},\"render_spec\":{\"opacity\":1},\"size_spec\":{\"height\":1,\"width\":1}},\"layer_config\":{\"is_critical\":true,\"tags\":{\"AVATAR_LAYER\":{},\"GENERAL_CFG\":{\"config_type\":1,\"general_config\":{\"web_css_style\":{\"borderRadius\":\"50%\"}}}}},\"resource\":{\"res_image\":{\"image_src\":{\"placeholder\":6,\"remote\":{\"bfs_style\":\"widget-layer-avatar\",\"url\":\"https://i0.hdslb.com/bfs/face/492d0bb71749332040f9d812954fa0b52e66c490.jpg\"},\"src_type\":1}},\"res_type\":3},\"visible\":true},{\"general_spec\":{\"pos_spec\":{\"axis_x\":0.8000000000000002,\"axis_y\":0.8000000000000002,\"coordinate_pos\":1},\"render_spec\":{\"opacity\":1},\"size_spec\":{\"height\":0.41666666666666663,\"width\":0.41666666666666663}},\"layer_config\":{\"tags\":{\"GENERAL_CFG\":{\"config_type\":1,\"general_config\":{\"web_css_style\":{\"background-color\":\"rgb(255,255,255)\",\"border\":\"2px solid rgba(255,255,255,1)\",\"borderRadius\":\"50%\",\"boxSizing\":\"border-box\"}}},\"ICON_LAYER\":{}}},\"resource\":{\"res_image\":{\"image_src\":{\"local\":3,\"src_type\":2}},\"res_type\":3},\"visible\":true}]},\"mid\":\"163637592\"},\"face\":\"https://i0.hdslb.com/bfs/face/492d0bb71749332040f9d812954fa0b52e66c490.jpg\",\"face_nft\":false,\"following\":null,\"jump_url\":\"//space.bilibili.com/163637592/dynamic\",\"label\":\"\",\"mid\":163637592,\"name\":\"老师好我叫何同学\",\"official_verify\":{\"desc\":\"\",\"type\":0},\"pendant\":{\"expire\":0,\"image\":\"\",\"image_enhance\":\"\",\"image_enhance_frame\":\"\",\"n_pid\":0,\"name\":\"\",\"pid\":0},\"pub_action\":\"\",\"pub_location_text\":\"\",\"pub_time\":\"2024年11月10日 18:30\",\"pub_ts\":1731234649,\"type\":\"AUTHOR_TYPE_NORMAL\",\"vip\":{\"avatar_subscript\":1,\"avatar_subscript_url\":\"\",\"due_date\":1796140800000,\"label\":{\"bg_color\":\"#FB7299\",\"bg_style\":1,\"border_color\":\"\",\"img_label_uri_hans\":\"\",\"img_label_uri_hans_static\":\"https://i0.hdslb.com/bfs/vip/8d4f8bfc713826a5412a0a27eaaac4d6b9ede1d9.png\",\"img_label_uri_hant\":\"\",\"img_label_uri_hant_static\":\"https://i0.hdslb.com/bfs/activity-plat/static/20220614/e369244d0b14644f5e1a06431e22a4d5/VEW8fCC0hg.png\",\"label_theme\":\"annual_vip\",\"path\":\"http://i0.hdslb.com/bfs/vip/label_annual.png\",\"text\":\"年度大会员\",\"text_color\":\"#FFFFFF\",\"use_img_label\":true},\"nickname_color\":\"#FB7299\",\"status\":1,\"theme_type\":0,\"type\":2}},\"module_dynamic\":{\"additional\":null,\"desc\":{\"rich_text_nodes\":[{\"orig_text\":\"改版之后第二期！这节目确实是越做越好玩了\",\"text\":\"改版之后第二期！这节目确实是越做越好玩了\",\"type\":\"RICH_TEXT_NODE_TYPE_TEXT\"}],\"text\":\"改版之后第二期！这节目确实是越做越好玩了\"},\"major\":null,\"topic\":null},\"module_more\":{\"three_point_items\":[{\"label\":\"举报\",\"type\":\"THREE_POINT_REPORT\"}]},\"module_stat\":{\"comment\":{\"count\":49,\"forbidden\":false},\"forward\":{\"count\":4,\"forbidden\":false},\"like\":{\"count\":4492,\"forbidden\":false,\"status\":false}}},\"orig\":{\"basic\":{\"comment_id_str\":\"\",\"comment_type\":0,\"like_icon\":{\"action_url\":\"\",\"end_url\":\"\",\"id\":0,\"start_url\":\"\"},\"rid_str\":\"\"},\"id_str\":\"998126459475197974\",\"modules\":{\"module_author\":{\"avatar\":{\"container_size\":{\"height\":1.35,\"width\":1.35},\"fallback_layers\":{\"is_critical_group\":true,\"layers\":[{\"general_spec\":{\"pos_spec\":{\"axis_x\":0.675,\"axis_y\":0.675,\"coordinate_pos\":2},\"render_spec\":{\"opacity\":1},\"size_spec\":{\"height\":1,\"width\":1}},\"layer_config\":{\"is_critical\":true,\"tags\":{\"AVATAR_LAYER\":{},\"GENERAL_CFG\":{\"config_type\":1,\"general_config\":{\"web_css_style\":{\"borderRadius\":\"50%\"}}}}},\"resource\":{\"res_image\":{\"image_src\":{\"placeholder\":6,\"remote\":{\"bfs_style\":\"widget-layer-avatar\",\"url\":\"https://i1.hdslb.com/bfs/face/d23781a855a64b37ba4cdd0c594c9c5a3a09f5bd.jpg\"},\"src_type\":1}},\"res_type\":3},\"visible\":true},{\"general_spec\":{\"pos_spec\":{\"axis_x\":0.8000000000000002,\"axis_y\":0.8000000000000002,\"coordinate_pos\":1},\"render_spec\":{\"opacity\":1},\"size_spec\":{\"height\":0.41666666666666663,\"width\":0.41666666666666663}},\"layer_config\":{\"tags\":{\"GENERAL_CFG\":{\"config_type\":1,\"general_config\":{\"web_css_style\":{\"background-color\":\"rgb(255,255,255)\",\"border\":\"2px solid rgba(255,255,255,1)\",\"borderRadius\":\"50%\",\"boxSizing\":\"border-box\"}}},\"ICON_LAYER\":{}}},\"resource\":{\"res_image\":{\"image_src\":{\"local\":3,\"src_type\":2}},\"res_type\":3},\"visible\":true}]},\"mid\":\"1192648858\"},\"face\":\"https://i1.hdslb.com/bfs/face/d23781a855a64b37ba4cdd0c594c9c5a3a09f5bd.jpg\",\"face_nft\":false,\"following\":null,\"jump_url\":\"//space.bilibili.com/1192648858/dynamic\",\"label\":\"\",\"mid\":1192648858,\"name\":\"何同学工作室\",\"official_verify\":{\"desc\":\"\",\"type\":0},\"pendant\":{\"expire\":0,\"image\":\"\",\"image_enhance\":\"\",\"image_enhance_frame\":\"\",\"n_pid\":0,\"name\":\"\",\"pid\":0},\"pub_action\":\"投稿了视频\",\"pub_time\":\"\",\"pub_ts\":1731232826,\"type\":\"AUTHOR_TYPE_NORMAL\",\"vip\":{\"avatar_subscript\":0,\"avatar_subscript_url\":\"\",\"due_date\":1674144000000,\"label\":{\"bg_color\":\"\",\"bg_style\":0,\"border_color\":\"\",\"img_label_uri_hans\":\"\",\"img_label_uri_hans_static\":\"https://i0.hdslb.com/bfs/vip/d7b702ef65a976b20ed854cbd04cb9e27341bb79.png\",\"img_label_uri_hant\":\"\",\"img_label_uri_hant_static\":\"https://i0.hdslb.com/bfs/activity-plat/static/20220614/e369244d0b14644f5e1a06431e22a4d5/KJunwh19T5.png\",\"label_theme\":\"\",\"path\":\"\",\"text\":\"\",\"text_color\":\"\",\"use_img_label\":true},\"nickname_color\":\"\",\"status\":0,\"theme_type\":0,\"type\":1}},\"module_dynamic\":{\"additional\":null,\"desc\":{\"rich_text_nodes\":[{\"orig_text\":\"看到了会后空翻的狗，还体验了没有鞋带的跑鞋、没有笔的画板和没有弦的吉他\",\"text\":\"看到了会后空翻的狗，还体验了没有鞋带的跑鞋、没有笔的画板和没有弦的吉他\",\"type\":\"RICH_TEXT_NODE_TYPE_TEXT\"}],\"text\":\"看到了会后空翻的狗，还体验了没有鞋带的跑鞋、没有笔的画板和没有弦的吉他\"},\"major\":{\"archive\":{\"aid\":\"113457567568273\",\"badge\":{\"bg_color\":\"#FB7299\",\"color\":\"#FFFFFF\",\"icon_url\":null,\"text\":\"投稿视频\"},\"bvid\":\"BV1TAmBYVEJr\",\"cover\":\"http://i2.hdslb.com/bfs/archive/50091efd965d9f13ff6814f7ad374f90ab21e77d.jpg\",\"desc\":\"本期产品信息：\\n机器狗\\n气味模拟器\\nCloudboom Strike LS\\n无弦吉他\\n蓝牙磁带音箱\\n神奇画板\",\"disable_preview\":0,\"duration_text\":\"15:30\",\"jump_url\":\"//www.bilibili.com/video/BV1TAmBYVEJr/\",\"stat\":{\"danmaku\":\"6420\",\"play\":\"139.3万\"},\"title\":\"美国小朋友就玩这个？！何同学工作室11月开箱\",\"type\":1},\"type\":\"MAJOR_TYPE_ARCHIVE\"},\"topic\":{\"id\":1006025,\"jump_url\":\"https://m.bilibili.com/topic-detail?topic_id=1006025\\u0026topic_name=%E5%BC%80%E7%AE%B1%E6%B5%8B%E8%AF%84\",\"name\":\"开箱测评\"}}},\"type\":\"DYNAMIC_TYPE_AV\",\"visible\":true},\"type\":\"DYNAMIC_TYPE_FORWARD\",\"visible\":true}}}"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.bilibili.com/x/web-interface/wbi/view?aid=170001&wts=1789529766&w_rid=51e59b1d2cba8ee294b4df450f4bf620",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ],
+          [
+            "referer",
+            "https://www.bilibili.com/"
+          ],
+          [
+            "origin",
+            "https://www.bilibili.com"
+          ],
+          [
+            "cookie",
+            "<redacted>"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://api.bilibili.com/x/web-interface/wbi/view?aid=170001&wts=1789529766&w_rid=51e59b1d2cba8ee294b4df450f4bf620",
+        "headers": [
+          [
+            "date",
+            "Wed, 16 Sep 2026 03:36:06 GMT"
+          ],
+          [
+            "content-type",
+            "application/json; charset=utf-8"
+          ],
+          [
+            "access-control-allow-credentials",
+            "true"
+          ],
+          [
+            "access-control-allow-methods",
+            "GET,POST,PUT,DELETE"
+          ],
+          [
+            "access-control-allow-origin",
+            "https://www.bilibili.com"
+          ],
+          [
+            "bili-status-code",
+            "0"
+          ],
+          [
+            "bili-trace-id",
+            "5371fbb0986aaa0e"
+          ],
+          [
+            "cpu_usage",
+            "283"
+          ],
+          [
+            "vary",
+            "Origin"
+          ],
+          [
+            "x-bili-trace-id",
+            "32fd2d98fc6927f95371fbb0986aaa0e"
+          ],
+          [
+            "x-rid-result",
+            "0"
+          ],
+          [
+            "access-control-allow-headers",
+            "origin,no-cache,x-requested-with,if-modified-since,pragma,last-modified,cache-control,expires,content-type,access-control-allow-credentials,dnt,x-customheader,keep-alive,user-agent,x-cache-webcdn,x-bilibili-key-real-ip,x-backend-bili-real-ip,x-risk-header,x-event-traceid"
+          ],
+          [
+            "cross-origin-resource-policy",
+            "cross-origin"
+          ],
+          [
+            "access-control-expose-headers",
+            "x-bili-gaia-vvoucher,x-bili-trace-id,x-bili-gaia-param"
+          ],
+          [
+            "access-control-expose-headers",
+            "X-Cache-Webcdn"
+          ],
+          [
+            "x-cache-webcdn",
+            "BYPASS from blzone02"
+          ],
+          [
+            "expires",
+            "Wed, 16 Sep 2026 03:36:05 GMT"
+          ],
+          [
+            "cache-control",
+            "no-cache"
+          ]
+        ],
+        "body": {
+          "text": "{\"code\":0,\"message\":\"OK\",\"ttl\":1,\"data\":{\"bvid\":\"BV17x411w7KC\",\"aid\":170001,\"videos\":10,\"tid\":193,\"tid_v2\":2017,\"tname\":\"\",\"tname_v2\":\"\",\"copyright\":2,\"pic\":\"http://i2.hdslb.com/bfs/archive/1ada8c32a9d168e4b2ee3e010f24789ba3353785.jpg\",\"title\":\"【MV】保加利亚妖王AZIS视频合辑\",\"pubdate\":1320850533,\"ctime\":1497380562,\"desc\":\"sina 保加利亚超级天王 Azis1999年出道。他的音乐融合保加利亚名族曲风chalga和pop、rap等元素，不过他惊艳的易装秀与浮夸的角色诠释才是他最为出名的地方 Azis与众多保加利亚天王天后级歌手都有过合作.06年，他作为Mariana Popova的伴唱，在欧洲半决赛上演唱了他们的参赛曲Let Me Cry 06年他被Velikite Balgari评为保加利亚有史以来最伟大的名人之一\",\"desc_v2\":[{\"raw_text\":\"sina 保加利亚超级天王 Azis1999年出道。他的音乐融合保加利亚名族曲风chalga和pop、rap等元素，不过他惊艳的易装秀与浮夸的角色诠释才是他最为出名的地方 Azis与众多保加利亚天王天后级歌手都有过合作.06年，他作为Mariana Popova的伴唱，在欧洲半决赛上演唱了他们的参赛曲Let Me Cry 06年他被Velikite Balgari评为保加利亚有史以来最伟大的名人之一\",\"type\":1,\"biz_id\":0}],\"state\":0,\"duration\":2412,\"rights\":{\"bp\":0,\"elec\":0,\"download\":1,\"movie\":0,\"pay\":0,\"hd5\":0,\"no_reprint\":0,\"autoplay\":1,\"ugc_pay\":0,\"is_cooperation\":0,\"ugc_pay_preview\":0,\"no_background\":0,\"clean_mode\":0,\"is_stein_gate\":0,\"is_360\":0,\"no_share\":0,\"arc_pay\":0,\"free_watch\":0},\"owner\":{\"mid\":122541,\"name\":\"冰封.虾子\",\"face\":\"http://i0.hdslb.com/bfs/face/40c46ee74dd6ea33d46c38cd6083e6a1286aa482.gif\"},\"stat\":{\"aid\":170001,\"view\":45794574,\"danmaku\":915659,\"reply\":184063,\"favorite\":877362,\"coin\":294887,\"share\":41376862,\"now_rank\":0,\"his_rank\":13,\"like\":942730,\"dislike\":0,\"evaluation\":\"\",\"vt\":0},\"argue_info\":{\"argue_msg\":\"\",\"argue_type\":0,\"argue_link\":\"\"},\"dynamic\":\"\",\"cid\":279786,\"dimension\":{\"width\":512,\"height\":288,\"rotate\":0},\"premiere\":null,\"teenage_mode\":0,\"is_chargeable_season\":false,\"is_story\":false,\"is_upower_exclusive\":false,\"is_upower_play\":false,\"is_upower_preview\":false,\"enable_vt\":0,\"vt_display\":\"\",\"is_upower_exclusive_with_qa\":false,\"is_hua_sheng\":false,\"no_cache\":false,\"pages\":[{\"cid\":279786,\"page\":1,\"from\":\"vupload\",\"part\":\"Хоп\",\"duration\":199,\"vid\":\"\",\"weblink\":\"\",\"dimension\":{\"width\":512,\"height\":288,\"rotate\":0},\"ctime\":1497380562},{\"cid\":275431,\"page\":2,\"from\":\"vupload\",\"part\":\"Imash li surce\",\"duration\":205,\"vid\":\"\",\"weblink\":\"\",\"dimension\":{\"width\":640,\"height\":360,\"rotate\":0},\"ctime\":1497380562},{\"cid\":279787,\"page\":3,\"from\":\"vupload\",\"part\":\"No Kazvam Ti Stiga\",\"duration\":308,\"vid\":\"\",\"weblink\":\"\",\"dimension\":{\"width\":432,\"height\":324,\"rotate\":0},\"ctime\":1497380562},{\"cid\":280467,\"page\":4,\"from\":\"vupload\",\"part\":\"Samo za teb\",\"duration\":273,\"vid\":\"\",\"weblink\":\"\",\"dimension\":{\"width\":360,\"height\":288,\"rotate\":0},\"ctime\":1497380562},{\"cid\":280468,\"page\":5,\"from\":\"vupload\",\"part\":\"Tochno sega\",\"duration\":241,\"vid\":\"\",\"weblink\":\"\",\"dimension\":{\"width\":584,\"height\":360,\"rotate\":0},\"ctime\":1497380562},{\"cid\":280469,\"page\":6,\"from\":\"vupload\",\"part\":\"Kak boli\",\"duration\":336,\"vid\":\"\",\"weblink\":\"\",\"dimension\":{\"width\":384,\"height\":288,\"rotate\":0},\"ctime\":1497380562},{\"cid\":274491,\"page\":7,\"from\":\"vupload\",\"part\":\"Obicham Te\",\"duration\":250,\"vid\":\"\",\"weblink\":\"\",\"dimension\":{\"width\":402,\"height\":208,\"rotate\":0},\"ctime\":1497380562},{\"cid\":267410,\"page\":8,\"from\":\"vupload\",\"part\":\"Mrazish\",\"duration\":201,\"vid\":\"\",\"weblink\":\"\",\"dimension\":{\"width\":540,\"height\":360,\"rotate\":0},\"ctime\":1497380562},{\"cid\":267714,\"page\":9,\"from\":\"vupload\",\"part\":\"Няма накъде\",\"duration\":201,\"vid\":\"\",\"weblink\":\"\",\"dimension\":{\"width\":450,\"height\":360,\"rotate\":0},\"ctime\":1497380562},{\"cid\":270380,\"page\":10,\"from\":\"vupload\",\"part\":\"Gadna poroda\",\"duration\":198,\"vid\":\"\",\"weblink\":\"\",\"dimension\":{\"width\":432,\"height\":324,\"rotate\":0},\"ctime\":1497380562}],\"subtitle\":null,\"is_season_display\":false,\"user_garb\":{\"url_image_ani_cut\":\"\"},\"honor_reply\":{\"honor\":[{\"aid\":170001,\"type\":3,\"desc\":\"全站排行榜最高第13名\",\"weekly_recommend_num\":0}]},\"like_icon\":\"\",\"need_jump_bv\":false,\"disable_show_up_info\":false,\"is_story_play\":0,\"is_view_self\":false}}"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.bilibili.com/x/player/wbi/playurl?bvid=BV17x411w7KC&cid=279786&dm_cover_img_str=QU5HTEUgKEludGVsLCBJbnRlbChSKSBVSEQgR3JhcGhpY3MgNjMwIERpcmVjdDNEMTEgdnNfNV8wIHBzXzVfMCwgRDNEMTEpR29vZ2xlIEluYy4gKEludGVsKQ&dm_img_inter=%7B%22ds%22%3A%5B%5D%2C%22wh%22%3A%5B0%2C0%2C0%5D%2C%22of%22%3A%5B0%2C0%2C0%5D%7D&dm_img_list=%5B%5D&dm_img_str=V2ViR0wgMS4wIChPcGVuR0wgRVMgMi4wIENocm9taXVtKQ&fnval=4048&fnver=0&fourk=1&try_look=1&wts=1789529766&w_rid=68a24a8dd537742f7e3016e502c7ce12",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ],
+          [
+            "referer",
+            "https://www.bilibili.com/"
+          ],
+          [
+            "origin",
+            "https://www.bilibili.com"
+          ],
+          [
+            "cookie",
+            "<redacted>"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://api.bilibili.com/x/player/wbi/playurl?bvid=BV17x411w7KC&cid=279786&dm_cover_img_str=QU5HTEUgKEludGVsLCBJbnRlbChSKSBVSEQgR3JhcGhpY3MgNjMwIERpcmVjdDNEMTEgdnNfNV8wIHBzXzVfMCwgRDNEMTEpR29vZ2xlIEluYy4gKEludGVsKQ&dm_img_inter=%7B%22ds%22%3A%5B%5D%2C%22wh%22%3A%5B0%2C0%2C0%5D%2C%22of%22%3A%5B0%2C0%2C0%5D%7D&dm_img_list=%5B%5D&dm_img_str=V2ViR0wgMS4wIChPcGVuR0wgRVMgMi4wIENocm9taXVtKQ&fnval=4048&fnver=0&fourk=1&try_look=1&wts=1789529766&w_rid=68a24a8dd537742f7e3016e502c7ce12",
+        "headers": [
+          [
+            "date",
+            "Wed, 16 Sep 2026 03:36:06 GMT"
+          ],
+          [
+            "content-type",
+            "application/json; charset=utf-8"
+          ],
+          [
+            "access-control-allow-credentials",
+            "true"
+          ],
+          [
+            "access-control-allow-methods",
+            "GET,POST,PUT,DELETE"
+          ],
+          [
+            "access-control-allow-origin",
+            "https://www.bilibili.com"
+          ],
+          [
+            "bili-status-code",
+            "0"
+          ],
+          [
+            "bili-trace-id",
+            "472e82254f6aaa0e"
+          ],
+          [
+            "cpu_usage",
+            "103"
+          ],
+          [
+            "vary",
+            "Origin"
+          ],
+          [
+            "x-bili-trace-id",
+            "62b3ffaf2dc27281472e82254f6aaa0e"
+          ],
+          [
+            "x-rid-result",
+            "0"
+          ],
+          [
+            "access-control-allow-headers",
+            "origin,no-cache,x-requested-with,if-modified-since,pragma,last-modified,cache-control,expires,content-type,access-control-allow-credentials,dnt,x-customheader,keep-alive,user-agent,x-cache-webcdn,x-bilibili-key-real-ip,x-backend-bili-real-ip,x-risk-header,x-event-traceid"
+          ],
+          [
+            "cross-origin-resource-policy",
+            "cross-origin"
+          ],
+          [
+            "access-control-expose-headers",
+            "x-bili-gaia-vvoucher,x-bili-trace-id,x-bili-gaia-param"
+          ],
+          [
+            "x-cache-webcdn",
+            "BYPASS from blzone02"
+          ],
+          [
+            "expires",
+            "Wed, 16 Sep 2026 03:36:05 GMT"
+          ],
+          [
+            "cache-control",
+            "no-cache"
+          ]
+        ],
+        "body": {
+          "text": "{\"code\":0,\"message\":\"OK\",\"ttl\":1,\"data\":{\"from\":\"local\",\"result\":\"suee\",\"message\":\"\",\"quality\":16,\"format\":\"mp4\",\"timelength\":199400,\"accept_format\":\"mp4\",\"accept_description\":[\"流畅 360P\"],\"accept_quality\":[16],\"video_codecid\":7,\"seek_param\":\"start\",\"seek_type\":\"second\",\"dash\":{\"duration\":200,\"minBufferTime\":1.5,\"min_buffer_time\":1.5,\"video\":[{\"id\":16,\"baseUrl\":\"https://upos-sz-mirrorcosov.bilivideo.com/upgcxcode/86/97/279786/279786_da3-1-100109.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=\\u0026platform=pc\\u0026mid=0\\u0026deadline=1789536966\\u0026oi=410064093\\u0026trid=4b9bc8bdb726408da238855aaa68a72u\\u0026os=cosovbv\\u0026og=hw\\u0026nbs=1\\u0026uipk=5\\u0026gen=playurlv3\\u0026upsig=1d1d2b1155d2b7e69662b9a77021f48b\\u0026uparams=e,platform,mid,deadline,oi,trid,os,og,nbs,uipk,gen\\u0026bvc=vod\\u0026nettype=0\\u0026bw=155474\\u0026lrs=0\\u0026agrr=0\\u0026buvid=23C901B0-0C48-0426-B576-455A31A0C16A64565infoc\\u0026build=0\\u0026dl=0\\u0026f=u_0_0\\u0026qn_dyeid=4870a0d87d1b1dcd005516846aaa0ea6\\u0026orderid=0,2\",\"base_url\":\"https://upos-sz-mirrorcosov.bilivideo.com/upgcxcode/86/97/279786/279786_da3-1-100109.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=\\u0026platform=pc\\u0026mid=0\\u0026deadline=1789536966\\u0026oi=410064093\\u0026trid=4b9bc8bdb726408da238855aaa68a72u\\u0026os=cosovbv\\u0026og=hw\\u0026nbs=1\\u0026uipk=5\\u0026gen=playurlv3\\u0026upsig=1d1d2b1155d2b7e69662b9a77021f48b\\u0026uparams=e,platform,mid,deadline,oi,trid,os,og,nbs,uipk,gen\\u0026bvc=vod\\u0026nettype=0\\u0026bw=155474\\u0026lrs=0\\u0026agrr=0\\u0026buvid=23C901B0-0C48-0426-B576-455A31A0C16A64565infoc\\u0026build=0\\u0026dl=0\\u0026f=u_0_0\\u0026qn_dyeid=4870a0d87d1b1dcd005516846aaa0ea6\\u0026orderid=0,2\",\"backupUrl\":[\"https://upos-hz-mirrorakam.akamaized.net/upgcxcode/86/97/279786/279786_da3-1-100109.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=\\u0026uipk=5\\u0026oi=410064093\\u0026trid=4b9bc8bdb726408da238855aaa68a72u\\u0026gen=playurlv3\\u0026og=hw\\u0026nbs=1\\u0026platform=pc\\u0026mid=0\\u0026deadline=1789536966\\u0026os=akam\\u0026upsig=b7ac3e36d0fa8fdaad2107df6e4a262d\\u0026uparams=e,uipk,oi,trid,gen,og,nbs,platform,mid,deadline,os\\u0026hdnts=exp=1789536966~hmac=8d339af5d01debe43bdaa42a5c81bc8db07997c91ce3ae1cfd4ac0cb6740fa8d\\u0026bvc=vod\\u0026nettype=0\\u0026bw=155474\\u0026lrs=0\\u0026dl=0\\u0026f=u_0_0\\u0026qn_dyeid=4870a0d87d1b1dcd005516846aaa0ea6\\u0026agrr=0\\u0026buvid=23C901B0-0C48-0426-B576-455A31A0C16A64565infoc\\u0026build=0\\u0026orderid=1,2\"],\"backup_url\":[\"https://upos-hz-mirrorakam.akamaized.net/upgcxcode/86/97/279786/279786_da3-1-100109.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=\\u0026uipk=5\\u0026oi=410064093\\u0026trid=4b9bc8bdb726408da238855aaa68a72u\\u0026gen=playurlv3\\u0026og=hw\\u0026nbs=1\\u0026platform=pc\\u0026mid=0\\u0026deadline=1789536966\\u0026os=akam\\u0026upsig=b7ac3e36d0fa8fdaad2107df6e4a262d\\u0026uparams=e,uipk,oi,trid,gen,og,nbs,platform,mid,deadline,os\\u0026hdnts=exp=1789536966~hmac=8d339af5d01debe43bdaa42a5c81bc8db07997c91ce3ae1cfd4ac0cb6740fa8d\\u0026bvc=vod\\u0026nettype=0\\u0026bw=155474\\u0026lrs=0\\u0026dl=0\\u0026f=u_0_0\\u0026qn_dyeid=4870a0d87d1b1dcd005516846aaa0ea6\\u0026agrr=0\\u0026buvid=23C901B0-0C48-0426-B576-455A31A0C16A64565infoc\\u0026build=0\\u0026orderid=1,2\"],\"bandwidth\":155201,\"mimeType\":\"video/mp4\",\"mime_type\":\"video/mp4\",\"codecs\":\"hev1.1.6.L120.90\",\"width\":512,\"height\":288,\"frameRate\":\"15.015\",\"frame_rate\":\"15.015\",\"sar\":\"1105:1104\",\"startWithSap\":1,\"start_with_sap\":1,\"SegmentBase\":{\"Initialization\":\"0-1126\",\"indexRange\":\"1127-1638\"},\"segment_base\":{\"initialization\":\"0-1126\",\"index_range\":\"1127-1638\"},\"codecid\":12},{\"id\":16,\"baseUrl\":\"https://upos-sz-mirrorcosov.bilivideo.com/upgcxcode/86/97/279786/279786_da3-1-30016.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=\\u0026og=cos\\u0026nbs=1\\u0026mid=0\\u0026deadline=1789536966\\u0026os=cosovbv\\u0026uipk=5\\u0026platform=pc\\u0026oi=410064093\\u0026trid=4b9bc8bdb726408da238855aaa68a72u\\u0026gen=playurlv3\\u0026upsig=c724d9c62d3e94488ad158f79bbfec16\\u0026uparams=e,og,nbs,mid,deadline,os,uipk,platform,oi,trid,gen\\u0026bvc=vod\\u0026nettype=0\\u0026bw=226907\\u0026lrs=0\\u0026dl=0\\u0026f=u_0_0\\u0026qn_dyeid=4870a0d87d1b1dcd005516846aaa0ea6\\u0026agrr=0\\u0026buvid=23C901B0-0C48-0426-B576-455A31A0C16A64565infoc\\u0026build=0\\u0026orderid=0,2\",\"base_url\":\"https://upos-sz-mirrorcosov.bilivideo.com/upgcxcode/86/97/279786/279786_da3-1-30016.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=\\u0026og=cos\\u0026nbs=1\\u0026mid=0\\u0026deadline=1789536966\\u0026os=cosovbv\\u0026uipk=5\\u0026platform=pc\\u0026oi=410064093\\u0026trid=4b9bc8bdb726408da238855aaa68a72u\\u0026gen=playurlv3\\u0026upsig=c724d9c62d3e94488ad158f79bbfec16\\u0026uparams=e,og,nbs,mid,deadline,os,uipk,platform,oi,trid,gen\\u0026bvc=vod\\u0026nettype=0\\u0026bw=226907\\u0026lrs=0\\u0026dl=0\\u0026f=u_0_0\\u0026qn_dyeid=4870a0d87d1b1dcd005516846aaa0ea6\\u0026agrr=0\\u0026buvid=23C901B0-0C48-0426-B576-455A31A0C16A64565infoc\\u0026build=0\\u0026orderid=0,2\",\"backupUrl\":[\"https://upos-hz-mirrorakam.akamaized.net/upgcxcode/86/97/279786/279786_da3-1-30016.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=\\u0026platform=pc\\u0026og=cos\\u0026mid=0\\u0026deadline=1789536966\\u0026trid=4b9bc8bdb726408da238855aaa68a72u\\u0026nbs=1\\u0026uipk=5\\u0026gen=playurlv3\\u0026os=akam\\u0026oi=410064093\\u0026upsig=7fe4514700bdba9ec0ef90aae0e7b22f\\u0026uparams=e,platform,og,mid,deadline,trid,nbs,uipk,gen,os,oi\\u0026hdnts=exp=1789536966~hmac=bfce9e34457bae1a7c3f5efa039ac5e51bbd1ea2db6a77316605cef9ffcf220a\\u0026bvc=vod\\u0026nettype=0\\u0026bw=226907\\u0026lrs=0\\u0026qn_dyeid=4870a0d87d1b1dcd005516846aaa0ea6\\u0026agrr=0\\u0026buvid=23C901B0-0C48-0426-B576-455A31A0C16A64565infoc\\u0026build=0\\u0026dl=0\\u0026f=u_0_0\\u0026orderid=1,2\"],\"backup_url\":[\"https://upos-hz-mirrorakam.akamaized.net/upgcxcode/86/97/279786/279786_da3-1-30016.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=\\u0026platform=pc\\u0026og=cos\\u0026mid=0\\u0026deadline=1789536966\\u0026trid=4b9bc8bdb726408da238855aaa68a72u\\u0026nbs=1\\u0026uipk=5\\u0026gen=playurlv3\\u0026os=akam\\u0026oi=410064093\\u0026upsig=7fe4514700bdba9ec0ef90aae0e7b22f\\u0026uparams=e,platform,og,mid,deadline,trid,nbs,uipk,gen,os,oi\\u0026hdnts=exp=1789536966~hmac=bfce9e34457bae1a7c3f5efa039ac5e51bbd1ea2db6a77316605cef9ffcf220a\\u0026bvc=vod\\u0026nettype=0\\u0026bw=226907\\u0026lrs=0\\u0026qn_dyeid=4870a0d87d1b1dcd005516846aaa0ea6\\u0026agrr=0\\u0026buvid=23C901B0-0C48-0426-B576-455A31A0C16A64565infoc\\u0026build=0\\u0026dl=0\\u0026f=u_0_0\\u0026orderid=1,2\"],\"bandwidth\":226528,\"mimeType\":\"video/mp4\",\"mime_type\":\"video/mp4\",\"codecs\":\"avc1.64001E\",\"width\":512,\"height\":288,\"frameRate\":\"15.152\",\"frame_rate\":\"15.152\",\"sar\":\"1105:1104\",\"startWithSap\":1,\"start_with_sap\":1,\"SegmentBase\":{\"Initialization\":\"0-1031\",\"indexRange\":\"1032-1543\"},\"segment_base\":{\"initialization\":\"0-1031\",\"index_range\":\"1032-1543\"},\"codecid\":7},{\"id\":16,\"baseUrl\":\"https://upos-sz-mirrorcosov.bilivideo.com/upgcxcode/86/97/279786/279786_da3-1-100022.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=\\u0026nbs=1\\u0026uipk=5\\u0026oi=410064093\\u0026trid=4b9bc8bdb726408da238855aaa68a72u\\u0026gen=playurlv3\\u0026platform=pc\\u0026mid=0\\u0026deadline=1789536966\\u0026os=cosovbv\\u0026og=cos\\u0026upsig=f73251ddc6d9f7e6e9d526fb2a7c980f\\u0026uparams=e,nbs,uipk,oi,trid,gen,platform,mid,deadline,os,og\\u0026bvc=vod\\u0026nettype=0\\u0026bw=207162\\u0026lrs=0\\u0026f=u_0_0\\u0026qn_dyeid=4870a0d87d1b1dcd005516846aaa0ea6\\u0026agrr=0\\u0026buvid=23C901B0-0C48-0426-B576-455A31A0C16A64565infoc\\u0026build=0\\u0026dl=0\\u0026orderid=0,2\",\"base_url\":\"https://upos-sz-mirrorcosov.bilivideo.com/upgcxcode/86/97/279786/279786_da3-1-100022.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=\\u0026nbs=1\\u0026uipk=5\\u0026oi=410064093\\u0026trid=4b9bc8bdb726408da238855aaa68a72u\\u0026gen=playurlv3\\u0026platform=pc\\u0026mid=0\\u0026deadline=1789536966\\u0026os=cosovbv\\u0026og=cos\\u0026upsig=f73251ddc6d9f7e6e9d526fb2a7c980f\\u0026uparams=e,nbs,uipk,oi,trid,gen,platform,mid,deadline,os,og\\u0026bvc=vod\\u0026nettype=0\\u0026bw=207162\\u0026lrs=0\\u0026f=u_0_0\\u0026qn_dyeid=4870a0d87d1b1dcd005516846aaa0ea6\\u0026agrr=0\\u0026buvid=23C901B0-0C48-0426-B576-455A31A0C16A64565infoc\\u0026build=0\\u0026dl=0\\u0026orderid=0,2\",\"backupUrl\":[\"https://upos-hz-mirrorakam.akamaized.net/upgcxcode/86/97/279786/279786_da3-1-100022.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=\\u0026oi=410064093\\u0026trid=4b9bc8bdb726408da238855aaa68a72u\\u0026os=akam\\u0026nbs=1\\u0026uipk=5\\u0026mid=0\\u0026gen=playurlv3\\u0026og=cos\\u0026platform=pc\\u0026deadline=1789536966\\u0026upsig=5b4b59f64df6d3570bc46253704560ef\\u0026uparams=e,oi,trid,os,nbs,uipk,mid,gen,og,platform,deadline\\u0026hdnts=exp=1789536966~hmac=94a349b4bead4622deecac577729504189f0bcde7e952b6c51dcfe2da41bc5d9\\u0026bvc=vod\\u0026nettype=0\\u0026bw=207162\\u0026lrs=0\\u0026dl=0\\u0026f=u_0_0\\u0026qn_dyeid=4870a0d87d1b1dcd005516846aaa0ea6\\u0026agrr=0\\u0026buvid=23C901B0-0C48-0426-B576-455A31A0C16A64565infoc\\u0026build=0\\u0026orderid=1,2\"],\"backup_url\":[\"https://upos-hz-mirrorakam.akamaized.net/upgcxcode/86/97/279786/279786_da3-1-100022.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=\\u0026oi=410064093\\u0026trid=4b9bc8bdb726408da238855aaa68a72u\\u0026os=akam\\u0026nbs=1\\u0026uipk=5\\u0026mid=0\\u0026gen=playurlv3\\u0026og=cos\\u0026platform=pc\\u0026deadline=1789536966\\u0026upsig=5b4b59f64df6d3570bc46253704560ef\\u0026uparams=e,oi,trid,os,nbs,uipk,mid,gen,og,platform,deadline\\u0026hdnts=exp=1789536966~hmac=94a349b4bead4622deecac577729504189f0bcde7e952b6c51dcfe2da41bc5d9\\u0026bvc=vod\\u0026nettype=0\\u0026bw=207162\\u0026lrs=0\\u0026dl=0\\u0026f=u_0_0\\u0026qn_dyeid=4870a0d87d1b1dcd005516846aaa0ea6\\u0026agrr=0\\u0026buvid=23C901B0-0C48-0426-B576-455A31A0C16A64565infoc\\u0026build=0\\u0026orderid=1,2\"],\"bandwidth\":205640,\"mimeType\":\"video/mp4\",\"mime_type\":\"video/mp4\",\"codecs\":\"av01.0.00M.08.0.110.01.01.01.0\",\"width\":512,\"height\":288,\"frameRate\":\"15.009\",\"frame_rate\":\"15.009\",\"sar\":\"1105:1104\",\"startWithSap\":1,\"start_with_sap\":1,\"SegmentBase\":{\"Initialization\":\"0-987\",\"indexRange\":\"1052-1563\"},\"segment_base\":{\"initialization\":\"0-987\",\"index_range\":\"1052-1563\"},\"codecid\":13}],\"audio\":[{\"id\":30216,\"baseUrl\":\"https://upos-sz-mirrorcosov.bilivideo.com/upgcxcode/86/97/279786/279786_da3-1-30216.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=\\u0026trid=4b9bc8bdb726408da238855aaa68a72u\\u0026gen=playurlv3\\u0026os=cosovbv\\u0026oi=410064093\\u0026og=hw\\u0026nbs=1\\u0026uipk=5\\u0026platform=pc\\u0026mid=0\\u0026deadline=1789536966\\u0026upsig=465d8a34bbd1e4e6ed06d524f93c469b\\u0026uparams=e,trid,gen,os,oi,og,nbs,uipk,platform,mid,deadline\\u0026bvc=vod\\u0026nettype=0\\u0026bw=50888\\u0026lrs=0\\u0026dl=0\\u0026f=u_0_0\\u0026qn_dyeid=4870a0d87d1b1dcd005516846aaa0ea6\\u0026agrr=0\\u0026buvid=23C901B0-0C48-0426-B576-455A31A0C16A64565infoc\\u0026build=0\\u0026orderid=0,2\",\"base_url\":\"https://upos-sz-mirrorcosov.bilivideo.com/upgcxcode/86/97/279786/279786_da3-1-30216.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=\\u0026trid=4b9bc8bdb726408da238855aaa68a72u\\u0026gen=playurlv3\\u0026os=cosovbv\\u0026oi=410064093\\u0026og=hw\\u0026nbs=1\\u0026uipk=5\\u0026platform=pc\\u0026mid=0\\u0026deadline=1789536966\\u0026upsig=465d8a34bbd1e4e6ed06d524f93c469b\\u0026uparams=e,trid,gen,os,oi,og,nbs,uipk,platform,mid,deadline\\u0026bvc=vod\\u0026nettype=0\\u0026bw=50888\\u0026lrs=0\\u0026dl=0\\u0026f=u_0_0\\u0026qn_dyeid=4870a0d87d1b1dcd005516846aaa0ea6\\u0026agrr=0\\u0026buvid=23C901B0-0C48-0426-B576-455A31A0C16A64565infoc\\u0026build=0\\u0026orderid=0,2\",\"backupUrl\":[\"https://upos-hz-mirrorakam.akamaized.net/upgcxcode/86/97/279786/279786_da3-1-30216.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=\\u0026deadline=1789536966\\u0026oi=410064093\\u0026os=akam\\u0026og=hw\\u0026nbs=1\\u0026uipk=5\\u0026trid=4b9bc8bdb726408da238855aaa68a72u\\u0026gen=playurlv3\\u0026platform=pc\\u0026mid=0\\u0026upsig=fe5f641c4d7b5302e97dfcb4a715ba32\\u0026uparams=e,deadline,oi,os,og,nbs,uipk,trid,gen,platform,mid\\u0026hdnts=exp=1789536966~hmac=c80385cd57e9757b5469440f014115ca60c9bfa8d420f846877765087d1567d9\\u0026bvc=vod\\u0026nettype=0\\u0026bw=50888\\u0026lrs=0\\u0026build=0\\u0026dl=0\\u0026f=u_0_0\\u0026qn_dyeid=4870a0d87d1b1dcd005516846aaa0ea6\\u0026agrr=0\\u0026buvid=23C901B0-0C48-0426-B576-455A31A0C16A64565infoc\\u0026orderid=1,2\"],\"backup_url\":[\"https://upos-hz-mirrorakam.akamaized.net/upgcxcode/86/97/279786/279786_da3-1-30216.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=\\u0026deadline=1789536966\\u0026oi=410064093\\u0026os=akam\\u0026og=hw\\u0026nbs=1\\u0026uipk=5\\u0026trid=4b9bc8bdb726408da238855aaa68a72u\\u0026gen=playurlv3\\u0026platform=pc\\u0026mid=0\\u0026upsig=fe5f641c4d7b5302e97dfcb4a715ba32\\u0026uparams=e,deadline,oi,os,og,nbs,uipk,trid,gen,platform,mid\\u0026hdnts=exp=1789536966~hmac=c80385cd57e9757b5469440f014115ca60c9bfa8d420f846877765087d1567d9\\u0026bvc=vod\\u0026nettype=0\\u0026bw=50888\\u0026lrs=0\\u0026build=0\\u0026dl=0\\u0026f=u_0_0\\u0026qn_dyeid=4870a0d87d1b1dcd005516846aaa0ea6\\u0026agrr=0\\u0026buvid=23C901B0-0C48-0426-B576-455A31A0C16A64565infoc\\u0026orderid=1,2\"],\"bandwidth\":50806,\"mimeType\":\"audio/mp4\",\"mime_type\":\"audio/mp4\",\"codecs\":\"mp4a.40.2\",\"width\":0,\"height\":0,\"frameRate\":\"\",\"frame_rate\":\"\",\"sar\":\"\",\"startWithSap\":0,\"start_with_sap\":0,\"SegmentBase\":{\"Initialization\":\"0-932\",\"indexRange\":\"933-1444\"},\"segment_base\":{\"initialization\":\"0-932\",\"index_range\":\"933-1444\"},\"codecid\":0}],\"dolby\":{\"type\":0,\"audio\":null},\"flac\":null},\"support_formats\":[{\"quality\":16,\"format\":\"mp4\",\"new_description\":\"360P 流畅\",\"display_desc\":\"360P\",\"superscript\":\"\",\"codecs\":[\"av01.0.00M.08.0.110.01.01.01.0\",\"avc1.64001E\",\"hev1.1.6.L120.90\"],\"can_watch_qn_reason\":0,\"limit_watch_reason\":0,\"report\":{}}],\"high_format\":null,\"last_play_time\":0,\"last_play_cid\":0,\"view_info\":null,\"play_conf\":{\"is_new_description\":false},\"cur_language\":\"\",\"cur_production_type\":0,\"auto_qn_resp\":{\"dyeid\":\"4870a0d87d1b1dcd005516846aaa0ea6\",\"qn_feature\":{\"quality_tag\":\"常规\",\"tid_name\":\"音乐\",\"sub_tid_name\":\"MV\"}}}}"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.bilibili.com/x/player/wbi/v2?bvid=BV17x411w7KC&cid=279786&wts=1789529766&w_rid=07d81d7705bfbbfaf51f1ba9c108503f",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ],
+          [
+            "referer",
+            "https://www.bilibili.com/"
+          ],
+          [
+            "origin",
+            "https://www.bilibili.com"
+          ],
+          [
+            "cookie",
+            "<redacted>"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://api.bilibili.com/x/player/wbi/v2?bvid=BV17x411w7KC&cid=279786&wts=1789529766&w_rid=07d81d7705bfbbfaf51f1ba9c108503f",
+        "headers": [
+          [
+            "date",
+            "Wed, 16 Sep 2026 03:36:07 GMT"
+          ],
+          [
+            "content-type",
+            "application/json; charset=utf-8"
+          ],
+          [
+            "access-control-allow-credentials",
+            "true"
+          ],
+          [
+            "access-control-allow-methods",
+            "GET,POST,PUT,DELETE"
+          ],
+          [
+            "access-control-allow-origin",
+            "https://www.bilibili.com"
+          ],
+          [
+            "bili-status-code",
+            "0"
+          ],
+          [
+            "bili-trace-id",
+            "36cafcd2336aaa0e"
+          ],
+          [
+            "cpu_usage",
+            "133"
+          ],
+          [
+            "set-cookie",
+            "<redacted>"
+          ],
+          [
+            "vary",
+            "Origin"
+          ],
+          [
+            "x-bili-metadata-ip-region",
+            "US"
+          ],
+          [
+            "x-bili-trace-id",
+            "24e061eb8d77d4f136cafcd2336aaa0e"
+          ],
+          [
+            "x-rid-result",
+            "0"
+          ],
+          [
+            "access-control-allow-headers",
+            "origin,no-cache,x-requested-with,if-modified-since,pragma,last-modified,cache-control,expires,content-type,access-control-allow-credentials,dnt,x-customheader,keep-alive,user-agent,x-cache-webcdn,x-bilibili-key-real-ip,x-backend-bili-real-ip,x-risk-header,x-event-traceid"
+          ],
+          [
+            "cross-origin-resource-policy",
+            "cross-origin"
+          ],
+          [
+            "access-control-expose-headers",
+            "x-bili-gaia-vvoucher,x-bili-trace-id,x-bili-gaia-param"
+          ],
+          [
+            "x-cache-webcdn",
+            "BYPASS from blzone02"
+          ],
+          [
+            "expires",
+            "Wed, 16 Sep 2026 03:36:06 GMT"
+          ],
+          [
+            "cache-control",
+            "no-cache"
+          ]
+        ],
+        "body": {
+          "text": "{\"code\":0,\"message\":\"OK\",\"ttl\":1,\"data\":{\"aid\":170001,\"bvid\":\"BV17x411w7KC\",\"allow_bp\":false,\"no_share\":false,\"cid\":279786,\"max_limit\":1000,\"page_no\":1,\"has_next\":true,\"ip_info\":{\"ip\":\"24.113.20.221\",\"zone_ip\":\" 10.156.199.44\",\"zone_id\":29425664,\"country\":\"美国\",\"province\":\"华盛顿州\",\"city\":\"汤森港\"},\"login_mid\":0,\"login_mid_hash\":\"\",\"is_owner\":false,\"name\":\"\",\"permission\":\"0\",\"level_info\":{\"current_level\":0,\"current_min\":0,\"current_exp\":0,\"next_exp\":0,\"level_up\":0},\"vip\":{\"type\":0,\"status\":0,\"due_date\":0,\"vip_pay_type\":0,\"theme_type\":0,\"label\":{\"path\":\"\",\"text\":\"\",\"label_theme\":\"\",\"text_color\":\"\",\"bg_style\":0,\"bg_color\":\"\",\"border_color\":\"\",\"use_img_label\":false,\"img_label_uri_hans\":\"\",\"img_label_uri_hant\":\"\",\"img_label_uri_hans_static\":\"\",\"img_label_uri_hant_static\":\"\",\"label_id\":0,\"label_goto\":null,\"img_label_uri_i18n\":\"\",\"img_label_uri_i18n_static\":\"\",\"label_type\":0},\"avatar_subscript\":0,\"nickname_color\":\"\",\"role\":0,\"avatar_subscript_url\":\"\",\"tv_vip_status\":0,\"tv_vip_pay_type\":0,\"tv_due_date\":0,\"avatar_icon\":{\"icon_resource\":{}},\"ott_info\":{\"vip_type\":0,\"pay_type\":0,\"pay_channel_id\":\"\",\"status\":0,\"overdue_time\":0},\"super_vip\":{\"is_super_vip\":false}},\"answer_status\":0,\"block_time\":0,\"role\":\"\",\"last_play_time\":0,\"last_play_cid\":0,\"now_time\":1789529766,\"online_count\":1,\"dm_mask\":{\"cid\":279786,\"plat\":0,\"fps\":15,\"time\":0,\"mask_url\":\"//upos-sz-staticcos-cmask.bilivideo.com/cmaskboss/279786_15_2.webmask?trid=c5601d7cfce1472e85f0fe0a9dc46aaaB\\u0026orderid=0,1\\u0026logo=00000000\"},\"need_login_subtitle\":false,\"subtitle\":{\"allow_submit\":false,\"lan\":\"\",\"lan_doc\":\"\",\"subtitles\":[],\"subtitle_position\":null,\"font_size_type\":0},\"view_points\":[],\"preview_toast\":\"为创作付费，购买观看完整视频|购买观看\",\"options\":{\"is_360\":false,\"without_vip\":false},\"guide_attention\":[],\"jump_card\":[],\"operation_card\":[],\"online_switch\":{\"enable_gray_dash_playback\":\"500\",\"new_broadcast\":\"1\",\"realtime_dm\":\"1\",\"subtitle_submit_switch\":\"1\"},\"fawkes\":{\"config_version\":38487,\"ff_version\":21289},\"show_switch\":{\"long_progress\":false},\"bgm_info\":{\"music_id\":\"MA407124762800730394\",\"music_title\":\"发现《Hop》\",\"jump_url\":\"https://music.bilibili.com/h5/music-detail?music_id=MA407124762800730394\\u0026cid=279786\\u0026aid=170001\\u0026na_close_hide=1\"},\"toast_block\":false,\"is_upower_exclusive\":false,\"is_upower_play\":false,\"is_ugc_pay_preview\":false,\"elec_high_level\":{\"privilege_type\":0,\"title\":\"\",\"sub_title\":\"\",\"show_button\":false,\"button_text\":\"\",\"jump_url\":\"\",\"intro\":\"\",\"new\":false,\"question_text\":\"\",\"qa_title\":\"\"},\"disable_show_up_info\":false,\"is_upower_exclusive_with_qa\":false,\"arc_aigc\":null,\"self_visible\":null,\"script_pace_exp\":\"0\",\"asr_language\":\"\",\"ocr_language\":\"\"}}"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.live.bilibili.com/room/v1/Room/get_info?id=196",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ],
+          [
+            "referer",
+            "https://live.bilibili.com/"
+          ],
+          [
+            "cookie",
+            "<redacted>"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://api.live.bilibili.com/room/v1/Room/get_info?id=196",
+        "headers": [
+          [
+            "date",
+            "Wed, 16 Sep 2026 03:36:07 GMT"
+          ],
+          [
+            "content-type",
+            "application/json"
+          ],
+          [
+            "bili-status-code",
+            "0"
+          ],
+          [
+            "bili-trace-id",
+            "499935eabff3936570155d260d6aaa0e:18d5afd79849ed32:2e99c7386665f413:0"
+          ],
+          [
+            "cache-control",
+            "no-cache"
+          ],
+          [
+            "server",
+            "swoole-http-server"
+          ],
+          [
+            "set-cookie",
+            "<redacted>"
+          ],
+          [
+            "x-bili-trace-id",
+            "499935eabff3936570155d260d6aaa0e:18d5afd79849ed32:2e99c7386665f413:0"
+          ],
+          [
+            "x-envoy-upstream-service-time",
+            "19"
+          ],
+          [
+            "vary",
+            "Accept-Encoding,Origin"
+          ],
+          [
+            "x-cache-webcdn",
+            "BYPASS from blzone01"
+          ],
+          [
+            "expires",
+            "Wed, 16 Sep 2026 03:36:06 GMT"
+          ]
+        ],
+        "body": {
+          "text": "{\"code\":0,\"msg\":\"ok\",\"message\":\"ok\",\"data\":{\"uid\":5055,\"room_id\":263605,\"short_id\":196,\"attention\":1551378,\"online\":0,\"is_portrait\":false,\"description\":\"舰长审核1041080943，欢迎各位加入\\n对被禁言有疑问的朋友，可到直播误封解封333616358进行申诉\\n上舰请勿使用IOS系统，感谢大家的支持~\",\"live_status\":0,\"area_id\":1084,\"parent_area_id\":3,\"parent_area_name\":\"手游\",\"old_area_id\":12,\"background\":\"\",\"title\":\"正在下播\",\"user_cover\":\"https://i0.hdslb.com/bfs/live/new_room_cover/50e699121cfff8db5066dac4545049e3f8097bf8.jpg\",\"keyframe\":\"\",\"is_strict_room\":false,\"live_time\":\"0000-00-00 00:00:00\",\"tags\":\"歌手,唱见,小缘,196\",\"is_anchor\":0,\"room_silent_type\":\"\",\"room_silent_level\":0,\"room_silent_second\":0,\"area_name\":\"游戏之星\",\"pendants\":\"\",\"area_pendants\":\"\",\"hot_words\":[\"2333333\",\"喂，妖妖零吗\",\"红红火火恍恍惚惚\",\"FFFFFFFFFF\",\"Yooooooo\",\"啪啪啪啪啪\",\"666666666\",\"老司机带带我\",\"你为什么这么熟练啊\",\"gg\",\"prprpr\",\"向大佬低头\",\"请大家注意弹幕礼仪哦！\",\"还有这种操作！\",\"囍\",\"打call\",\"你气不气？\",\"队友呢？\"],\"hot_words_status\":0,\"verify\":\"\",\"new_pendants\":{\"frame\":{\"name\":\"\",\"value\":\"\",\"position\":0,\"desc\":\"\",\"area\":0,\"area_old\":0,\"bg_color\":\"\",\"bg_pic\":\"\",\"use_old_area\":false},\"badge\":{\"name\":\"v_person\",\"position\":3,\"value\":\"\",\"desc\":\"bilibili 2018百大UP主、 知名唱见、直播高能主播\"},\"mobile_frame\":{\"name\":\"\",\"value\":\"\",\"position\":0,\"desc\":\"\",\"area\":0,\"area_old\":0,\"bg_color\":\"\",\"bg_pic\":\"\",\"use_old_area\":false},\"mobile_badge\":null},\"up_session\":\"\",\"pk_status\":0,\"pk_id\":0,\"battle_id\":0,\"allow_change_area_time\":0,\"allow_upload_cover_time\":0,\"studio_info\":{\"status\":0,\"master_list\":[]}}}"
+        },
+        "truncated": false
+      }
+    }
+  ]
+}

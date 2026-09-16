@@ -11,7 +11,7 @@
 	import Field from '$lib/components/Field.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { pluralize } from '$lib/format';
-	import { LIMITS } from './+page';
+	import { LIMITS } from './query';
 
 	let { data }: { data: PageData } = $props();
 

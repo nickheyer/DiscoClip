@@ -18,9 +18,11 @@
 		onsave: (change: SettingsChange) => Promise<void>;
 		/** The key the address named, to draw the eye to. */
 		highlight?: string | null;
+		/** Told whenever the section gains or loses edits that are not saved. */
+		ondirty?: (dirty: boolean) => void;
 	}
 
-	let { spec, view, onsave, highlight = null }: Props = $props();
+	let { spec, view, onsave, highlight = null, ondirty }: Props = $props();
 
 	const effectiveSection = $derived(at(view.settings, spec.key));
 	const sectionOn = $derived(!spec.optional || (effectiveSection !== null && effectiveSection !== undefined));
@@ -30,7 +32,9 @@
 	let draft = $state<Record<string, SettingValue | undefined>>({});
 	let enabled = $state(true);
 	let resets = new SvelteSet<string>();
-	let version = $state(0);
+	let base: Record<string, SettingValue | undefined> = {};
+	let baseEnabled = true;
+	let versions = $state<Record<string, number>>({});
 	let saving = $state(false);
 	let error = $state<string | null>(null);
 	let maps = $state<Record<string, SettingMap | undefined>>({});
@@ -59,25 +63,46 @@
 		return next;
 	}
 
-	function reload() {
-		draft = fresh();
-		enabled = sectionOn;
-		resets.clear();
-		error = null;
-		version += 1;
+	function bump(key: string) {
+		versions[key] = (versions[key] ?? 0) + 1;
 	}
 
-	// A fresh view, after a save or a reload, replaces the draft. Only `view` is watched:
-	// the reset writes the draft, the toggle and the version, which must not re-run this.
+	/** Drops every edit: the draft is the view again. */
+	function reload() {
+		base = fresh();
+		baseEnabled = sectionOn;
+		draft = { ...base };
+		enabled = baseEnabled;
+		resets.clear();
+		error = null;
+		for (const key of Object.keys(base)) bump(key);
+	}
+
+	function rebase() {
+		const next = fresh();
+		for (const key of Object.keys(next)) {
+			const edited = resets.has(key) || !sameValue(draft[key], base[key]);
+			if (!edited && !sameValue(draft[key], next[key])) {
+				draft[key] = next[key];
+				bump(key);
+			}
+		}
+		if (enabled === baseEnabled) enabled = sectionOn;
+		base = next;
+		baseEnabled = sectionOn;
+	}
+
+	// Only `view` is watched: the rebase writes the draft, the toggle and the versions,
+	// which must not re-run this.
 	$effect.pre(() => {
 		void view;
-		untrack(reload);
+		untrack(rebase);
 	});
 
 	function useDefault(key: string) {
 		draft[key] = at(view.defaults, key) ?? null;
 		resets.add(key);
-		version += 1;
+		bump(key);
 	}
 
 	/** Whether `key` was sent back to its default and left there. */
@@ -150,6 +175,10 @@
 		Object.keys(change.set ?? {}).length > 0 || (change.reset?.length ?? 0) > 0
 	);
 	const ready = $derived(dirty && fieldProblems.length === 0 && mapsValid);
+
+	$effect(() => {
+		ondirty?.(dirty);
+	});
 	const highlighted = $derived(
 		highlight !== null && (highlight === spec.key || highlight.startsWith(`${spec.key}.`))
 	);
@@ -161,6 +190,7 @@
 		error = null;
 		try {
 			await onsave(change);
+			reload();
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : String(cause);
 		} finally {
@@ -173,6 +203,7 @@
 		error = null;
 		try {
 			await onsave({ reset: [spec.key] });
+			reload();
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : String(cause);
 		} finally {
@@ -185,7 +216,7 @@
 	);
 </script>
 
-<form class={['card', highlighted && 'highlighted']} id={`section-${spec.key}`} onsubmit={save} novalidate>
+<form class={['card', highlighted && 'highlighted']} id={`section-${spec.key}`} onsubmit={save} novalidate tabindex="-1">
 	<div class="card-header">
 		<div class="title">
 			<span class="glyph"><Icon name={spec.icon} size={16} /></span>
@@ -219,10 +250,10 @@
 			</label>
 		{/if}
 		{#if !spec.optional || enabled}
-			{#key version}
-				{#each spec.fields as field (field.name)}
-					{@const key = fieldKey(field.name)}
-					{@const source = sourceOf(view, key)}
+			{#each spec.fields as field (field.name)}
+				{@const key = fieldKey(field.name)}
+				{@const source = sourceOf(view, key)}
+				{#key versions[key] ?? 0}
 					<SettingField
 						id={key}
 						spec={field}
@@ -236,11 +267,11 @@
 						dormant={spec.optional !== undefined && !sectionOn}
 						onreset={() => useDefault(key)}
 					/>
-				{/each}
-			{/key}
+				{/key}
+			{/each}
 			{#each spec.maps ?? [] as map (map.key)}
 				{@const source = sourceOf(view, map.key)}
-				{#key version}
+				{#key versions[map.key] ?? 0}
 					<SettingMap
 						spec={map}
 						bind:value={draft[map.key]}
@@ -270,6 +301,17 @@
 </form>
 
 <style>
+	/* Jumped to from the contents: clear of the window's edge, and of the top bar on a phone. */
+	form {
+		scroll-margin-top: 20px;
+	}
+
+	@media (max-width: 900px) {
+		form {
+			scroll-margin-top: 64px;
+		}
+	}
+
 	.title {
 		display: flex;
 		align-items: flex-start;

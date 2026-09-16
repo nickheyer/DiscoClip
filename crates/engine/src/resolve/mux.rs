@@ -152,6 +152,10 @@ impl MuxResolver {
 
 #[async_trait]
 impl Resolver for MuxResolver {
+    fn embeds_in(&self, page: &Page) -> Vec<Url> {
+        embeds_in(page)
+    }
+
     fn id(&self) -> &'static str {
         PLATFORM
     }

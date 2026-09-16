@@ -17,6 +17,7 @@ fn extension(format: SubtitleFormat) -> &'static str {
         SubtitleFormat::Vtt
         | SubtitleFormat::Json3
         | SubtitleFormat::BilibiliJson
+        | SubtitleFormat::TiktokJson
         | SubtitleFormat::HlsVtt => "vtt",
         SubtitleFormat::Srt => "srt",
         SubtitleFormat::Ttml => "ttml",
@@ -26,9 +27,10 @@ fn extension(format: SubtitleFormat) -> &'static str {
 
 fn stored_format(format: SubtitleFormat) -> SubtitleFormat {
     match format {
-        SubtitleFormat::Json3 | SubtitleFormat::BilibiliJson | SubtitleFormat::HlsVtt => {
-            SubtitleFormat::Vtt
-        }
+        SubtitleFormat::Json3
+        | SubtitleFormat::BilibiliJson
+        | SubtitleFormat::TiktokJson
+        | SubtitleFormat::HlsVtt => SubtitleFormat::Vtt,
         other => other,
     }
 }
@@ -106,6 +108,9 @@ async fn fetch_track(
         }),
         SubtitleFormat::BilibiliJson => bilibili_json_to_vtt(&text).ok_or_else(|| {
             DownloadError::Manifest(format!("{} is not a Bilibili subtitle", track.url))
+        }),
+        SubtitleFormat::TiktokJson => tiktok_json_to_vtt(&text).ok_or_else(|| {
+            DownloadError::Manifest(format!("{} is not a TikTok caption file", track.url))
         }),
         SubtitleFormat::HlsVtt => {
             let playlist = match m3u8_rs::parse_playlist_res(text.as_bytes()) {
@@ -195,6 +200,29 @@ pub fn json3_to_vtt(text: &str) -> Option<String> {
             vtt_time(start),
             vtt_time(start + duration),
             line.trim()
+        ));
+    }
+    Some(out)
+}
+
+/// TikTok's automatic captions as WebVTT: every utterance with text becomes a cue.
+fn tiktok_json_to_vtt(text: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(text).ok()?;
+    let utterances = value["utterances"].as_array()?;
+    let mut out = String::from("WEBVTT\n\n");
+    for line in utterances {
+        let (Some(start), Some(end), Some(cue)) = (
+            line["start_time"].as_f64(),
+            line["end_time"].as_f64(),
+            line["text"].as_str().map(str::trim).filter(|t| !t.is_empty()),
+        ) else {
+            continue;
+        };
+        out.push_str(&format!(
+            "{} --> {}\n{}\n\n",
+            vtt_time(start.round().max(0.0) as u64),
+            vtt_time(end.round().max(0.0) as u64),
+            cue
         ));
     }
     Some(out)

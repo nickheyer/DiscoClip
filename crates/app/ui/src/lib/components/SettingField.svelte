@@ -67,9 +67,6 @@
 		return String(v);
 	}
 
-	// Amounts are entered in a unit of their own and stored in the base unit. The entry
-	// state is set once, from the value the field is created with; the section creates
-	// the field afresh whenever the draft is replaced.
 	const units = $derived(spec.kind === 'bytes' ? BYTE_UNITS : spec.kind === 'seconds' ? TIME_UNITS : null);
 
 	function entryOf(): { unit: string; amount: string; numberText: string } {
@@ -172,8 +169,11 @@
 					type="number"
 					min="0"
 					step="any"
-					bind:value={amount}
-					oninput={commitAmount}
+					value={amount}
+					oninput={(e) => {
+						amount = (e.currentTarget as HTMLInputElement).value;
+						commitAmount();
+					}}
 					placeholder={spec.nullLabel ?? ''}
 					{disabled}
 					aria-invalid={problem ? 'true' : undefined}
@@ -192,8 +192,11 @@
 					type="number"
 					min={spec.min ?? 0}
 					step={spec.kind === 'number' ? 'any' : 1}
-					bind:value={numberText}
-					oninput={commitNumber}
+					value={numberText}
+					oninput={(e) => {
+						numberText = (e.currentTarget as HTMLInputElement).value;
+						commitNumber();
+					}}
 					placeholder={spec.nullLabel ?? ''}
 					{disabled}
 					aria-invalid={problem ? 'true' : undefined}

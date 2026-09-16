@@ -17,7 +17,15 @@ pub const PLATFORM: &str = "1news";
 const ACCOUNT: &str = "963482464001";
 const PLAYER: &str = "0xpHIR6IB";
 /// The assignment the article page renders its Fusion content into.
-const CONTENT_PREFIX: &str = "Fusion.globalContent=";
+/// The Fusion content blob a page carries: `Fusion.globalContent=` followed by JSON, with
+/// any spacing around the `=`.
+fn fusion_content(html: &str) -> Option<Value> {
+    let start = html.find("Fusion.globalContent")?;
+    let rest = &html[start + "Fusion.globalContent".len()..];
+    let rest = rest.trim_start();
+    let rest = rest.strip_prefix('=')?;
+    json_after(rest, "")
+}
 
 /// The slug of an article link: `/<year>/<month>/<day>/<slug>/`.
 pub fn parse_link(url: &Url) -> Option<String> {
@@ -145,13 +153,38 @@ impl Resolver for OneNewsNzResolver {
         )
         .await?;
         let html = fetched.text();
-        let content = json_after(&html, CONTENT_PREFIX).ok_or_else(|| {
+        let content = fusion_content(&html).ok_or_else(|| {
             ResolveError::malformed(url, "the article page carries no Fusion content")
         })?;
         let mut entries = players_of(&content);
         match entries.len() {
             0 => Err(ResolveError::NotFound(url.clone())),
-            1 => Err(ResolveError::Redirect(entries.remove(0).url)),
+            1 => {
+                let entry = entries.remove(0);
+                let Some(link) = brightcove::parse_link(&entry.url) else {
+                    return Err(ResolveError::Redirect(entry.url));
+                };
+                let mut resolved = brightcove::media(&self.http, PLATFORM, &link, url).await?;
+                resolved.title = content["headlines"]["basic"]
+                    .as_str()
+                    .and_then(clean_title)
+                    .or(entry.title)
+                    .or(resolved.title);
+                resolved.description = content["description"]["basic"]
+                    .as_str()
+                    .or(content["subheadlines"]["basic"].as_str())
+                    .and_then(clean_title)
+                    .or(resolved.description);
+                resolved.uploader = Some("1News".to_string());
+                resolved.uploader_url = Some(Url::parse("https://www.1news.co.nz/").expect("valid"));
+                resolved.uploaded_at = content["publish_date"]
+                    .as_str()
+                    .or(content["display_date"].as_str())
+                    .and_then(|t| t.parse().ok())
+                    .or(resolved.uploaded_at);
+                resolved.webpage_url = Some(url.clone());
+                Ok(Resolution::from(resolved))
+            }
             count => Ok(Resolution::Playlist(Playlist {
                 resolver: PLATFORM.to_string(),
                 id: Some(slug),
@@ -168,6 +201,7 @@ impl Resolver for OneNewsNzResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::VariantKind;
     use crate::http::Fixture;
 
     const COWS: &str =
@@ -194,16 +228,26 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn articles_redirect_to_their_player_or_list_several() {
+    async fn articles_resolve_their_video_hand_youtube_on_or_list_several() {
         let fixture = Fixture::parse(include_str!("onenewsnz_fixture.json")).unwrap();
         let resolver = OneNewsNzResolver::new(Http::replay(fixture));
-        assert!(resolver.matches(&Url::parse(COWS).unwrap()));
+        let cows = Url::parse(COWS).unwrap();
+        assert!(resolver.matches(&cows));
 
-        let error = resolver.resolve(&Url::parse(COWS).unwrap()).await.unwrap_err();
-        assert!(
-            matches!(&error, ResolveError::Redirect(to) if to.as_str() == "https://players.brightcove.net/963482464001/0xpHIR6IB_default/index.html?videoId=6312993358112"),
-            "{error}"
+        let resolved = resolver.resolve(&cows).await.unwrap().media().unwrap();
+        assert_eq!(resolved.resolver, PLATFORM);
+        assert_eq!(resolved.id.as_deref(), Some("6312993358112"));
+        assert_eq!(
+            resolved.title.as_deref(),
+            Some("'Cows' painted green on Parliament lawn in climate protest")
         );
+        assert_eq!(resolved.uploader.as_deref(), Some("1News"));
+        assert_eq!(resolved.webpage_url.as_ref(), Some(&cows));
+        assert!(resolved.uploaded_at.is_some());
+        assert!(resolved.duration.is_some());
+        assert!(resolved.variants.iter().any(|v| v.kind == VariantKind::File && v.height.is_some()));
+        assert!(resolved.variants.iter().any(|v| v.kind == VariantKind::Hls && v.height.is_some()));
+        assert!(resolved.variants.iter().any(|v| v.kind == VariantKind::Dash && v.height.is_some()));
 
         let error = resolver.resolve(&Url::parse(RUGBY).unwrap()).await.unwrap_err();
         assert!(

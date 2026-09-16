@@ -126,6 +126,7 @@ impl TwentyMinResolver {
         number: &str,
         record: Option<&Value>,
         page_url: Option<Url>,
+        page_size: Option<(u32, u32)>,
         link: &Url,
     ) -> Result<Resolution, ResolveError> {
         let master = playlist_url(number);
@@ -166,14 +167,18 @@ impl TwentyMinResolver {
             v.duration = duration;
             v.format_id = Some(format!("mp4-{label}"));
             v.label = Some(label.to_string());
-            if *suffix == "h"
-                && let (Some(w), Some(h)) = (
+            if *suffix == "h" {
+                let recorded = match (
                     record.and_then(|r| r["width"].as_u64()),
                     record.and_then(|r| r["height"].as_u64()),
-                )
-            {
-                v.width = Some(w as u32);
-                v.height = Some(h as u32);
+                ) {
+                    (Some(w), Some(h)) => Some((w as u32, h as u32)),
+                    _ => None,
+                };
+                if let Some((w, h)) = recorded.or(page_size) {
+                    v.width = Some(w);
+                    v.height = Some(h);
+                }
             }
             variants.push(v);
         }
@@ -228,14 +233,21 @@ impl TwentyMinResolver {
         )
         .await?;
         let html = fetched.text();
-        let (videos, title) = {
+        let (videos, title, page_size) = {
             let page = Page::parse(&html, &fetched.url);
-            (videos_in(&page), page.title())
+            let size = match (
+                page.meta("og:video:width").and_then(|w| w.parse::<u32>().ok()),
+                page.meta("og:video:height").and_then(|h| h.parse::<u32>().ok()),
+            ) {
+                (Some(w), Some(h)) if w > 0 && h > 0 => Some((w, h)),
+                _ => None,
+            };
+            (videos_in(&page), page.title(), size)
         };
         match videos.as_slice() {
             [] => Err(ResolveError::NotFound(link.clone())),
             [(number, record)] => {
-                self.video(number, Some(record), Some(fetched.url.clone()), link)
+                self.video(number, Some(record), Some(fetched.url.clone()), page_size, link)
                     .await
             }
             many => Ok(Resolution::Playlist(Playlist {
@@ -284,7 +296,7 @@ impl Resolver for TwentyMinResolver {
     async fn resolve(&self, url: &Url) -> Result<Resolution, ResolveError> {
         match parse_link(url).ok_or_else(|| ResolveError::NotFound(url.clone()))? {
             Link::Page(_) => self.page(url).await,
-            Link::Player(number) => self.video(&number, None, None, url).await,
+            Link::Player(number) => self.video(&number, None, None, None, url).await,
         }
     }
 }
@@ -351,7 +363,7 @@ mod tests {
         assert_eq!(resolved.id.as_deref(), Some("uv10924877"));
         assert_eq!(
             resolved.title.as_deref(),
-            Some("Adoptions-Serie: «Dachte, Mami liebt mich nicht» – Adoptierte suchen Antworten")
+            Some("Benj, Malin und Ina: Auf der Suche nach der Wahrheit über ihre Adoption")
         );
         assert!(resolved.description.is_some());
         assert_eq!(resolved.duration, Some(Duration::from_secs(990)));

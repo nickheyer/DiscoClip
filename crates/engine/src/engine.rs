@@ -31,7 +31,7 @@ pub struct EngineBuilder {
     config: EngineConfig,
     store: Arc<dyn JobStore>,
     http: Http,
-    resolvers: Vec<Box<dyn Resolver>>,
+    resolvers: Vec<Arc<dyn Resolver>>,
     downloaders: Vec<Arc<dyn Downloader>>,
     transcoder: Option<Arc<dyn Transcoder>>,
     publishers: HashMap<SourceId, Arc<dyn Publisher>>,
@@ -53,11 +53,11 @@ impl EngineBuilder {
     }
 
     pub fn resolver(mut self, resolver: impl Resolver + 'static) -> Self {
-        self.resolvers.push(Box::new(resolver));
+        self.resolvers.push(Arc::new(resolver));
         self
     }
 
-    pub fn resolver_boxed(mut self, resolver: Box<dyn Resolver>) -> Self {
+    pub fn resolver_arc(mut self, resolver: Arc<dyn Resolver>) -> Self {
         self.resolvers.push(resolver);
         self
     }

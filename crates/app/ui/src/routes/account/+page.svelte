@@ -562,7 +562,7 @@
 					<option value="never">Never</option>
 				</select>
 				{#if tokenExpiry === 'custom'}
-					<input class="input" type="number" min="1" step="1" bind:value={tokenCustomDays} placeholder="Days" aria-label="Days until expiry" />
+					<input class="input" type="number" min="1" step="1" value={tokenCustomDays} oninput={(e) => (tokenCustomDays = (e.currentTarget as HTMLInputElement).value)} placeholder="Days" aria-label="Days until expiry" />
 				{/if}
 			</div>
 		</Field>

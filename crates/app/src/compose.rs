@@ -11,8 +11,8 @@ use discoclip_engine::download::HttpDownloader;
 use discoclip_engine::download::dash::DashDownloader;
 use discoclip_engine::download::hls::HlsDownloader;
 use discoclip_engine::ffmpeg::Ffmpeg;
-use discoclip_engine::resolve::{Resolver, standard_resolvers};
 use discoclip_engine::resolve::discord::BotTokens;
+use discoclip_engine::resolve::{Resolver, standard_resolvers};
 use discoclip_engine::store::sqlite::SqliteStore;
 use discoclip_engine::transcode::FfmpegTranscoder;
 use discoclip_engine::{Engine, EngineBuilder, Http};
@@ -134,7 +134,7 @@ impl BotTokens for RunningBots {
     }
 }
 
-fn resolvers(http: &Http, bots: Arc<dyn BotTokens>) -> Vec<Box<dyn Resolver>> {
+fn resolvers(http: &Http, bots: Arc<dyn BotTokens>) -> Vec<Arc<dyn Resolver>> {
     standard_resolvers(http, bots)
 }
 
@@ -155,7 +155,7 @@ async fn builder(
         .downloader(DashDownloader::new(http.clone(), ffmpeg.clone()))
         .transcoder(FfmpegTranscoder::new(ffmpeg.clone()));
     for resolver in resolvers(&http, Arc::new(RunningBots(clients.clone()))) {
-        builder = builder.resolver_boxed(resolver);
+        builder = builder.resolver_arc(resolver);
     }
     builder = builder.archiver(FsArchiver::new(engine_config.archive));
     Ok((builder, ffmpeg))

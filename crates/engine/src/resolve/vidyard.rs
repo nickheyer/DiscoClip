@@ -322,6 +322,10 @@ impl VidyardResolver {
 
 #[async_trait]
 impl Resolver for VidyardResolver {
+    fn embeds_in(&self, page: &Page) -> Vec<Url> {
+        embeds_in(page)
+    }
+
     fn id(&self) -> &'static str {
         PLATFORM
     }

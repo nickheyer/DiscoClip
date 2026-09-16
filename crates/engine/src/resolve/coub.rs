@@ -44,11 +44,26 @@ pub fn coub_id(url: &Url) -> Option<String> {
         .filter(|s| !s.is_empty())
         .collect();
     let id = match segments.as_slice() {
-        ["view" | "embed", id, ..] => id,
+        ["view" | "embed" | "coubs", id, ..] => id,
         [id] if !RESERVED.contains(id) => id,
         _ => return None,
     };
     RE_ID.is_match(id).then(|| id.to_string())
+}
+
+/// `c-cdn.coub.com/fb-player.swf?coubID={id}`: the Flash player other pages embedded.
+pub fn player_coub_id(url: &Url) -> Option<String> {
+    if !matches!(url.scheme(), "http" | "https") || url.host_str()? != "c-cdn.coub.com" {
+        return None;
+    }
+    if !url.path().ends_with("fb-player.swf") {
+        return None;
+    }
+    let id = url
+        .query_pairs()
+        .find(|(k, _)| k == "coubID")
+        .map(|(_, v)| v.into_owned())?;
+    RE_ID.is_match(&id).then_some(id)
 }
 
 fn dimensions(coub: &Value) -> (Option<u32>, Option<u32>) {
@@ -67,6 +82,9 @@ fn dimensions(coub: &Value) -> (Option<u32>, Option<u32>) {
 
 /// The variants the API describes: the shareable file with sound first, then the silent
 /// loop in each size paired with the looped audio.
+/// Every file the coub is served as: the share file (the loop with its sound), each
+/// HTML5 video quality (video alone, paired with the best HTML5 audio), each HTML5 audio
+/// quality on its own, the iPhone file, and the mobile video and audio.
 pub fn variants_of(coub: &Value) -> Vec<Variant> {
     let duration = coub["duration"]
         .as_f64()
@@ -85,17 +103,17 @@ pub fn variants_of(coub: &Value) -> Vec<Variant> {
         v.audio = Some(AudioCodec::Aac);
         v.width = width;
         v.height = height;
+        v.duration = duration;
         v.format_id = Some("share".into());
         v.label = Some("looped with sound".into());
         variants.push(v);
-        return variants;
     }
-    let audio = ["high", "med"]
+    let audio = ["higher", "high", "med", "low"]
         .iter()
         .find_map(|q| versions["html5"]["audio"][q]["url"].as_str())
         .or_else(|| coub["audio_file_url"].as_str())
         .and_then(|u| Url::parse(u).ok());
-    for quality in ["higher", "high", "med"] {
+    for quality in ["higher", "high", "med", "low"] {
         let entry = &versions["html5"]["video"][quality];
         let Some(url) = entry["url"].as_str().and_then(|u| Url::parse(u).ok()) else {
             continue;
@@ -105,40 +123,89 @@ pub fn variants_of(coub: &Value) -> Vec<Variant> {
         v.video = Some(VideoCodec::H264);
         v.size = entry["size"].as_u64().filter(|s| *s > 0);
         v.duration = duration;
-        v.format_id = Some(quality.to_string());
+        v.format_id = Some(format!("html5-video-{quality}"));
         v.label = Some(quality.to_string());
         match (quality, width, height) {
             ("med", Some(w), Some(h)) => {
                 v.width = Some(w / 2);
                 v.height = Some(h / 2);
             }
+            ("low", Some(w), Some(h)) => {
+                v.width = Some(w / 4);
+                v.height = Some(h / 4);
+            }
             (_, w, h) => {
                 v.width = w;
                 v.height = h;
             }
         }
+        v.video_only = true;
         if let Some(audio) = &audio {
-            v.video_only = true;
             v.audio_url = Some(audio.clone());
             v.audio = Some(AudioCodec::Mp3);
         }
         variants.push(v);
     }
-    if variants.is_empty()
-        && let Some(url) = versions["mobile"]["video"]
-            .as_str()
-            .and_then(|u| Url::parse(u).ok())
+    for quality in ["higher", "high", "med", "low"] {
+        let entry = &versions["html5"]["audio"][quality];
+        let Some(url) = entry["url"].as_str().and_then(|u| Url::parse(u).ok()) else {
+            continue;
+        };
+        let mut v = Variant::new(url, VariantKind::File);
+        v.container = Some(Container::Other("mp3".into()));
+        v.audio = Some(AudioCodec::Mp3);
+        v.audio_only = true;
+        v.size = entry["size"].as_u64().filter(|s| *s > 0);
+        v.duration = duration;
+        v.format_id = Some(format!("html5-audio-{quality}"));
+        v.label = Some(format!("audio {quality}"));
+        variants.push(v);
+    }
+    if let Some(url) = versions["iphone"]["url"]
+        .as_str()
+        .and_then(|u| Url::parse(u).ok())
+    {
+        let mut v = Variant::new(url, VariantKind::File);
+        v.container = Some(Container::Mp4);
+        v.video = Some(VideoCodec::H264);
+        v.audio = Some(AudioCodec::Aac);
+        v.duration = duration;
+        v.format_id = Some("iphone".into());
+        v.label = Some("iphone".into());
+        variants.push(v);
+    }
+    if let Some(url) = versions["mobile"]["video"]
+        .as_str()
+        .and_then(|u| Url::parse(u).ok())
     {
         let mut v = Variant::new(url, VariantKind::File);
         v.container = Some(Container::Mp4);
         v.video = Some(VideoCodec::H264);
         v.duration = duration;
         v.format_id = Some("mobile".into());
-        if let Some(audio) = &audio {
-            v.video_only = true;
-            v.audio_url = Some(audio.clone());
+        v.label = Some("mobile".into());
+        v.video_only = true;
+        if let Some(audio) = versions["mobile"]["audio_url"]
+            .as_str()
+            .and_then(|u| Url::parse(u).ok())
+            .or_else(|| audio.clone())
+        {
+            v.audio_url = Some(audio);
             v.audio = Some(AudioCodec::Mp3);
         }
+        variants.push(v);
+    }
+    if let Some(url) = versions["mobile"]["audio_url"]
+        .as_str()
+        .and_then(|u| Url::parse(u).ok())
+    {
+        let mut v = Variant::new(url, VariantKind::File);
+        v.container = Some(Container::Other("mp3".into()));
+        v.audio = Some(AudioCodec::Mp3);
+        v.audio_only = true;
+        v.duration = duration;
+        v.format_id = Some("mobile-audio".into());
+        v.label = Some("mobile audio".into());
         variants.push(v);
     }
     variants
@@ -173,11 +240,13 @@ impl Resolver for CoubResolver {
     }
 
     fn matches(&self, url: &Url) -> bool {
-        coub_id(url).is_some()
+        coub_id(url).is_some() || player_coub_id(url).is_some()
     }
 
     async fn resolve(&self, url: &Url) -> Result<Resolution, ResolveError> {
-        let id = coub_id(url).ok_or_else(|| ResolveError::NotFound(url.clone()))?;
+        let id = coub_id(url)
+            .or_else(|| player_coub_id(url))
+            .ok_or_else(|| ResolveError::NotFound(url.clone()))?;
         let api = Url::parse(&format!("{API}{id}")).expect("valid");
         let fetched = fetch(&self.http, &api, PLATFORM, BROWSER_UA, &[], MAX_PAGE).await?;
         match fetched.status.as_u16() {
@@ -192,6 +261,9 @@ impl Resolver for CoubResolver {
             }
         }
         let coub = fetched.json(url)?;
+        if let Some(error) = coub["error"].as_str().filter(|e| !e.trim().is_empty()) {
+            return Err(ResolveError::unavailable(url, format!("Coub said: {error}")));
+        }
         if coub["banned"].as_bool() == Some(true) {
             return Err(ResolveError::unavailable(url, "the coub was banned"));
         }
@@ -222,6 +294,7 @@ impl Resolver for CoubResolver {
         resolved.thumbnail = coub["picture"].as_str().and_then(|u| Url::parse(u).ok());
         resolved.webpage_url = Url::parse(&format!("{SITE}view/{permalink}")).ok();
         resolved.age_limit = (coub["age_restricted"].as_bool() == Some(true)
+            || coub["age_restricted_by_admin"].as_bool() == Some(true)
             || coub["not_safe_for_work"].as_bool() == Some(true))
         .then_some(18);
         resolved.variants = variants;
@@ -303,7 +376,7 @@ mod tests {
         );
         assert_eq!(resolved.duration, Some(Duration::from_secs_f64(4.6)));
         assert!(resolved.uploaded_at.is_some());
-        assert_eq!(resolved.variants.len(), 1);
+        assert!(resolved.variants.len() > 1, "the share file and every HTML5 rendition");
         let share = &resolved.variants[0];
         assert_eq!(share.url.as_str(), "https://cdn.coub.test/looped.mp4");
         assert_eq!(share.audio, Some(AudioCodec::Aac));
@@ -333,7 +406,9 @@ mod tests {
             .unwrap()
             .media()
             .unwrap();
-        assert_eq!(resolved.variants.len(), 2);
+        assert!(resolved.variants.len() >= 2, "{}", resolved.variants.len());
+        assert!(resolved.variants.iter().all(|v| v.format_id.as_deref() != Some("share")));
+        assert!(resolved.variants.iter().any(|v| v.audio_only), "the HTML5 audio on its own");
         let high = &resolved.variants[0];
         assert!(high.video_only);
         assert_eq!(

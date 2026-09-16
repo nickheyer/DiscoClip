@@ -2,6 +2,7 @@
 //! then muxes video and audio locally.
 
 use std::collections::HashMap;
+use std::time::Duration;
 use std::path::{Path, PathBuf};
 
 use aes::cipher::{BlockModeDecrypt, KeyIvInit, block_padding::Pkcs7};
@@ -15,8 +16,10 @@ use super::segments::{Sink, fetch_bytes, fetch_text, mux};
 use super::{DownloadContext, DownloadError, Downloaded, Downloader};
 use crate::event::{Progress, ProgressSender};
 use crate::ffmpeg::Ffmpeg;
-use crate::http::Http;
-use crate::resolve::{Variant, VariantKind};
+use md5::{Digest, Md5};
+
+use crate::http::{BROWSER_UA, Http};
+use crate::resolve::{Keepalive, Variant, VariantKind, signed_url};
 
 const MAX_PLAYLIST: usize = 8 * 1024 * 1024;
 const CONCURRENCY: usize = 4;
@@ -73,8 +76,10 @@ async fn load_media_playlist(
     url: &Url,
     platform: &str,
     headers: &[(String, String)],
+    query: &[(String, String)],
     depth: u8,
 ) -> Result<(Url, MediaPlaylist), DownloadError> {
+    let url = &signed_url(url, query);
     let (final_url, text) = fetch_text(http, url, platform, headers, MAX_PLAYLIST).await?;
     match m3u8_rs::parse_playlist_res(text.as_bytes()) {
         Ok(Playlist::MediaPlaylist(media)) => Ok((final_url, media)),
@@ -96,6 +101,7 @@ async fn load_media_playlist(
                 &next,
                 platform,
                 headers,
+                query,
                 depth - 1,
             ))
             .await
@@ -121,7 +127,60 @@ fn sequence_iv(sequence: u64) -> [u8; 16] {
     iv
 }
 
-fn build_track(base: &Url, media: &MediaPlaylist) -> Result<Track, DownloadError> {
+/// The playback report a host wants while its stream is fetched, made every two seconds
+/// until the download ends.
+struct KeepaliveTask {
+    handle: tokio::task::JoinHandle<()>,
+}
+
+impl KeepaliveTask {
+    fn start(http: Http, keepalive: Keepalive, platform: String, headers: Vec<(String, String)>) -> Self {
+        let handle = tokio::spawn(async move {
+            let Keepalive::BunnyPing { url, secret, context_id } = keepalive;
+            let mut elapsed = 0u64;
+            loop {
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                elapsed += 2;
+                let time = format!("{elapsed}.{:06}", rand::random::<u32>() % 1_000_000);
+                let hash = hex::encode(Md5::digest(
+                    format!("{secret}_{context_id}_{time}_false_1080").as_bytes(),
+                ));
+                let mut ping = url.clone();
+                ping.query_pairs_mut()
+                    .append_pair("hash", &hash)
+                    .append_pair("time", &time)
+                    .append_pair("paused", "false")
+                    .append_pair("resolution", "1080");
+                match http
+                    .get(ping.clone())
+                    .platform(&platform)
+                    .user_agent(BROWSER_UA)
+                    .headers(&headers)
+                    .send()
+                    .await
+                {
+                    Ok(response) => {
+                        let _ = response.bytes_up_to(4096).await;
+                    }
+                    Err(error) => tracing::debug!(%ping, "keepalive ping failed: {error}"),
+                }
+            }
+        });
+        Self { handle }
+    }
+}
+
+impl Drop for KeepaliveTask {
+    fn drop(&mut self) {
+        self.handle.abort();
+    }
+}
+
+fn build_track(
+    base: &Url,
+    media: &MediaPlaylist,
+    query: &[(String, String)],
+) -> Result<Track, DownloadError> {
     let mut pieces = Vec::with_capacity(media.segments.len());
     let mut init = None;
     let mut key: Option<(Url, Option<[u8; 16]>)> = None;
@@ -138,6 +197,7 @@ fn build_track(base: &Url, media: &MediaPlaylist) -> Result<Track, DownloadError
                         .ok_or_else(|| DownloadError::Manifest("AES-128 key without URI".into()))?;
                     let key_url = base
                         .join(uri)
+                        .map(|url| signed_url(&url, query))
                         .map_err(|e| DownloadError::Manifest(format!("bad key uri: {e}")))?;
                     let iv = k.iv.as_deref().and_then(parse_iv);
                     key = Some((key_url, iv));
@@ -155,6 +215,7 @@ fn build_track(base: &Url, media: &MediaPlaylist) -> Result<Track, DownloadError
             fragmented = true;
             let url = base
                 .join(&map.uri)
+                .map(|url| signed_url(&url, query))
                 .map_err(|e| DownloadError::Manifest(format!("bad init uri: {e}")))?;
             let range = map.byte_range.as_ref().map(|r| {
                 let start = r.offset.unwrap_or(0);
@@ -168,6 +229,7 @@ fn build_track(base: &Url, media: &MediaPlaylist) -> Result<Track, DownloadError
         }
         let url = base
             .join(&segment.uri)
+            .map(|url| signed_url(&url, query))
             .map_err(|e| DownloadError::Manifest(format!("bad segment uri: {e}")))?;
         let range = segment.byte_range.as_ref().map(|r| {
             let start = r.offset.unwrap_or(next_offset);
@@ -283,14 +345,19 @@ impl Downloader for HlsDownloader {
         tokio::fs::create_dir_all(dest_dir).await?;
         let headers = &variant.headers;
         let platform = context.platform.as_str();
+        let query = &variant.query;
+        let _keepalive = variant
+            .keepalive
+            .clone()
+            .map(|keepalive| KeepaliveTask::start(self.http.clone(), keepalive, platform.to_string(), headers.clone()));
         let (video_base, video_playlist) =
-            load_media_playlist(&self.http, &variant.url, platform, headers, 2).await?;
-        let video = build_track(&video_base, &video_playlist)?;
+            load_media_playlist(&self.http, &variant.url, platform, headers, query, 2).await?;
+        let video = build_track(&video_base, &video_playlist, query)?;
         let audio = match &variant.audio_url {
             Some(url) => {
                 let (base, playlist) =
-                    load_media_playlist(&self.http, url, platform, headers, 2).await?;
-                Some(build_track(&base, &playlist)?)
+                    load_media_playlist(&self.http, url, platform, headers, query, 2).await?;
+                Some(build_track(&base, &playlist, query)?)
             }
             None => None,
         };

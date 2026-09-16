@@ -13,47 +13,99 @@ use url::Url;
 use crate::http::{Cookie, Http, HttpError, Response, StatusCode};
 use crate::media::{AudioCodec, Container, VideoCodec};
 
+pub use page::Page;
+
+pub mod abc;
+pub mod abcotvs;
+pub mod acast;
+pub mod acfun;
+pub mod adobetv;
+pub mod aljazeera;
+pub mod allocine;
+pub mod amp;
+pub mod aparat;
+pub mod applepodcasts;
+pub mod audioboom;
 pub mod archive_org;
+pub mod ard;
+pub mod baidu;
+pub mod banbye;
+pub mod bandcamp;
+pub mod bannedvideo;
 pub mod bilibili;
+pub mod bitchute;
+pub mod blerp;
+pub mod blogger;
+pub mod bloomberg;
 pub mod bluesky;
+pub mod bongacams;
+pub mod box_;
 pub mod brightcove;
+pub mod btvplus;
+pub mod bundesliga;
+pub mod bundestag;
 pub mod bunny;
+pub mod businessinsider;
+pub mod buzzfeed;
+pub mod byutv;
 pub mod catbox;
+pub mod ccc;
+pub mod chaturbate;
 pub mod cloudflare_stream;
 pub mod coub;
+pub mod cpac;
+pub mod dailymail;
 pub mod dailymotion;
+pub mod dash;
+pub mod daystar;
+pub mod dbtv;
+pub mod dctp;
+pub mod democracynow;
 pub mod discord;
 pub mod douyin;
+pub mod dplay;
 pub mod dropbox;
+pub mod drtv;
+pub mod dumpert;
+pub mod dw;
 pub mod facebook;
 pub mod firsttv;
+pub mod floatplane;
+pub mod geo;
 pub mod giphy;
 pub mod google_drive;
 pub mod hls;
 pub mod ifunny;
 pub mod imgur;
 pub mod instagram;
+pub mod ism;
+pub mod jixie;
 pub mod jwplayer;
 pub mod kaltura;
 pub mod kick;
 pub mod kuaishou;
 pub mod linkedin;
 pub mod loom;
+pub mod manifests;
 pub mod mastodon;
+pub mod medialaan;
 pub mod mega;
 pub mod mux;
 pub mod newgrounds;
+pub mod nexx;
 pub mod niconico;
 pub mod ninegag;
 pub mod odysee;
 pub mod onedrive;
 pub mod onenewsnz;
 pub mod page;
+pub mod periscope;
 pub mod pinterest;
 pub mod reddit;
 pub mod redgifs;
 pub mod rumble;
 pub mod seventeenlive;
+pub mod smil;
 pub mod snapchat;
 pub mod streamable;
 pub mod telegram;
@@ -64,6 +116,9 @@ pub mod tumblr;
 pub mod twentymin;
 pub mod twitch;
 pub mod twitter;
+pub mod uplynk;
+pub mod ustream;
+pub mod util;
 pub mod vidyard;
 pub mod vimeo;
 pub mod vk;
@@ -75,71 +130,136 @@ pub mod x;
 pub mod xiaohongshu;
 pub mod youtube;
 
-/// Every resolver, in the order links are offered to them: platforms first, then the
-/// players they embed, Mastodon (which matches links on any host by their shape and
-/// passes the rest on) just before the generic web resolver, which takes whatever is
-/// left. The app, the examples and the fixture recorder all build from this list.
-pub fn standard_resolvers(http: &Http, bots: Arc<dyn discord::BotTokens>) -> Vec<Box<dyn Resolver>> {
+/// The resolvers this crate carries, in the order links are offered to them: platforms
+/// first, then the players they embed, then the platforms ported from yt-dlp: the players
+/// and network bases others build on, then the rest alphabetically. Neither the Mastodon
+/// resolver nor the generic web resolver is among them; [`tail_resolvers`] adds those last.
+pub fn builtin_resolvers(http: &Http, bots: Arc<dyn discord::BotTokens>) -> Vec<Arc<dyn Resolver>> {
     vec![
-        Box::new(youtube::YoutubeResolver::new(http.clone())),
-        Box::new(x::XResolver::new(http.clone())),
-        Box::new(tiktok::TiktokResolver::new(http.clone())),
-        Box::new(instagram::InstagramResolver::new(http.clone())),
-        Box::new(facebook::FacebookResolver::new(http.clone())),
-        Box::new(reddit::RedditResolver::new(http.clone())),
-        Box::new(twitch::TwitchResolver::new(http.clone())),
-        Box::new(kick::KickResolver::new(http.clone())),
-        Box::new(vimeo::VimeoResolver::new(http.clone())),
-        Box::new(dailymotion::DailymotionResolver::new(http.clone())),
-        Box::new(streamable::StreamableResolver::new(http.clone())),
-        Box::new(imgur::ImgurResolver::new(http.clone())),
-        Box::new(redgifs::RedgifsResolver::new(http.clone())),
-        Box::new(bilibili::BilibiliResolver::new(http.clone())),
-        Box::new(niconico::NiconicoResolver::new(http.clone())),
-        Box::new(douyin::DouyinResolver::new(http.clone())),
-        Box::new(kuaishou::KuaishouResolver::new(http.clone())),
-        Box::new(weibo::WeiboResolver::new(http.clone())),
-        Box::new(xiaohongshu::XiaohongshuResolver::new(http.clone())),
-        Box::new(vk::VkResolver::new(http.clone())),
-        Box::new(rumble::RumbleResolver::new(http.clone())),
-        Box::new(odysee::OdyseeResolver::new(http.clone())),
-        Box::new(bluesky::BlueskyResolver::new(http.clone())),
-        Box::new(threads::ThreadsResolver::new(http.clone())),
-        Box::new(tumblr::TumblrResolver::new(http.clone())),
-        Box::new(pinterest::PinterestResolver::new(http.clone())),
-        Box::new(linkedin::LinkedinResolver::new(http.clone())),
-        Box::new(snapchat::SnapchatResolver::new(http.clone())),
-        Box::new(loom::LoomResolver::new(http.clone())),
-        Box::new(telegram::TelegramResolver::new(http.clone())),
-        Box::new(discord::DiscordResolver::new(http.clone(), bots)),
-        Box::new(ninegag::NinegagResolver::new(http.clone())),
-        Box::new(ifunny::IfunnyResolver::new(http.clone())),
-        Box::new(newgrounds::NewgroundsResolver::new(http.clone())),
-        Box::new(archive_org::ArchiveOrgResolver::new(http.clone())),
-        Box::new(wikimedia::WikimediaResolver::new(http.clone())),
-        Box::new(coub::CoubResolver::new(http.clone())),
-        Box::new(giphy::GiphyResolver::new(http.clone())),
-        Box::new(tenor::TenorResolver::new(http.clone())),
-        Box::new(catbox::CatboxResolver::new(http.clone())),
-        Box::new(google_drive::GoogleDriveResolver::new(http.clone())),
-        Box::new(dropbox::DropboxResolver::new(http.clone())),
-        Box::new(onedrive::OnedriveResolver::new(http.clone())),
-        Box::new(mega::MegaResolver::new(http.clone())),
-        Box::new(jwplayer::JwplayerResolver::new(http.clone())),
-        Box::new(brightcove::BrightcoveResolver::new(http.clone())),
-        Box::new(wistia::WistiaResolver::new(http.clone())),
-        Box::new(kaltura::KalturaResolver::new(http.clone())),
-        Box::new(vidyard::VidyardResolver::new(http.clone())),
-        Box::new(cloudflare_stream::CloudflareStreamResolver::new(http.clone())),
-        Box::new(mux::MuxResolver::new(http.clone())),
-        Box::new(bunny::BunnyResolver::new(http.clone())),
-        Box::new(onenewsnz::OneNewsNzResolver::new(http.clone())),
-        Box::new(seventeenlive::SeventeenLiveResolver::new(http.clone())),
-        Box::new(firsttv::FirstTvResolver::new(http.clone())),
-        Box::new(twentymin::TwentyMinResolver::new(http.clone())),
-        Box::new(mastodon::MastodonResolver::new(http.clone())),
-        Box::new(web::WebResolver::new(http.clone())),
+        Arc::new(youtube::YoutubeResolver::new(http.clone())),
+        Arc::new(x::XResolver::new(http.clone())),
+        Arc::new(tiktok::TiktokResolver::new(http.clone())),
+        Arc::new(instagram::InstagramResolver::new(http.clone())),
+        Arc::new(facebook::FacebookResolver::new(http.clone())),
+        Arc::new(reddit::RedditResolver::new(http.clone())),
+        Arc::new(twitch::TwitchResolver::new(http.clone())),
+        Arc::new(kick::KickResolver::new(http.clone())),
+        Arc::new(vimeo::VimeoResolver::new(http.clone())),
+        Arc::new(dailymotion::DailymotionResolver::new(http.clone())),
+        Arc::new(streamable::StreamableResolver::new(http.clone())),
+        Arc::new(imgur::ImgurResolver::new(http.clone())),
+        Arc::new(redgifs::RedgifsResolver::new(http.clone())),
+        Arc::new(bilibili::BilibiliResolver::new(http.clone())),
+        Arc::new(niconico::NiconicoResolver::new(http.clone())),
+        Arc::new(douyin::DouyinResolver::new(http.clone())),
+        Arc::new(kuaishou::KuaishouResolver::new(http.clone())),
+        Arc::new(weibo::WeiboResolver::new(http.clone())),
+        Arc::new(xiaohongshu::XiaohongshuResolver::new(http.clone())),
+        Arc::new(vk::VkResolver::new(http.clone())),
+        Arc::new(rumble::RumbleResolver::new(http.clone())),
+        Arc::new(odysee::OdyseeResolver::new(http.clone())),
+        Arc::new(bluesky::BlueskyResolver::new(http.clone())),
+        Arc::new(threads::ThreadsResolver::new(http.clone())),
+        Arc::new(tumblr::TumblrResolver::new(http.clone())),
+        Arc::new(pinterest::PinterestResolver::new(http.clone())),
+        Arc::new(linkedin::LinkedinResolver::new(http.clone())),
+        Arc::new(snapchat::SnapchatResolver::new(http.clone())),
+        Arc::new(loom::LoomResolver::new(http.clone())),
+        Arc::new(telegram::TelegramResolver::new(http.clone())),
+        Arc::new(discord::DiscordResolver::new(http.clone(), bots)),
+        Arc::new(ninegag::NinegagResolver::new(http.clone())),
+        Arc::new(ifunny::IfunnyResolver::new(http.clone())),
+        Arc::new(newgrounds::NewgroundsResolver::new(http.clone())),
+        Arc::new(archive_org::ArchiveOrgResolver::new(http.clone())),
+        Arc::new(wikimedia::WikimediaResolver::new(http.clone())),
+        Arc::new(coub::CoubResolver::new(http.clone())),
+        Arc::new(giphy::GiphyResolver::new(http.clone())),
+        Arc::new(tenor::TenorResolver::new(http.clone())),
+        Arc::new(catbox::CatboxResolver::new(http.clone())),
+        Arc::new(google_drive::GoogleDriveResolver::new(http.clone())),
+        Arc::new(dropbox::DropboxResolver::new(http.clone())),
+        Arc::new(onedrive::OnedriveResolver::new(http.clone())),
+        Arc::new(mega::MegaResolver::new(http.clone())),
+        Arc::new(jwplayer::JwplayerResolver::new(http.clone())),
+        Arc::new(brightcove::BrightcoveResolver::new(http.clone())),
+        Arc::new(wistia::WistiaResolver::new(http.clone())),
+        Arc::new(kaltura::KalturaResolver::new(http.clone())),
+        Arc::new(vidyard::VidyardResolver::new(http.clone())),
+        Arc::new(cloudflare_stream::CloudflareStreamResolver::new(http.clone())),
+        Arc::new(mux::MuxResolver::new(http.clone())),
+        Arc::new(bunny::BunnyResolver::new(http.clone())),
+        Arc::new(onenewsnz::OneNewsNzResolver::new(http.clone())),
+        Arc::new(seventeenlive::SeventeenLiveResolver::new(http.clone())),
+        Arc::new(firsttv::FirstTvResolver::new(http.clone())),
+        Arc::new(twentymin::TwentyMinResolver::new(http.clone())),
+        Arc::new(abc::AbcResolver::new(http.clone())),
+        Arc::new(abcotvs::AbcotvsResolver::new(http.clone())),
+        Arc::new(acast::AcastResolver::new(http.clone())),
+        Arc::new(acfun::AcfunResolver::new(http.clone())),
+        Arc::new(adobetv::AdobetvResolver::new(http.clone())),
+        Arc::new(aljazeera::AljazeeraResolver::new(http.clone())),
+        Arc::new(allocine::AllocineResolver::new(http.clone())),
+        Arc::new(aparat::AparatResolver::new(http.clone())),
+        Arc::new(applepodcasts::ApplePodcastsResolver::new(http.clone())),
+        Arc::new(audioboom::AudioboomResolver::new(http.clone())),
+        Arc::new(amp::AmpResolver::new(http.clone())),
+        Arc::new(ard::ArdResolver::new(http.clone())),
+        Arc::new(dplay::DplayResolver::new(http.clone())),
+        Arc::new(floatplane::FloatplaneResolver::new(http.clone())),
+        Arc::new(jixie::JixieResolver::new(http.clone())),
+        Arc::new(medialaan::MedialaanResolver::new(http.clone())),
+        Arc::new(nexx::NexxResolver::new(http.clone())),
+        Arc::new(periscope::PeriscopeResolver::new(http.clone())),
+        Arc::new(uplynk::UplynkResolver::new(http.clone())),
+        Arc::new(ustream::UstreamResolver::new(http.clone())),
+        Arc::new(baidu::BaiduResolver::new(http.clone())),
+        Arc::new(banbye::BanByeResolver::new(http.clone())),
+        Arc::new(bandcamp::BandcampResolver::new(http.clone())),
+        Arc::new(bitchute::BitchuteResolver::new(http.clone())),
+        Arc::new(ccc::CccResolver::new(http.clone())),
+        Arc::new(chaturbate::ChaturbateResolver::new(http.clone())),
+        Arc::new(cpac::CpacResolver::new(http.clone())),
+        Arc::new(dailymail::DailymailResolver::new(http.clone())),
+        Arc::new(bannedvideo::BannedVideoResolver::new(http.clone())),
+        Arc::new(blerp::BlerpResolver::new(http.clone())),
+        Arc::new(blogger::BloggerResolver::new(http.clone())),
+        Arc::new(bloomberg::BloombergResolver::new(http.clone())),
+        Arc::new(bongacams::BongacamsResolver::new(http.clone())),
+        Arc::new(box_::BoxResolver::new(http.clone())),
+        Arc::new(btvplus::BtvplusResolver::new(http.clone())),
+        Arc::new(bundesliga::BundesligaResolver::new(http.clone())),
+        Arc::new(bundestag::BundestagResolver::new(http.clone())),
+        Arc::new(businessinsider::BusinessinsiderResolver::new(http.clone())),
+        Arc::new(buzzfeed::BuzzfeedResolver::new(http.clone())),
+        Arc::new(byutv::ByutvResolver::new(http.clone())),
+        Arc::new(daystar::DaystarResolver::new(http.clone())),
+        Arc::new(dbtv::DbtvResolver::new(http.clone())),
+        Arc::new(dctp::DctpResolver::new(http.clone())),
+        Arc::new(democracynow::DemocracynowResolver::new(http.clone())),
+        Arc::new(drtv::DrtvResolver::new(http.clone())),
+        Arc::new(dumpert::DumpertResolver::new(http.clone())),
+        Arc::new(dw::DwResolver::new(http.clone())),
     ]
+}
+
+/// The resolvers that come last, whatever else is registered: Mastodon, which matches
+/// links on any host by their shape and passes the rest on, and the generic web resolver,
+/// which takes whatever is left and hands a page whose player one of `players` knows to
+/// that player's resolver.
+pub fn tail_resolvers(http: &Http, players: &[Arc<dyn Resolver>]) -> Vec<Arc<dyn Resolver>> {
+    vec![
+        Arc::new(mastodon::MastodonResolver::new(http.clone())),
+        Arc::new(web::WebResolver::new(http.clone(), players.to_vec())),
+    ]
+}
+
+/// Every resolver this crate carries, in the order links are offered to them:
+/// [`builtin_resolvers`], then [`tail_resolvers`].
+pub fn standard_resolvers(http: &Http, bots: Arc<dyn discord::BotTokens>) -> Vec<Arc<dyn Resolver>> {
+    let mut list = builtin_resolvers(http, bots);
+    let tail = tail_resolvers(http, &list);
+    list.extend(tail);
+    list
 }
 
 const MAX_REDIRECT_HOPS: usize = 5;
@@ -203,15 +323,25 @@ pub trait Resolver: Send + Sync {
     async fn check_session(&self) -> Result<SessionCheck, ResolveError> {
         Ok(SessionCheck::Unsupported)
     }
+    /// Links to the platform's player embedded in `page`: frames, script tags and the
+    /// inline markup the player is loaded with. The generic web resolver asks every
+    /// resolver and hands the page on to the one whose player it finds.
+    fn embeds_in(&self, _page: &Page) -> Vec<Url> {
+        Vec::new()
+    }
 }
 
 pub struct ResolverRegistry {
-    resolvers: Vec<Box<dyn Resolver>>,
+    resolvers: Vec<Arc<dyn Resolver>>,
 }
 
 impl ResolverRegistry {
-    pub fn new(resolvers: Vec<Box<dyn Resolver>>) -> Self {
+    pub fn new(resolvers: Vec<Arc<dyn Resolver>>) -> Self {
         Self { resolvers }
+    }
+
+    pub fn resolvers(&self) -> &[Arc<dyn Resolver>] {
+        &self.resolvers
     }
 
     pub fn ids(&self) -> Vec<&'static str> {
@@ -337,6 +467,9 @@ pub enum SubtitleFormat {
     Json3,
     /// Bilibili's JSON subtitles: a `body` of cues with `from`, `to` and `content`.
     BilibiliJson,
+    /// TikTok's automatic captions: `utterances` with `start_time`, `end_time` (in
+    /// milliseconds) and `text`.
+    TiktokJson,
     /// A playlist of WebVTT segments.
     HlsVtt,
 }
@@ -457,6 +590,21 @@ pub enum Cipher {
     Aes128Ctr { key: [u8; 16], nonce: [u8; 8] },
 }
 
+/// A request the download repeats while it runs, for hosts that serve a stream only
+/// while its player keeps reporting playback.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "scheme", rename_all = "snake_case")]
+pub enum Keepalive {
+    /// Bunny Stream's MediaCage ping: every two seconds, `url` with `hash`, `time`,
+    /// `paused` and `resolution` in its query, the hash being the MD5 of
+    /// `{secret}_{context_id}_{time}_{paused}_{resolution}`.
+    BunnyPing {
+        url: Url,
+        secret: String,
+        context_id: String,
+    },
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Variant {
     pub url: Url,
@@ -475,6 +623,11 @@ pub struct Variant {
     pub size: Option<u64>,
     pub duration: Option<Duration>,
     pub headers: Vec<(String, String)>,
+    /// Query parameters every request for the variant's playlists, segments and keys
+    /// carries, as hosts that sign the manifest link and check the signature on each
+    /// segment require.
+    #[serde(default)]
+    pub query: Vec<(String, String)>,
     /// The platform's name for the format, such as a YouTube itag.
     #[serde(default)]
     pub format_id: Option<String>,
@@ -499,6 +652,10 @@ pub struct Variant {
     /// encrypted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cipher: Option<Cipher>,
+    /// The request the download keeps making while it runs, when the host serves the
+    /// stream only to a player that reports playback.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keepalive: Option<Keepalive>,
 }
 
 impl Variant {
@@ -517,6 +674,7 @@ impl Variant {
             size: None,
             duration: None,
             headers: Vec::new(),
+            query: Vec::new(),
             format_id: None,
             label: None,
             language: None,
@@ -526,6 +684,7 @@ impl Variant {
             live: false,
             drm: None,
             cipher: None,
+            keepalive: None,
         }
     }
 
@@ -550,6 +709,18 @@ impl Variant {
     pub fn with_header(mut self, name: &str, value: &str) -> Self {
         self.headers.push((name.to_string(), value.to_string()));
         self
+    }
+
+    /// `url` with the variant's query parameters added, for the requests the variant's
+    /// playlists, segments and keys are fetched with; a parameter the link already
+    /// carries is left as it is.
+    pub fn signed(&self, url: &Url) -> Url {
+        signed_url(url, &self.query)
+    }
+
+    /// The variant's own link with `query` added.
+    pub fn signed_with(&self, query: &[(String, String)]) -> Url {
+        signed_url(&self.url, query)
     }
 
     /// Fills codec identities from an RFC 6381 codec string.
@@ -658,6 +829,24 @@ impl ResolveError {
     }
 }
 
+/// `url` with `query` added, leaving parameters the link already carries as they are.
+pub fn signed_url(url: &Url, query: &[(String, String)]) -> Url {
+    if query.is_empty() {
+        return url.clone();
+    }
+    let present: Vec<String> = url.query_pairs().map(|(k, _)| k.into_owned()).collect();
+    let mut signed = url.clone();
+    {
+        let mut pairs = signed.query_pairs_mut();
+        for (name, value) in query {
+            if !present.contains(name) {
+                pairs.append_pair(name, value);
+            }
+        }
+    }
+    signed
+}
+
 /// Turns an HTTP status into the resolver error it means for `requested`: nothing there,
 /// locked, rate limited, or unavailable.
 pub fn check_status(response: &Response, requested: &Url) -> Result<(), ResolveError> {
@@ -740,6 +929,50 @@ pub async fn fetch(
         content_type,
         body,
     })
+}
+
+/// GETs `url` as `platform` the way Chrome would: its TLS and HTTP/2 fingerprint and its
+/// own headers, for hosts that refuse any other client. `headers` still win over the
+/// browser's.
+pub async fn fetch_as_browser(
+    http: &Http,
+    url: &Url,
+    platform: &str,
+    headers: &[(String, String)],
+    limit: usize,
+) -> Result<Fetched, ResolveError> {
+    let response = http
+        .get(url.clone())
+        .platform(platform)
+        .headers(headers)
+        .impersonate()
+        .send()
+        .await?;
+    let status = response.status;
+    let final_url = response.url.clone();
+    let content_type = response.content_type().map(str::to_owned);
+    let (body, _) = response.bytes_up_to(limit).await?;
+    Ok(Fetched {
+        url: final_url,
+        status,
+        content_type,
+        body,
+    })
+}
+
+/// [`fetch_as_browser`], failing unless the answer is 2xx.
+pub async fn fetch_ok_as_browser(
+    http: &Http,
+    url: &Url,
+    platform: &str,
+    headers: &[(String, String)],
+    limit: usize,
+) -> Result<Fetched, ResolveError> {
+    let fetched = fetch_as_browser(http, url, platform, headers, limit).await?;
+    if let Some(error) = status_error(fetched.status, url) {
+        return Err(error);
+    }
+    Ok(fetched)
 }
 
 /// [`fetch`], failing unless the answer is 2xx.

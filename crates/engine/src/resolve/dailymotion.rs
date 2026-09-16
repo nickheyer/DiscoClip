@@ -13,7 +13,7 @@ use url::Url;
 use super::{
     ClipRange, MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved,
     Resolver, SessionSupport, SubtitleFormat, SubtitleTrack, Variant, VariantKind, clean_title,
-    fetch, hls, path_extension, status_error, timestamp_hint,
+    fetch, hls, path_extension, status_error, timestamp_hint, util,
 };
 use crate::http::{BROWSER_UA, Cookie, Http};
 use crate::media::{AudioCodec, Container, VideoCodec};
@@ -27,7 +27,25 @@ const MASTER_ATTEMPTS: usize = 3;
 
 static RE_HOST: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(?:[a-z0-9-]+\.)*dailymotion\.[a-z]{2,3}$").unwrap());
-static RE_ID: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^x[0-9a-z]{2,}$").unwrap());
+/// A video id: `x` and letters and digits for most, `k` and a longer mixed-case string
+/// for partner uploads.
+static RE_ID: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9]{2,}$").unwrap());
+const GRAPHQL: &str = "https://graphql.api.dailymotion.com/";
+/// The player's own client, which the API hands a token to.
+const CLIENT_ID: &str = "f1a362d288c1b98099c7";
+const CLIENT_SECRET: &str = "eea605b96e01c796ff369935357eca920c5da4c5";
+/// `DM.player(element, { video: "x…" })`: a player set up inline.
+static RE_DM_PLAYER: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"(?s)DM\.player\([^,]+,\s*\{.*?video['"]?\s*:\s*["']?([0-9a-zA-Z]+).+?\}\s*\);"#).unwrap()
+});
+/// `<script src="https://geo.dailymotion.com/player/x1234.js" data-video="x…">`.
+static RE_PLAYER_SCRIPT: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"(?s)<script [^>]*src=(["'])(?:https?:)?//[\w-]+\.dailymotion\.com/player/(?:(?!).)+[^>]*>"#).unwrap()
+});
+/// `<input id="dmcloudUrlEmissionSelect" value="https://www.dailymotion.com/…">`.
+static RE_EMISSION_INPUT: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"(?is)<input[^>]+id=["']dmcloudUrlEmissionSelect["'][^>]+value=["']([^"']+)["']"#).unwrap()
+});
 static RE_USER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z0-9._-]{2,}$").unwrap());
 /// Progressive links carry their size: `/H264-1280x720-60/`.
 static RE_SIZE: LazyLock<Regex> =
@@ -45,15 +63,13 @@ pub enum Link {
     Video(String),
     Playlist(String),
     User(String),
+    /// A search, by its term.
+    Search(String),
 }
 
 fn id_of(segment: &str) -> Option<String> {
-    let id = segment
-        .split('_')
-        .next()
-        .unwrap_or(segment)
-        .to_ascii_lowercase();
-    RE_ID.is_match(&id).then_some(id)
+    let id = segment.split('_').next().unwrap_or(segment);
+    RE_ID.is_match(id).then(|| id.to_string())
 }
 
 pub fn parse_link(url: &Url) -> Option<Link> {
@@ -73,6 +89,13 @@ pub fn parse_link(url: &Url) -> Option<Link> {
             _ => None,
         };
     }
+    // L'Équipe serves Dailymotion videos under its own video paths.
+    if host == "lequipe.fr" || host == "www.lequipe.fr" {
+        return match segments.as_slice() {
+            ["video", id, ..] => id_of(id).map(Link::Video),
+            _ => None,
+        };
+    }
     if !RE_HOST.is_match(&host) {
         return None;
     }
@@ -82,14 +105,24 @@ pub fn parse_link(url: &Url) -> Option<Link> {
             .and_then(|(_, v)| id_of(&v))
     };
     match segments.as_slice() {
-        ["video", id, ..] | ["embed", "video", id, ..] | ["swf", "video", id, ..] => {
-            id_of(id).map(Link::Video)
-        }
+        ["video", id, ..]
+        | ["embed", "video", id, ..]
+        | ["swf", "video", id, ..]
+        | ["crawler", "video", id, ..] => id_of(id).map(Link::Video),
         ["swf", id] => id_of(id).map(Link::Video),
         ["playlist", id, ..] | ["embed", "playlist", id, ..] => id_of(id).map(Link::Playlist),
+        ["search", term, "videos"] | ["search", term] => {
+            let term = percent_encoding::percent_decode_str(&term.replace('+', "%20"))
+                .decode_utf8_lossy()
+                .trim()
+                .to_string();
+            (!term.is_empty()).then_some(Link::Search(term))
+        }
         _ if query("video").is_some() => query("video").map(Link::Video),
         _ if query("playlist").is_some() => query("playlist").map(Link::Playlist),
-        ["user", user] | ["user", user, "videos"] => Some(Link::User(user.to_string())),
+        ["user", user] | ["user", user, "videos"] | ["old", "user", user] | ["old", "user", user, "videos"] => {
+            Some(Link::User(user.to_string()))
+        }
         [user] | [user, "videos"]
             if !RESERVED.contains(&user.to_ascii_lowercase().as_str())
                 && RE_USER.is_match(user) =>
@@ -134,6 +167,92 @@ impl DailymotionResolver {
         Ok(value)
     }
 
+    /// A client token from the API's OAuth endpoint, as the player asks for one.
+    async fn token(&self, origin: &Url) -> Result<String, ResolveError> {
+        let response = self
+            .http
+            .post(Url::parse(&format!("{GRAPHQL}oauth/token")).expect("valid"))
+            .platform(PLATFORM)
+            .user_agent(BROWSER_UA)
+            .form(&[
+                ("client_id", CLIENT_ID),
+                ("client_secret", CLIENT_SECRET),
+                ("grant_type", "client_credentials"),
+            ])
+            .send()
+            .await?;
+        let status = response.status;
+        let answer: Value = response
+            .json(MAX_PAGE)
+            .await
+            .map_err(|e| ResolveError::malformed(origin, format!("token JSON: {e}")))?;
+        if let Some(token) = answer["access_token"].as_str().filter(|t| !t.is_empty()) {
+            return Ok(token.to_string());
+        }
+        Err(ResolveError::unavailable(
+            origin,
+            answer["error_description"]
+                .as_str()
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("the token endpoint answered HTTP {status}")),
+        ))
+    }
+
+    /// One GraphQL query, with the client token; the API's own errors become resolver
+    /// errors.
+    async fn graphql(&self, query: Value, origin: &Url) -> Result<Value, ResolveError> {
+        let token = self.token(origin).await?;
+        let response = self
+            .http
+            .post(Url::parse(GRAPHQL).expect("valid"))
+            .platform(PLATFORM)
+            .user_agent(BROWSER_UA)
+            .header("accept", "application/json")
+            .header("content-type", "application/json")
+            .header("origin", "https://www.dailymotion.com")
+            .header("authorization", &format!("Bearer {token}"))
+            .json(&query)
+            .send()
+            .await?;
+        if let Some(error) = status_error(response.status, origin) {
+            return Err(error);
+        }
+        response
+            .json(MAX_PAGE)
+            .await
+            .map_err(|e| ResolveError::malformed(origin, format!("GraphQL JSON: {e}")))
+    }
+
+    /// The media record the GraphQL API keeps beside the player metadata: the description,
+    /// the countries a geoblocked video allows, and for a live stream whether it is on
+    /// air. A password-protected video is asked for with the link's `password`.
+    async fn media_record(&self, id: &str, password: Option<&str>, origin: &Url) -> Result<Value, ResolveError> {
+        let fields = "description geoblockedCountries { allowed } xid";
+        let filter = match password {
+            Some(password) => format!(", password: {}", serde_json::to_string(password).unwrap_or_default()),
+            None => String::new(),
+        };
+        let query = format!(
+            "{{ media(xid: \"{id}\"{filter}) {{ ... on Video {{ {fields} }} ... on Live {{ {fields} isOnAir }} }} }}"
+        );
+        let answer = self.graphql(serde_json::json!({"query": query}), origin).await?;
+        let media = &answer["data"]["media"];
+        if media.is_null() {
+            let message = answer["errors"][0]["message"]
+                .as_str()
+                .unwrap_or("the API has no record of the video")
+                .to_string();
+            return Err(if message.to_ascii_lowercase().contains("password") {
+                ResolveError::unavailable(origin, format!("{message}; add ?password=… to the link"))
+            } else if message.to_ascii_lowercase().contains("not found") || message.to_ascii_lowercase().contains("does not exist") {
+                ResolveError::NotFound(origin.clone())
+            } else {
+                ResolveError::unavailable(origin, message)
+            });
+        }
+        Ok(media.clone())
+    }
+
     /// The master playlist behind the CDN director, which refuses requests whose header
     /// fingerprint it has seen too often: every attempt carries a fresh set of headers.
     async fn master_playlist(
@@ -175,6 +294,9 @@ impl DailymotionResolver {
     }
 
     async fn video(&self, id: &str, url: &Url) -> Result<Resolved, ResolveError> {
+        let password = util::query_param(url, "password").filter(|p| !p.is_empty());
+        let record = self.media_record(id, password.as_deref(), url).await?;
+        let id = record["xid"].as_str().filter(|x| !x.is_empty()).unwrap_or(id);
         let metadata_url =
             Url::parse(&format!("{METADATA}{id}?app=com.dailymotion.neon")).expect("valid");
         let fetched = fetch(
@@ -188,16 +310,28 @@ impl DailymotionResolver {
         .await?;
         let metadata = fetched.json(url)?;
         if let Some(error) = metadata.get("error").filter(|e| e.is_object()) {
-            return Err(metadata_error(error, &metadata, url));
+            let mut failure = metadata_error(error, &metadata, url);
+            if error["code"].as_str() == Some("DM007")
+                && let Some(allowed) = record["geoblockedCountries"]["allowed"].as_array()
+                && let ResolveError::Unavailable { reason, .. } = &mut failure
+            {
+                let countries: Vec<&str> = allowed.iter().filter_map(Value::as_str).collect();
+                if !countries.is_empty() {
+                    reason.push_str(&format!(" (allowed in {})", countries.join(", ")));
+                }
+            }
+            return Err(failure);
         }
         if let Some(error) = status_error(fetched.status, url) {
             return Err(error);
         }
         let live = matches!(metadata["stream_type"].as_str(), Some("live"))
-            || matches!(metadata["mode"].as_str(), Some("live"));
+            || matches!(metadata["mode"].as_str(), Some("live"))
+            || record["isOnAir"].as_bool() == Some(true);
         let mut resolved = Resolved::new(PLATFORM);
         resolved.id = Some(id.to_string());
         resolved.title = metadata["title"].as_str().and_then(clean_title);
+        resolved.description = record["description"].as_str().and_then(clean_title);
         resolved.uploader = metadata["owner"]["screenname"]
             .as_str()
             .and_then(clean_title);
@@ -294,6 +428,54 @@ impl DailymotionResolver {
         Ok(resolved)
     }
 
+    /// The videos a search finds, page by page through the GraphQL API.
+    async fn search(&self, term: &str, url: &Url) -> Result<Playlist, ResolveError> {
+        let mut entries: Vec<PlaylistEntry> = Vec::new();
+        for page in 1..=MAX_PAGES {
+            let answer = self
+                .graphql(
+                    serde_json::json!({
+                        "operationName": "SEARCH_QUERY",
+                        "query": "query SEARCH_QUERY( $query: String! $page: Int $limit: Int ) { search { videos( query: $query first: $limit page: $page ) { edges { node { xid title duration } } } } }",
+                        "variables": {"limit": 20, "page": page, "query": term},
+                    }),
+                    url,
+                )
+                .await?;
+            let Some(edges) = answer["data"]["search"]["videos"]["edges"].as_array() else {
+                let message = answer["errors"][0]["message"]
+                    .as_str()
+                    .unwrap_or("the search answered nothing")
+                    .to_string();
+                return Err(ResolveError::unavailable(url, message));
+            };
+            let before = entries.len();
+            for edge in edges {
+                let Some(xid) = edge["node"]["xid"].as_str() else {
+                    continue;
+                };
+                entries.push(PlaylistEntry {
+                    url: Url::parse(&format!("https://www.dailymotion.com/video/{xid}")).expect("valid"),
+                    title: edge["node"]["title"].as_str().and_then(clean_title),
+                    duration: edge["node"]["duration"]
+                        .as_u64()
+                        .filter(|d| *d > 0)
+                        .map(Duration::from_secs),
+                });
+            }
+            if edges.len() < 20 || entries.len() == before {
+                break;
+            }
+        }
+        Ok(Playlist {
+            resolver: PLATFORM.into(),
+            id: Some(term.to_string()),
+            title: Some(term.to_string()),
+            total: Some(entries.len()),
+            entries,
+        })
+    }
+
     /// A playlist or a user's videos, read page by page through the public API.
     async fn listing(&self, link: &Link, url: &Url) -> Result<Playlist, ResolveError> {
         let (about, videos, id, fields) = match link {
@@ -309,7 +491,7 @@ impl DailymotionResolver {
                 name.clone(),
                 "id,screenname,videos_total",
             ),
-            Link::Video(_) => unreachable!("videos are resolved on their own"),
+            Link::Video(_) | Link::Search(_) => unreachable!("videos and searches are resolved on their own"),
         };
         let info = self.rest(&about, &[("fields", fields)], url).await?;
         let title = info["name"]
@@ -327,6 +509,7 @@ impl DailymotionResolver {
                         ("fields", "id,title,duration"),
                         ("limit", &limit),
                         ("page", &page.to_string()),
+                        ("family_filter", "false"),
                     ],
                     url,
                 )
@@ -441,7 +624,7 @@ impl Resolver for DailymotionResolver {
         Platform {
             id: PLATFORM,
             name: "Dailymotion",
-            hosts: &["dailymotion.com", "dai.ly"],
+            hosts: &["dailymotion.com", "dai.ly", "lequipe.fr"],
             features: &[
                 "videos",
                 "live",
@@ -449,8 +632,10 @@ impl Resolver for DailymotionResolver {
                 "short links",
                 "playlists",
                 "user videos",
+                "searches",
                 "subtitles",
                 "age-gated",
+                "password-protected",
             ],
             formats: &["hls", "mp4"],
             session: SessionSupport::None,
@@ -472,7 +657,61 @@ impl Resolver for DailymotionResolver {
             Link::Playlist(_) | Link::User(_) => {
                 Ok(Resolution::Playlist(self.listing(&link, url).await?))
             }
+            Link::Search(term) => Ok(Resolution::Playlist(self.search(term, url).await?)),
         }
+    }
+
+    /// Players other pages set up inline, load with the player script, or name in the
+    /// emission selector, beside the frames the generic scan finds.
+    fn embeds_in(&self, page: &super::page::Page) -> Vec<Url> {
+        let html = page.html();
+        let mut found: Vec<Url> = Vec::new();
+        let mut push = |url: Url| {
+            if !found.contains(&url) {
+                found.push(url);
+            }
+        };
+        for caps in RE_DM_PLAYER.captures_iter(html) {
+            if let Ok(url) = Url::parse(&format!("https://www.dailymotion.com/embed/video/{}", &caps[1])) {
+                push(url);
+            }
+        }
+        for tag in RE_PLAYER_SCRIPT.find_iter(html) {
+            let attrs = util::extract_attributes(tag.as_str());
+            let attr = |name: &str| {
+                attrs
+                    .iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case(name))
+                    .map(|(_, v)| v.trim().to_string())
+                    .filter(|v| !v.is_empty())
+            };
+            let Some(src) = attr("src") else {
+                continue;
+            };
+            let src = if src.starts_with("//") { format!("https:{src}") } else { src };
+            let Ok(mut player) = Url::parse(&src.replace(".js", ".html")) else {
+                continue;
+            };
+            let query = if let Some(video) = attr("data-video") {
+                format!("video={video}")
+            } else if let Some(playlist) = attr("data-playlist") {
+                format!("playlist={playlist}")
+            } else {
+                continue;
+            };
+            player.set_query(Some(&query));
+            if parse_link(&player).is_some() {
+                push(player);
+            }
+        }
+        for caps in RE_EMISSION_INPUT.captures_iter(html) {
+            if let Ok(url) = Url::parse(&util::html_unescape(&caps[1]))
+                && parse_link(&url).is_some()
+            {
+                push(url);
+            }
+        }
+        found
     }
 
     /// The family filter hides age-gated videos until this cookie turns it off.
@@ -488,6 +727,40 @@ mod tests {
         Exchange, Fixture, RecordedBody, RecordedRequest, RecordedResponse,
     };
     use serde_json::json;
+
+    fn post(url: &str, status: u16, body: String) -> Exchange {
+        Exchange {
+            request: RecordedRequest {
+                method: "POST".into(),
+                url: url.into(),
+                headers: Vec::new(),
+                body: None,
+            },
+            response: RecordedResponse {
+                status,
+                url: url.into(),
+                headers: vec![("content-type".into(), "application/json".into())],
+                body: RecordedBody::Text(body),
+                truncated: false,
+            },
+        }
+    }
+
+    fn token() -> Exchange {
+        post(
+            "https://graphql.api.dailymotion.com/oauth/token",
+            200,
+            json!({"access_token": "tok", "token_type": "Bearer"}).to_string(),
+        )
+    }
+
+    fn record(xid: &str, description: &str) -> Exchange {
+        post(
+            "https://graphql.api.dailymotion.com/",
+            200,
+            json!({"data": {"media": {"xid": xid, "description": description, "geoblockedCountries": {"allowed": ["FR"]}}}}).to_string(),
+        )
+    }
 
     fn get(url: &str, status: u16, content_type: &str, body: String) -> Exchange {
         Exchange {
@@ -549,7 +822,27 @@ mod tests {
             link("https://www.dailymotion.com/user/nqtv/videos"),
             Some(Link::User("nqtv".into()))
         );
-        assert_eq!(link("https://www.dailymotion.com/search/cats/videos"), None);
+        assert_eq!(
+            link("https://www.dailymotion.com/search/king%20of%20turtles/videos"),
+            Some(Link::Search("king of turtles".into()))
+        );
+        assert_eq!(
+            link("https://www.dailymotion.com/video/k7MtHciueyTcrFtFKA2"),
+            Some(Link::Video("k7MtHciueyTcrFtFKA2".into())),
+            "partner ids keep their case"
+        );
+        assert_eq!(
+            link("https://www.dailymotion.com/crawler/video/x2wr8je"),
+            Some(Link::Video("x2wr8je".into()))
+        );
+        assert_eq!(
+            link("https://www.lequipe.fr/video/x791mem"),
+            Some(Link::Video("x791mem".into()))
+        );
+        assert_eq!(
+            link("https://www.dailymotion.com/old/user/nqtv"),
+            Some(Link::User("nqtv".into()))
+        );
         assert_eq!(link("https://www.dailymotion.com/"), None);
         assert_eq!(link("https://example.com/video/x5kesuj"), None);
     }
@@ -557,6 +850,8 @@ mod tests {
     #[tokio::test]
     async fn videos_expand_their_playlist_with_metadata_and_subtitles() {
         let mut fixture = Fixture::new("dailymotion", None);
+        fixture.exchanges.push(token());
+        fixture.exchanges.push(record("x5kesuj", "Office Christmas Party Review"));
         fixture.exchanges.push(get("https://www.dailymotion.com/player/metadata/video/x5kesuj?app=com.dailymotion.neon", 200, "application/json", json!({
             "id": "x5kesuj", "title": "Office Christmas Party Review", "duration": 187, "created_time": 1493651285, "explicit": true,
             "stream_type": "recorded", "owner": {"screenname": "Someone", "url": "https://www.dailymotion.com/someone"},
@@ -636,6 +931,10 @@ mod tests {
     #[tokio::test]
     async fn player_errors_are_told_apart() {
         let mut fixture = Fixture::new("dailymotion", None);
+        fixture.exchanges.push(token());
+        fixture.exchanges.push(record("x8xcz2t", ""));
+        fixture.exchanges.push(record("x7geo00", ""));
+        fixture.exchanges.push(record("x7pass0", ""));
         fixture.exchanges.push(get("https://www.dailymotion.com/player/metadata/video/x8xcz2t?app=com.dailymotion.neon", 200, "application/json", json!({
             "error": {"code": "404", "message": "Can't find object video for `id' parameter", "type": "not_found"}, "id": "x8xcz2t"
         }).to_string()));

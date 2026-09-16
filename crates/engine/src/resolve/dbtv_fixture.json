@@ -1,0 +1,300 @@
+{
+  "name": "dbtv",
+  "recorded_at": "2026-09-16T02:58:36.313911037Z",
+  "url": "https://www.dagbladet.no/video/ranet-bank-med-chilipulver/J12GzewM",
+  "notes": "Dagbladet TV video: JW Player delivery API with the HLS manifest expanded",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://cdn.jwplayer.com/v2/media/J12GzewM",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://cdn.jwplayer.com/v2/media/J12GzewM",
+        "headers": [
+          [
+            "content-type",
+            "application/json; charset=utf-8"
+          ],
+          [
+            "date",
+            "Wed, 16 Sep 2026 02:58:36 GMT"
+          ],
+          [
+            "x-amz-cf-id",
+            "gqN96a46Phmv444dRoJRZaN1GVlkA69rvnLPUBp13AxlfXgRGnliCA=="
+          ],
+          [
+            "server",
+            "gunicorn"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "cache-control",
+            "max-age=180, max-stale=180"
+          ],
+          [
+            "expires",
+            "Wed, 16 Sep 2026 03:01:36"
+          ],
+          [
+            "x-robots-tag",
+            "none, indexifembedded"
+          ],
+          [
+            "vary",
+            "Accept-Encoding"
+          ],
+          [
+            "x-cache",
+            "Miss from cloudfront"
+          ],
+          [
+            "via",
+            "1.1 ffe9646b2ea911744e2d51fc0715cedc.cloudfront.net (CloudFront)"
+          ],
+          [
+            "x-amz-cf-pop",
+            "SEA900-P10"
+          ]
+        ],
+        "body": {
+          "text": "{\"title\":\"Ranet bank med chilipulver\",\"description\":\"BLE TATT: En maskert mann kastet chilipulver i ansiktet p\\u00e5 bankansatte under et ran ved en bankfilial India. Video: Kamera One, Christian T. Castberg\",\"kind\":\"Single Item\",\"siteid\":\"ZEO9juDZ\",\"playlist\":[{\"title\":\"Ranet bank med chilipulver\",\"mediaid\":\"J12GzewM\",\"link\":\"https://cdn.jwplayer.com/previews/J12GzewM\",\"image\":\"https://cdn.jwplayer.com/v2/media/J12GzewM/poster.jpg?width=720\",\"images\":[{\"src\":\"https://cdn.jwplayer.com/v2/media/J12GzewM/poster.jpg?width=320\",\"width\":320,\"type\":\"image/jpeg\"},{\"src\":\"https://cdn.jwplayer.com/v2/media/J12GzewM/poster.jpg?width=480\",\"width\":480,\"type\":\"image/jpeg\"},{\"src\":\"https://cdn.jwplayer.com/v2/media/J12GzewM/poster.jpg?width=640\",\"width\":640,\"type\":\"image/jpeg\"},{\"src\":\"https://cdn.jwplayer.com/v2/media/J12GzewM/poster.jpg?width=720\",\"width\":720,\"type\":\"image/jpeg\"},{\"src\":\"https://cdn.jwplayer.com/v2/media/J12GzewM/poster.jpg?width=1280\",\"width\":1280,\"type\":\"image/jpeg\"},{\"src\":\"https://cdn.jwplayer.com/v2/media/J12GzewM/poster.jpg?width=1920\",\"width\":1920,\"type\":\"image/jpeg\"}],\"siteid\":\"ZEO9juDZ\",\"duration\":49,\"content_source_type\":\"url\",\"pubdate\":1789505766,\"updated\":1789505766,\"description\":\"BLE TATT: En maskert mann kastet chilipulver i ansiktet p\\u00e5 bankansatte under et ran ved en bankfilial India. Video: Kamera One, Christian T. Castberg\",\"tags\":\"chili,india,bankran,show: nonstop,bankranere,vertical\",\"sources\":[{\"file\":\"https://customer-r6w3rkd6z0yql2ts.cloudflarestream.com/9380d8157bdc2e6dab07e1a477566952/manifest/video.m3u8\",\"type\":\"application/vnd.apple.mpegurl\"}],\"jwpseg\":[\"16010001\",\"16000001\",\"13011006\"],\"variations\":{},\"ageRestriction\":\"6\",\"author\":\"Christian Tycho Castberg\",\"brand\":\"dagbladet\",\"createdBy\":\"mediehub\",\"isGeoblocked\":\"false\",\"isPromoted\":\"false\",\"isPromotion\":\"false\",\"mediehubId\":\"6aa9ae934b4ec070ef49ab07\",\"nudity\":\"false\",\"orientation\":\"vertical\",\"paywall\":\"false\",\"productId\":\"\",\"program\":\"Non Stop\",\"promovideos\":\"\",\"seoTitle\":\"Ranet bank med chilipulver \"}],\"feed_instance_id\":\"4d7e3dc4-e375-485a-90c8-897dd858e708\"}"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://customer-r6w3rkd6z0yql2ts.cloudflarestream.com/9380d8157bdc2e6dab07e1a477566952/manifest/video.m3u8",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://customer-r6w3rkd6z0yql2ts.cloudflarestream.com/9380d8157bdc2e6dab07e1a477566952/manifest/video.m3u8",
+        "headers": [
+          [
+            "date",
+            "Wed, 16 Sep 2026 02:58:36 GMT"
+          ],
+          [
+            "content-type",
+            "application/vnd.apple.mpegurl"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "cache-control",
+            "public, max-age=600"
+          ],
+          [
+            "cf-ray",
+            "a3bc9c433a33283e-SEA"
+          ],
+          [
+            "vary",
+            "origin, referer"
+          ],
+          [
+            "access-control-allow-headers",
+            "range"
+          ],
+          [
+            "access-control-expose-header",
+            "cf-ray"
+          ],
+          [
+            "stream-dw-version",
+            "2026.9.5"
+          ],
+          [
+            "stream-dwg-version",
+            "0825c2cb-9dbe-41fa-9b92-dfeef8f1bc8f"
+          ],
+          [
+            "stream-ltx",
+            "false"
+          ],
+          [
+            "stream-media-id",
+            "9380d8157bdc2e6dab07e1a477566952"
+          ],
+          [
+            "server",
+            "cloudflare"
+          ]
+        ],
+        "body": {
+          "text": "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"group_audio\",NAME=\"original\",LANGUAGE=\"en-d85a6b2c\",DEFAULT=YES,AUTOSELECT=YES,URI=\"stream_td85a6b2c8a1988806b3cadf44520a183_r1891074269.m3u8\"\n#EXT-X-STREAM-INF:RESOLUTION=1080x1920,CODECS=\"avc1.4d4028,mp4a.40.2\",BANDWIDTH=2881644,AVERAGE-BANDWIDTH=2434644,SCORE=5.0,FRAME-RATE=25.000,AUDIO=\"group_audio\"\nstream_tbbe795c6af88f661f88fa40e453f069e_r1891074464.m3u8\n#EXT-X-STREAM-INF:RESOLUTION=720x1280,CODECS=\"avc1.4d401f,mp4a.40.2\",BANDWIDTH=1343338,AVERAGE-BANDWIDTH=1142946,SCORE=4.0,FRAME-RATE=25.000,AUDIO=\"group_audio\"\nstream_tbbe795c6af88f661f88fa40e453f069e_r1891074404.m3u8\n#EXT-X-STREAM-INF:RESOLUTION=480x852,CODECS=\"avc1.4d401e,mp4a.40.2\",BANDWIDTH=766060,AVERAGE-BANDWIDTH=647400,SCORE=3.0,FRAME-RATE=25.000,AUDIO=\"group_audio\"\nstream_tbbe795c6af88f661f88fa40e453f069e_r1891074326.m3u8\n#EXT-X-STREAM-INF:RESOLUTION=360x640,CODECS=\"avc1.4d401e,mp4a.40.2\",BANDWIDTH=555766,AVERAGE-BANDWIDTH=469282,SCORE=2.0,FRAME-RATE=25.000,AUDIO=\"group_audio\"\nstream_tbbe795c6af88f661f88fa40e453f069e_r1891074334.m3u8\n#EXT-X-STREAM-INF:RESOLUTION=240x426,CODECS=\"avc1.42c015,mp4a.40.2\",BANDWIDTH=438828,AVERAGE-BANDWIDTH=377278,SCORE=1.0,FRAME-RATE=25.000,AUDIO=\"group_audio\"\nstream_tbbe795c6af88f661f88fa40e453f069e_r1891074307.m3u8"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://customer-r6w3rkd6z0yql2ts.cloudflarestream.com/9380d8157bdc2e6dab07e1a477566952/manifest/stream_tbbe795c6af88f661f88fa40e453f069e_r1891074464.m3u8",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://customer-r6w3rkd6z0yql2ts.cloudflarestream.com/9380d8157bdc2e6dab07e1a477566952/manifest/stream_tbbe795c6af88f661f88fa40e453f069e_r1891074464.m3u8",
+        "headers": [
+          [
+            "date",
+            "Wed, 16 Sep 2026 02:58:37 GMT"
+          ],
+          [
+            "content-type",
+            "application/vnd.apple.mpegurl"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "cache-control",
+            "public, max-age=600"
+          ],
+          [
+            "cf-ray",
+            "a3bc9c454afe283e-SEA"
+          ],
+          [
+            "vary",
+            "origin, referer"
+          ],
+          [
+            "access-control-allow-headers",
+            "range"
+          ],
+          [
+            "access-control-expose-header",
+            "cf-ray"
+          ],
+          [
+            "stream-dw-version",
+            "2026.9.5"
+          ],
+          [
+            "stream-dwg-version",
+            "0825c2cb-9dbe-41fa-9b92-dfeef8f1bc8f"
+          ],
+          [
+            "stream-ltx",
+            "false"
+          ],
+          [
+            "stream-media-id",
+            "9380d8157bdc2e6dab07e1a477566952"
+          ],
+          [
+            "server",
+            "cloudflare"
+          ]
+        ],
+        "body": {
+          "text": "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-TARGETDURATION:5\n#EXT-X-MAP:URI=\"../../9380d8157bdc2e6dab07e1a477566952/video/1920/init.mp4?p=eyJ0eXBlIjoiaW5pdCIsInZpZGVvSUQiOiI5MzgwZDgxNTdiZGMyZTZkYWIwN2UxYTQ3NzU2Njk1MiIsIm93bmVySUQiOjcwMjEwMzI1LCJjcmVhdG9ySUQiOiJtZWRpZWh1YiIsInN0b3JhZ2VQcm92aWRlciI6NCwidHJhY2siOiJiYmU3OTVjNmFmODhmNjYxZjg4ZmE0MGU0NTNmMDY5ZSIsInJlbmRpdGlvbiI6IjE4OTEwNzQ0NjQiLCJtdXhpbmciOiIxOTUzMjU4NTY2In0&s=w4fChBbCo2DCmAg9w4nDmsOkw6bDhsKKfRjDlg3DvDlYw7tJMMKMwrp6woYUw4IpLg\"\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXTINF:4.00000,\n../../9380d8157bdc2e6dab07e1a477566952/video/1920/seg_1.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI5MzgwZDgxNTdiZGMyZTZkYWIwN2UxYTQ3NzU2Njk1MiIsIm93bmVySUQiOjcwMjEwMzI1LCJjcmVhdG9ySUQiOiJtZWRpZWh1YiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQsInN0b3JhZ2VQcm92aWRlciI6NCwidHJhY2siOiJiYmU3OTVjNmFmODhmNjYxZjg4ZmE0MGU0NTNmMDY5ZSIsInJlbmRpdGlvbiI6IjE4OTEwNzQ0NjQiLCJtdXhpbmciOiIxOTUzMjU4NTY2In0&s=XsKDfSpkwpzCqxFcHcKmwpN9FHzDogjCni4YPBEfwrzDrmU8wrvCsMKOwrV9\n#EXTINF:4.00000,\n../../9380d8157bdc2e6dab07e1a477566952/video/1920/seg_2.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI5MzgwZDgxNTdiZGMyZTZkYWIwN2UxYTQ3NzU2Njk1MiIsIm93bmVySUQiOjcwMjEwMzI1LCJjcmVhdG9ySUQiOiJtZWRpZWh1YiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQsInN0b3JhZ2VQcm92aWRlciI6NCwidHJhY2siOiJiYmU3OTVjNmFmODhmNjYxZjg4ZmE0MGU0NTNmMDY5ZSIsInJlbmRpdGlvbiI6IjE4OTEwNzQ0NjQiLCJtdXhpbmciOiIxOTUzMjU4NTY2In0&s=XsKDfSpkwpzCqxFcHcKmwpN9FHzDogjCni4YPBEfwrzDrmU8wrvCsMKOwrV9\n#EXTINF:4.00000,\n../../9380d8157bdc2e6dab07e1a477566952/video/1920/seg_3.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI5MzgwZDgxNTdiZGMyZTZkYWIwN2UxYTQ3NzU2Njk1MiIsIm93bmVySUQiOjcwMjEwMzI1LCJjcmVhdG9ySUQiOiJtZWRpZWh1YiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQsInN0b3JhZ2VQcm92aWRlciI6NCwidHJhY2siOiJiYmU3OTVjNmFmODhmNjYxZjg4ZmE0MGU0NTNmMDY5ZSIsInJlbmRpdGlvbiI6IjE4OTEwNzQ0NjQiLCJtdXhpbmciOiIxOTUzMjU4NTY2In0&s=XsKDfSpkwpzCqxFcHcKmwpN9FHzDogjCni4YPBEfwrzDrmU8wrvCsMKOwrV9\n#EXTINF:4.00000,\n../../9380d8157bdc2e6dab07e1a477566952/video/1920/seg_4.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI5MzgwZDgxNTdiZGMyZTZkYWIwN2UxYTQ3NzU2Njk1MiIsIm93bmVySUQiOjcwMjEwMzI1LCJjcmVhdG9ySUQiOiJtZWRpZWh1YiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQsInN0b3JhZ2VQcm92aWRlciI6NCwidHJhY2siOiJiYmU3OTVjNmFmODhmNjYxZjg4ZmE0MGU0NTNmMDY5ZSIsInJlbmRpdGlvbiI6IjE4OTEwNzQ0NjQiLCJtdXhpbmciOiIxOTUzMjU4NTY2In0&s=XsKDfSpkwpzCqxFcHcKmwpN9FHzDogjCni4YPBEfwrzDrmU8wrvCsMKOwrV9\n#EXTINF:4.00000,\n../../9380d8157bdc2e6dab07e1a477566952/video/1920/seg_5.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI5MzgwZDgxNTdiZGMyZTZkYWIwN2UxYTQ3NzU2Njk1MiIsIm93bmVySUQiOjcwMjEwMzI1LCJjcmVhdG9ySUQiOiJtZWRpZWh1YiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQsInN0b3JhZ2VQcm92aWRlciI6NCwidHJhY2siOiJiYmU3OTVjNmFmODhmNjYxZjg4ZmE0MGU0NTNmMDY5ZSIsInJlbmRpdGlvbiI6IjE4OTEwNzQ0NjQiLCJtdXhpbmciOiIxOTUzMjU4NTY2In0&s=XsKDfSpkwpzCqxFcHcKmwpN9FHzDogjCni4YPBEfwrzDrmU8wrvCsMKOwrV9\n#EXTINF:4.00000,\n../../9380d8157bdc2e6dab07e1a477566952/video/1920/seg_6.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI5MzgwZDgxNTdiZGMyZTZkYWIwN2UxYTQ3NzU2Njk1MiIsIm93bmVySUQiOjcwMjEwMzI1LCJjcmVhdG9ySUQiOiJtZWRpZWh1YiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQsInN0b3JhZ2VQcm92aWRlciI6NCwidHJhY2siOiJiYmU3OTVjNmFmODhmNjYxZjg4ZmE0MGU0NTNmMDY5ZSIsInJlbmRpdGlvbiI6IjE4OTEwNzQ0NjQiLCJtdXhpbmciOiIxOTUzMjU4NTY2In0&s=XsKDfSpkwpzCqxFcHcKmwpN9FHzDogjCni4YPBEfwrzDrmU8wrvCsMKOwrV9\n#EXTINF:4.00000,\n../../9380d8157bdc2e6dab07e1a477566952/video/1920/seg_7.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI5MzgwZDgxNTdiZGMyZTZkYWIwN2UxYTQ3NzU2Njk1MiIsIm93bmVySUQiOjcwMjEwMzI1LCJjcmVhdG9ySUQiOiJtZWRpZWh1YiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQsInN0b3JhZ2VQcm92aWRlciI6NCwidHJhY2siOiJiYmU3OTVjNmFmODhmNjYxZjg4ZmE0MGU0NTNmMDY5ZSIsInJlbmRpdGlvbiI6IjE4OTEwNzQ0NjQiLCJtdXhpbmciOiIxOTUzMjU4NTY2In0&s=XsKDfSpkwpzCqxFcHcKmwpN9FHzDogjCni4YPBEfwrzDrmU8wrvCsMKOwrV9\n#EXTINF:4.00000,\n../../9380d8157bdc2e6dab07e1a477566952/video/1920/seg_8.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI5MzgwZDgxNTdiZGMyZTZkYWIwN2UxYTQ3NzU2Njk1MiIsIm93bmVySUQiOjcwMjEwMzI1LCJjcmVhdG9ySUQiOiJtZWRpZWh1YiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQsInN0b3JhZ2VQcm92aWRlciI6NCwidHJhY2siOiJiYmU3OTVjNmFmODhmNjYxZjg4ZmE0MGU0NTNmMDY5ZSIsInJlbmRpdGlvbiI6IjE4OTEwNzQ0NjQiLCJtdXhpbmciOiIxOTUzMjU4NTY2In0&s=XsKDfSpkwpzCqxFcHcKmwpN9FHzDogjCni4YPBEfwrzDrmU8wrvCsMKOwrV9\n#EXTINF:4.00000,\n../../9380d8157bdc2e6dab07e1a477566952/video/1920/seg_9.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI5MzgwZDgxNTdiZGMyZTZkYWIwN2UxYTQ3NzU2Njk1MiIsIm93bmVySUQiOjcwMjEwMzI1LCJjcmVhdG9ySUQiOiJtZWRpZWh1YiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQsInN0b3JhZ2VQcm92aWRlciI6NCwidHJhY2siOiJiYmU3OTVjNmFmODhmNjYxZjg4ZmE0MGU0NTNmMDY5ZSIsInJlbmRpdGlvbiI6IjE4OTEwNzQ0NjQiLCJtdXhpbmciOiIxOTUzMjU4NTY2In0&s=XsKDfSpkwpzCqxFcHcKmwpN9FHzDogjCni4YPBEfwrzDrmU8wrvCsMKOwrV9\n#EXTINF:4.00000,\n../../9380d8157bdc2e6dab07e1a477566952/video/1920/seg_10.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI5MzgwZDgxNTdiZGMyZTZkYWIwN2UxYTQ3NzU2Njk1MiIsIm93bmVySUQiOjcwMjEwMzI1LCJjcmVhdG9ySUQiOiJtZWRpZWh1YiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQsInN0b3JhZ2VQcm92aWRlciI6NCwidHJhY2siOiJiYmU3OTVjNmFmODhmNjYxZjg4ZmE0MGU0NTNmMDY5ZSIsInJlbmRpdGlvbiI6IjE4OTEwNzQ0NjQiLCJtdXhpbmciOiIxOTUzMjU4NTY2In0&s=XsKDfSpkwpzCqxFcHcKmwpN9FHzDogjCni4YPBEfwrzDrmU8wrvCsMKOwrV9\n#EXTINF:4.00000,\n../../9380d8157bdc2e6dab07e1a477566952/video/1920/seg_11.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI5MzgwZDgxNTdiZGMyZTZkYWIwN2UxYTQ3NzU2Njk1MiIsIm93bmVySUQiOjcwMjEwMzI1LCJjcmVhdG9ySUQiOiJtZWRpZWh1YiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQsInN0b3JhZ2VQcm92aWRlciI6NCwidHJhY2siOiJiYmU3OTVjNmFmODhmNjYxZjg4ZmE0MGU0NTNmMDY5ZSIsInJlbmRpdGlvbiI6IjE4OTEwNzQ0NjQiLCJtdXhpbmciOiIxOTUzMjU4NTY2In0&s=XsKDfSpkwpzCqxFcHcKmwpN9FHzDogjCni4YPBEfwrzDrmU8wrvCsMKOwrV9\n#EXTINF:4.00000,\n../../9380d8157bdc2e6dab07e1a477566952/video/1920/seg_12.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI5MzgwZDgxNTdiZGMyZTZkYWIwN2UxYTQ3NzU2Njk1MiIsIm93bmVySUQiOjcwMjEwMzI1LCJjcmVhdG9ySUQiOiJtZWRpZWh1YiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQsInN0b3JhZ2VQcm92aWRlciI6NCwidHJhY2siOiJiYmU3OTVjNmFmODhmNjYxZjg4ZmE0MGU0NTNmMDY5ZSIsInJlbmRpdGlvbiI6IjE4OTEwNzQ0NjQiLCJtdXhpbmciOiIxOTUzMjU4NTY2In0&s=XsKDfSpkwpzCqxFcHcKmwpN9FHzDogjCni4YPBEfwrzDrmU8wrvCsMKOwrV9\n#EXTINF:1.84,\n../../9380d8157bdc2e6dab07e1a477566952/video/1920/seg_13.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI5MzgwZDgxNTdiZGMyZTZkYWIwN2UxYTQ3NzU2Njk1MiIsIm93bmVySUQiOjcwMjEwMzI1LCJjcmVhdG9ySUQiOiJtZWRpZWh1YiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQsInN0b3JhZ2VQcm92aWRlciI6NCwidHJhY2siOiJiYmU3OTVjNmFmODhmNjYxZjg4ZmE0MGU0NTNmMDY5ZSIsInJlbmRpdGlvbiI6IjE4OTEwNzQ0NjQiLCJtdXhpbmciOiIxOTUzMjU4NTY2In0&s=XsKDfSpkwpzCqxFcHcKmwpN9FHzDogjCni4YPBEfwrzDrmU8wrvCsMKOwrV9\n#EXT-X-ENDLIST\n"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://cdn.jwplayer.com/v2/media/zzzzzzzz",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 404,
+        "url": "https://cdn.jwplayer.com/v2/media/zzzzzzzz",
+        "headers": [
+          [
+            "content-type",
+            "application/json"
+          ],
+          [
+            "content-length",
+            "51"
+          ],
+          [
+            "date",
+            "Wed, 16 Sep 2026 02:58:37 GMT"
+          ],
+          [
+            "x-robots-tag",
+            "none, indexifembedded"
+          ],
+          [
+            "server",
+            "gunicorn"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "cache-control",
+            "max-age=180, max-stale=180"
+          ],
+          [
+            "expires",
+            "Wed, 16 Sep 2026 03:01:37"
+          ],
+          [
+            "x-cache",
+            "Error from cloudfront"
+          ],
+          [
+            "via",
+            "1.1 ffe9646b2ea911744e2d51fc0715cedc.cloudfront.net (CloudFront)"
+          ],
+          [
+            "x-amz-cf-pop",
+            "SEA900-P10"
+          ],
+          [
+            "x-amz-cf-id",
+            "UcTx4an1xW8wSVpbDS14KkP9rAN9tRBd2AstczgXB5mzIPqfBcj3nQ=="
+          ]
+        ],
+        "body": {
+          "text": "{\"message\":\"['zzzzzzzz']: id not found in index.\"}\n"
+        },
+        "truncated": false
+      }
+    }
+  ]
+}

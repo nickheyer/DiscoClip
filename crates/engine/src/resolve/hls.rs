@@ -73,6 +73,8 @@ pub async fn expand_playlist(
                 variant.fps = stream.frame_rate;
                 if let Some(codecs) = &stream.codecs {
                     let (video, audio) = parse_codecs(Some(codecs));
+                    variant.audio_only =
+                        video.is_none() && audio.is_some() && stream.resolution.is_none();
                     variant.video = video;
                     variant.audio = audio;
                     variant.codecs = Some(codecs.clone());
@@ -97,7 +99,18 @@ pub async fn expand_playlist(
                         Some(fps) if fps > 30.5 => format!("{}p{}", res.height, fps.round()),
                         _ => format!("{}p", res.height),
                     });
+                } else if variant.audio_only {
+                    variant.label = Some(match variant.bitrate {
+                        Some(bitrate) => format!("audio {}k", bitrate / 1000),
+                        None => "audio".to_string(),
+                    });
                 }
+                // A stream whose codecs name no audio and that pairs with no audio
+                // rendition is video alone.
+                variant.video_only = variant.video.is_some()
+                    && variant.audio.is_none()
+                    && stream.codecs.is_some()
+                    && variant.audio_url.is_none();
                 variant.headers = headers.to_vec();
                 variants.push(variant);
             }

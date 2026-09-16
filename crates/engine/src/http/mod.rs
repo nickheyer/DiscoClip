@@ -89,6 +89,23 @@ impl HttpError {
         }
     }
 
+    pub fn from_wreq(url: &Url, error: wreq::Error) -> Self {
+        let url = url.to_string();
+        if error.is_timeout() {
+            HttpError::Timeout { url }
+        } else if error.is_connect() || error.is_dns() || error.is_proxy_connect() {
+            HttpError::Connect {
+                url,
+                message: error.to_string(),
+            }
+        } else {
+            HttpError::Transport {
+                url,
+                message: error.to_string(),
+            }
+        }
+    }
+
     /// Whether asking again might work.
     pub fn is_retryable(&self) -> bool {
         matches!(
@@ -275,7 +292,7 @@ impl Http {
         )
     }
 
-    fn test_config() -> HttpConfig {
+    pub(crate) fn test_config() -> HttpConfig {
         HttpConfig {
             retry: RetryPolicy::NONE,
             rate_limits: RateLimits {
@@ -399,6 +416,7 @@ impl Http {
             cookies: true,
             retry: true,
             rate_limit: true,
+            impersonate: false,
             error: None,
         }
     }
@@ -489,6 +507,7 @@ pub struct RequestBuilder {
     cookies: bool,
     retry: bool,
     rate_limit: bool,
+    impersonate: bool,
     error: Option<HttpError>,
 }
 
@@ -594,6 +613,14 @@ impl RequestBuilder {
         self
     }
 
+    /// Sends the request as Chrome would: its TLS and HTTP/2 fingerprint and its default
+    /// headers, user agent included, for hosts that refuse any other client. Headers set
+    /// on the request still win over the browser's.
+    pub fn impersonate(mut self) -> Self {
+        self.impersonate = true;
+        self
+    }
+
     pub async fn send(self) -> Result<Response, HttpError> {
         if let Some(error) = self.error {
             return Err(error);
@@ -618,7 +645,7 @@ impl RequestBuilder {
         for _hop in 0..=config.max_redirects {
             let host = url.host_str().unwrap_or("").to_string();
             let mut headers = self.headers.clone();
-            if !headers.contains_key(header::USER_AGENT) {
+            if !self.impersonate && !headers.contains_key(header::USER_AGENT) {
                 headers.insert(
                     header::USER_AGENT,
                     HeaderValue::from_str(&config.user_agent)
@@ -656,9 +683,12 @@ impl RequestBuilder {
                     body: body.clone(),
                     timeout,
                     proxy: proxy.clone(),
+                    impersonate: self.impersonate,
                 };
+                tracing::trace!(method = %method, %url, headers = ?request.headers, "http request");
                 match http.inner.transport.send(request).await {
                     Ok(response) => {
+                        tracing::debug!(method = %method, %url, status = %response.status, "http");
                         http.inner.stats.record(&host, response.status);
                         if self.cookies {
                             http.store_cookies(platform, &url, &response.headers);

@@ -19,7 +19,7 @@
 	import { jobs as feed } from '$lib/state/jobs.svelte';
 	import { session } from '$lib/state/session.svelte';
 	import { toast } from '$lib/state/toast.svelte';
-	import { LIMITS } from './+page';
+	import { LIMITS } from './query';
 
 	let { data }: { data: PageData } = $props();
 
@@ -497,13 +497,13 @@
 		</div>
 		<div class="grid-3">
 			<Field label="Tallest output" for="s-height" optional error={heightProblem}>
-				<input id="s-height" class="input" type="number" min="0" step="1" bind:value={maxHeight} placeholder="px" aria-invalid={heightProblem ? 'true' : undefined} />
+				<input id="s-height" class="input" type="number" min="0" step="1" value={maxHeight} oninput={(e) => (maxHeight = (e.currentTarget as HTMLInputElement).value)} placeholder="px" aria-invalid={heightProblem ? 'true' : undefined} />
 			</Field>
 			<Field label="Longest video" for="s-minutes" optional error={minutesProblem}>
-				<input id="s-minutes" class="input" type="number" min="0" step="any" bind:value={maxMinutes} placeholder="min" aria-invalid={minutesProblem ? 'true' : undefined} />
+				<input id="s-minutes" class="input" type="number" min="0" step="any" value={maxMinutes} oninput={(e) => (maxMinutes = (e.currentTarget as HTMLInputElement).value)} placeholder="min" aria-invalid={minutesProblem ? 'true' : undefined} />
 			</Field>
 			<Field label="Largest source" for="s-mb" optional error={mbProblem}>
-				<input id="s-mb" class="input" type="number" min="0" step="any" bind:value={maxMb} placeholder="MB" aria-invalid={mbProblem ? 'true' : undefined} />
+				<input id="s-mb" class="input" type="number" min="0" step="any" value={maxMb} oninput={(e) => (maxMb = (e.currentTarget as HTMLInputElement).value)} placeholder="MB" aria-invalid={mbProblem ? 'true' : undefined} />
 			</Field>
 		</div>
 		<p class="hint">Limits tighten the server's own; they never loosen them.</p>

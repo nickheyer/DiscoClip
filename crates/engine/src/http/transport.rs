@@ -30,6 +30,9 @@ pub struct TransportRequest {
     /// Bound on the whole exchange, body included; `None` for media downloads.
     pub timeout: Option<Duration>,
     pub proxy: Option<Url>,
+    /// Sent as a browser would: with Chrome's TLS and HTTP/2 fingerprint and its default
+    /// headers, for hosts that refuse any other client.
+    pub impersonate: bool,
 }
 
 pub struct TransportResponse {
@@ -47,10 +50,15 @@ pub trait Transport: Send + Sync {
     fn configure(&self, _connect_timeout: Duration, _read_timeout: Duration) {}
 }
 
-/// The network, through reqwest, one client per proxy.
+/// The browser impersonated requests pass for.
+const EMULATION: wreq_util::Profile = wreq_util::Emulation::Chrome142;
+
+/// The network, through reqwest, one client per proxy; impersonated requests go through
+/// wreq, which speaks TLS and HTTP/2 the way Chrome does, one client per proxy as well.
 pub struct LiveTransport {
     timeouts: Mutex<(Duration, Duration)>,
     clients: Mutex<HashMap<String, reqwest::Client>>,
+    browsers: Mutex<HashMap<String, wreq::Client>>,
 }
 
 impl LiveTransport {
@@ -58,7 +66,66 @@ impl LiveTransport {
         Self {
             timeouts: Mutex::new((connect_timeout, read_timeout)),
             clients: Mutex::new(HashMap::new()),
+            browsers: Mutex::new(HashMap::new()),
         }
+    }
+
+    fn browser(&self, proxy: Option<&Url>) -> Result<wreq::Client, HttpError> {
+        let key = proxy.map(|p| p.to_string()).unwrap_or_default();
+        let (connect_timeout, read_timeout) = self.timeouts();
+        let mut browsers = self.browsers.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(client) = browsers.get(&key) {
+            return Ok(client.clone());
+        }
+        let mut builder = wreq::Client::builder()
+            .emulation(EMULATION)
+            .redirect(wreq::redirect::Policy::none())
+            .connect_timeout(connect_timeout)
+            .read_timeout(read_timeout);
+        if let Some(proxy) = proxy {
+            builder = builder.proxy(
+                wreq::Proxy::all(proxy.as_str())
+                    .map_err(|_| HttpError::Proxy(proxy.to_string()))?,
+            );
+        }
+        let client = builder
+            .build()
+            .map_err(|e| HttpError::Build(e.to_string()))?;
+        browsers.insert(key, client.clone());
+        Ok(client)
+    }
+
+    async fn send_as_browser(
+        &self,
+        request: TransportRequest,
+    ) -> Result<TransportResponse, HttpError> {
+        let client = self.browser(request.proxy.as_ref())?;
+        let url = request.url.clone();
+        let mut builder = client
+            .request(request.method, request.url.as_str())
+            .headers(request.headers);
+        if let Some(body) = request.body {
+            builder = builder.body(body);
+        }
+        if let Some(timeout) = request.timeout {
+            builder = builder.timeout(timeout);
+        }
+        let response = builder
+            .send()
+            .await
+            .map_err(|e| HttpError::from_wreq(&url, e))?;
+        let final_url = Url::parse(&response.uri().to_string()).unwrap_or_else(|_| url.clone());
+        let stream_url = final_url.clone();
+        Ok(TransportResponse {
+            status: response.status(),
+            url: final_url,
+            headers: response.headers().clone(),
+            body: Box::pin(
+                response
+                    .bytes_stream()
+                    .map_err(move |e| HttpError::from_wreq(&stream_url, e)),
+            ),
+        })
     }
 
     pub fn timeouts(&self) -> (Duration, Duration) {
@@ -93,6 +160,9 @@ impl LiveTransport {
 #[async_trait]
 impl Transport for LiveTransport {
     async fn send(&self, request: TransportRequest) -> Result<TransportResponse, HttpError> {
+        if request.impersonate {
+            return self.send_as_browser(request).await;
+        }
         let client = self.client(request.proxy.as_ref())?;
         let url = request.url.clone();
         let mut builder = client
@@ -134,6 +204,10 @@ impl Transport for LiveTransport {
         }
         *timeouts = (connect_timeout, read_timeout);
         self.clients
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+        self.browsers
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clear();
@@ -552,6 +626,7 @@ mod tests {
                 body: None,
                 timeout: None,
                 proxy: None,
+                impersonate: false,
             })
             .await
             .unwrap();
@@ -605,6 +680,7 @@ mod tests {
                 body: None,
                 timeout: None,
                 proxy: None,
+                impersonate: false,
             })
             .await;
         assert!(matches!(missing, Err(HttpError::NoFixture { .. })));

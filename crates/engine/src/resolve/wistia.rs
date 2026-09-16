@@ -336,6 +336,10 @@ impl WistiaResolver {
 
 #[async_trait]
 impl Resolver for WistiaResolver {
+    fn embeds_in(&self, page: &Page) -> Vec<Url> {
+        embeds_in(page)
+    }
+
     fn id(&self) -> &'static str {
         PLATFORM
     }

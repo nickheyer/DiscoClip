@@ -1,5 +1,6 @@
 //! Resolves links from the command line against the live network, printing what each
-//! resolver found: `cargo run -p discoclip-engine --example resolve -- <url>...`.
+//! resolver found: `cargo run -p discoclip-engine --example resolve -- <url>...`. Variant
+//! links are shortened unless `RESOLVE_FULL_URLS` is set.
 //! Discord message links are read with the bot tokens in `DISCOCLIP_DISCORD_TOKENS`,
 //! comma separated.
 
@@ -57,7 +58,13 @@ async fn main() {
                     media.variants.len(),
                     media.subtitles.len()
                 );
-                for v in media.variants.iter().take(12) {
+                let full = std::env::var_os("RESOLVE_FULL_URLS").is_some();
+                for v in media.variants.iter().take(if full { usize::MAX } else { 12 }) {
+                    let shown = if full {
+                        v.url.as_str().len()
+                    } else {
+                        v.url.as_str().len().min(100)
+                    };
                     println!(
                         "    {} {:?} {:?}x{:?} {:?} {:?} {}",
                         v.kind.as_str(),
@@ -66,7 +73,7 @@ async fn main() {
                         v.height,
                         v.video,
                         v.bitrate,
-                        &v.url.as_str()[..v.url.as_str().len().min(100)]
+                        &v.url.as_str()[..shown]
                     );
                 }
             }

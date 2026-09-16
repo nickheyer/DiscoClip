@@ -1,1 +1,718 @@
-{"name":"cloudflare_stream","recorded_at":"2026-09-13T09:42:57Z","url":"https://customer-f33zs165nr7gyfy4.cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957/iframe","notes":"The HLS master and its 1080p media playlist on the customer host and on the bare host, the downloads endpoint of a video without downloads, and a manifest for a video that does not exist.","exchanges":[{"request":{"method":"GET","url":"https://customer-f33zs165nr7gyfy4.cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957/manifest/video.m3u8","headers":[],"body":null},"response":{"status":200,"url":"https://customer-f33zs165nr7gyfy4.cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957/manifest/video.m3u8","headers":[["content-type","application/vnd.apple.mpegurl"]],"body":{"text":"#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-STREAM-INF:RESOLUTION=852x480,CODECS=\"avc1.4d401e\",BANDWIDTH=2578191,AVERAGE-BANDWIDTH=1051578,SCORE=3.0,FRAME-RATE=23.976\nstream_t6d81b683f1a360cb7c0fd8bfbb522367_r596381872.m3u8\n#EXT-X-STREAM-INF:RESOLUTION=1920x1080,CODECS=\"avc1.4d4028\",BANDWIDTH=5484049,AVERAGE-BANDWIDTH=3028579,SCORE=5.0,FRAME-RATE=23.976\nstream_t6d81b683f1a360cb7c0fd8bfbb522367_r596381958.m3u8\n#EXT-X-STREAM-INF:RESOLUTION=1280x720,CODECS=\"avc1.4d401f\",BANDWIDTH=4465228,AVERAGE-BANDWIDTH=1874097,SCORE=4.0,FRAME-RATE=23.976\nstream_t6d81b683f1a360cb7c0fd8bfbb522367_r596381906.m3u8\n#EXT-X-STREAM-INF:RESOLUTION=640x360,CODECS=\"avc1.4d401e\",BANDWIDTH=1572227,AVERAGE-BANDWIDTH=677232,SCORE=2.0,FRAME-RATE=23.976\nstream_t6d81b683f1a360cb7c0fd8bfbb522367_r596381886.m3u8\n#EXT-X-STREAM-INF:RESOLUTION=426x240,CODECS=\"avc1.42c015\",BANDWIDTH=894933,AVERAGE-BANDWIDTH=454175,SCORE=1.0,FRAME-RATE=23.976\nstream_t6d81b683f1a360cb7c0fd8bfbb522367_r596381873.m3u8"},"truncated":false}},{"request":{"method":"GET","url":"https://customer-f33zs165nr7gyfy4.cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957/manifest/stream_t6d81b683f1a360cb7c0fd8bfbb522367_r596381958.m3u8","headers":[],"body":null},"response":{"status":200,"url":"https://customer-f33zs165nr7gyfy4.cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957/manifest/stream_t6d81b683f1a360cb7c0fd8bfbb522367_r596381958.m3u8","headers":[["content-type","application/vnd.apple.mpegurl"]],"body":{"text":"#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-TARGETDURATION:5\n#EXT-X-MAP:URI=\"../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/init.mp4?p=eyJ0eXBlIjoiaW5pdCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInN0b3JhZ2VQcm92aWRlciI6NCwidHJhY2siOiI2ZDgxYjY4M2YxYTM2MGNiN2MwZmQ4YmZiYjUyMjM2NyIsInJlbmRpdGlvbiI6IjU5NjM4MTk1OCIsIm11eGluZyI6IjY1MDExMjg2OCJ9&s=NcKBIEhSD1zDgMORw7p7wrZfZMO-WcOFwol9w7DDgsKGAFvCglcow4nCrWPDlsKL\"\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXTINF:4.00400,\n../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_1.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\n#EXTINF:4.00400,\n../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_2.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\n#EXTINF:4.00400,\n../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_3.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\n#EXTINF:4.00400,\n../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_4.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\n#EXTINF:4.00400,\n../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_5.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\n#EXTINF:4.00400,\n../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_6.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\n#EXTINF:4.00400,\n../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_7.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\n#EXTINF:1.97,\n../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_8.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\n#EXT-X-ENDLIST\n"},"truncated":false}},{"request":{"method":"GET","url":"https://customer-f33zs165nr7gyfy4.cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957/downloads/default.mp4","headers":[],"body":null},"response":{"status":404,"url":"https://customer-f33zs165nr7gyfy4.cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957/downloads/default.mp4","headers":[["content-type","text/plain"],["content-length","13"]],"body":{"text":"404 not found"},"truncated":false}},{"request":{"method":"GET","url":"https://cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957/manifest/video.m3u8","headers":[],"body":null},"response":{"status":200,"url":"https://cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957/manifest/video.m3u8","headers":[["content-type","application/vnd.apple.mpegurl"]],"body":{"text":"#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-STREAM-INF:RESOLUTION=852x480,CODECS=\"avc1.4d401e\",BANDWIDTH=2578191,AVERAGE-BANDWIDTH=1051578,SCORE=3.0,FRAME-RATE=23.976\nstream_t6d81b683f1a360cb7c0fd8bfbb522367_r596381872.m3u8\n#EXT-X-STREAM-INF:RESOLUTION=1920x1080,CODECS=\"avc1.4d4028\",BANDWIDTH=5484049,AVERAGE-BANDWIDTH=3028579,SCORE=5.0,FRAME-RATE=23.976\nstream_t6d81b683f1a360cb7c0fd8bfbb522367_r596381958.m3u8\n#EXT-X-STREAM-INF:RESOLUTION=1280x720,CODECS=\"avc1.4d401f\",BANDWIDTH=4465228,AVERAGE-BANDWIDTH=1874097,SCORE=4.0,FRAME-RATE=23.976\nstream_t6d81b683f1a360cb7c0fd8bfbb522367_r596381906.m3u8\n#EXT-X-STREAM-INF:RESOLUTION=640x360,CODECS=\"avc1.4d401e\",BANDWIDTH=1572227,AVERAGE-BANDWIDTH=677232,SCORE=2.0,FRAME-RATE=23.976\nstream_t6d81b683f1a360cb7c0fd8bfbb522367_r596381886.m3u8\n#EXT-X-STREAM-INF:RESOLUTION=426x240,CODECS=\"avc1.42c015\",BANDWIDTH=894933,AVERAGE-BANDWIDTH=454175,SCORE=1.0,FRAME-RATE=23.976\nstream_t6d81b683f1a360cb7c0fd8bfbb522367_r596381873.m3u8"},"truncated":false}},{"request":{"method":"GET","url":"https://cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957/manifest/stream_t6d81b683f1a360cb7c0fd8bfbb522367_r596381958.m3u8","headers":[],"body":null},"response":{"status":200,"url":"https://cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957/manifest/stream_t6d81b683f1a360cb7c0fd8bfbb522367_r596381958.m3u8","headers":[["content-type","application/vnd.apple.mpegurl"]],"body":{"text":"#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-TARGETDURATION:5\n#EXT-X-MAP:URI=\"../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/init.mp4?p=eyJ0eXBlIjoiaW5pdCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInN0b3JhZ2VQcm92aWRlciI6NCwidHJhY2siOiI2ZDgxYjY4M2YxYTM2MGNiN2MwZmQ4YmZiYjUyMjM2NyIsInJlbmRpdGlvbiI6IjU5NjM4MTk1OCIsIm11eGluZyI6IjY1MDExMjg2OCJ9&s=NcKBIEhSD1zDgMORw7p7wrZfZMO-WcOFwol9w7DDgsKGAFvCglcow4nCrWPDlsKL\"\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXTINF:4.00400,\n../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_1.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\n#EXTINF:4.00400,\n../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_2.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\n#EXTINF:4.00400,\n../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_3.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\n#EXTINF:4.00400,\n../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_4.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\n#EXTINF:4.00400,\n../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_5.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\n#EXTINF:4.00400,\n../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_6.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\n#EXTINF:4.00400,\n../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_7.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\n#EXTINF:1.97,\n../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_8.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\n#EXT-X-ENDLIST\n"},"truncated":false}},{"request":{"method":"GET","url":"https://cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957/downloads/default.mp4","headers":[],"body":null},"response":{"status":404,"url":"https://cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957/downloads/default.mp4","headers":[["content-type","text/plain"],["content-length","13"]],"body":{"text":"404 not found"},"truncated":false}},{"request":{"method":"GET","url":"https://customer-f33zs165nr7gyfy4.cloudflarestream.com/00000000000000000000000000000000/manifest/video.m3u8","headers":[],"body":null},"response":{"status":404,"url":"https://customer-f33zs165nr7gyfy4.cloudflarestream.com/00000000000000000000000000000000/manifest/video.m3u8","headers":[["content-type","text/plain"],["content-length","25"]],"body":{"text":"NotFound: failed to fetch"},"truncated":false}}]}
+{
+  "name": "cloudflare_stream",
+  "recorded_at": "2026-09-16T04:07:28.690996999Z",
+  "url": "https://customer-f33zs165nr7gyfy4.cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957/iframe",
+  "notes": "Cloudflare Stream: a video through its HLS and DASH manifests and download, and a missing id",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://customer-f33zs165nr7gyfy4.cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957/manifest/video.m3u8",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://customer-f33zs165nr7gyfy4.cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957/manifest/video.m3u8",
+        "headers": [
+          [
+            "date",
+            "Wed, 16 Sep 2026 04:07:29 GMT"
+          ],
+          [
+            "content-type",
+            "application/vnd.apple.mpegurl"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "cache-control",
+            "public, max-age=600"
+          ],
+          [
+            "cf-ray",
+            "a3bd012548a9c378-SEA"
+          ],
+          [
+            "vary",
+            "origin, referer"
+          ],
+          [
+            "access-control-allow-headers",
+            "range"
+          ],
+          [
+            "access-control-expose-header",
+            "cf-ray"
+          ],
+          [
+            "stream-dw-version",
+            "2026.9.5"
+          ],
+          [
+            "stream-dwg-version",
+            "0825c2cb-9dbe-41fa-9b92-dfeef8f1bc8f"
+          ],
+          [
+            "stream-ltx",
+            "false"
+          ],
+          [
+            "stream-media-id",
+            "6b9e68b07dfee8cc2d116e4c51d6a957"
+          ],
+          [
+            "server",
+            "cloudflare"
+          ]
+        ],
+        "body": {
+          "text": "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-STREAM-INF:RESOLUTION=852x480,CODECS=\"avc1.4d401e\",BANDWIDTH=2578191,AVERAGE-BANDWIDTH=1051578,SCORE=3.0,FRAME-RATE=23.976\nstream_t6d81b683f1a360cb7c0fd8bfbb522367_r596381872.m3u8\n#EXT-X-STREAM-INF:RESOLUTION=1920x1080,CODECS=\"avc1.4d4028\",BANDWIDTH=5484049,AVERAGE-BANDWIDTH=3028579,SCORE=5.0,FRAME-RATE=23.976\nstream_t6d81b683f1a360cb7c0fd8bfbb522367_r596381958.m3u8\n#EXT-X-STREAM-INF:RESOLUTION=1280x720,CODECS=\"avc1.4d401f\",BANDWIDTH=4465228,AVERAGE-BANDWIDTH=1874097,SCORE=4.0,FRAME-RATE=23.976\nstream_t6d81b683f1a360cb7c0fd8bfbb522367_r596381906.m3u8\n#EXT-X-STREAM-INF:RESOLUTION=640x360,CODECS=\"avc1.4d401e\",BANDWIDTH=1572227,AVERAGE-BANDWIDTH=677232,SCORE=2.0,FRAME-RATE=23.976\nstream_t6d81b683f1a360cb7c0fd8bfbb522367_r596381886.m3u8\n#EXT-X-STREAM-INF:RESOLUTION=426x240,CODECS=\"avc1.42c015\",BANDWIDTH=894933,AVERAGE-BANDWIDTH=454175,SCORE=1.0,FRAME-RATE=23.976\nstream_t6d81b683f1a360cb7c0fd8bfbb522367_r596381873.m3u8"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://customer-f33zs165nr7gyfy4.cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957/manifest/stream_t6d81b683f1a360cb7c0fd8bfbb522367_r596381958.m3u8",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://customer-f33zs165nr7gyfy4.cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957/manifest/stream_t6d81b683f1a360cb7c0fd8bfbb522367_r596381958.m3u8",
+        "headers": [
+          [
+            "date",
+            "Wed, 16 Sep 2026 04:07:29 GMT"
+          ],
+          [
+            "content-type",
+            "application/vnd.apple.mpegurl"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "cache-control",
+            "public, max-age=600"
+          ],
+          [
+            "cf-ray",
+            "a3bd012739d2c378-SEA"
+          ],
+          [
+            "vary",
+            "origin, referer"
+          ],
+          [
+            "access-control-allow-headers",
+            "range"
+          ],
+          [
+            "access-control-expose-header",
+            "cf-ray"
+          ],
+          [
+            "stream-dw-version",
+            "2026.9.5"
+          ],
+          [
+            "stream-dwg-version",
+            "0825c2cb-9dbe-41fa-9b92-dfeef8f1bc8f"
+          ],
+          [
+            "stream-ltx",
+            "false"
+          ],
+          [
+            "stream-media-id",
+            "6b9e68b07dfee8cc2d116e4c51d6a957"
+          ],
+          [
+            "server",
+            "cloudflare"
+          ]
+        ],
+        "body": {
+          "text": "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-TARGETDURATION:5\n#EXT-X-MAP:URI=\"../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/init.mp4?p=eyJ0eXBlIjoiaW5pdCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInN0b3JhZ2VQcm92aWRlciI6NCwidHJhY2siOiI2ZDgxYjY4M2YxYTM2MGNiN2MwZmQ4YmZiYjUyMjM2NyIsInJlbmRpdGlvbiI6IjU5NjM4MTk1OCIsIm11eGluZyI6IjY1MDExMjg2OCJ9&s=NcKBIEhSD1zDgMORw7p7wrZfZMO-WcOFwol9w7DDgsKGAFvCglcow4nCrWPDlsKL\"\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXTINF:4.00400,\n../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_1.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\n#EXTINF:4.00400,\n../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_2.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\n#EXTINF:4.00400,\n../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_3.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\n#EXTINF:4.00400,\n../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_4.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\n#EXTINF:4.00400,\n../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_5.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\n#EXTINF:4.00400,\n../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_6.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\n#EXTINF:4.00400,\n../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_7.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\n#EXTINF:1.97,\n../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_8.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\n#EXT-X-ENDLIST\n"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://customer-f33zs165nr7gyfy4.cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957/manifest/video.mpd",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://customer-f33zs165nr7gyfy4.cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957/manifest/video.mpd",
+        "headers": [
+          [
+            "date",
+            "Wed, 16 Sep 2026 04:07:29 GMT"
+          ],
+          [
+            "content-type",
+            "application/dash+xml"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "cache-control",
+            "public, max-age=600"
+          ],
+          [
+            "cf-ray",
+            "a3bd01279a24c378-SEA"
+          ],
+          [
+            "vary",
+            "origin, referer"
+          ],
+          [
+            "access-control-allow-headers",
+            "range"
+          ],
+          [
+            "access-control-expose-header",
+            "cf-ray"
+          ],
+          [
+            "stream-dw-version",
+            "2026.9.5"
+          ],
+          [
+            "stream-dwg-version",
+            "0825c2cb-9dbe-41fa-9b92-dfeef8f1bc8f"
+          ],
+          [
+            "stream-ltx",
+            "false"
+          ],
+          [
+            "stream-media-id",
+            "6b9e68b07dfee8cc2d116e4c51d6a957"
+          ],
+          [
+            "server",
+            "cloudflare"
+          ]
+        ],
+        "body": {
+          "text": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<MPD xmlns=\"urn:mpeg:dash:schema:mpd:2011\" profiles=\"urn:mpeg:dash:profile:isoff-live:2011\" type=\"static\" mediaPresentationDuration=\"PT30S\" minBufferTime=\"PT8S\">\n  <Period id=\"0\">\n    <AdaptationSet id=\"554495332\" mimeType=\"video/mp4\" segmentAlignment=\"true\" >\n    <Representation id=\"596381872\" bandwidth=\"2578191\" codecs=\"avc1.4d401e\" frameRate=\"24000/1001\" height=\"480\" width=\"852\">\n  <SegmentTemplate duration=\"96000\" initialization=\"../../6b9e68b07dfee8cc2d116e4c51d6a957/video/480/init.mp4?p=eyJ0eXBlIjoiaW5pdCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInN0b3JhZ2VQcm92aWRlciI6NCwidHJhY2siOiI2ZDgxYjY4M2YxYTM2MGNiN2MwZmQ4YmZiYjUyMjM2NyIsInJlbmRpdGlvbiI6IjU5NjM4MTg3MiIsIm11eGluZyI6IjY1MDExMjc4MiJ9&amp;s=UMKHB8OmwoQVLcO2w6_DqsKvDjPCpsKZw7HCujfChEE2w6rCuDlhWsKSO8KRw6bDmhk\" media=\"../../6b9e68b07dfee8cc2d116e4c51d6a957/video/480/seg_$Number$.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE4NzIiLCJtdXhpbmciOiI2NTAxMTI3ODIifQ&amp;s=ThkDVMOLw6zDicKzY8K1W2t7w5YtwqTCoTdrw7ceScKMFcKJw4jCvS3Co8ODwrTCnA\" startNumber=\"1\" timescale=\"23976\"></SegmentTemplate>\n</Representation>\n<Representation id=\"596381873\" bandwidth=\"894933\" codecs=\"avc1.42c015\" frameRate=\"24000/1001\" height=\"240\" width=\"426\">\n  <SegmentTemplate duration=\"96000\" initialization=\"../../6b9e68b07dfee8cc2d116e4c51d6a957/video/240/init.mp4?p=eyJ0eXBlIjoiaW5pdCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInN0b3JhZ2VQcm92aWRlciI6NCwidHJhY2siOiI2ZDgxYjY4M2YxYTM2MGNiN2MwZmQ4YmZiYjUyMjM2NyIsInJlbmRpdGlvbiI6IjU5NjM4MTg3MyIsIm11eGluZyI6IjY1MDExMjc4MyJ9&amp;s=wrwFwqbClzMrwoxFwqLDi8O7P8KvwoJTF1TDoT7DnBhNe8OWI2jDqGvClgLCo8Ow\" media=\"../../6b9e68b07dfee8cc2d116e4c51d6a957/video/240/seg_$Number$.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE4NzMiLCJtdXhpbmciOiI2NTAxMTI3ODMifQ&amp;s=wrIJYGfCo8Ozw7sNw7B5bwZXw5TDo8KuCMKiXsK2wqrDsF3CijsLwpEGY0xODQ\" startNumber=\"1\" timescale=\"23976\"></SegmentTemplate>\n</Representation>\n<Representation id=\"596381886\" bandwidth=\"1572227\" codecs=\"avc1.4d401e\" frameRate=\"24000/1001\" height=\"360\" width=\"640\">\n  <SegmentTemplate duration=\"96000\" initialization=\"../../6b9e68b07dfee8cc2d116e4c51d6a957/video/360/init.mp4?p=eyJ0eXBlIjoiaW5pdCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInN0b3JhZ2VQcm92aWRlciI6NCwidHJhY2siOiI2ZDgxYjY4M2YxYTM2MGNiN2MwZmQ4YmZiYjUyMjM2NyIsInJlbmRpdGlvbiI6IjU5NjM4MTg4NiIsIm11eGluZyI6IjY1MDExMjc5NiJ9&amp;s=wph3OMKCwpE6BjvChDcgT8K1XhfCvMKuFMOGwrfCkcOPZQjDrMOnwp4Rw7gnwowc\" media=\"../../6b9e68b07dfee8cc2d116e4c51d6a957/video/360/seg_$Number$.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE4ODYiLCJtdXhpbmciOiI2NTAxMTI3OTYifQ&amp;s=eHfChw1Tw6dcworDvcKRHzZowpk_CnDDuCRvw698w7JUWMKMJXh1EyDCpQ\" startNumber=\"1\" timescale=\"23976\"></SegmentTemplate>\n</Representation>\n<Representation id=\"596381906\" bandwidth=\"4465228\" codecs=\"avc1.4d401f\" frameRate=\"24000/1001\" height=\"720\" width=\"1280\">\n  <SegmentTemplate duration=\"96000\" initialization=\"../../6b9e68b07dfee8cc2d116e4c51d6a957/video/720/init.mp4?p=eyJ0eXBlIjoiaW5pdCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInN0b3JhZ2VQcm92aWRlciI6NCwidHJhY2siOiI2ZDgxYjY4M2YxYTM2MGNiN2MwZmQ4YmZiYjUyMjM2NyIsInJlbmRpdGlvbiI6IjU5NjM4MTkwNiIsIm11eGluZyI6IjY1MDExMjgxNiJ9&amp;s=XsKMCGVJworCvUDCl8KVwpXCjcOgcsKZwqPCrMKBUQ3CvyVfccONEsKMwoXCpcO3BBk\" media=\"../../6b9e68b07dfee8cc2d116e4c51d6a957/video/720/seg_$Number$.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5MDYiLCJtdXhpbmciOiI2NTAxMTI4MTYifQ&amp;s=QjIiCg3DocO7w60Hw6fDmAzDiyIjwrBMw4HCgsOgVX0YecObW8OTJFB9J24\" startNumber=\"1\" timescale=\"23976\"></SegmentTemplate>\n</Representation>\n<Representation id=\"596381958\" bandwidth=\"5484049\" codecs=\"avc1.4d4028\" frameRate=\"24000/1001\" height=\"1080\" width=\"1920\">\n  <SegmentTemplate duration=\"96000\" initialization=\"../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/init.mp4?p=eyJ0eXBlIjoiaW5pdCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInN0b3JhZ2VQcm92aWRlciI6NCwidHJhY2siOiI2ZDgxYjY4M2YxYTM2MGNiN2MwZmQ4YmZiYjUyMjM2NyIsInJlbmRpdGlvbiI6IjU5NjM4MTk1OCIsIm11eGluZyI6IjY1MDExMjg2OCJ9&amp;s=NcKBIEhSD1zDgMORw7p7wrZfZMO-WcOFwol9w7DDgsKGAFvCglcow4nCrWPDlsKL\" media=\"../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_$Number$.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&amp;s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\" startNumber=\"1\" timescale=\"23976\"></SegmentTemplate>\n</Representation>\n</AdaptationSet>\n\n  </Period>\n</MPD>\n    "
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://customer-f33zs165nr7gyfy4.cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957/downloads/default.mp4",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ],
+          [
+            "range",
+            "bytes=0-0"
+          ],
+          [
+            "accept-encoding",
+            "identity"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 404,
+        "url": "https://customer-f33zs165nr7gyfy4.cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957/downloads/default.mp4",
+        "headers": [
+          [
+            "date",
+            "Wed, 16 Sep 2026 04:07:29 GMT"
+          ],
+          [
+            "content-type",
+            "text/plain"
+          ],
+          [
+            "content-length",
+            "13"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "cache-control",
+            "no-cache, no-store, must-revalidate"
+          ],
+          [
+            "vary",
+            "origin"
+          ],
+          [
+            "stream-dwg-version",
+            "0825c2cb-9dbe-41fa-9b92-dfeef8f1bc8f"
+          ],
+          [
+            "server",
+            "cloudflare"
+          ],
+          [
+            "cf-ray",
+            "a3bd0127fa70c378-SEA"
+          ]
+        ],
+        "body": {
+          "text": "404 not found"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957/manifest/video.m3u8",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957/manifest/video.m3u8",
+        "headers": [
+          [
+            "date",
+            "Wed, 16 Sep 2026 04:07:29 GMT"
+          ],
+          [
+            "content-type",
+            "application/vnd.apple.mpegurl"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "cache-control",
+            "public, max-age=600"
+          ],
+          [
+            "cf-ray",
+            "a3bd0129992c5e58-SEA"
+          ],
+          [
+            "vary",
+            "origin, referer"
+          ],
+          [
+            "access-control-allow-headers",
+            "range"
+          ],
+          [
+            "access-control-expose-header",
+            "cf-ray"
+          ],
+          [
+            "stream-dw-version",
+            "2026.9.5"
+          ],
+          [
+            "stream-dwg-version",
+            "0825c2cb-9dbe-41fa-9b92-dfeef8f1bc8f"
+          ],
+          [
+            "stream-ltx",
+            "false"
+          ],
+          [
+            "stream-media-id",
+            "6b9e68b07dfee8cc2d116e4c51d6a957"
+          ],
+          [
+            "server",
+            "cloudflare"
+          ]
+        ],
+        "body": {
+          "text": "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-STREAM-INF:RESOLUTION=852x480,CODECS=\"avc1.4d401e\",BANDWIDTH=2578191,AVERAGE-BANDWIDTH=1051578,SCORE=3.0,FRAME-RATE=23.976\nstream_t6d81b683f1a360cb7c0fd8bfbb522367_r596381872.m3u8\n#EXT-X-STREAM-INF:RESOLUTION=1920x1080,CODECS=\"avc1.4d4028\",BANDWIDTH=5484049,AVERAGE-BANDWIDTH=3028579,SCORE=5.0,FRAME-RATE=23.976\nstream_t6d81b683f1a360cb7c0fd8bfbb522367_r596381958.m3u8\n#EXT-X-STREAM-INF:RESOLUTION=1280x720,CODECS=\"avc1.4d401f\",BANDWIDTH=4465228,AVERAGE-BANDWIDTH=1874097,SCORE=4.0,FRAME-RATE=23.976\nstream_t6d81b683f1a360cb7c0fd8bfbb522367_r596381906.m3u8\n#EXT-X-STREAM-INF:RESOLUTION=640x360,CODECS=\"avc1.4d401e\",BANDWIDTH=1572227,AVERAGE-BANDWIDTH=677232,SCORE=2.0,FRAME-RATE=23.976\nstream_t6d81b683f1a360cb7c0fd8bfbb522367_r596381886.m3u8\n#EXT-X-STREAM-INF:RESOLUTION=426x240,CODECS=\"avc1.42c015\",BANDWIDTH=894933,AVERAGE-BANDWIDTH=454175,SCORE=1.0,FRAME-RATE=23.976\nstream_t6d81b683f1a360cb7c0fd8bfbb522367_r596381873.m3u8"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957/manifest/stream_t6d81b683f1a360cb7c0fd8bfbb522367_r596381958.m3u8",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957/manifest/stream_t6d81b683f1a360cb7c0fd8bfbb522367_r596381958.m3u8",
+        "headers": [
+          [
+            "date",
+            "Wed, 16 Sep 2026 04:07:29 GMT"
+          ],
+          [
+            "content-type",
+            "application/vnd.apple.mpegurl"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "cache-control",
+            "public, max-age=600"
+          ],
+          [
+            "cf-ray",
+            "a3bd0129f99c5e58-SEA"
+          ],
+          [
+            "vary",
+            "origin, referer"
+          ],
+          [
+            "access-control-allow-headers",
+            "range"
+          ],
+          [
+            "access-control-expose-header",
+            "cf-ray"
+          ],
+          [
+            "stream-dw-version",
+            "2026.9.5"
+          ],
+          [
+            "stream-dwg-version",
+            "0825c2cb-9dbe-41fa-9b92-dfeef8f1bc8f"
+          ],
+          [
+            "stream-ltx",
+            "false"
+          ],
+          [
+            "stream-media-id",
+            "6b9e68b07dfee8cc2d116e4c51d6a957"
+          ],
+          [
+            "server",
+            "cloudflare"
+          ]
+        ],
+        "body": {
+          "text": "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-TARGETDURATION:5\n#EXT-X-MAP:URI=\"../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/init.mp4?p=eyJ0eXBlIjoiaW5pdCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInN0b3JhZ2VQcm92aWRlciI6NCwidHJhY2siOiI2ZDgxYjY4M2YxYTM2MGNiN2MwZmQ4YmZiYjUyMjM2NyIsInJlbmRpdGlvbiI6IjU5NjM4MTk1OCIsIm11eGluZyI6IjY1MDExMjg2OCJ9&s=NcKBIEhSD1zDgMORw7p7wrZfZMO-WcOFwol9w7DDgsKGAFvCglcow4nCrWPDlsKL\"\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXTINF:4.00400,\n../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_1.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\n#EXTINF:4.00400,\n../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_2.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\n#EXTINF:4.00400,\n../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_3.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\n#EXTINF:4.00400,\n../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_4.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\n#EXTINF:4.00400,\n../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_5.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\n#EXTINF:4.00400,\n../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_6.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\n#EXTINF:4.00400,\n../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_7.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\n#EXTINF:1.97,\n../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_8.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\n#EXT-X-ENDLIST\n"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957/manifest/video.mpd",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957/manifest/video.mpd",
+        "headers": [
+          [
+            "date",
+            "Wed, 16 Sep 2026 04:07:29 GMT"
+          ],
+          [
+            "content-type",
+            "application/dash+xml"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "cache-control",
+            "public, max-age=600"
+          ],
+          [
+            "cf-ray",
+            "a3bd012a29df5e58-SEA"
+          ],
+          [
+            "vary",
+            "origin, referer"
+          ],
+          [
+            "access-control-allow-headers",
+            "range"
+          ],
+          [
+            "access-control-expose-header",
+            "cf-ray"
+          ],
+          [
+            "stream-dw-version",
+            "2026.9.5"
+          ],
+          [
+            "stream-dwg-version",
+            "0825c2cb-9dbe-41fa-9b92-dfeef8f1bc8f"
+          ],
+          [
+            "stream-ltx",
+            "false"
+          ],
+          [
+            "stream-media-id",
+            "6b9e68b07dfee8cc2d116e4c51d6a957"
+          ],
+          [
+            "server",
+            "cloudflare"
+          ]
+        ],
+        "body": {
+          "text": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<MPD xmlns=\"urn:mpeg:dash:schema:mpd:2011\" profiles=\"urn:mpeg:dash:profile:isoff-live:2011\" type=\"static\" mediaPresentationDuration=\"PT30S\" minBufferTime=\"PT8S\">\n  <Period id=\"0\">\n    <AdaptationSet id=\"554495332\" mimeType=\"video/mp4\" segmentAlignment=\"true\" >\n    <Representation id=\"596381872\" bandwidth=\"2578191\" codecs=\"avc1.4d401e\" frameRate=\"24000/1001\" height=\"480\" width=\"852\">\n  <SegmentTemplate duration=\"96000\" initialization=\"../../6b9e68b07dfee8cc2d116e4c51d6a957/video/480/init.mp4?p=eyJ0eXBlIjoiaW5pdCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInN0b3JhZ2VQcm92aWRlciI6NCwidHJhY2siOiI2ZDgxYjY4M2YxYTM2MGNiN2MwZmQ4YmZiYjUyMjM2NyIsInJlbmRpdGlvbiI6IjU5NjM4MTg3MiIsIm11eGluZyI6IjY1MDExMjc4MiJ9&amp;s=UMKHB8OmwoQVLcO2w6_DqsKvDjPCpsKZw7HCujfChEE2w6rCuDlhWsKSO8KRw6bDmhk\" media=\"../../6b9e68b07dfee8cc2d116e4c51d6a957/video/480/seg_$Number$.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE4NzIiLCJtdXhpbmciOiI2NTAxMTI3ODIifQ&amp;s=ThkDVMOLw6zDicKzY8K1W2t7w5YtwqTCoTdrw7ceScKMFcKJw4jCvS3Co8ODwrTCnA\" startNumber=\"1\" timescale=\"23976\"></SegmentTemplate>\n</Representation>\n<Representation id=\"596381873\" bandwidth=\"894933\" codecs=\"avc1.42c015\" frameRate=\"24000/1001\" height=\"240\" width=\"426\">\n  <SegmentTemplate duration=\"96000\" initialization=\"../../6b9e68b07dfee8cc2d116e4c51d6a957/video/240/init.mp4?p=eyJ0eXBlIjoiaW5pdCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInN0b3JhZ2VQcm92aWRlciI6NCwidHJhY2siOiI2ZDgxYjY4M2YxYTM2MGNiN2MwZmQ4YmZiYjUyMjM2NyIsInJlbmRpdGlvbiI6IjU5NjM4MTg3MyIsIm11eGluZyI6IjY1MDExMjc4MyJ9&amp;s=wrwFwqbClzMrwoxFwqLDi8O7P8KvwoJTF1TDoT7DnBhNe8OWI2jDqGvClgLCo8Ow\" media=\"../../6b9e68b07dfee8cc2d116e4c51d6a957/video/240/seg_$Number$.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE4NzMiLCJtdXhpbmciOiI2NTAxMTI3ODMifQ&amp;s=wrIJYGfCo8Ozw7sNw7B5bwZXw5TDo8KuCMKiXsK2wqrDsF3CijsLwpEGY0xODQ\" startNumber=\"1\" timescale=\"23976\"></SegmentTemplate>\n</Representation>\n<Representation id=\"596381886\" bandwidth=\"1572227\" codecs=\"avc1.4d401e\" frameRate=\"24000/1001\" height=\"360\" width=\"640\">\n  <SegmentTemplate duration=\"96000\" initialization=\"../../6b9e68b07dfee8cc2d116e4c51d6a957/video/360/init.mp4?p=eyJ0eXBlIjoiaW5pdCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInN0b3JhZ2VQcm92aWRlciI6NCwidHJhY2siOiI2ZDgxYjY4M2YxYTM2MGNiN2MwZmQ4YmZiYjUyMjM2NyIsInJlbmRpdGlvbiI6IjU5NjM4MTg4NiIsIm11eGluZyI6IjY1MDExMjc5NiJ9&amp;s=wph3OMKCwpE6BjvChDcgT8K1XhfCvMKuFMOGwrfCkcOPZQjDrMOnwp4Rw7gnwowc\" media=\"../../6b9e68b07dfee8cc2d116e4c51d6a957/video/360/seg_$Number$.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE4ODYiLCJtdXhpbmciOiI2NTAxMTI3OTYifQ&amp;s=eHfChw1Tw6dcworDvcKRHzZowpk_CnDDuCRvw698w7JUWMKMJXh1EyDCpQ\" startNumber=\"1\" timescale=\"23976\"></SegmentTemplate>\n</Representation>\n<Representation id=\"596381906\" bandwidth=\"4465228\" codecs=\"avc1.4d401f\" frameRate=\"24000/1001\" height=\"720\" width=\"1280\">\n  <SegmentTemplate duration=\"96000\" initialization=\"../../6b9e68b07dfee8cc2d116e4c51d6a957/video/720/init.mp4?p=eyJ0eXBlIjoiaW5pdCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInN0b3JhZ2VQcm92aWRlciI6NCwidHJhY2siOiI2ZDgxYjY4M2YxYTM2MGNiN2MwZmQ4YmZiYjUyMjM2NyIsInJlbmRpdGlvbiI6IjU5NjM4MTkwNiIsIm11eGluZyI6IjY1MDExMjgxNiJ9&amp;s=XsKMCGVJworCvUDCl8KVwpXCjcOgcsKZwqPCrMKBUQ3CvyVfccONEsKMwoXCpcO3BBk\" media=\"../../6b9e68b07dfee8cc2d116e4c51d6a957/video/720/seg_$Number$.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5MDYiLCJtdXhpbmciOiI2NTAxMTI4MTYifQ&amp;s=QjIiCg3DocO7w60Hw6fDmAzDiyIjwrBMw4HCgsOgVX0YecObW8OTJFB9J24\" startNumber=\"1\" timescale=\"23976\"></SegmentTemplate>\n</Representation>\n<Representation id=\"596381958\" bandwidth=\"5484049\" codecs=\"avc1.4d4028\" frameRate=\"24000/1001\" height=\"1080\" width=\"1920\">\n  <SegmentTemplate duration=\"96000\" initialization=\"../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/init.mp4?p=eyJ0eXBlIjoiaW5pdCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInN0b3JhZ2VQcm92aWRlciI6NCwidHJhY2siOiI2ZDgxYjY4M2YxYTM2MGNiN2MwZmQ4YmZiYjUyMjM2NyIsInJlbmRpdGlvbiI6IjU5NjM4MTk1OCIsIm11eGluZyI6IjY1MDExMjg2OCJ9&amp;s=NcKBIEhSD1zDgMORw7p7wrZfZMO-WcOFwol9w7DDgsKGAFvCglcow4nCrWPDlsKL\" media=\"../../6b9e68b07dfee8cc2d116e4c51d6a957/video/1080/seg_$Number$.mp4?p=eyJ0eXBlIjoic2VnbWVudCIsInZpZGVvSUQiOiI2YjllNjhiMDdkZmVlOGNjMmQxMTZlNGM1MWQ2YTk1NyIsIm93bmVySUQiOjc2NzcyMTYsImNyZWF0b3JJRCI6IiIsInNlZ21lbnREdXJhdGlvblNlY3MiOjQuMDA0LCJzdG9yYWdlUHJvdmlkZXIiOjQsInRyYWNrIjoiNmQ4MWI2ODNmMWEzNjBjYjdjMGZkOGJmYmI1MjIzNjciLCJyZW5kaXRpb24iOiI1OTYzODE5NTgiLCJtdXhpbmciOiI2NTAxMTI4NjgifQ&amp;s=wpbCi3PCj8OJwqLCimtkH8KRDEPDtB7Di3AiIMOmdlx9YsOOw5E9HiXCkE5M\" startNumber=\"1\" timescale=\"23976\"></SegmentTemplate>\n</Representation>\n</AdaptationSet>\n\n  </Period>\n</MPD>\n    "
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957/downloads/default.mp4",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ],
+          [
+            "range",
+            "bytes=0-0"
+          ],
+          [
+            "accept-encoding",
+            "identity"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 404,
+        "url": "https://cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957/downloads/default.mp4",
+        "headers": [
+          [
+            "date",
+            "Wed, 16 Sep 2026 04:07:29 GMT"
+          ],
+          [
+            "content-type",
+            "text/plain"
+          ],
+          [
+            "content-length",
+            "13"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "cache-control",
+            "no-cache, no-store, must-revalidate"
+          ],
+          [
+            "vary",
+            "origin"
+          ],
+          [
+            "stream-dwg-version",
+            "0825c2cb-9dbe-41fa-9b92-dfeef8f1bc8f"
+          ],
+          [
+            "server",
+            "cloudflare"
+          ],
+          [
+            "cf-ray",
+            "a3bd012a6a3b5e58-SEA"
+          ]
+        ],
+        "body": {
+          "text": "404 not found"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://cloudflarestream.com/00000000000000000000000000000000/manifest/video.m3u8",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 404,
+        "url": "https://cloudflarestream.com/00000000000000000000000000000000/manifest/video.m3u8",
+        "headers": [
+          [
+            "date",
+            "Wed, 16 Sep 2026 04:07:30 GMT"
+          ],
+          [
+            "content-type",
+            "text/plain"
+          ],
+          [
+            "content-length",
+            "25"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "cache-control",
+            "no-cache, no-store, must-revalidate"
+          ],
+          [
+            "vary",
+            "origin"
+          ],
+          [
+            "err-code",
+            "3000003"
+          ],
+          [
+            "stream-dwg-version",
+            "0825c2cb-9dbe-41fa-9b92-dfeef8f1bc8f"
+          ],
+          [
+            "server",
+            "cloudflare"
+          ],
+          [
+            "cf-ray",
+            "a3bd012aaa8a5e58-SEA"
+          ]
+        ],
+        "body": {
+          "text": "NotFound: failed to fetch"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://cloudflarestream.com/00000000000000000000000000000000/manifest/video.mpd",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 404,
+        "url": "https://cloudflarestream.com/00000000000000000000000000000000/manifest/video.mpd",
+        "headers": [
+          [
+            "date",
+            "Wed, 16 Sep 2026 04:07:30 GMT"
+          ],
+          [
+            "content-type",
+            "text/plain"
+          ],
+          [
+            "content-length",
+            "25"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "cache-control",
+            "no-cache, no-store, must-revalidate"
+          ],
+          [
+            "vary",
+            "origin"
+          ],
+          [
+            "err-code",
+            "3000003"
+          ],
+          [
+            "stream-dwg-version",
+            "0825c2cb-9dbe-41fa-9b92-dfeef8f1bc8f"
+          ],
+          [
+            "server",
+            "cloudflare"
+          ],
+          [
+            "cf-ray",
+            "a3bd012e8f455e58-SEA"
+          ]
+        ],
+        "body": {
+          "text": "NotFound: failed to fetch"
+        },
+        "truncated": false
+      }
+    }
+  ]
+}

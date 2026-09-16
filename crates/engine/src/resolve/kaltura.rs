@@ -436,6 +436,10 @@ impl KalturaResolver {
 
 #[async_trait]
 impl Resolver for KalturaResolver {
+    fn embeds_in(&self, page: &Page) -> Vec<Url> {
+        embeds_in(page)
+    }
+
     fn id(&self) -> &'static str {
         PLATFORM
     }

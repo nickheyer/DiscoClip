@@ -140,12 +140,23 @@ impl Resolver for DropboxResolver {
 
     async fn resolve(&self, url: &Url) -> Result<Resolution, ResolveError> {
         let link = parse_link(url).ok_or_else(|| ResolveError::NotFound(url.clone()))?;
-        if link.host_str().is_some_and(|h| h.ends_with("dl.dropboxusercontent.com")) {
+        if link
+            .host_str()
+            .is_some_and(|h| h.ends_with("dl.dropboxusercontent.com"))
+        {
             return self.file_only(&link, url).await;
         }
         let mut page_url = link.clone();
         page_url.query_pairs_mut().clear().append_pair("dl", "0");
-        let fetched = fetch(&self.http, &page_url, PLATFORM, BROWSER_UA, &navigation_headers(), MAX_PAGE).await?;
+        let fetched = fetch(
+            &self.http,
+            &page_url,
+            PLATFORM,
+            BROWSER_UA,
+            &navigation_headers(),
+            MAX_PAGE,
+        )
+        .await?;
         if let Some(error) = status_error(fetched.status, url) {
             return Err(error);
         }
@@ -158,7 +169,8 @@ impl Resolver for DropboxResolver {
             .find(|part| part.contains("/sm/password"))
             .and_then(|part| util::search(&RE_CONTENT_ID, part))
         {
-            let Some(password) = util::query_param(url, "password").filter(|p| !p.is_empty()) else {
+            let Some(password) = util::query_param(url, "password").filter(|p| !p.is_empty())
+            else {
                 return Err(ResolveError::unavailable(
                     url,
                     "the share is password protected; add ?password=… to the link",
@@ -169,8 +181,14 @@ impl Resolver for DropboxResolver {
                 .jar(PLATFORM)
                 .get("t")
                 .map(|c| c.value.clone())
-                .ok_or_else(|| ResolveError::malformed(url, "the share page set no session cookie"))?;
-            let relative = format!("{}{}", link.path(), link.query().map(|q| format!("?{q}")).unwrap_or_default());
+                .ok_or_else(|| {
+                    ResolveError::malformed(url, "the share page set no session cookie")
+                })?;
+            let relative = format!(
+                "{}{}",
+                link.path(),
+                link.query().map(|q| format!("?{q}")).unwrap_or_default()
+            );
             let response = self
                 .http
                 .post(Url::parse("https://www.dropbox.com/sm/auth").expect("valid"))
@@ -190,9 +208,20 @@ impl Resolver for DropboxResolver {
                 .await
                 .map_err(|e| ResolveError::malformed(url, format!("password answer: {e}")))?;
             if answer["status"].as_str() != Some("authed") {
-                return Err(ResolveError::unavailable(url, "the share refused the password"));
+                return Err(ResolveError::unavailable(
+                    url,
+                    "the share refused the password",
+                ));
             }
-            let again = fetch(&self.http, &page_url, PLATFORM, BROWSER_UA, &navigation_headers(), MAX_PAGE).await?;
+            let again = fetch(
+                &self.http,
+                &page_url,
+                PLATFORM,
+                BROWSER_UA,
+                &navigation_headers(),
+                MAX_PAGE,
+            )
+            .await?;
             html = again.text();
             parts = prefetched_parts(&html);
         }
@@ -202,7 +231,9 @@ impl Resolver for DropboxResolver {
             if part.contains("anonymous:\tanonymous") {
                 downloads_allowed = true;
             }
-            let Some(transcode) = util::search(&RE_TRANSCODE, part).and_then(|t| Url::parse(&t).ok()) else {
+            let Some(transcode) =
+                util::search(&RE_TRANSCODE, part).and_then(|t| Url::parse(&t).ok())
+            else {
                 continue;
             };
             let expanded = hls::expand(&self.http, &transcode, PLATFORM, BROWSER_UA, &[]).await?;
@@ -215,7 +246,8 @@ impl Resolver for DropboxResolver {
                 });
                 resolved.variants.push(variant);
             }
-            resolved.thumbnail = util::search(&RE_THUMBNAIL, part).and_then(|t| Url::parse(&t).ok());
+            resolved.thumbnail =
+                util::search(&RE_THUMBNAIL, part).and_then(|t| Url::parse(&t).ok());
             break;
         }
         let name = name_from_path(&link);
@@ -258,7 +290,11 @@ impl Resolver for DropboxResolver {
 
 impl DropboxResolver {
     /// The original file as a download, with its name and length.
-    async fn original(&self, link: &Url, origin: &Url) -> Result<(Variant, Option<String>), ResolveError> {
+    async fn original(
+        &self,
+        link: &Url,
+        origin: &Url,
+    ) -> Result<(Variant, Option<String>), ResolveError> {
         let download = download_link(link);
         let probed = probe_file(&self.http, &download, PLATFORM, BROWSER_UA, &[]).await?;
         match probed.status.as_u16() {
@@ -341,7 +377,13 @@ mod tests {
         Exchange, Fixture, RecordedBody, RecordedRequest, RecordedResponse,
     };
 
-    fn get(url: &str, status: u16, content_type: &str, headers: &[(&str, &str)], final_url: &str) -> Exchange {
+    fn get(
+        url: &str,
+        status: u16,
+        content_type: &str,
+        headers: &[(&str, &str)],
+        final_url: &str,
+    ) -> Exchange {
         let mut all = vec![("content-type".to_string(), content_type.to_string())];
         all.extend(headers.iter().map(|(k, v)| (k.to_string(), v.to_string())));
         Exchange {
@@ -367,13 +409,18 @@ mod tests {
     fn links_are_read_and_turned_into_downloads() {
         let link = |s: &str| parse_link(&Url::parse(s).unwrap());
         assert!(link(SCL).is_some());
-        assert!(link("https://www.dropbox.com/s/nelirfsxnmcfbfh/youtube-dl%20test.mp4?dl=0").is_some());
+        assert!(
+            link("https://www.dropbox.com/s/nelirfsxnmcfbfh/youtube-dl%20test.mp4?dl=0").is_some()
+        );
         assert!(link("https://dl.dropboxusercontent.com/scl/fi/abc/clip.mp4?rlkey=x").is_some());
         assert_eq!(link("https://www.dropbox.com/home"), None);
         assert!(link("https://www.dropbox.com/scl/fo/abc/h/sub/clip.mp4?rlkey=x&dl=0").is_some());
         assert!(link("https://www.dropbox.com/e/scl/fi/abc/clip.mp4").is_some());
         assert!(link("https://www.dropbox.com/s/abc").is_some());
-        assert_eq!(link("https://www.dropbox.com/scl/fo/abc/h?rlkey=x&dl=0"), None);
+        assert_eq!(
+            link("https://www.dropbox.com/scl/fo/abc/h?rlkey=x&dl=0"),
+            None
+        );
         assert_eq!(
             download_link(&Url::parse(SCL).unwrap()).as_str(),
             "https://www.dropbox.com/scl/fi/cttkzvl75vuqwn2o5ctx0/youtube-dl-test-video-BaW_jenozKc.mp4?rlkey=zae0yts5dh5e6hh4jduo25w7v&dl=1"
@@ -429,15 +476,27 @@ mod tests {
             &[("content-range", "bytes 0-0/1601434"), ("content-disposition", "attachment; filename=\"youtube-dl test video '?BaW_jenozKc.mp4\"; filename*=UTF-8''youtube-dl%20test%20video%20%27%C3%A4BaW_jenozKc.mp4")],
             "https://ucc7.dl.dropboxusercontent.com/cd/0/get/token/file?dl=1",
         ));
-        fixture.exchanges.push(page("https://www.dropbox.com/s/gone/clip.mp4?dl=0", 404, "<html>gone</html>"));
+        fixture.exchanges.push(page(
+            "https://www.dropbox.com/s/gone/clip.mp4?dl=0",
+            404,
+            "<html>gone</html>",
+        ));
         fixture.exchanges.push(page(
             "https://www.dropbox.com/s/locked/clip.mp4?dl=0",
             200,
             r#"<html><script>registerStreamedPrefetch("a", "Ei9zbS9wYXNzd29yZD9jb250ZW50X2lkPWlkJTNBQUJDMTIzJTNEeHl6Cg==");</script></html>"#,
         ));
         let resolver = DropboxResolver::new(Http::replay(fixture));
-        let resolved = resolver.resolve(&Url::parse(SCL).unwrap()).await.unwrap().media().unwrap();
-        assert_eq!(resolved.title.as_deref(), Some("youtube-dl test video 'äBaW_jenozKc"));
+        let resolved = resolver
+            .resolve(&Url::parse(SCL).unwrap())
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
+        assert_eq!(
+            resolved.title.as_deref(),
+            Some("youtube-dl test video 'äBaW_jenozKc")
+        );
         assert_eq!(resolved.variants.len(), 2, "the transcode and the original");
         assert_eq!(resolved.variants[0].kind, VariantKind::Hls);
         assert_eq!(resolved.variants[0].height, Some(720));
@@ -445,13 +504,29 @@ mod tests {
         assert_eq!(resolved.variants[1].size, Some(1601434));
         assert_eq!(resolved.variants[1].container, Some(Container::Mp4));
         assert_eq!(resolved.variants[1].format_id.as_deref(), Some("original"));
-        assert!(resolved.thumbnail.as_ref().unwrap().as_str().starts_with("https://www.dropbox.com/temp_thumb_from_token/"));
+        assert!(
+            resolved
+                .thumbnail
+                .as_ref()
+                .unwrap()
+                .as_str()
+                .starts_with("https://www.dropbox.com/temp_thumb_from_token/")
+        );
         assert!(matches!(
-            resolver.resolve(&Url::parse("https://www.dropbox.com/s/gone/clip.mp4?dl=0").unwrap()).await.unwrap_err(),
+            resolver
+                .resolve(&Url::parse("https://www.dropbox.com/s/gone/clip.mp4?dl=0").unwrap())
+                .await
+                .unwrap_err(),
             ResolveError::NotFound(_)
         ));
-        let error = resolver.resolve(&Url::parse("https://www.dropbox.com/s/locked/clip.mp4?dl=0").unwrap()).await.unwrap_err();
-        assert!(matches!(&error, ResolveError::Unavailable { reason, .. } if reason.contains("password")), "{error}");
+        let error = resolver
+            .resolve(&Url::parse("https://www.dropbox.com/s/locked/clip.mp4?dl=0").unwrap())
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&error, ResolveError::Unavailable { reason, .. } if reason.contains("password")),
+            "{error}"
+        );
         let parts = prefetched_parts(&html);
         assert_eq!(parts.len(), 2);
         assert!(parts[0].contains("anonymous:\tanonymous"));

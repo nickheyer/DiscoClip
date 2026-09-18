@@ -13,8 +13,8 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Page, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved,
-    Resolver, SessionSupport, Variant, clean_title, fetch, hls, navigation_headers,
-    status_error, util,
+    Resolver, SessionSupport, Variant, clean_title, fetch, hls, navigation_headers, status_error,
+    util,
 };
 use crate::http::{BROWSER_UA, Http};
 
@@ -35,13 +35,17 @@ static RE_CONTENT: LazyLock<Regex> = LazyLock::new(|| {
 });
 /// `/{show}`, or one of its tabs.
 static RE_SHOW: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^/([a-z0-9][a-z0-9-]*)(?:/(?:episodes|details|discover|extras|clips|seasons?[^/]*))?/?$")
-        .unwrap()
+    Regex::new(
+        r"^/([a-z0-9][a-z0-9-]*)(?:/(?:episodes|details|discover|extras|clips|seasons?[^/]*))?/?$",
+    )
+    .unwrap()
 });
 /// Episode links on a show page.
 static RE_EPISODE_LINK: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"href="/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/([^"/?#]+)""#)
-        .unwrap()
+    Regex::new(
+        r#"href="/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/([^"/?#]+)""#,
+    )
+    .unwrap()
 });
 static RE_ALT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"\balt="([^"]*)""#).unwrap());
 /// `d.hh:mm:ss.fffffff`, how the API writes lengths and markers.
@@ -49,10 +53,40 @@ static RE_SPAN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(?:(\d+)\.)?(\d{1,2}):(\d{2}):(\d{2})(?:\.(\d+))?$").unwrap());
 /// Site sections that are not shows.
 const RESERVED: &[&str] = &[
-    "shows", "live", "search", "account", "schedule", "browse", "settings", "login", "signup",
-    "movies", "sports", "kids", "faq", "about", "contact", "privacy", "terms", "help", "apps",
-    "watch", "player", "playback", "byutv", "images", "_nuxt", "_i18n", "api", "home", "news",
-    "devotionals", "byu-sports", "on-demand", "collections", "showoffs",
+    "shows",
+    "live",
+    "search",
+    "account",
+    "schedule",
+    "browse",
+    "settings",
+    "login",
+    "signup",
+    "movies",
+    "sports",
+    "kids",
+    "faq",
+    "about",
+    "contact",
+    "privacy",
+    "terms",
+    "help",
+    "apps",
+    "watch",
+    "player",
+    "playback",
+    "byutv",
+    "images",
+    "_nuxt",
+    "_i18n",
+    "api",
+    "home",
+    "news",
+    "devotionals",
+    "byu-sports",
+    "on-demand",
+    "collections",
+    "showoffs",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -212,10 +246,11 @@ impl ByutvResolver {
         let thumbnail = {
             let image = &standard["images"]["primary"];
             match (util::text(&image["baseUrl"]), util::text(&image["imageId"])) {
-                (Some(base), Some(image_id)) => {
-                    Url::parse(&format!("{}/{image_id}/1280x720.webp", base.trim_end_matches('/')))
-                        .ok()
-                }
+                (Some(base), Some(image_id)) => Url::parse(&format!(
+                    "{}/{image_id}/1280x720.webp",
+                    base.trim_end_matches('/')
+                ))
+                .ok(),
                 _ => None,
             }
         };
@@ -227,7 +262,10 @@ impl ByutvResolver {
         let mut resolved = Resolved::new(PLATFORM);
         let mut failure = None;
         for asset in media["assets"].as_array().into_iter().flatten() {
-            if asset["multimediaType"].as_str().is_some_and(|kind| kind != "video") {
+            if asset["multimediaType"]
+                .as_str()
+                .is_some_and(|kind| kind != "video")
+            {
                 continue;
             }
             let Some(asset_url) = util::url_of(&asset["url"], None) else {
@@ -274,7 +312,8 @@ impl ByutvResolver {
                         )
                         .await
                         {
-                            representation.language = representation.language.take().or(language.clone());
+                            representation.language =
+                                representation.language.take().or(language.clone());
                             resolved.variants.push(representation);
                         }
                         resolved.subtitles.extend(subtitles);
@@ -288,7 +327,11 @@ impl ByutvResolver {
                         .or(Some(crate::media::Container::Mp4));
                     variant.video = Some(crate::media::VideoCodec::H264);
                     variant.audio = Some(crate::media::AudioCodec::Aac);
-                    variant.format_id = Some(if kind.is_empty() { "file".to_string() } else { kind.to_string() });
+                    variant.format_id = Some(if kind.is_empty() {
+                        "file".to_string()
+                    } else {
+                        kind.to_string()
+                    });
                     variant.language = language;
                     resolved.variants.push(variant);
                 }
@@ -470,7 +513,9 @@ mod tests {
             content(CONTENT_ID, Some("season-9-episode-2"))
         );
         assert_eq!(
-            link("http://www.byutv.org/watch/0160476a-bfd0-425d-82f9-5757bde3bf37/studio-c-season-9-episode-2"),
+            link(
+                "http://www.byutv.org/watch/0160476a-bfd0-425d-82f9-5757bde3bf37/studio-c-season-9-episode-2"
+            ),
             content(CONTENT_ID, Some("studio-c-season-9-episode-2"))
         );
         assert_eq!(
@@ -478,7 +523,9 @@ mod tests {
             content(CONTENT_ID, None)
         );
         assert_eq!(
-            link("https://www.byutv.org/player/27741493-dc83-40b0-8420-e7ae38a2ae98/byu-football?listid=4fe0fee5&q=toledo"),
+            link(
+                "https://www.byutv.org/player/27741493-dc83-40b0-8420-e7ae38a2ae98/byu-football?listid=4fe0fee5&q=toledo"
+            ),
             content("27741493-dc83-40b0-8420-e7ae38a2ae98", Some("byu-football"))
         );
         assert_eq!(
@@ -564,7 +611,10 @@ mod tests {
             "#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:6.0,\n0.ts\n#EXT-X-ENDLIST\n".into(),
         ));
         let resolver = ByutvResolver::new(Http::replay(fixture));
-        let url = Url::parse(&format!("https://www.byutv.org/{CONTENT_ID}/season-9-episode-2")).unwrap();
+        let url = Url::parse(&format!(
+            "https://www.byutv.org/{CONTENT_ID}/season-9-episode-2"
+        ))
+        .unwrap();
         assert!(resolver.matches(&url));
         let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
         assert_eq!(resolved.id.as_deref(), Some(CONTENT_ID));

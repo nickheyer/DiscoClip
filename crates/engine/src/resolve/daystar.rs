@@ -25,8 +25,7 @@ static RE_IFRAME: LazyLock<Regex> =
 static RE_CONFIG_URL: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"var\s+configUrl\s*=\s*['"]([^'"]+)['"]"#).unwrap());
 /// `playlist: [` in the configuration's `jwplayer().setup` call.
-static RE_PLAYLIST: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\bplaylist:\s*\[").unwrap());
+static RE_PLAYLIST: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\bplaylist:\s*\[").unwrap());
 /// `subtitles_en.srt`: the language a caption file is named with.
 static RE_CAPTION_LANGUAGE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"_([a-z]{2,3})\.(?:srt|vtt)(?:\?|$)").unwrap());
@@ -340,7 +339,10 @@ mod tests {
             resolved.thumbnail.as_ref().unwrap().as_str(),
             "https://st1-fs.cdn01.net/videos/0000439/0439621/thumbs/0439621__101oahd.jpg"
         );
-        assert_eq!(resolved.duration, Some(std::time::Duration::from_secs(1710)));
+        assert_eq!(
+            resolved.duration,
+            Some(std::time::Duration::from_secs(1710))
+        );
         assert_eq!(resolved.variants.len(), 1);
         assert_eq!(resolved.variants[0].bitrate, Some(3_588_000));
         assert!(

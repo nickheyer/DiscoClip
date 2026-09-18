@@ -960,8 +960,9 @@ impl Resolver for NexxResolver {
                     MAX_PAGE,
                 )
                 .await?;
-                let media_id = embed_media_id(&fetched.text())
-                    .ok_or_else(|| ResolveError::malformed(url, "the embed page has no player call"))?;
+                let media_id = embed_media_id(&fetched.text()).ok_or_else(|| {
+                    ResolveError::malformed(url, "the embed page has no player call")
+                })?;
                 match media_id.as_str() {
                     "" => Err(ResolveError::unavailable(
                         url,
@@ -1438,8 +1439,14 @@ mod tests {
             embed_media_id(&embed_page("0", "video", "741")).as_deref(),
             Some("0")
         );
-        assert_eq!(embed_media_id(&embed_page("", "", "748")).as_deref(), Some(""));
-        assert_eq!(embed_media_id("<html><body>nothing here</body></html>"), None);
+        assert_eq!(
+            embed_media_id(&embed_page("", "", "748")).as_deref(),
+            Some("")
+        );
+        assert_eq!(
+            embed_media_id("<html><body>nothing here</body></html>"),
+            None
+        );
     }
 
     #[tokio::test]

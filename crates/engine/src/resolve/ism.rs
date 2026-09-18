@@ -79,7 +79,10 @@ pub fn expand_manifest(
     if root.tag_name().name() != "SmoothStreamingMedia" {
         return Err(ResolveError::malformed(
             url,
-            format!("not a Smooth Streaming manifest: <{}>", root.tag_name().name()),
+            format!(
+                "not a Smooth Streaming manifest: <{}>",
+                root.tag_name().name()
+            ),
         ));
     }
     let timescale: f64 = root
@@ -115,14 +118,21 @@ pub fn expand_manifest(
         .collect();
     let audio = streams
         .iter()
-        .filter(|s| s.attribute("Type").is_some_and(|t| t.eq_ignore_ascii_case("audio")))
+        .filter(|s| {
+            s.attribute("Type")
+                .is_some_and(|t| t.eq_ignore_ascii_case("audio"))
+        })
         .flat_map(|s| {
             let language = s.attribute("Language").map(str::to_string);
             s.children()
                 .filter(|n| n.is_element() && n.tag_name().name() == "QualityLevel")
                 .map(move |q| (q, language.clone()))
         })
-        .max_by_key(|(q, _)| q.attribute("Bitrate").and_then(|b| b.parse::<u64>().ok()).unwrap_or(0));
+        .max_by_key(|(q, _)| {
+            q.attribute("Bitrate")
+                .and_then(|b| b.parse::<u64>().ok())
+                .unwrap_or(0)
+        });
     let audio_codec_found = audio.as_ref().and_then(|(q, _)| {
         audio_codec(q.attribute("FourCC").unwrap_or(""), q.attribute("AudioTag"))
     });
@@ -131,19 +141,20 @@ pub fn expand_manifest(
         .and_then(|(q, _)| q.attribute("Bitrate").and_then(|b| b.parse::<u64>().ok()));
     let audio_language = audio.as_ref().and_then(|(_, language)| language.clone());
     let mut variants = Vec::new();
-    for stream in streams
-        .iter()
-        .filter(|s| s.attribute("Type").is_some_and(|t| t.eq_ignore_ascii_case("video")))
-    {
+    for stream in streams.iter().filter(|s| {
+        s.attribute("Type")
+            .is_some_and(|t| t.eq_ignore_ascii_case("video"))
+    }) {
         for (index, level) in stream
             .children()
             .filter(|n| n.is_element() && n.tag_name().name() == "QualityLevel")
             .enumerate()
         {
-            let bitrate = level.attribute("Bitrate").and_then(|b| b.parse::<u64>().ok());
+            let bitrate = level
+                .attribute("Bitrate")
+                .and_then(|b| b.parse::<u64>().ok());
             let mut v = Variant::new(url.clone(), VariantKind::Ism);
-            v.format_id = Some(match level.attribute("Index").or_else(|| Some(""))
-            {
+            v.format_id = Some(match level.attribute("Index").or_else(|| Some("")) {
                 Some(id) if !id.is_empty() => format!("video-{id}"),
                 _ => format!("video-{index}"),
             });

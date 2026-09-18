@@ -24,7 +24,8 @@ pub const PLATFORM: &str = "tenor";
 const SITE: &str = "https://tenor.com/";
 
 static RE_VIEW_ID: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?:^|-)(\d{5,})$").unwrap());
-static RE_SHORT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([A-Za-z0-9_-]{6,20})\.gif$").unwrap());
+static RE_SHORT: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^([A-Za-z0-9_-]{6,20})\.gif$").unwrap());
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Link {
@@ -74,25 +75,25 @@ pub fn parse_link(url: &Url) -> Option<Link> {
 /// The store the page renders in `<script id="store-cache">`.
 pub fn store_in(page: &Page) -> Option<Value> {
     let selector = Selector::parse("script#store-cache").expect("valid");
-    let text = page.document().select(&selector).next()?.text().collect::<String>();
+    let text = page
+        .document()
+        .select(&selector)
+        .next()?
+        .text()
+        .collect::<String>();
     serde_json::from_str(&text).ok()
 }
 
 /// The GIF's record in the store: the one with `id`, else the first there is.
 pub fn gif_in(store: &Value, id: &str) -> Option<Value> {
     let by_id = store["gifs"]["byId"].as_object()?;
-    let entry = by_id
-        .get(id)
-        .or_else(|| by_id.values().next())?;
+    let entry = by_id.get(id).or_else(|| by_id.values().next())?;
     entry["results"].as_array()?.first().cloned()
 }
 
 fn dims(format: &Value) -> (Option<u32>, Option<u32>) {
     match format["dims"].as_array().map(|d| d.as_slice()) {
-        Some([w, h, ..]) => (
-            w.as_u64().map(|w| w as u32),
-            h.as_u64().map(|h| h as u32),
-        ),
+        Some([w, h, ..]) => (w.as_u64().map(|w| w as u32), h.as_u64().map(|h| h as u32)),
         _ => (None, None),
     }
 }
@@ -149,7 +150,12 @@ impl TenorResolver {
         Self { http }
     }
 
-    async fn view(&self, page_url: &Url, id: Option<&str>, origin: &Url) -> Result<Resolved, ResolveError> {
+    async fn view(
+        &self,
+        page_url: &Url,
+        id: Option<&str>,
+        origin: &Url,
+    ) -> Result<Resolved, ResolveError> {
         let fetched = fetch(
             &self.http,
             page_url,
@@ -249,8 +255,17 @@ impl TenorResolver {
                 ));
             }
         }
-        let name = file.path().rsplit('/').next().unwrap_or_default().to_string();
-        let ext = name.rsplit('.').next().unwrap_or("mp4").to_ascii_lowercase();
+        let name = file
+            .path()
+            .rsplit('/')
+            .next()
+            .unwrap_or_default()
+            .to_string();
+        let ext = name
+            .rsplit('.')
+            .next()
+            .unwrap_or("mp4")
+            .to_ascii_lowercase();
         let mut v = Variant::new(file.clone(), VariantKind::File);
         v.container = Container::from_mime(&essence(probed.content_type.as_deref()))
             .or_else(|| Container::from_extension(&ext));
@@ -259,7 +274,12 @@ impl TenorResolver {
         }
         v.size = probed.size;
         let mut resolved = Resolved::new(PLATFORM);
-        resolved.title = clean_title(&name.rsplit_once('.').map_or(name.as_str(), |(s, _)| s).replace('-', " "));
+        resolved.title = clean_title(
+            &name
+                .rsplit_once('.')
+                .map_or(name.as_str(), |(s, _)| s)
+                .replace('-', " "),
+        );
         resolved.webpage_url = Some(file.clone());
         resolved.variants = vec![v];
         Ok(resolved)
@@ -293,7 +313,9 @@ impl Resolver for TenorResolver {
 
     async fn resolve(&self, url: &Url) -> Result<Resolution, ResolveError> {
         match parse_link(url).ok_or_else(|| ResolveError::NotFound(url.clone()))? {
-            Link::View { page, id } => Ok(Resolution::from(self.view(&page, Some(&id), url).await?)),
+            Link::View { page, id } => {
+                Ok(Resolution::from(self.view(&page, Some(&id), url).await?))
+            }
             Link::Short(short) => Ok(Resolution::from(self.view(&short, None, url).await?)),
             Link::Media(file) => Ok(Resolution::from(self.media(&file, url).await?)),
         }
@@ -307,7 +329,14 @@ mod tests {
         Exchange, Fixture, RecordedBody, RecordedRequest, RecordedResponse,
     };
 
-    fn get(url: &str, status: u16, content_type: &str, body: &str, headers: &[(&str, &str)], final_url: &str) -> Exchange {
+    fn get(
+        url: &str,
+        status: u16,
+        content_type: &str,
+        body: &str,
+        headers: &[(&str, &str)],
+        final_url: &str,
+    ) -> Exchange {
         let mut all = vec![("content-type".to_string(), content_type.to_string())];
         all.extend(headers.iter().map(|(k, v)| (k.to_string(), v.to_string())));
         Exchange {
@@ -337,10 +366,21 @@ mod tests {
             link("https://tenor.com/view/banana-cat-gif-2736737110227615394?x=1"),
             Some(Link::View { id, .. }) if id == "2736737110227615394"
         ));
-        assert!(matches!(link("https://tenor.com/de/view/katze-gif-123456"), Some(Link::View { id, .. }) if id == "123456"));
-        assert!(matches!(link("https://tenor.com/dqkrPHwUKcg.gif"), Some(Link::Short(_))));
-        assert!(matches!(link("https://media.tenor.com/JfrX5uK-_qIAAAPo/banana-cat.mp4"), Some(Link::Media(_))));
-        assert!(matches!(link("https://media1.tenor.com/m/JfrX5uK-_qIAAAAC/banana-cat.gif"), Some(Link::Media(_))));
+        assert!(
+            matches!(link("https://tenor.com/de/view/katze-gif-123456"), Some(Link::View { id, .. }) if id == "123456")
+        );
+        assert!(matches!(
+            link("https://tenor.com/dqkrPHwUKcg.gif"),
+            Some(Link::Short(_))
+        ));
+        assert!(matches!(
+            link("https://media.tenor.com/JfrX5uK-_qIAAAPo/banana-cat.mp4"),
+            Some(Link::Media(_))
+        ));
+        assert!(matches!(
+            link("https://media1.tenor.com/m/JfrX5uK-_qIAAAAC/banana-cat.gif"),
+            Some(Link::Media(_))
+        ));
         assert_eq!(link("https://tenor.com/search/cat-gifs"), None);
         assert_eq!(link("https://tenor.com/view/no-id"), None);
     }
@@ -348,18 +388,31 @@ mod tests {
     #[tokio::test]
     async fn view_pages_resolve_from_the_rendered_store() {
         let mut fixture = Fixture::new("tenor", None);
-        fixture.exchanges.push(get("https://tenor.com/view/banana-cat-gif-2736737110227615394", 200, "text/html", PAGE, &[], "https://tenor.com/view/banana-cat-gif-2736737110227615394"));
+        fixture.exchanges.push(get(
+            "https://tenor.com/view/banana-cat-gif-2736737110227615394",
+            200,
+            "text/html",
+            PAGE,
+            &[],
+            "https://tenor.com/view/banana-cat-gif-2736737110227615394",
+        ));
         let resolver = TenorResolver::new(Http::replay(fixture));
         let url = Url::parse("https://tenor.com/view/banana-cat-gif-2736737110227615394").unwrap();
         let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
         assert_eq!(resolved.title.as_deref(), Some("Banana Cat Meme"));
         assert_eq!(resolved.uploader.as_deref(), Some("Darshuil"));
-        assert_eq!(resolved.uploader_url.unwrap().as_str(), "https://tenor.com/users/Darshuil");
+        assert_eq!(
+            resolved.uploader_url.unwrap().as_str(),
+            "https://tenor.com/users/Darshuil"
+        );
         assert_eq!(resolved.uploaded_at.unwrap().as_second(), 1766968109);
         assert_eq!(resolved.duration, Some(Duration::from_secs_f64(1.2)));
         assert_eq!(resolved.variants.len(), 4);
         let mp4 = &resolved.variants[0];
-        assert_eq!(mp4.url.as_str(), "https://media.tenor.com/JfrX5uK-_qIAAAPo/banana-cat.mp4");
+        assert_eq!(
+            mp4.url.as_str(),
+            "https://media.tenor.com/JfrX5uK-_qIAAAPo/banana-cat.mp4"
+        );
         assert_eq!((mp4.width, mp4.height), (Some(380), Some(498)));
         assert_eq!(mp4.size, Some(4543));
         assert!(mp4.audio.is_none());
@@ -371,9 +424,30 @@ mod tests {
     async fn short_links_land_on_the_view_page_and_bare_pages_use_open_graph() {
         let og_only = r#"<html><head><meta property="og:title" content="Banana Cat Meme - Discover &amp; Share GIFs"><meta property="og:video" content="https://media.tenor.com/JfrX5uK-_qIAAAPo/banana-cat.mp4"><meta property="og:video:width" content="380"><meta property="og:video:height" content="498"></head></html>"#;
         let mut fixture = Fixture::new("tenor", None);
-        fixture.exchanges.push(get("https://tenor.com/dqkrPHwUKcg.gif", 200, "text/html", og_only, &[], "https://tenor.com/view/banana-cat-gif-2736737110227615394"));
-        fixture.exchanges.push(get("https://media.tenor.com/JfrX5uK-_qIAAAPo/banana-cat.mp4", 206, "video/mp4", "", &[("content-range", "bytes 0-0/4543")], "https://media.tenor.com/JfrX5uK-_qIAAAPo/banana-cat.mp4"));
-        fixture.exchanges.push(get("https://tenor.com/view/gone-gif-99999", 404, "text/html", "", &[], "https://tenor.com/view/gone-gif-99999"));
+        fixture.exchanges.push(get(
+            "https://tenor.com/dqkrPHwUKcg.gif",
+            200,
+            "text/html",
+            og_only,
+            &[],
+            "https://tenor.com/view/banana-cat-gif-2736737110227615394",
+        ));
+        fixture.exchanges.push(get(
+            "https://media.tenor.com/JfrX5uK-_qIAAAPo/banana-cat.mp4",
+            206,
+            "video/mp4",
+            "",
+            &[("content-range", "bytes 0-0/4543")],
+            "https://media.tenor.com/JfrX5uK-_qIAAAPo/banana-cat.mp4",
+        ));
+        fixture.exchanges.push(get(
+            "https://tenor.com/view/gone-gif-99999",
+            404,
+            "text/html",
+            "",
+            &[],
+            "https://tenor.com/view/gone-gif-99999",
+        ));
         let resolver = TenorResolver::new(Http::replay(fixture));
         let resolved = resolver
             .resolve(&Url::parse("https://tenor.com/dqkrPHwUKcg.gif").unwrap())
@@ -386,7 +460,9 @@ mod tests {
         assert_eq!(resolved.variants.len(), 1);
         assert_eq!(resolved.variants[0].height, Some(498));
         let resolved = resolver
-            .resolve(&Url::parse("https://media.tenor.com/JfrX5uK-_qIAAAPo/banana-cat.mp4").unwrap())
+            .resolve(
+                &Url::parse("https://media.tenor.com/JfrX5uK-_qIAAAPo/banana-cat.mp4").unwrap(),
+            )
             .await
             .unwrap()
             .media()
@@ -394,7 +470,10 @@ mod tests {
         assert_eq!(resolved.title.as_deref(), Some("banana cat"));
         assert_eq!(resolved.variants[0].size, Some(4543));
         assert!(matches!(
-            resolver.resolve(&Url::parse("https://tenor.com/view/gone-gif-99999").unwrap()).await.unwrap_err(),
+            resolver
+                .resolve(&Url::parse("https://tenor.com/view/gone-gif-99999").unwrap())
+                .await
+                .unwrap_err(),
             ResolveError::NotFound(_)
         ));
     }

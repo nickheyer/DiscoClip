@@ -25,8 +25,20 @@ const API: &str = "https://coub.com/api/v2/coubs/";
 static RE_ID: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z0-9]{3,12}$").unwrap());
 /// Top level pages of the site that are not coubs.
 const RESERVED: [&str; 14] = [
-    "api", "explore", "hot", "rising", "fresh", "feed", "community", "tags", "search", "embed",
-    "view", "login", "signup", "about",
+    "api",
+    "explore",
+    "hot",
+    "rising",
+    "fresh",
+    "feed",
+    "community",
+    "tags",
+    "search",
+    "embed",
+    "view",
+    "login",
+    "signup",
+    "about",
 ];
 
 pub fn coub_id(url: &Url) -> Option<String> {
@@ -72,10 +84,7 @@ fn dimensions(coub: &Value) -> (Option<u32>, Option<u32>) {
         .or_else(|| coub["size"].as_array())
         .or_else(|| coub["dimensions"]["med"].as_array());
     match pair.map(|p| p.as_slice()) {
-        Some([w, h, ..]) => (
-            w.as_u64().map(|w| w as u32),
-            h.as_u64().map(|h| h as u32),
-        ),
+        Some([w, h, ..]) => (w.as_u64().map(|w| w as u32), h.as_u64().map(|h| h as u32)),
         _ => (None, None),
     }
 }
@@ -262,7 +271,10 @@ impl Resolver for CoubResolver {
         }
         let coub = fetched.json(url)?;
         if let Some(error) = coub["error"].as_str().filter(|e| !e.trim().is_empty()) {
-            return Err(ResolveError::unavailable(url, format!("Coub said: {error}")));
+            return Err(ResolveError::unavailable(
+                url,
+                format!("Coub said: {error}"),
+            ));
         }
         if coub["banned"].as_bool() == Some(true) {
             return Err(ResolveError::unavailable(url, "the coub was banned"));
@@ -350,7 +362,10 @@ mod tests {
     fn links_are_read() {
         let id = |s: &str| coub_id(&Url::parse(s).unwrap());
         assert_eq!(id("https://coub.com/view/5u5n1"), Some("5u5n1".into()));
-        assert_eq!(id("https://coub.com/embed/5u5n1?muted=false"), Some("5u5n1".into()));
+        assert_eq!(
+            id("https://coub.com/embed/5u5n1?muted=false"),
+            Some("5u5n1".into())
+        );
         assert_eq!(id("https://coub.com/5u5n1"), Some("5u5n1".into()));
         assert_eq!(id("https://coub.com/explore"), None);
         assert_eq!(id("https://coub.com/artyom.loskutnikov"), None);
@@ -376,7 +391,10 @@ mod tests {
         );
         assert_eq!(resolved.duration, Some(Duration::from_secs_f64(4.6)));
         assert!(resolved.uploaded_at.is_some());
-        assert!(resolved.variants.len() > 1, "the share file and every HTML5 rendition");
+        assert!(
+            resolved.variants.len() > 1,
+            "the share file and every HTML5 rendition"
+        );
         let share = &resolved.variants[0];
         assert_eq!(share.url.as_str(), "https://cdn.coub.test/looped.mp4");
         assert_eq!(share.audio, Some(AudioCodec::Aac));
@@ -407,8 +425,16 @@ mod tests {
             .media()
             .unwrap();
         assert!(resolved.variants.len() >= 2, "{}", resolved.variants.len());
-        assert!(resolved.variants.iter().all(|v| v.format_id.as_deref() != Some("share")));
-        assert!(resolved.variants.iter().any(|v| v.audio_only), "the HTML5 audio on its own");
+        assert!(
+            resolved
+                .variants
+                .iter()
+                .all(|v| v.format_id.as_deref() != Some("share"))
+        );
+        assert!(
+            resolved.variants.iter().any(|v| v.audio_only),
+            "the HTML5 audio on its own"
+        );
         let high = &resolved.variants[0];
         assert!(high.video_only);
         assert_eq!(

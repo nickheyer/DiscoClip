@@ -14,9 +14,9 @@ use url::Url;
 
 use super::page::Page;
 use super::{
-    Keepalive, MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver,
-    SessionSupport, SubtitleFormat, SubtitleTrack, Variant, clean_title, essence, fetch, hls,
-    is_hls_type, probe_file, status_error, util,
+    Keepalive, MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport,
+    SubtitleFormat, SubtitleTrack, Variant, clean_title, essence, fetch, hls, is_hls_type,
+    probe_file, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
 use crate::media::{AudioCodec, Container, VideoCodec};
@@ -33,9 +33,8 @@ static RE_PLAYLIST: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"\burlPlaylistUrl\s*=\s*["']([^"']+)["']"#).unwrap());
 static RE_DRM: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\bisEntDrm\s*=\s*true\b").unwrap());
 /// `.setAttribute('src', '…')`: the stream a MediaCage player sets on its element.
-static RE_SET_SRC: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"\.setAttribute\(['"]src['"],\s*['"]([^'"]+)['"]\)"#).unwrap()
-});
+static RE_SET_SRC: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"\.setAttribute\(['"]src['"],\s*['"]([^'"]+)['"]\)"#).unwrap());
 /// `loadUrl('…/activate')`: the request that unlocks a MediaCage stream.
 static RE_ACTIVATE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"loadUrl\(['"]([^'"]+/activate)['"]"#).unwrap());
@@ -93,7 +92,8 @@ impl Link {
             .map(|(k, v)| (k.into_owned(), v.into_owned()))
             .collect();
         if !signed.is_empty() {
-            url.query_pairs_mut().extend_pairs(signed.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+            url.query_pairs_mut()
+                .extend_pairs(signed.iter().map(|(k, v)| (k.as_str(), v.as_str())));
         }
         url
     }
@@ -205,7 +205,9 @@ fn player_of(html: &str, base: &Url, origin: &Url) -> Result<Player, ResolveErro
         .cloned()
         .unwrap_or_default();
     Ok(Player {
-        title: page.title().or_else(|| ld["name"].as_str().and_then(clean_title)),
+        title: page
+            .title()
+            .or_else(|| ld["name"].as_str().and_then(clean_title)),
         description: page
             .meta("og:description")
             .and_then(|s| clean_title(&s))
@@ -216,7 +218,9 @@ fn player_of(html: &str, base: &Url, origin: &Url) -> Result<Player, ResolveErro
             .filter(|s| s.is_finite() && *s > 0.0)
             .map(Duration::from_secs_f64),
         uploaded_at: ld["uploadDate"].as_str().and_then(util::parse_timestamp),
-        thumbnail: page.poster().or_else(|| util::url_of(&ld["thumbnailUrl"], None)),
+        thumbnail: page
+            .poster()
+            .or_else(|| util::url_of(&ld["thumbnailUrl"], None)),
         master,
         cage,
         original,
@@ -272,13 +276,15 @@ impl Resolver for BunnyResolver {
     fn embeds_in(&self, page: &Page) -> Vec<Url> {
         let mut found: Vec<Url> = Vec::new();
         for caps in RE_IFRAME.captures_iter(page.html()) {
-            let Some(mut url) = util::join_url(Some(page.url()), &util::html_unescape(&caps[1])) else {
+            let Some(mut url) = util::join_url(Some(page.url()), &util::html_unescape(&caps[1]))
+            else {
                 continue;
             };
             if parse_link(&url).is_none() {
                 continue;
             }
-            url.query_pairs_mut().append_pair("referrer", page.url().as_str());
+            url.query_pairs_mut()
+                .append_pair("referrer", page.url().as_str());
             if !found.contains(&url) {
                 found.push(url);
             }
@@ -295,7 +301,15 @@ impl Resolver for BunnyResolver {
             .map(|r| r.to_string())
             .unwrap_or_else(|| "https://iframe.mediadelivery.net/".to_string());
         let page_headers = vec![("referer".to_string(), page_referer)];
-        let fetched = fetch(&self.http, &player_url, PLATFORM, BROWSER_UA, &page_headers, MAX_PAGE).await?;
+        let fetched = fetch(
+            &self.http,
+            &player_url,
+            PLATFORM,
+            BROWSER_UA,
+            &page_headers,
+            MAX_PAGE,
+        )
+        .await?;
         if let Some(error) = status_error(fetched.status, url) {
             return Err(error);
         }
@@ -322,7 +336,15 @@ impl Resolver for BunnyResolver {
         }
         if let Some(cage) = &player.cage {
             // Activation unlocks the stream for the pings that follow.
-            let activation = fetch(&self.http, &cage.activate, PLATFORM, BROWSER_UA, &headers, MAX_PAGE).await?;
+            let activation = fetch(
+                &self.http,
+                &cage.activate,
+                PLATFORM,
+                BROWSER_UA,
+                &headers,
+                MAX_PAGE,
+            )
+            .await?;
             if let Some(error) = status_error(activation.status, url) {
                 return Err(error);
             }
@@ -523,7 +545,12 @@ mod tests {
         assert_eq!(third.title.as_deref(), Some("netflix part 1"));
         assert!(third.uploaded_at.is_some());
         assert_eq!(third.variants.len(), 3);
-        assert!(third.variants.iter().all(|v| v.kind == super::super::VariantKind::Hls && v.height.is_some()));
+        assert!(
+            third
+                .variants
+                .iter()
+                .all(|v| v.kind == super::super::VariantKind::Hls && v.height.is_some())
+        );
         assert_eq!(third.variants[0].format_id.as_deref(), Some("hls-480p"));
     }
 
@@ -560,20 +587,48 @@ mod tests {
             loadUrl('https://video-1.mediadelivery.net/.drm/1/abc/ping');
         </script></body></html>"#;
         let mut fixture = Fixture::new(PLATFORM, None);
-        fixture.exchanges.push(get("https://iframe.mediadelivery.net/embed/1/2e8545ec-509d-4571-b855-4cf0235ccd75", 200, "text/html", page));
-        fixture.exchanges.push(get("https://video-1.mediadelivery.net/.drm/1/abc/activate", 200, "application/json", "{}"));
+        fixture.exchanges.push(get(
+            "https://iframe.mediadelivery.net/embed/1/2e8545ec-509d-4571-b855-4cf0235ccd75",
+            200,
+            "text/html",
+            page,
+        ));
+        fixture.exchanges.push(get(
+            "https://video-1.mediadelivery.net/.drm/1/abc/activate",
+            200,
+            "application/json",
+            "{}",
+        ));
         fixture.exchanges.push(get("https://video-1.mediadelivery.net/play/1/abc/playlist.drm?contextId=ctx1&secret=s3cret", 200, "application/vnd.apple.mpegurl", "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1280x720\n720.m3u8\n"));
-        fixture.exchanges.push(get("https://video-1.mediadelivery.net/play/1/abc/720.m3u8", 200, "application/vnd.apple.mpegurl", "#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:4.0,\n0.ts\n#EXT-X-ENDLIST\n"));
-        fixture.exchanges.push(get("https://iframe.mediadelivery.net/embed/1/e73edec1-e381-4c8b-ae73-717a140e0924", 200, "text/html", "<html><head><title>403</title></head></html>"));
+        fixture.exchanges.push(get(
+            "https://video-1.mediadelivery.net/play/1/abc/720.m3u8",
+            200,
+            "application/vnd.apple.mpegurl",
+            "#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:4.0,\n0.ts\n#EXT-X-ENDLIST\n",
+        ));
+        fixture.exchanges.push(get(
+            "https://iframe.mediadelivery.net/embed/1/e73edec1-e381-4c8b-ae73-717a140e0924",
+            200,
+            "text/html",
+            "<html><head><title>403</title></head></html>",
+        ));
         let resolver = BunnyResolver::new(Http::replay(fixture));
         let resolved = resolver
-            .resolve(&Url::parse("https://iframe.mediadelivery.net/embed/1/2e8545ec-509d-4571-b855-4cf0235ccd75").unwrap())
+            .resolve(
+                &Url::parse(
+                    "https://iframe.mediadelivery.net/embed/1/2e8545ec-509d-4571-b855-4cf0235ccd75",
+                )
+                .unwrap(),
+            )
             .await
             .unwrap()
             .media()
             .unwrap();
         assert_eq!(resolved.title.as_deref(), Some("Caged"));
-        assert_eq!(resolved.uploaded_at.map(|t| t.as_second()), Some(1717152269));
+        assert_eq!(
+            resolved.uploaded_at.map(|t| t.as_second()),
+            Some(1717152269)
+        );
         assert_eq!(resolved.variants.len(), 1);
         assert_eq!(resolved.variants[0].height, Some(720));
         assert_eq!(resolved.variants[0].format_id.as_deref(), Some("cage-720p"));
@@ -586,10 +641,18 @@ mod tests {
             })
         );
         let error = resolver
-            .resolve(&Url::parse("https://iframe.mediadelivery.net/embed/1/e73edec1-e381-4c8b-ae73-717a140e0924").unwrap())
+            .resolve(
+                &Url::parse(
+                    "https://iframe.mediadelivery.net/embed/1/e73edec1-e381-4c8b-ae73-717a140e0924",
+                )
+                .unwrap(),
+            )
             .await
             .unwrap_err();
-        assert!(matches!(&error, ResolveError::Unavailable { reason, .. } if reason.contains("own site")), "{error}");
+        assert!(
+            matches!(&error, ResolveError::Unavailable { reason, .. } if reason.contains("own site")),
+            "{error}"
+        );
         let page = Page::parse(
             r#"<iframe src="https://iframe.mediadelivery.net/embed/136145/32e34c4b-0d72-437c-9abb-05e67657da34?autoplay=true"></iframe>"#,
             &Url::parse("https://example.com/post").unwrap(),
@@ -597,6 +660,9 @@ mod tests {
         let embeds = resolver.embeds_in(&page);
         assert_eq!(embeds.len(), 1);
         let link = parse_link(&embeds[0]).unwrap();
-        assert_eq!(link.referrer.as_ref().unwrap().as_str(), "https://example.com/post");
+        assert_eq!(
+            link.referrer.as_ref().unwrap().as_str(),
+            "https://example.com/post"
+        );
     }
 }

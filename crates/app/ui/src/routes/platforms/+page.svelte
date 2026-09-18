@@ -130,6 +130,7 @@
 	const withFixtures = $derived(data.platforms.filter((p) => p.fixtures.length > 0));
 	const passing = $derived(withFixtures.filter((p) => coverageState(p) === 'passing').length);
 	const failing = $derived(withFixtures.filter((p) => coverageState(p) === 'failing').length);
+	const needingLogin = $derived(withFixtures.filter((p) => coverageState(p) === 'login').length);
 	const running = $derived(data.platforms.some((p) => p.running));
 	const lastRun = $derived(
 		data.platforms.reduce<string | null>(
@@ -221,6 +222,10 @@
 			<div class="stat">
 				<span class={['stat-value', failing > 0 && 'danger']}>{failing}</span>
 				<span class="stat-label">with a failing fixture</span>
+			</div>
+			<div class="stat">
+				<span class={['stat-value', needingLogin > 0 && 'warn']}>{needingLogin}</span>
+				<span class="stat-label">needing a login</span>
 			</div>
 			<div class="stat">
 				<span class="stat-value">{formats.length}</span>
@@ -388,6 +393,8 @@
 																<td class="found">
 																	{#if fixture.status === 'fail' && fixture.error}
 																		<span class="error-text truncate-2" title={fixture.error}>{fixture.error}</span>
+																	{:else if fixture.status === 'login_required' && fixture.error}
+																		<span class="muted truncate-2" title={fixture.error}>{fixture.error}</span>
 																	{:else if fixture.title}
 																		<span class="truncate-2" title={fixture.title}>{fixture.title}</span>
 																	{:else}
@@ -487,6 +494,10 @@
 
 	.stat-value.danger {
 		color: var(--danger-text);
+	}
+
+	.stat-value.warn {
+		color: var(--warn-text);
 	}
 
 	.small-value {

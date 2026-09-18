@@ -222,9 +222,9 @@ pub const FIXTURE_HOST: &str = "fixture.test";
 /// How long the fixtured platform's slow link takes to resolve.
 pub const SLOW_FIXTURE: std::time::Duration = std::time::Duration::from_millis(300);
 
-/// A platform with fixtures: `/ok` resolves, `/slow` resolves after [`SLOW_FIXTURE`], and
-/// `/bad` fails the first time it is asked and resolves after that. A jar holding a `sid`
-/// cookie logs it in as `tester`.
+/// A platform with fixtures: `/ok` resolves, `/slow` resolves after [`SLOW_FIXTURE`],
+/// `/bad` fails the first time it is asked and resolves after that, and `/login` resolves
+/// only with a session. A jar holding a `sid` cookie logs it in as `tester`.
 struct Fixtured {
     asked_bad: std::sync::atomic::AtomicUsize,
     http: Http,
@@ -259,6 +259,7 @@ impl Resolver for Fixtured {
                 "https://fixture.test/ok",
                 "https://fixture.test/bad",
                 "https://fixture.test/slow",
+                "https://fixture.test/login",
             ],
         }
     }
@@ -284,6 +285,14 @@ impl Resolver for Fixtured {
                     Ok(Self::media("A recovered fixture"))
                 }
             }
+            "/login" => match self.http.jar("fixtured").get("sid") {
+                Some(_) => Ok(Self::media("A members-only fixture")),
+                None => Err(ResolveError::login_required(
+                    url,
+                    "fixtured",
+                    "members' links are read with the sid cookie",
+                )),
+            },
             _ => Err(ResolveError::NotFound(url.clone())),
         }
     }

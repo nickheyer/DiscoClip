@@ -26,7 +26,8 @@ static RE_EVENT_ID: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"data-id=["'](\d+)["']"#).unwrap());
 /// The event's GUID, which the API also answers to.
 static RE_EVENT_GUID: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"/public/events/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"#).unwrap()
+    Regex::new(r#"/public/events/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"#)
+        .unwrap()
 });
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,7 +66,10 @@ fn recording_subtitle(recording: &Value) -> Option<SubtitleTrack> {
     let language = util::text(&recording["language"]).unwrap_or_else(|| "und".to_string());
     Some(SubtitleTrack {
         url,
-        name: recording["label"].as_str().and_then(clean_title).or_else(|| Some(language.clone())),
+        name: recording["label"]
+            .as_str()
+            .and_then(clean_title)
+            .or_else(|| Some(language.clone())),
         language,
         format,
         auto: false,
@@ -76,12 +80,18 @@ fn recording_subtitle(recording: &Value) -> Option<SubtitleTrack> {
 /// A recording as a variant: a video file with its size and language, or an audio file.
 fn recording_variant(recording: &Value) -> Option<Variant> {
     let url = util::url_of(&recording["recording_url"], None)?;
-    if matches!(super::path_extension(&url).as_deref(), Some("srt" | "vtt" | "sbv" | "txt")) {
+    if matches!(
+        super::path_extension(&url).as_deref(),
+        Some("srt" | "vtt" | "sbv" | "txt")
+    ) {
         return None;
     }
     let folder = recording["folder"].as_str().unwrap_or("").to_string();
     let language = util::text(&recording["language"]);
-    let mime = recording["mime_type"].as_str().unwrap_or("").to_ascii_lowercase();
+    let mime = recording["mime_type"]
+        .as_str()
+        .unwrap_or("")
+        .to_ascii_lowercase();
     if !mime.is_empty() && !mime.starts_with("video/") && !mime.starts_with("audio/") {
         return None;
     }
@@ -101,7 +111,11 @@ fn recording_variant(recording: &Value) -> Option<Variant> {
             "mp3"
         };
         variant.container = Some(Container::Other(codec.to_string()));
-        variant.audio = Some(if codec == "opus" { AudioCodec::Opus } else { AudioCodec::Mp3 });
+        variant.audio = Some(if codec == "opus" {
+            AudioCodec::Opus
+        } else {
+            AudioCodec::Mp3
+        });
     } else {
         variant.container = Some(if mime.contains("webm") {
             Container::Webm
@@ -115,7 +129,11 @@ fn recording_variant(recording: &Value) -> Option<Variant> {
         } else {
             VideoCodec::Vp9
         });
-        variant.audio = Some(if mime.contains("webm") { AudioCodec::Opus } else { AudioCodec::Aac });
+        variant.audio = Some(if mime.contains("webm") {
+            AudioCodec::Opus
+        } else {
+            AudioCodec::Aac
+        });
     }
     variant.label = recording["label"].as_str().and_then(clean_title);
     variant.format_id = Some(match (&language, folder.is_empty()) {
@@ -136,7 +154,8 @@ impl CccResolver {
     }
 
     async fn api(&self, path: &str, origin: &Url) -> Result<Value, ResolveError> {
-        let api = Url::parse(&format!("{API}{path}")).map_err(|e| ResolveError::malformed(origin, e.to_string()))?;
+        let api = Url::parse(&format!("{API}{path}"))
+            .map_err(|e| ResolveError::malformed(origin, e.to_string()))?;
         let accept = [("accept".to_string(), "application/json".to_string())];
         let fetched = fetch(&self.http, &api, PLATFORM, BROWSER_UA, &accept, MAX_PAGE).await?;
         if let Some(error) = status_error(fetched.status, origin) {
@@ -146,7 +165,15 @@ impl CccResolver {
     }
 
     async fn resolve_talk(&self, slug: &str, url: &Url) -> Result<Resolution, ResolveError> {
-        let page = fetch(&self.http, url, PLATFORM, BROWSER_UA, &navigation_headers(), MAX_PAGE).await?;
+        let page = fetch(
+            &self.http,
+            url,
+            PLATFORM,
+            BROWSER_UA,
+            &navigation_headers(),
+            MAX_PAGE,
+        )
+        .await?;
         if let Some(error) = status_error(page.status, url) {
             return Err(error);
         }
@@ -162,7 +189,10 @@ impl CccResolver {
             .filter_map(recording_variant)
             .collect();
         if variants.is_empty() {
-            return Err(ResolveError::unavailable(url, "the event has no recordings"));
+            return Err(ResolveError::unavailable(
+                url,
+                "the event has no recordings",
+            ));
         }
         variants.sort_by_key(|v| {
             std::cmp::Reverse((!v.audio_only, v.height.unwrap_or(0), v.size.unwrap_or(0)))
@@ -176,8 +206,10 @@ impl CccResolver {
             .or_else(|| event["subtitle"].as_str().and_then(clean_title));
         resolved.thumbnail = util::url_of(&event["thumb_url"], None)
             .or_else(|| util::url_of(&event["poster_url"], None));
-        resolved.uploaded_at = util::time(&event["date"]).or_else(|| util::time(&event["release_date"]));
-        resolved.duration = util::seconds(&event["length"]).or_else(|| util::seconds(&event["duration"]));
+        resolved.uploaded_at =
+            util::time(&event["date"]).or_else(|| util::time(&event["release_date"]));
+        resolved.duration =
+            util::seconds(&event["length"]).or_else(|| util::seconds(&event["duration"]));
         resolved.uploader = event["persons"]
             .as_array()
             .map(|people| {
@@ -194,7 +226,8 @@ impl CccResolver {
             let acronym = api_url.path_segments()?.next_back()?.to_string();
             Url::parse(&format!("https://media.ccc.de/c/{acronym}")).ok()
         });
-        resolved.webpage_url = util::url_of(&event["frontend_link"], None).or_else(|| Some(url.clone()));
+        resolved.webpage_url =
+            util::url_of(&event["frontend_link"], None).or_else(|| Some(url.clone()));
         resolved.subtitles = event["recordings"]
             .as_array()
             .into_iter()
@@ -206,7 +239,11 @@ impl CccResolver {
         Ok(Resolution::from(resolved))
     }
 
-    async fn resolve_conference(&self, acronym: &str, url: &Url) -> Result<Resolution, ResolveError> {
+    async fn resolve_conference(
+        &self,
+        acronym: &str,
+        url: &Url,
+    ) -> Result<Resolution, ResolveError> {
         let conference = self.api(&format!("conferences/{acronym}"), url).await?;
         let entries: Vec<PlaylistEntry> = conference["events"]
             .as_array()
@@ -216,7 +253,8 @@ impl CccResolver {
                 Some(PlaylistEntry {
                     url: util::url_of(&event["frontend_link"], None)?,
                     title: event["title"].as_str().and_then(clean_title),
-                    duration: util::seconds(&event["length"]).or_else(|| util::seconds(&event["duration"])),
+                    duration: util::seconds(&event["length"])
+                        .or_else(|| util::seconds(&event["duration"])),
                 })
             })
             .collect();
@@ -294,7 +332,8 @@ mod tests {
         }
     }
 
-    const TALK: &str = "https://media.ccc.de/v/39c3-schlechte-karten-it-sicherheit-im-jahr-null-der-epa-fur-alle";
+    const TALK: &str =
+        "https://media.ccc.de/v/39c3-schlechte-karten-it-sicherheit-im-jahr-null-der-epa-fur-alle";
 
     #[test]
     fn links_are_read() {
@@ -360,11 +399,20 @@ mod tests {
         assert!(resolver.matches(&url));
         let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
         assert_eq!(resolved.id.as_deref(), Some("2403"));
-        assert_eq!(resolved.title.as_deref(), Some("Schlechte Karten - IT-Sicherheit im Jahr null der ePA für alle"));
+        assert_eq!(
+            resolved.title.as_deref(),
+            Some("Schlechte Karten - IT-Sicherheit im Jahr null der ePA für alle")
+        );
         assert_eq!(resolved.uploader.as_deref(), Some("Bianca Kastl"));
-        assert_eq!(resolved.uploader_url.as_ref().unwrap().as_str(), "https://media.ccc.de/c/39c3");
+        assert_eq!(
+            resolved.uploader_url.as_ref().unwrap().as_str(),
+            "https://media.ccc.de/c/39c3"
+        );
         assert_eq!(resolved.duration, Some(Duration::from_secs(3619)));
-        assert_eq!(resolved.uploaded_at.map(|t| t.as_second()), Some(1767024900));
+        assert_eq!(
+            resolved.uploaded_at.map(|t| t.as_second()),
+            Some(1767024900)
+        );
         assert_eq!(resolved.variants.len(), 3);
         let best = &resolved.variants[0];
         assert_eq!(best.height, Some(1080));
@@ -415,10 +463,19 @@ mod tests {
         else {
             panic!("a playlist");
         };
-        assert_eq!(playlist.title.as_deref(), Some("39th Chaos Communication Congress"));
+        assert_eq!(
+            playlist.title.as_deref(),
+            Some("39th Chaos Communication Congress")
+        );
         assert_eq!(playlist.entries.len(), 1);
-        assert_eq!(playlist.entries[0].url.as_str(), "https://media.ccc.de/v/39c3-sos-fafo");
-        assert_eq!(playlist.entries[0].duration, Some(Duration::from_secs(1800)));
+        assert_eq!(
+            playlist.entries[0].url.as_str(),
+            "https://media.ccc.de/v/39c3-sos-fafo"
+        );
+        assert_eq!(
+            playlist.entries[0].duration,
+            Some(Duration::from_secs(1800))
+        );
         assert!(matches!(
             resolver
                 .resolve(&Url::parse("https://media.ccc.de/c/nothing").unwrap())

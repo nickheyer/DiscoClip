@@ -180,7 +180,9 @@ impl Resolver for AllocineResolver {
                 }
                 return Err(ResolveError::NotFound(url.clone()));
             }
-            variants.sort_by_key(|v| std::cmp::Reverse(quality_rank(v.format_id.as_deref().unwrap_or(""))));
+            variants.sort_by_key(|v| {
+                std::cmp::Reverse(quality_rank(v.format_id.as_deref().unwrap_or("")))
+            });
             resolved.id = util::text(&video["id"]).or_else(|| Some(display_id.clone()));
             resolved.title = video["title"].as_str().and_then(clean_title);
             resolved.duration = util::seconds(&video["duration"]);
@@ -212,7 +214,8 @@ impl Resolver for AllocineResolver {
         if variants.is_empty() {
             return Err(ResolveError::NotFound(url.clone()));
         }
-        variants.sort_by_key(|v| std::cmp::Reverse(quality_rank(v.format_id.as_deref().unwrap_or(""))));
+        variants
+            .sort_by_key(|v| std::cmp::Reverse(quality_rank(v.format_id.as_deref().unwrap_or(""))));
         resolved.id = Some(display_id);
         resolved.title = page_title;
         resolved.variants = variants;
@@ -267,7 +270,10 @@ mod tests {
             id("http://www.allocine.fr/video/player_gen_cmedia=19540403&cfilm=222257.html"),
             Some("19540403".into())
         );
-        assert_eq!(id("http://www.allocine.fr/video/video-19550147/"), Some("19550147".into()));
+        assert_eq!(
+            id("http://www.allocine.fr/video/video-19550147/"),
+            Some("19550147".into())
+        );
         assert_eq!(
             id("https://www.allocine.fr/film/fichefilm_gen_cfilm=222257.html"),
             Some("222257".into())
@@ -335,7 +341,8 @@ mod tests {
             "https://www.allocine.fr/article/fichearticle_gen_carticle=18635087.html",
             200,
             "text/html",
-            r#"<html><head><title>Astérix - AlloCiné</title></head><body>no model</body></html>"#.into(),
+            r#"<html><head><title>Astérix - AlloCiné</title></head><body>no model</body></html>"#
+                .into(),
         ));
         fixture.exchanges.push(get(
             "https://www.allocine.fr/ws/AcVisiondataV5.ashx?media=18635087",
@@ -345,7 +352,12 @@ mod tests {
         ));
         let resolver = AllocineResolver::new(Http::replay(fixture));
         let resolved = resolver
-            .resolve(&Url::parse("https://www.allocine.fr/video/player_gen_cmedia=19540403&cfilm=222257.html").unwrap())
+            .resolve(
+                &Url::parse(
+                    "https://www.allocine.fr/video/player_gen_cmedia=19540403&cfilm=222257.html",
+                )
+                .unwrap(),
+            )
             .await
             .unwrap()
             .media()
@@ -353,7 +365,10 @@ mod tests {
         assert_eq!(resolved.id.as_deref(), Some("19540403"));
         assert_eq!(resolved.title.as_deref(), Some("Bande-annonce"));
         assert_eq!(resolved.duration, Some(Duration::from_secs(120)));
-        assert_eq!(resolved.uploaded_at.map(|t| t.as_second()), Some(1418333880));
+        assert_eq!(
+            resolved.uploaded_at.map(|t| t.as_second()),
+            Some(1418333880)
+        );
         assert_eq!(resolved.variants.len(), 3);
         assert_eq!(resolved.variants[0].format_id.as_deref(), Some("hd"));
         assert_eq!(
@@ -362,7 +377,12 @@ mod tests {
         );
         assert_eq!(resolved.variants[2].format_id.as_deref(), Some("ld"));
         let article = resolver
-            .resolve(&Url::parse("https://www.allocine.fr/article/fichearticle_gen_carticle=18635087.html").unwrap())
+            .resolve(
+                &Url::parse(
+                    "https://www.allocine.fr/article/fichearticle_gen_carticle=18635087.html",
+                )
+                .unwrap(),
+            )
             .await
             .unwrap()
             .media()

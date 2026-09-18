@@ -176,7 +176,8 @@ impl Resolver for OneNewsNzResolver {
                     .and_then(clean_title)
                     .or(resolved.description);
                 resolved.uploader = Some("1News".to_string());
-                resolved.uploader_url = Some(Url::parse("https://www.1news.co.nz/").expect("valid"));
+                resolved.uploader_url =
+                    Some(Url::parse("https://www.1news.co.nz/").expect("valid"));
                 resolved.uploaded_at = content["publish_date"]
                     .as_str()
                     .or(content["display_date"].as_str())
@@ -188,9 +189,7 @@ impl Resolver for OneNewsNzResolver {
             count => Ok(Resolution::Playlist(Playlist {
                 resolver: PLATFORM.to_string(),
                 id: Some(slug),
-                title: content["headlines"]["basic"]
-                    .as_str()
-                    .and_then(clean_title),
+                title: content["headlines"]["basic"].as_str().and_then(clean_title),
                 entries,
                 total: Some(count),
             })),
@@ -200,14 +199,12 @@ impl Resolver for OneNewsNzResolver {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::VariantKind;
+    use super::*;
     use crate::http::Fixture;
 
-    const COWS: &str =
-        "https://www.1news.co.nz/2022/09/29/cows-painted-green-on-parliament-lawn-in-climate-protest/";
-    const HURRICANE: &str =
-        "https://www.1news.co.nz/2022/09/29/raw-videos-capture-hurricane-ians-fury-as-it-slams-florida/";
+    const COWS: &str = "https://www.1news.co.nz/2022/09/29/cows-painted-green-on-parliament-lawn-in-climate-protest/";
+    const HURRICANE: &str = "https://www.1news.co.nz/2022/09/29/raw-videos-capture-hurricane-ians-fury-as-it-slams-florida/";
     const RUGBY: &str =
         "https://www.1news.co.nz/2022/09/30/now-is-the-time-to-care-about-womens-rugby/";
 
@@ -224,7 +221,10 @@ mod tests {
         );
         assert_eq!(link("https://www.1news.co.nz/2022/09/29/"), None);
         assert_eq!(link("https://www.1news.co.nz/sport/"), None);
-        assert_eq!(link("https://www.1news.co.nz.evil.test/2022/09/29/slug/"), None);
+        assert_eq!(
+            link("https://www.1news.co.nz.evil.test/2022/09/29/slug/"),
+            None
+        );
     }
 
     #[tokio::test]
@@ -245,18 +245,38 @@ mod tests {
         assert_eq!(resolved.webpage_url.as_ref(), Some(&cows));
         assert!(resolved.uploaded_at.is_some());
         assert!(resolved.duration.is_some());
-        assert!(resolved.variants.iter().any(|v| v.kind == VariantKind::File && v.height.is_some()));
-        assert!(resolved.variants.iter().any(|v| v.kind == VariantKind::Hls && v.height.is_some()));
-        assert!(resolved.variants.iter().any(|v| v.kind == VariantKind::Dash && v.height.is_some()));
+        assert!(
+            resolved
+                .variants
+                .iter()
+                .any(|v| v.kind == VariantKind::File && v.height.is_some())
+        );
+        assert!(
+            resolved
+                .variants
+                .iter()
+                .any(|v| v.kind == VariantKind::Hls && v.height.is_some())
+        );
+        assert!(
+            resolved
+                .variants
+                .iter()
+                .any(|v| v.kind == VariantKind::Dash && v.height.is_some())
+        );
 
-        let error = resolver.resolve(&Url::parse(RUGBY).unwrap()).await.unwrap_err();
+        let error = resolver
+            .resolve(&Url::parse(RUGBY).unwrap())
+            .await
+            .unwrap_err();
         assert!(
             matches!(&error, ResolveError::Redirect(to) if to.as_str() == "https://www.youtube.com/watch?v=s4wEB9neTfU"),
             "{error}"
         );
 
-        let Resolution::Playlist(playlist) =
-            resolver.resolve(&Url::parse(HURRICANE).unwrap()).await.unwrap()
+        let Resolution::Playlist(playlist) = resolver
+            .resolve(&Url::parse(HURRICANE).unwrap())
+            .await
+            .unwrap()
         else {
             panic!("a playlist");
         };

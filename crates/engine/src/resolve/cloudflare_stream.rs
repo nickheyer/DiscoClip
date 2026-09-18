@@ -223,7 +223,15 @@ impl Resolver for CloudflareStreamResolver {
                 ),
                 Err(error) => (Vec::new(), Vec::new(), None, false, Some(error.at(url))),
             };
-        match super::dash::expand(&self.http, &link.resource("manifest/video.mpd"), PLATFORM, BROWSER_UA, &[]).await {
+        match super::dash::expand(
+            &self.http,
+            &link.resource("manifest/video.mpd"),
+            PLATFORM,
+            BROWSER_UA,
+            &[],
+        )
+        .await
+        {
             Ok(expanded) => {
                 duration = duration.or(expanded.duration);
                 live |= expanded.live;
@@ -454,7 +462,10 @@ mod tests {
             Some("https://watch.cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957")
         );
         let error = resolver
-            .resolve(&Url::parse("https://watch.cloudflarestream.com/00000000000000000000000000000000").unwrap())
+            .resolve(
+                &Url::parse("https://watch.cloudflarestream.com/00000000000000000000000000000000")
+                    .unwrap(),
+            )
             .await
             .unwrap_err();
         assert!(matches!(error, ResolveError::NotFound(_)), "{error}");

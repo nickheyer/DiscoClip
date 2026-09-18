@@ -50,8 +50,7 @@ static RE_RECORDED: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^/recorded/(
 static RE_EMBED_RECORDED: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^/embed/recorded/(\d+)").unwrap());
 static RE_EMBED: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^/embed/(\d+)").unwrap());
-static RE_CHANNEL: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^/channel/([^/?#]+)").unwrap());
+static RE_CHANNEL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^/channel/([^/?#]+)").unwrap());
 /// The player frames another site embeds.
 static RE_EMBED_FRAME: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
@@ -369,9 +368,8 @@ pub async fn resolve_recorded(
         .map(Duration::from_secs_f64)
         .or(stream_duration);
     resolved.thumbnail = thumbnail_of(&video["thumbnail"]);
-    resolved.webpage_url = Some(
-        util::url_of(&video["url"], None).unwrap_or_else(|| recorded_url(video_id)),
-    );
+    resolved.webpage_url =
+        Some(util::url_of(&video["url"], None).unwrap_or_else(|| recorded_url(video_id)));
     resolved.live = live;
     resolved.subtitles = subtitles;
     resolved.variants = variants;
@@ -735,7 +733,12 @@ mod tests {
         );
         assert!(!resolved.live);
         assert!(resolved.variants.len() >= 2, "{:?}", resolved.variants);
-        assert!(resolved.variants.iter().all(|v| v.kind == super::super::VariantKind::Hls));
+        assert!(
+            resolved
+                .variants
+                .iter()
+                .all(|v| v.kind == super::super::VariantKind::Hls)
+        );
         assert!(resolved.variants.iter().any(|v| v.height == Some(1080)));
         assert!(resolved.variants.iter().all(|v| !v.live));
     }
@@ -781,7 +784,12 @@ mod tests {
                 Some("Sisters of Divine Providence")
             );
             assert_eq!(resolved.uploader.as_deref(), Some("vgm4u1ne0yy"));
-            assert!(resolved.description.as_deref().is_some_and(|d| d.starts_with("Founded in Finthen")));
+            assert!(
+                resolved
+                    .description
+                    .as_deref()
+                    .is_some_and(|d| d.starts_with("Founded in Finthen"))
+            );
             assert_eq!(
                 resolved.webpage_url.as_ref().map(Url::as_str),
                 Some(LIVE_CHANNEL)
@@ -798,23 +806,18 @@ mod tests {
     async fn off_air_channels_list_their_recordings() {
         for link in [OFF_AIR_CHANNEL, OFF_AIR_EMBED] {
             let resolver = UstreamResolver::new(Http::replay(fixture()));
-            let Resolution::Playlist(playlist) = resolver.resolve(&url(link)).await.unwrap()
-            else {
+            let Resolution::Playlist(playlist) = resolver.resolve(&url(link)).await.unwrap() else {
                 panic!("{link} should list a playlist");
             };
             assert_eq!(playlist.id.as_deref(), Some("23952663"));
-            assert_eq!(
-                playlist.title.as_deref(),
-                Some("IBM Data and AI Content")
-            );
+            assert_eq!(playlist.title.as_deref(), Some("IBM Data and AI Content"));
             assert_eq!(playlist.entries.len(), MAX_ENTRIES, "{link}");
             assert!(playlist.total.is_some_and(|t| t > MAX_ENTRIES));
-            assert!(
-                playlist
-                    .entries
-                    .iter()
-                    .all(|e| e.url.as_str().starts_with("https://video.ibm.com/recorded/"))
-            );
+            assert!(playlist.entries.iter().all(|e| {
+                e.url
+                    .as_str()
+                    .starts_with("https://video.ibm.com/recorded/")
+            }));
             assert!(playlist.entries.iter().all(|e| e.title.is_some()));
             assert!(playlist.entries.iter().all(|e| e.duration.is_some()));
         }

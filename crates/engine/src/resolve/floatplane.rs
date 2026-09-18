@@ -694,6 +694,7 @@ impl Resolver for FloatplaneResolver {
             formats: &["hls", "mp4", "aac"],
             session: SessionSupport::Required,
             examples: &[
+                "https://www.floatplane.com/post/957jPKiAOV",
                 "https://www.floatplane.com/channel/linustechtips/home/ltxexpo",
                 "https://www.floatplane.com/channel/ShankMods/home",
                 "https://beta.floatplane.com/channel/linustechtips/home",

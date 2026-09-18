@@ -634,9 +634,9 @@ pub fn story_of(data: &Value) -> Story {
         match value {
             Value::Object(map) => {
                 if let Some(featured) = map.get("featuredVideo")
-                    && let Some(id) = featured["id"].as_str().or_else(|| {
-                        featured["video"]["id"].as_str()
-                    })
+                    && let Some(id) = featured["id"]
+                        .as_str()
+                        .or_else(|| featured["video"]["id"].as_str())
                 {
                     let title = featured["headline"]
                         .as_str()
@@ -918,7 +918,9 @@ mod tests {
         );
         assert_eq!(link(FOX_EMBED), fox(Kind::Embed, "6320653836112"));
         assert_eq!(
-            link("http://video.insider.foxnews.com/v/video-embed.html?video_id=5099377331001&autoplay=true"),
+            link(
+                "http://video.insider.foxnews.com/v/video-embed.html?video_id=5099377331001&autoplay=true"
+            ),
             fox(Kind::Embed, "5099377331001")
         );
         assert_eq!(
@@ -926,7 +928,9 @@ mod tests {
             fox(Kind::Embed, "6189191231001")
         );
         assert_eq!(
-            link("https://api.foxnews.com/v3/video-player/6320653836112?callback=uid_6320653836112"),
+            link(
+                "https://api.foxnews.com/v3/video-player/6320653836112?callback=uid_6320653836112"
+            ),
             fox(Kind::Feed, "6320653836112")
         );
         assert_eq!(
@@ -947,7 +951,9 @@ mod tests {
         );
         assert_eq!(link(ABC_VIDEO), abc(Kind::Video, "20411932"));
         assert_eq!(
-            link("http://abcnews.go.com/ThisWeek/video/week-exclusive-irans-foreign-minister-zarif-20411932"),
+            link(
+                "http://abcnews.go.com/ThisWeek/video/week-exclusive-irans-foreign-minister-zarif-20411932"
+            ),
             abc(Kind::Video, "20411932")
         );
         assert_eq!(
@@ -956,14 +962,21 @@ mod tests {
         );
         assert_eq!(link(ABC_FEED), abc(Kind::Feed, "20411932"));
         assert_eq!(
-            link("https://abcnews.go.com/Entertainment/peter-billingsley-child-actor-christmas-story-hollywood-power/story?id=51286501"),
+            link(
+                "https://abcnews.go.com/Entertainment/peter-billingsley-child-actor-christmas-story-hollywood-power/story?id=51286501"
+            ),
             abc(Kind::Story, "51286501")
         );
         assert_eq!(
-            link("http://abcnews.go.com/Technology/exclusive-apple-ceo-tim-cook-iphone-cracking-software/story?id=37173343"),
+            link(
+                "http://abcnews.go.com/Technology/exclusive-apple-ceo-tim-cook-iphone-cracking-software/story?id=37173343"
+            ),
             abc(Kind::Story, "37173343")
         );
-        assert_eq!(link("https://abcnews.go.com/Entertainment/story?id=1"), None);
+        assert_eq!(
+            link("https://abcnews.go.com/Entertainment/story?id=1"),
+            None
+        );
         assert_eq!(
             link("http://fivethirtyeight.abcnews.go.com/video/embed/35606406/25628179"),
             abc(Kind::Embed, "35606406")
@@ -976,12 +989,11 @@ mod tests {
             link("https://www.foxnews.com/politics/some-article-slug"),
             None
         );
+        assert_eq!(link("https://abcnews.go.com/US/story?id=136285118"), None);
         assert_eq!(
-            link("https://abcnews.go.com/US/story?id=136285118"),
-            None
-        );
-        assert_eq!(
-            link("http://vid.bleacherreport.com/videos/8fd44c2f-3dc5-4821-9118-2c825a98c0e1.akamai"),
+            link(
+                "http://vid.bleacherreport.com/videos/8fd44c2f-3dc5-4821-9118-2c825a98c0e1.akamai"
+            ),
             None
         );
         assert_eq!(link("ftp://www.foxnews.com/video/6320653836112"), None);
@@ -1057,7 +1069,12 @@ mod tests {
     async fn fox_video_pages_resolve() {
         let resolver = recorded();
         assert!(resolver.matches(&url(FOX_VIDEO)));
-        let resolved = resolver.resolve(&url(FOX_VIDEO)).await.unwrap().media().unwrap();
+        let resolved = resolver
+            .resolve(&url(FOX_VIDEO))
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
         assert_eq!(resolved.id.as_deref(), Some("6320653836112"));
         assert_eq!(
             resolved.title.as_deref(),
@@ -1067,23 +1084,38 @@ mod tests {
         assert!(resolved.thumbnail.is_some());
         assert_eq!(resolved.uploaded_at.unwrap().as_second(), 1676611344);
         assert_eq!(resolved.duration, Some(Duration::from_secs(404)));
-        assert_eq!(resolved.webpage_url.as_ref().map(Url::as_str), Some(FOX_VIDEO));
+        assert_eq!(
+            resolved.webpage_url.as_ref().map(Url::as_str),
+            Some(FOX_VIDEO)
+        );
         assert!(!resolved.variants.is_empty());
         assert!(resolved.variants.iter().all(|v| v.kind == VariantKind::Hls));
         assert!(resolved.variants.iter().all(|v| v.height.is_some()));
-        assert!(resolved.variants.iter().all(|v| v.format_id.as_deref().is_some_and(|f| f.starts_with("hls-"))));
+        assert!(resolved.variants.iter().all(|v| {
+            v.format_id
+                .as_deref()
+                .is_some_and(|f| f.starts_with("hls-"))
+        }));
     }
 
     #[tokio::test]
     async fn fox_embeds_resolve_to_the_same_video() {
         let resolver = recorded();
-        let resolved = resolver.resolve(&url(FOX_EMBED)).await.unwrap().media().unwrap();
+        let resolved = resolver
+            .resolve(&url(FOX_EMBED))
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
         assert_eq!(resolved.id.as_deref(), Some("6320653836112"));
         assert_eq!(
             resolved.title.as_deref(),
             Some("Tucker Carlson joins 'Gutfeld!' to discuss his new documentary")
         );
-        assert_eq!(resolved.webpage_url.as_ref().map(Url::as_str), Some(FOX_VIDEO));
+        assert_eq!(
+            resolved.webpage_url.as_ref().map(Url::as_str),
+            Some(FOX_VIDEO)
+        );
         assert!(!resolved.variants.is_empty());
     }
 
@@ -1091,7 +1123,12 @@ mod tests {
     async fn abc_video_pages_resolve_with_playlists_files_and_captions() {
         let resolver = recorded();
         assert!(resolver.matches(&url(ABC_VIDEO)));
-        let resolved = resolver.resolve(&url(ABC_VIDEO)).await.unwrap().media().unwrap();
+        let resolved = resolver
+            .resolve(&url(ABC_VIDEO))
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
         assert_eq!(resolved.id.as_deref(), Some("20411932"));
         assert_eq!(
             resolved.title.as_deref(),
@@ -1099,7 +1136,10 @@ mod tests {
         );
         assert_eq!(resolved.uploaded_at.unwrap().as_second(), 1380454200);
         assert_eq!(resolved.duration, Some(Duration::from_secs(180)));
-        assert_eq!(resolved.webpage_url.as_ref().map(Url::as_str), Some(ABC_VIDEO));
+        assert_eq!(
+            resolved.webpage_url.as_ref().map(Url::as_str),
+            Some(ABC_VIDEO)
+        );
         assert!(resolved.thumbnail.is_some());
         assert!(resolved.variants.iter().any(|v| v.kind == VariantKind::Hls));
         let files: Vec<&Variant> = resolved
@@ -1110,19 +1150,32 @@ mod tests {
         assert!(!files.is_empty());
         assert!(files.iter().all(|v| v.container == Some(Container::Mp4)));
         assert!(files.iter().all(|v| v.url.path().ends_with(".mp4")));
-        assert!(resolved.subtitles.iter().any(|s| s.format == SubtitleFormat::Ttml));
+        assert!(
+            resolved
+                .subtitles
+                .iter()
+                .any(|s| s.format == SubtitleFormat::Ttml)
+        );
     }
 
     #[tokio::test]
     async fn abc_feed_links_resolve() {
         let resolver = recorded();
-        let resolved = resolver.resolve(&url(ABC_FEED)).await.unwrap().media().unwrap();
+        let resolved = resolver
+            .resolve(&url(ABC_FEED))
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
         assert_eq!(resolved.id.as_deref(), Some("20411932"));
         assert_eq!(
             resolved.title.as_deref(),
             Some("'This Week' Exclusive: Iran's Foreign Minister Zarif")
         );
-        assert_eq!(resolved.webpage_url.as_ref().map(Url::as_str), Some(ABC_VIDEO));
+        assert_eq!(
+            resolved.webpage_url.as_ref().map(Url::as_str),
+            Some(ABC_VIDEO)
+        );
         assert!(!resolved.variants.is_empty());
     }
 
@@ -1342,27 +1395,49 @@ mod tests {
         let current = r#"<html><script>window['__abcnews__'] = {"page":{"content":{"story":{"story":{"headline":"Peter Billingsley","description":"From child actor to power player.","featuredVideo":{"id":"51205814","type":"video","headline":"Tim Allen describes his costume"},"leadMediaVideo":{"video":{"featuredVideo":{"id":"51205814","headline":"Tim Allen describes his costume"}}}},"data":{"mainComponents":[{"name":"Body","props":{"body":[{"type":"video","id":"51205900","headline":"Inline clip"},{"type":"iframe","attrs":{"src":"https://www.youtube.com/embed/aaaaaaaaaaa"}},{"type":"p"}]}}]}}}}};</script></html>"#;
         let story = story_of(&abcnews_data(current).unwrap());
         assert_eq!(story.headline.as_deref(), Some("Peter Billingsley"));
-        assert_eq!(story.description.as_deref(), Some("From child actor to power player."));
+        assert_eq!(
+            story.description.as_deref(),
+            Some("From child actor to power player.")
+        );
         assert_eq!(
             story.videos,
             vec![
-                StoryVideo { id: "51205814".into(), title: Some("Tim Allen describes his costume".into()) },
-                StoryVideo { id: "51205900".into(), title: Some("Inline clip".into()) },
+                StoryVideo {
+                    id: "51205814".into(),
+                    title: Some("Tim Allen describes his costume".into())
+                },
+                StoryVideo {
+                    id: "51205900".into(),
+                    title: Some("Inline clip".into())
+                },
             ]
         );
         assert_eq!(story.frames.len(), 1);
-        assert_eq!(story.frames[0].as_str(), "https://www.youtube.com/embed/aaaaaaaaaaa");
+        assert_eq!(
+            story.frames[0].as_str(),
+            "https://www.youtube.com/embed/aaaaaaaaaaa"
+        );
 
         let older = r#"window['__abcnews__'] = {"page":{"content":{"story":{"everscroll":[{"featuredVideo":{"id":"38897857","name":"Justin Timberlake Drops Hints","video":{"feed":"http://abcnews.go.com/video/itemfeed?id=38897857"}},"articleContents":{"headline":"JT at Eurovision","subHead":"Pop News","inlines":[{"type":"iframe","attrs":{"src":"https://www.youtube.com/embed/bbbbbbbbbbb"}},{"type":"video","id":"38897999"}]}}]}}}};"#;
         let story = story_of(&abcnews_data(older).unwrap());
         assert_eq!(story.headline.as_deref(), Some("JT at Eurovision"));
         assert_eq!(story.description.as_deref(), Some("Pop News"));
         assert_eq!(
-            story.videos.iter().map(|v| v.id.as_str()).collect::<Vec<_>>(),
+            story
+                .videos
+                .iter()
+                .map(|v| v.id.as_str())
+                .collect::<Vec<_>>(),
             vec!["38897857", "38897999"]
         );
-        assert_eq!(story.videos[0].title.as_deref(), Some("Justin Timberlake Drops Hints"));
-        assert_eq!(story.frames[0].as_str(), "https://www.youtube.com/embed/bbbbbbbbbbb");
+        assert_eq!(
+            story.videos[0].title.as_deref(),
+            Some("Justin Timberlake Drops Hints")
+        );
+        assert_eq!(
+            story.frames[0].as_str(),
+            "https://www.youtube.com/embed/bbbbbbbbbbb"
+        );
         assert!(abcnews_data("<html>no data</html>").is_none());
     }
 
@@ -1372,10 +1447,22 @@ mod tests {
         let many = r#"<html><script>window['__abcnews__'] = {"page":{"content":{"story":{"story":{"headline":"Two videos","featuredVideo":{"id":"20411932","type":"video","headline":"Lead"}},"data":{"mainComponents":[{"props":{"body":[{"type":"video","id":"20411933","headline":"Second"},{"type":"iframe","attrs":{"src":"https://www.youtube.com/embed/aaaaaaaaaaa"}}]}}]}}}}};</script></html>"#;
         let feed = json!({"channel": {"title": "ABC News", "item": {"title": "'This Week' Exclusive", "guid": "20411932", "media-content": [{"@attributes": {"url": "https://ondemand.abcnews.com/x_700.mp4", "type": "video/mp4", "duration": "180"}}]}}}).to_string();
         let mut fixture = Fixture::new(PLATFORM, None);
-        fixture.exchanges.push(get("https://abcnews.go.com/Politics/one/story?id=1", 200, "text/html", one.into()));
-        fixture.exchanges.push(get("https://abcnews.go.com/Politics/many/story?id=2", 200, "text/html", many.into()));
+        fixture.exchanges.push(get(
+            "https://abcnews.go.com/Politics/one/story?id=1",
+            200,
+            "text/html",
+            one.into(),
+        ));
+        fixture.exchanges.push(get(
+            "https://abcnews.go.com/Politics/many/story?id=2",
+            200,
+            "text/html",
+            many.into(),
+        ));
         fixture.exchanges.push(get("https://abcnews.go.com/Politics/none/story?id=3", 200, "text/html", "<html><script>window['__abcnews__'] = {\"page\":{\"content\":{\"story\":{}}}};</script></html>".into()));
-        fixture.exchanges.push(get(ABC_FEED, 200, "application/json", feed));
+        fixture
+            .exchanges
+            .push(get(ABC_FEED, 200, "application/json", feed));
         let resolver = AmpResolver::new(Http::replay(fixture));
         let resolved = resolver
             .resolve(&url("https://abcnews.go.com/Politics/one/story?id=1"))
@@ -1401,7 +1488,11 @@ mod tests {
         assert_eq!(playlist.id.as_deref(), Some("2"));
         assert_eq!(playlist.title.as_deref(), Some("Two videos"));
         assert_eq!(
-            playlist.entries.iter().map(|e| e.url.as_str()).collect::<Vec<_>>(),
+            playlist
+                .entries
+                .iter()
+                .map(|e| e.url.as_str())
+                .collect::<Vec<_>>(),
             vec![
                 "https://abcnews.com/video/embed?id=20411932",
                 "https://abcnews.com/video/embed?id=20411933",

@@ -21,7 +21,8 @@ use crate::media::{AudioCodec, Container, VideoCodec};
 pub const PLATFORM: &str = "telegram";
 const SITE: &str = "https://t.me/";
 
-static RE_CHANNEL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z][A-Za-z0-9_]{3,}$").unwrap());
+static RE_CHANNEL: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[A-Za-z][A-Za-z0-9_]{3,}$").unwrap());
 static RE_STYLE_URL: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"url\('?([^')]+)'?\)").unwrap());
 
@@ -38,7 +39,10 @@ pub fn parse_link(url: &Url) -> Option<PostRef> {
         return None;
     }
     let host = url.host_str()?.to_ascii_lowercase();
-    if !matches!(host.as_str(), "t.me" | "telegram.me" | "telegram.dog" | "www.t.me") {
+    if !matches!(
+        host.as_str(),
+        "t.me" | "telegram.me" | "telegram.dog" | "www.t.me"
+    ) {
         return None;
     }
     let segments: Vec<&str> = url
@@ -202,7 +206,10 @@ impl TelegramResolver {
             return Err(if lower.contains("not found") {
                 ResolveError::NotFound(origin.clone())
             } else if lower.contains("private") || lower.contains("restricted") {
-                ResolveError::unavailable(origin, format!("{error}; the channel's posts are not public"))
+                ResolveError::unavailable(
+                    origin,
+                    format!("{error}; the channel's posts are not public"),
+                )
             } else {
                 ResolveError::unavailable(origin, error.clone())
             });
@@ -434,15 +441,24 @@ mod tests {
             other => panic!("expected a playlist, got {other:?}"),
         };
         assert_eq!(playlist.entries.len(), 2);
-        assert_eq!(playlist.entries[1].url.as_str(), "https://t.me/telegram/442?single=");
-        assert_eq!(playlist.entries[1].duration, Some(std::time::Duration::from_secs(20)));
+        assert_eq!(
+            playlist.entries[1].url.as_str(),
+            "https://t.me/telegram/442?single="
+        );
+        assert_eq!(
+            playlist.entries[1].duration,
+            Some(std::time::Duration::from_secs(20))
+        );
         let second = resolver
             .resolve(&playlist.entries[1].url)
             .await
             .unwrap()
             .media()
             .unwrap();
-        assert_eq!(second.variants[0].url.as_str(), "https://cdn1.telesco.pe/file/b.mp4");
+        assert_eq!(
+            second.variants[0].url.as_str(),
+            "https://cdn1.telesco.pe/file/b.mp4"
+        );
         assert!(matches!(
             resolver
                 .resolve(&Url::parse("https://t.me/telegram/99999999").unwrap())

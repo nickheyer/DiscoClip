@@ -35,15 +35,29 @@ static RE_LISTING: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^/(channel|playlist)/([^/?#&]+)").unwrap());
 static RE_CARD_LINK: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"<a\s[^>]*\bhref=["']/video/([^"'/]+)"#).unwrap());
-static RE_COUNT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<span>(\d+)\s+videos?</span>").unwrap());
+static RE_COUNT: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"<span>(\d+)\s+videos?</span>").unwrap());
 /// `seed122.bitchute.com`: the seed host a media link names, one of many that serve the
 /// same file.
 static RE_SEED_HOST: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^seed[a-z0-9]+\.bitchute\.com$").unwrap());
 /// The seed hosts a file is served from when the one its link names refuses it.
 const SEED_HOSTS: &[&str] = &[
-    "seed122", "seed125", "seed126", "seed128", "seed132", "seed150", "seed151", "seed152",
-    "seed153", "seed167", "seed171", "seed177", "seed305", "seed307", "seedp29xb",
+    "seed122",
+    "seed125",
+    "seed126",
+    "seed128",
+    "seed132",
+    "seed150",
+    "seed151",
+    "seed152",
+    "seed153",
+    "seed167",
+    "seed171",
+    "seed177",
+    "seed305",
+    "seed307",
+    "seedp29xb",
     "zb10-7gsop1v78",
 ];
 /// `<script src="https://www.bitchute.com/embed/{id}/">` or an iframe of the same.
@@ -61,7 +75,9 @@ pub fn seed_candidates(media_url: &Url) -> Vec<Url> {
     {
         for seed in SEED_HOSTS {
             let mut candidate = media_url.clone();
-            if candidate.set_host(Some(&format!("{seed}.bitchute.com"))).is_ok()
+            if candidate
+                .set_host(Some(&format!("{seed}.bitchute.com")))
+                .is_ok()
                 && !candidates.contains(&candidate)
             {
                 candidates.push(candidate);
@@ -82,7 +98,10 @@ pub fn parse_link(url: &Url) -> Option<Link> {
         return None;
     }
     let host = url.host_str()?.to_ascii_lowercase();
-    if !matches!(host.as_str(), "bitchute.com" | "www.bitchute.com" | "old.bitchute.com") {
+    if !matches!(
+        host.as_str(),
+        "bitchute.com" | "www.bitchute.com" | "old.bitchute.com"
+    ) {
         return None;
     }
     let path = url.path();
@@ -101,7 +120,11 @@ pub fn parse_link(url: &Url) -> Option<Link> {
 fn card_classes(kind: &str) -> (&'static str, &'static str, &'static str) {
     match kind {
         "playlist" => ("playlist-video", "title", "description"),
-        _ => ("channel-videos-container", "channel-videos-title", "channel-videos-text"),
+        _ => (
+            "channel-videos-container",
+            "channel-videos-title",
+            "channel-videos-text",
+        ),
     }
 }
 
@@ -169,7 +192,10 @@ impl BitchuteResolver {
                 .collect();
             let reason = reasons.join(". ");
             if reason.contains("location") {
-                return Err(ResolveError::unavailable(origin, format!("refused for this location: {reason}")));
+                return Err(ResolveError::unavailable(
+                    origin,
+                    format!("refused for this location: {reason}"),
+                ));
             }
             if !reason.is_empty() {
                 return Err(ResolveError::unavailable(origin, reason));
@@ -205,11 +231,14 @@ impl BitchuteResolver {
         if let Some(error) = status_error(status, origin) {
             return Err(error);
         }
-        serde_json::from_str(&text).map_err(|e| ResolveError::malformed(origin, format!("API JSON: {e}")))
+        serde_json::from_str(&text)
+            .map_err(|e| ResolveError::malformed(origin, format!("API JSON: {e}")))
     }
 
     async fn resolve_video(&self, id: &str, url: &Url) -> Result<Resolution, ResolveError> {
-        let media = self.api("video/media", serde_json::json!({"video_id": id}), url).await?;
+        let media = self
+            .api("video/media", serde_json::json!({"video_id": id}), url)
+            .await?;
         let media_url = util::url_of(&media["media_url"], None)
             .ok_or_else(|| ResolveError::NotFound(url.clone()))?;
         let details = self
@@ -270,7 +299,11 @@ impl BitchuteResolver {
         // The channel's record names the profile that owns it, the video's uploader.
         let channel = match util::text(&details["channel"]["channel_id"]) {
             Some(channel_id) => self
-                .api("channel", serde_json::json!({"channel_id": channel_id}), url)
+                .api(
+                    "channel",
+                    serde_json::json!({"channel_id": channel_id}),
+                    url,
+                )
                 .await
                 .unwrap_or(Value::Null),
             None => Value::Null,
@@ -343,16 +376,31 @@ impl BitchuteResolver {
                 .or(details["name"].as_str())
                 .and_then(clean_title),
             entries,
-            total: util::uint(&details["video_count"]).map(|n| n as usize).or(Some(total)),
+            total: util::uint(&details["video_count"])
+                .map(|n| n as usize)
+                .or(Some(total)),
         }))
     }
 
-    async fn resolve_listing(&self, kind: &str, id: &str, url: &Url) -> Result<Resolution, ResolveError> {
+    async fn resolve_listing(
+        &self,
+        kind: &str,
+        id: &str,
+        url: &Url,
+    ) -> Result<Resolution, ResolveError> {
         if kind == "playlist" {
             return self.resolve_playlist(id, url).await;
         }
         let listing_url = Url::parse(&format!("{OLD_SITE}{kind}/{id}/")).expect("valid");
-        let page = fetch(&self.http, &listing_url, PLATFORM, BROWSER_UA, &[], MAX_PAGE).await?;
+        let page = fetch(
+            &self.http,
+            &listing_url,
+            PLATFORM,
+            BROWSER_UA,
+            &[],
+            MAX_PAGE,
+        )
+        .await?;
         if let Some(error) = status_error(page.status, url) {
             return Err(error);
         }
@@ -402,7 +450,10 @@ impl BitchuteResolver {
             }
             let count = found.len();
             for (video_id, title) in found {
-                if entries.iter().any(|e| e.url.path().ends_with(&format!("/video/{video_id}/"))) {
+                if entries
+                    .iter()
+                    .any(|e| e.url.path().ends_with(&format!("/video/{video_id}/")))
+                {
                     continue;
                 }
                 entries.push(PlaylistEntry {
@@ -486,7 +537,13 @@ mod tests {
     use crate::http::{Exchange, Fixture, RecordedBody, RecordedRequest, RecordedResponse};
     use serde_json::json;
 
-    fn exchange(method: &str, url: &str, status: u16, content_type: &str, body: String) -> Exchange {
+    fn exchange(
+        method: &str,
+        url: &str,
+        status: u16,
+        content_type: &str,
+        body: String,
+    ) -> Exchange {
         Exchange {
             request: RecordedRequest {
                 method: method.into(),
@@ -497,7 +554,10 @@ mod tests {
             response: RecordedResponse {
                 status,
                 url: url.into(),
-                headers: vec![("content-type".into(), content_type.into()), ("content-length".into(), "12345".into())],
+                headers: vec![
+                    ("content-type".into(), content_type.into()),
+                    ("content-length".into(), "12345".into()),
+                ],
                 body: RecordedBody::Text(body),
                 truncated: false,
             },
@@ -507,20 +567,43 @@ mod tests {
     #[test]
     fn links_are_read() {
         let link = |s: &str| parse_link(&Url::parse(s).unwrap());
-        assert_eq!(link("https://www.bitchute.com/video/UGlrF9o9b-Q/"), Some(Link::Video { id: "UGlrF9o9b-Q".into() }));
-        assert_eq!(link("https://www.bitchute.com/embed/lbb5G1hjPhw/"), Some(Link::Video { id: "lbb5G1hjPhw".into() }));
+        assert_eq!(
+            link("https://www.bitchute.com/video/UGlrF9o9b-Q/"),
+            Some(Link::Video {
+                id: "UGlrF9o9b-Q".into()
+            })
+        );
+        assert_eq!(
+            link("https://www.bitchute.com/embed/lbb5G1hjPhw/"),
+            Some(Link::Video {
+                id: "lbb5G1hjPhw".into()
+            })
+        );
         assert_eq!(
             link("https://www.bitchute.com/torrent/Zee5BE49045h/szoMrox2JEI.webtorrent"),
-            Some(Link::Video { id: "szoMrox2JEI".into() })
+            Some(Link::Video {
+                id: "szoMrox2JEI".into()
+            })
         );
-        assert_eq!(link("https://old.bitchute.com/video/UGlrF9o9b-Q/"), Some(Link::Video { id: "UGlrF9o9b-Q".into() }));
+        assert_eq!(
+            link("https://old.bitchute.com/video/UGlrF9o9b-Q/"),
+            Some(Link::Video {
+                id: "UGlrF9o9b-Q".into()
+            })
+        );
         assert_eq!(
             link("https://www.bitchute.com/channel/bitchute/"),
-            Some(Link::Listing { kind: "channel".into(), id: "bitchute".into() })
+            Some(Link::Listing {
+                kind: "channel".into(),
+                id: "bitchute".into()
+            })
         );
         assert_eq!(
             link("https://old.bitchute.com/playlist/wV9Imujxasw9/"),
-            Some(Link::Listing { kind: "playlist".into(), id: "wV9Imujxasw9".into() })
+            Some(Link::Listing {
+                kind: "playlist".into(),
+                id: "wV9Imujxasw9".into()
+            })
         );
         assert_eq!(link("https://www.bitchute.com/"), None);
         assert_eq!(link("https://example.com/video/UGlrF9o9b-Q/"), None);
@@ -579,11 +662,20 @@ mod tests {
         assert!(resolver.matches(&url));
         let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
         assert_eq!(resolved.id.as_deref(), Some("UGlrF9o9b-Q"));
-        assert_eq!(resolved.title.as_deref(), Some("This is the first video on #BitChute !"));
+        assert_eq!(
+            resolved.title.as_deref(),
+            Some("This is the first video on #BitChute !")
+        );
         assert_eq!(resolved.uploader.as_deref(), Some("BitChute"));
-        assert_eq!(resolved.uploader_url.as_ref().unwrap().as_str(), "https://www.bitchute.com/channel/bitchute/");
+        assert_eq!(
+            resolved.uploader_url.as_ref().unwrap().as_str(),
+            "https://www.bitchute.com/channel/bitchute/"
+        );
         assert_eq!(resolved.duration, Some(Duration::from_secs(16)));
-        assert_eq!(resolved.uploaded_at.map(|t| t.as_second()), Some(1483425443));
+        assert_eq!(
+            resolved.uploaded_at.map(|t| t.as_second()),
+            Some(1483425443)
+        );
         assert_eq!(resolved.variants.len(), 1);
         assert_eq!(resolved.variants[0].size, Some(12345));
         let error = resolver
@@ -632,7 +724,8 @@ mod tests {
             "https://api.bitchute.com/api/beta/playlist",
             200,
             "application/json",
-            json!({"playlist_id": "abc", "playlist_name": "Favourites", "video_count": 2}).to_string(),
+            json!({"playlist_id": "abc", "playlist_name": "Favourites", "video_count": 2})
+                .to_string(),
         ));
         let resolver = BitchuteResolver::new(Http::replay(fixture));
         let Resolution::Playlist(playlist) = resolver
@@ -644,8 +737,14 @@ mod tests {
         };
         assert_eq!(playlist.title.as_deref(), Some("Favourites"));
         assert_eq!(playlist.total, Some(2));
-        assert_eq!(playlist.entries[1].duration, Some(Duration::from_secs(3723)));
-        assert_eq!(playlist.entries[1].url.as_str(), "https://www.bitchute.com/video/Yti_j9A-UZ4/");
+        assert_eq!(
+            playlist.entries[1].duration,
+            Some(Duration::from_secs(3723))
+        );
+        assert_eq!(
+            playlist.entries[1].url.as_str(),
+            "https://www.bitchute.com/video/Yti_j9A-UZ4/"
+        );
     }
 
     #[tokio::test]
@@ -676,7 +775,10 @@ mod tests {
         assert_eq!(playlist.title.as_deref(), Some("BitChute"));
         assert_eq!(playlist.total, Some(2));
         assert_eq!(playlist.entries.len(), 2);
-        assert_eq!(playlist.entries[1].url.as_str(), "https://www.bitchute.com/video/Yti_j9A-UZ4/");
+        assert_eq!(
+            playlist.entries[1].url.as_str(),
+            "https://www.bitchute.com/video/Yti_j9A-UZ4/"
+        );
         assert_eq!(playlist.entries[0].title.as_deref(), Some("First"));
     }
 
@@ -741,12 +843,18 @@ mod tests {
             resolved.uploader_url.as_ref().unwrap().as_str(),
             "https://www.bitchute.com/profile/prof9/"
         );
-        let candidates = seed_candidates(&Url::parse("https://seed167.bitchute.com/x/abc.mp4").unwrap());
-        assert_eq!(candidates.len(), SEED_HOSTS.len(), "the named seed is one of the list");
+        let candidates =
+            seed_candidates(&Url::parse("https://seed167.bitchute.com/x/abc.mp4").unwrap());
+        assert_eq!(
+            candidates.len(),
+            SEED_HOSTS.len(),
+            "the named seed is one of the list"
+        );
         assert_eq!(candidates[0].host_str(), Some("seed167.bitchute.com"));
         assert_eq!(candidates[1].host_str(), Some("seed122.bitchute.com"));
         assert_eq!(
-            seed_candidates(&Url::parse("https://zbbb278hfll091.bitchute.com/x/abc.mp4").unwrap()).len(),
+            seed_candidates(&Url::parse("https://zbbb278hfll091.bitchute.com/x/abc.mp4").unwrap())
+                .len(),
             1,
             "only seed hosts have twins"
         );
@@ -755,8 +863,15 @@ mod tests {
             &Url::parse("https://example.com/post").unwrap(),
         );
         assert_eq!(
-            resolver.embeds_in(&page).iter().map(|u| u.as_str()).collect::<Vec<_>>(),
-            vec!["https://www.bitchute.com/embed/UGlrF9o9b-Q/", "https://old.bitchute.com/video/abc/"]
+            resolver
+                .embeds_in(&page)
+                .iter()
+                .map(|u| u.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "https://www.bitchute.com/embed/UGlrF9o9b-Q/",
+                "https://old.bitchute.com/video/abc/"
+            ]
         );
     }
 }

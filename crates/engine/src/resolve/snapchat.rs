@@ -23,7 +23,8 @@ use crate::media::{AudioCodec, Container, VideoCodec};
 pub const PLATFORM: &str = "snapchat";
 const SITE: &str = "https://www.snapchat.com/";
 
-static RE_SPOTLIGHT_ID: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z0-9_-]{20,}$").unwrap());
+static RE_SPOTLIGHT_ID: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[A-Za-z0-9_-]{20,}$").unwrap());
 static RE_USERNAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[a-z0-9._-]{3,}$").unwrap());
 
 /// What a link names.
@@ -31,7 +32,10 @@ static RE_USERNAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[a-z0-9._-]
 pub enum Link {
     Spotlight(String),
     /// A user's public story, or one snap of it by its position.
-    Story { user: String, snap: Option<usize> },
+    Story {
+        user: String,
+        snap: Option<usize>,
+    },
     Short(Url),
 }
 
@@ -59,7 +63,23 @@ pub fn parse_link(url: &Url) -> Option<Link> {
         ["t", code] if !code.is_empty() => Some(Link::Short(url.clone())),
         ["add", user] | [user] if user.starts_with('@') || RE_USERNAME.is_match(user) => {
             let user = user.trim_start_matches('@');
-            let reserved = ["spotlight", "t", "add", "stories", "discover", "lens", "lenses", "p", "explore", "l", "ads", "privacy", "terms", "download", "web"];
+            let reserved = [
+                "spotlight",
+                "t",
+                "add",
+                "stories",
+                "discover",
+                "lens",
+                "lenses",
+                "p",
+                "explore",
+                "l",
+                "ads",
+                "privacy",
+                "terms",
+                "download",
+                "web",
+            ];
             (!reserved.contains(&user)).then(|| Link::Story {
                 user: user.to_string(),
                 snap,
@@ -78,7 +98,10 @@ pub fn next_data(page: &Page) -> Option<Value> {
 
 /// A value the pages wrap as `{"value": …}`, or give plainly.
 fn unwrap(value: &Value) -> &Value {
-    if value.is_object() && value.get("value").is_some() && value.as_object().map(|m| m.len()) == Some(1) {
+    if value.is_object()
+        && value.get("value").is_some()
+        && value.as_object().map(|m| m.len()) == Some(1)
+    {
         &value["value"]
     } else {
         value
@@ -114,14 +137,15 @@ pub fn snaps_of(list: &Value) -> Vec<Snap> {
         .into_iter()
         .flatten()
         .filter_map(|snap| {
-            let media_url = as_str(&snap["snapUrls"]["mediaUrl"])
-                .and_then(|u| Url::parse(u).ok())?;
+            let media_url =
+                as_str(&snap["snapUrls"]["mediaUrl"]).and_then(|u| Url::parse(u).ok())?;
             Some(Snap {
                 id: as_str(&snap["snapId"]).map(String::from),
                 media_url,
                 is_video: snap["snapMediaType"].as_u64() == Some(1)
                     || snap["snapMediaType"].as_str() == Some("VIDEO"),
-                preview: as_str(&snap["snapUrls"]["mediaPreviewUrl"]).and_then(|u| Url::parse(u).ok()),
+                preview: as_str(&snap["snapUrls"]["mediaPreviewUrl"])
+                    .and_then(|u| Url::parse(u).ok()),
                 timestamp: as_u64(&snap["timestampInSec"])
                     .and_then(|t| Timestamp::from_second(t as i64).ok()),
                 title: as_str(&snap["snapTitle"]).and_then(clean_title),
@@ -135,8 +159,14 @@ fn video_variant(url: Url, metadata: &Value) -> Variant {
     v.container = Some(Container::Mp4);
     v.video = Some(VideoCodec::H264);
     v.audio = Some(AudioCodec::Aac);
-    v.width = metadata["width"].as_u64().map(|w| w as u32).filter(|w| *w > 0);
-    v.height = metadata["height"].as_u64().map(|h| h as u32).filter(|h| *h > 0);
+    v.width = metadata["width"]
+        .as_u64()
+        .map(|w| w as u32)
+        .filter(|w| *w > 0);
+    v.height = metadata["height"]
+        .as_u64()
+        .map(|h| h as u32)
+        .filter(|h| *h > 0);
     v.duration = as_u64(&metadata["durationMs"]).map(Duration::from_millis);
     v.headers = vec![("referer".to_string(), SITE.to_string())];
     v
@@ -225,8 +255,7 @@ impl SnapchatResolver {
         resolved.uploader_url = as_str(&person["url"])
             .and_then(|u| Url::parse(u).ok())
             .or_else(|| {
-                as_str(&person["username"])
-                    .and_then(|u| Url::parse(&format!("{SITE}add/{u}")).ok())
+                as_str(&person["username"]).and_then(|u| Url::parse(&format!("{SITE}add/{u}")).ok())
             });
         resolved.uploaded_at = as_u64(&metadata["uploadDateMs"])
             .and_then(|t| Timestamp::from_millisecond(t as i64).ok())
@@ -241,7 +270,12 @@ impl SnapchatResolver {
         Ok(Resolution::from(resolved))
     }
 
-    async fn story(&self, user: &str, snap: Option<usize>, origin: &Url) -> Result<Resolution, ResolveError> {
+    async fn story(
+        &self,
+        user: &str,
+        snap: Option<usize>,
+        origin: &Url,
+    ) -> Result<Resolution, ResolveError> {
         let page_url = Url::parse(&format!("{SITE}add/{user}")).expect("valid");
         let props = self.page_props(&page_url, origin).await?;
         let mut snaps: Vec<Snap> = snaps_of(&props["story"]["snapList"]);
@@ -250,11 +284,13 @@ impl SnapchatResolver {
         }
         let videos: Vec<Snap> = snaps.into_iter().filter(|s| s.is_video).collect();
         if videos.is_empty() {
-            return Err(if props["userProfile"].is_object() || props["story"].is_object() {
-                ResolveError::unavailable(origin, "the profile shows no public video snaps")
-            } else {
-                ResolveError::NotFound(origin.clone())
-            });
+            return Err(
+                if props["userProfile"].is_object() || props["story"].is_object() {
+                    ResolveError::unavailable(origin, "the profile shows no public video snaps")
+                } else {
+                    ResolveError::NotFound(origin.clone())
+                },
+            );
         }
         let profile = &props["userProfile"];
         let display = as_str(&profile["displayName"])
@@ -271,7 +307,11 @@ impl SnapchatResolver {
                     PlaylistEntry {
                         url: entry,
                         title: s.title.clone().or_else(|| {
-                            Some(format!("{} ({})", display.clone().unwrap_or_else(|| format!("@{user}")), index + 1))
+                            Some(format!(
+                                "{} ({})",
+                                display.clone().unwrap_or_else(|| format!("@{user}")),
+                                index + 1
+                            ))
                         }),
                         duration: None,
                     }
@@ -280,7 +320,9 @@ impl SnapchatResolver {
             return Ok(Resolution::Playlist(Playlist {
                 resolver: PLATFORM.into(),
                 id: Some(format!("story-{user}")),
-                title: display.map(|d| format!("{d}'s story")).or_else(|| Some(format!("@{user}'s story"))),
+                title: display
+                    .map(|d| format!("{d}'s story"))
+                    .or_else(|| Some(format!("@{user}'s story"))),
                 total: Some(entries.len()),
                 entries,
             }));
@@ -382,7 +424,9 @@ mod tests {
 
     fn page(props: Value) -> String {
         let data = json!({"props": {"pageProps": props}, "page": "/spotlight/[id]"});
-        format!(r#"<html><body><script id="__NEXT_DATA__" type="application/json">{data}</script></body></html>"#)
+        format!(
+            r#"<html><body><script id="__NEXT_DATA__" type="application/json">{data}</script></body></html>"#
+        )
     }
 
     const ID: &str = "W7_EDlXWTBiXAEEniNoMPwAAYb2lpY3VwYWFlAZ6JW-cbAZ6JW-bhAAAAAQ";
@@ -417,7 +461,10 @@ mod tests {
                 snap: Some(2)
             })
         );
-        assert!(matches!(link("https://www.snapchat.com/t/abc123"), Some(Link::Short(_))));
+        assert!(matches!(
+            link("https://www.snapchat.com/t/abc123"),
+            Some(Link::Short(_))
+        ));
         assert_eq!(link("https://www.snapchat.com/spotlight/short"), None);
         assert_eq!(link("https://www.snapchat.com/discover"), None);
     }
@@ -425,7 +472,10 @@ mod tests {
     #[tokio::test]
     async fn spotlight_snaps_resolve_from_the_page_data() {
         let mut fixture = Fixture::new("snapchat", None);
-        fixture.exchanges.push(get(&format!("https://www.snapchat.com/spotlight/{ID}"), &page(spotlight_props())));
+        fixture.exchanges.push(get(
+            &format!("https://www.snapchat.com/spotlight/{ID}"),
+            &page(spotlight_props()),
+        ));
         let resolver = SnapchatResolver::new(Http::replay(fixture));
         let url = Url::parse(&format!("https://www.snapchat.com/spotlight/{ID}")).unwrap();
         assert!(resolver.matches(&url));
@@ -452,8 +502,13 @@ mod tests {
             {"snapId": {"value": "s3"}, "snapMediaType": 1, "snapUrls": {"mediaUrl": "https://cf-st.sc-cdn.net/d/three.mp4"}, "snapTitle": {"value": "Third"}}
         ]}});
         let mut fixture = Fixture::new("snapchat", None);
-        fixture.exchanges.push(get("https://www.snapchat.com/add/snapchat", &page(story.clone())));
-        fixture.exchanges.push(get("https://www.snapchat.com/add/snapchat", &page(story)));
+        fixture.exchanges.push(get(
+            "https://www.snapchat.com/add/snapchat",
+            &page(story.clone()),
+        ));
+        fixture
+            .exchanges
+            .push(get("https://www.snapchat.com/add/snapchat", &page(story)));
         fixture.exchanges.push(get(&format!("https://www.snapchat.com/spotlight/{ID}"), &page(json!({"videoMetadata": {"contentUrl": ""}, "spotlightFeed": {"spotlightStories": [{"story": {"snapList": []}}]}}))));
         let resolver = SnapchatResolver::new(Http::replay(fixture));
         let playlist = match resolver
@@ -474,7 +529,10 @@ mod tests {
             .media()
             .unwrap();
         assert_eq!(third.id.as_deref(), Some("s3"));
-        assert_eq!(third.variants[0].url.as_str(), "https://cf-st.sc-cdn.net/d/three.mp4");
+        assert_eq!(
+            third.variants[0].url.as_str(),
+            "https://cf-st.sc-cdn.net/d/three.mp4"
+        );
         assert!(matches!(
             resolver
                 .resolve(&Url::parse(&format!("https://www.snapchat.com/spotlight/{ID}")).unwrap())

@@ -25,13 +25,12 @@ pub mod allocine;
 pub mod amp;
 pub mod aparat;
 pub mod applepodcasts;
-pub mod audioboom;
 pub mod archive_org;
 pub mod ard;
+pub mod audioboom;
 pub mod baidu;
 pub mod banbye;
 pub mod bandcamp;
-pub mod bannedvideo;
 pub mod bilibili;
 pub mod bitchute;
 pub mod blerp;
@@ -41,7 +40,6 @@ pub mod bluesky;
 pub mod bongacams;
 pub mod box_;
 pub mod brightcove;
-pub mod btvplus;
 pub mod bundesliga;
 pub mod bundestag;
 pub mod bunny;
@@ -130,11 +128,7 @@ pub mod x;
 pub mod xiaohongshu;
 pub mod youtube;
 
-/// The resolvers this crate carries, in the order links are offered to them: platforms
-/// first, then the players they embed, then the platforms ported from yt-dlp: the players
-/// and network bases others build on, then the rest alphabetically. Neither the Mastodon
-/// resolver nor the generic web resolver is among them; [`tail_resolvers`] adds those last.
-pub fn builtin_resolvers(http: &Http, bots: Arc<dyn discord::BotTokens>) -> Vec<Arc<dyn Resolver>> {
+pub fn builtin_resolvers(http: &Http) -> Vec<Arc<dyn Resolver>> {
     vec![
         Arc::new(youtube::YoutubeResolver::new(http.clone())),
         Arc::new(x::XResolver::new(http.clone())),
@@ -166,7 +160,6 @@ pub fn builtin_resolvers(http: &Http, bots: Arc<dyn discord::BotTokens>) -> Vec<
         Arc::new(snapchat::SnapchatResolver::new(http.clone())),
         Arc::new(loom::LoomResolver::new(http.clone())),
         Arc::new(telegram::TelegramResolver::new(http.clone())),
-        Arc::new(discord::DiscordResolver::new(http.clone(), bots)),
         Arc::new(ninegag::NinegagResolver::new(http.clone())),
         Arc::new(ifunny::IfunnyResolver::new(http.clone())),
         Arc::new(newgrounds::NewgroundsResolver::new(http.clone())),
@@ -185,7 +178,9 @@ pub fn builtin_resolvers(http: &Http, bots: Arc<dyn discord::BotTokens>) -> Vec<
         Arc::new(wistia::WistiaResolver::new(http.clone())),
         Arc::new(kaltura::KalturaResolver::new(http.clone())),
         Arc::new(vidyard::VidyardResolver::new(http.clone())),
-        Arc::new(cloudflare_stream::CloudflareStreamResolver::new(http.clone())),
+        Arc::new(cloudflare_stream::CloudflareStreamResolver::new(
+            http.clone(),
+        )),
         Arc::new(mux::MuxResolver::new(http.clone())),
         Arc::new(bunny::BunnyResolver::new(http.clone())),
         Arc::new(onenewsnz::OneNewsNzResolver::new(http.clone())),
@@ -220,13 +215,11 @@ pub fn builtin_resolvers(http: &Http, bots: Arc<dyn discord::BotTokens>) -> Vec<
         Arc::new(chaturbate::ChaturbateResolver::new(http.clone())),
         Arc::new(cpac::CpacResolver::new(http.clone())),
         Arc::new(dailymail::DailymailResolver::new(http.clone())),
-        Arc::new(bannedvideo::BannedVideoResolver::new(http.clone())),
         Arc::new(blerp::BlerpResolver::new(http.clone())),
         Arc::new(blogger::BloggerResolver::new(http.clone())),
         Arc::new(bloomberg::BloombergResolver::new(http.clone())),
         Arc::new(bongacams::BongacamsResolver::new(http.clone())),
         Arc::new(box_::BoxResolver::new(http.clone())),
-        Arc::new(btvplus::BtvplusResolver::new(http.clone())),
         Arc::new(bundesliga::BundesligaResolver::new(http.clone())),
         Arc::new(bundestag::BundestagResolver::new(http.clone())),
         Arc::new(businessinsider::BusinessinsiderResolver::new(http.clone())),
@@ -255,8 +248,8 @@ pub fn tail_resolvers(http: &Http, players: &[Arc<dyn Resolver>]) -> Vec<Arc<dyn
 
 /// Every resolver this crate carries, in the order links are offered to them:
 /// [`builtin_resolvers`], then [`tail_resolvers`].
-pub fn standard_resolvers(http: &Http, bots: Arc<dyn discord::BotTokens>) -> Vec<Arc<dyn Resolver>> {
-    let mut list = builtin_resolvers(http, bots);
+pub fn standard_resolvers(http: &Http) -> Vec<Arc<dyn Resolver>> {
+    let mut list = builtin_resolvers(http);
     let tail = tail_resolvers(http, &list);
     list.extend(tail);
     list

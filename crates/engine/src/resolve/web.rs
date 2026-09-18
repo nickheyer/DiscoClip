@@ -471,7 +471,7 @@ mod tests {
 
     /// Every resolver of the crate, for the players a page may embed.
     fn players(http: &Http) -> Vec<Arc<dyn Resolver>> {
-        builtin_resolvers(http, Arc::new(Vec::<String>::new()))
+        builtin_resolvers(http)
     }
 
     fn web(http: Http) -> WebResolver {

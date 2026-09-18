@@ -33,9 +33,12 @@ pub fn int(value: &Value) -> Option<i64> {
             .or_else(|| n.as_f64().filter(|f| f.is_finite()).map(|f| f as i64)),
         Value::String(s) => {
             let s = s.trim();
-            s.parse::<i64>()
-                .ok()
-                .or_else(|| s.parse::<f64>().ok().filter(|f| f.is_finite()).map(|f| f as i64))
+            s.parse::<i64>().ok().or_else(|| {
+                s.parse::<f64>()
+                    .ok()
+                    .filter(|f| f.is_finite())
+                    .map(|f| f as i64)
+            })
         }
         Value::Bool(b) => Some(i64::from(*b)),
         _ => None,
@@ -112,7 +115,11 @@ pub fn epoch(value: &Value) -> Option<Timestamp> {
     if n <= 0.0 {
         return None;
     }
-    let seconds = if n >= 100_000_000_000.0 { n / 1000.0 } else { n };
+    let seconds = if n >= 100_000_000_000.0 {
+        n / 1000.0
+    } else {
+        n
+    };
     Timestamp::from_millisecond((seconds * 1000.0) as i64).ok()
 }
 
@@ -475,8 +482,9 @@ pub fn parse_resolution(text: &str) -> (Option<u32>, Option<u32>, Option<f64>) {
 /// The height a label such as `720p`, `hd1080`, `1080p60` or `4K` names.
 pub fn height_of(text: &str) -> Option<u32> {
     parse_resolution(text).1.or_else(|| {
-        static HD: std::sync::LazyLock<Regex> =
-            std::sync::LazyLock::new(|| Regex::new(r"(?i)(?:hd|sd|res)?_?(\d{3,4})(?:[^0-9]|$)").unwrap());
+        static HD: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+            Regex::new(r"(?i)(?:hd|sd|res)?_?(\d{3,4})(?:[^0-9]|$)").unwrap()
+        });
         HD.captures(text).and_then(|c| c[1].parse().ok())
     })
 }
@@ -609,10 +617,20 @@ fn parse_timestamp_with(text: &str, day_first: bool) -> Option<Timestamp> {
     }
     if raw.chars().all(|c| c.is_ascii_digit()) {
         return match raw.len() {
-            8 => civil("%Y%m%d", &format!("{}-{}-{}", &raw[..4], &raw[4..6], &raw[6..8])),
+            8 => civil(
+                "%Y%m%d",
+                &format!("{}-{}-{}", &raw[..4], &raw[4..6], &raw[6..8]),
+            ),
             12 => civil(
                 "%Y%m%d%H%M",
-                &format!("{}-{}-{} {}:{}", &raw[..4], &raw[4..6], &raw[6..8], &raw[8..10], &raw[10..12]),
+                &format!(
+                    "{}-{}-{} {}:{}",
+                    &raw[..4],
+                    &raw[4..6],
+                    &raw[6..8],
+                    &raw[8..10],
+                    &raw[10..12]
+                ),
             ),
             14 => civil(
                 "%Y%m%d%H%M%S",
@@ -645,9 +663,14 @@ fn parse_timestamp_with(text: &str, day_first: bool) -> Option<Timestamp> {
     // Nanoseconds beyond what a fraction can carry are cut.
     let mut candidate = s.clone();
     strip_ordinals(&mut candidate);
-    let formats = DATE_FORMATS
-        .iter()
-        .chain(if day_first { DATE_FORMATS_DAY_FIRST } else { DATE_FORMATS_MONTH_FIRST }.iter());
+    let formats = DATE_FORMATS.iter().chain(
+        if day_first {
+            DATE_FORMATS_DAY_FIRST
+        } else {
+            DATE_FORMATS_MONTH_FIRST
+        }
+        .iter(),
+    );
     for format in formats {
         if let Some(mut dt) = strptime(format, &candidate) {
             if let Some(meridiem) = &pm {
@@ -691,8 +714,10 @@ fn strptime(format: &str, input: &str) -> Option<DateTime> {
 
 fn strip_weekday(s: &str) -> String {
     static WEEKDAY: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-        Regex::new(r"(?i)[,|]|\b(?:mon|tues?|wed(?:nes)?|thu(?:rs)?|fri|sat(?:ur)?|sun)(?:day)?\b\.?")
-            .unwrap()
+        Regex::new(
+            r"(?i)[,|]|\b(?:mon|tues?|wed(?:nes)?|thu(?:rs)?|fri|sat(?:ur)?|sun)(?:day)?\b\.?",
+        )
+        .unwrap()
     });
     let replaced = WEEKDAY.replace_all(s, " ");
     let replaced = replaced.replace(" at ", " ");
@@ -713,7 +738,10 @@ fn strip_ordinals(s: &mut String) {
 /// The zone at the end of a date, as an offset, and the date without it.
 fn extract_timezone(s: &str) -> (Option<Offset>, String) {
     static NUMERIC: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-        Regex::new(r"(?:\d{4}|\d\d:\d\d(?:\.\d+)?|\d\d:\d\d:\d\d(?:\.\d+)?)\s?(Z|[+-]\d{2}:?\d{2})$").unwrap()
+        Regex::new(
+            r"(?:\d{4}|\d\d:\d\d(?:\.\d+)?|\d\d:\d\d:\d\d(?:\.\d+)?)\s?(Z|[+-]\d{2}:?\d{2})$",
+        )
+        .unwrap()
     });
     static NAMED: std::sync::LazyLock<Regex> =
         std::sync::LazyLock::new(|| Regex::new(r"\d{1,2}:\d{1,2}(?:\.\d+)?(\s*[A-Z]+)$").unwrap());
@@ -777,7 +805,9 @@ pub fn js_to_json(code: &str) -> String {
         let c = bytes[i];
         // Comments.
         if c == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'*' {
-            i = code[i + 2..].find("*/").map_or(bytes.len(), |e| i + 2 + e + 2);
+            i = code[i + 2..]
+                .find("*/")
+                .map_or(bytes.len(), |e| i + 2 + e + 2);
             continue;
         }
         if c == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
@@ -801,7 +831,9 @@ pub fn js_to_json(code: &str) -> String {
                 if bytes[j].is_ascii_whitespace() {
                     j += 1;
                 } else if bytes[j] == b'/' && j + 1 < bytes.len() && bytes[j + 1] == b'*' {
-                    j = code[j + 2..].find("*/").map_or(bytes.len(), |e| j + 2 + e + 2);
+                    j = code[j + 2..]
+                        .find("*/")
+                        .map_or(bytes.len(), |e| j + 2 + e + 2);
                 } else if bytes[j] == b'/' && j + 1 < bytes.len() && bytes[j + 1] == b'/' {
                     j = code[j..].find('\n').map_or(bytes.len(), |e| j + e + 1);
                 } else {
@@ -976,7 +1008,9 @@ fn js_integer(word: &str) -> Option<i64> {
         return i64::from_str_radix(hex, 16).ok();
     }
     if word.len() > 1 && word.starts_with('0') && word.chars().all(|c| ('0'..='7').contains(&c)) {
-        return i64::from_str_radix(word.trim_start_matches('0'), 8).ok().or(Some(0));
+        return i64::from_str_radix(word.trim_start_matches('0'), 8)
+            .ok()
+            .or(Some(0));
     }
     None
 }
@@ -1002,7 +1036,9 @@ pub fn balanced_js_end(text: &str) -> Option<usize> {
                 continue;
             }
             b'/' if i + 1 < bytes.len() && bytes[i + 1] == b'*' => {
-                i = text[i + 2..].find("*/").map_or(bytes.len(), |e| i + 2 + e + 2);
+                i = text[i + 2..]
+                    .find("*/")
+                    .map_or(bytes.len(), |e| i + 2 + e + 2);
                 continue;
             }
             b'/' if i + 1 < bytes.len() && bytes[i + 1] == b'/' => {
@@ -1091,10 +1127,19 @@ pub fn html_unescape(text: &str) -> String {
             rest = &rest[1..];
             continue;
         }
-        let decoded: Option<String> = if let Some(hex) = entity.strip_prefix("#x").or_else(|| entity.strip_prefix("#X")) {
-            u32::from_str_radix(hex, 16).ok().and_then(char::from_u32).map(String::from)
+        let decoded: Option<String> = if let Some(hex) = entity
+            .strip_prefix("#x")
+            .or_else(|| entity.strip_prefix("#X"))
+        {
+            u32::from_str_radix(hex, 16)
+                .ok()
+                .and_then(char::from_u32)
+                .map(String::from)
         } else if let Some(dec) = entity.strip_prefix('#') {
-            dec.parse::<u32>().ok().and_then(char::from_u32).map(String::from)
+            dec.parse::<u32>()
+                .ok()
+                .and_then(char::from_u32)
+                .map(String::from)
         } else {
             named_entity(entity).map(String::from)
         };
@@ -1163,8 +1208,9 @@ fn named_entity(name: &str) -> Option<&'static str> {
 /// The text of an HTML fragment: tags removed, entities decoded, whitespace collapsed.
 pub fn clean_html(html: &str) -> String {
     let with_breaks = {
-        static BREAKS: std::sync::LazyLock<Regex> =
-            std::sync::LazyLock::new(|| Regex::new(r"(?i)<\s*(?:br|/p|/div|/li|/h\d)\s*/?>").unwrap());
+        static BREAKS: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+            Regex::new(r"(?i)<\s*(?:br|/p|/div|/li|/h\d)\s*/?>").unwrap()
+        });
         BREAKS.replace_all(html, "\n")
     };
     let stripped = {
@@ -1184,8 +1230,10 @@ pub fn clean_html(html: &str) -> String {
 /// The attributes of one HTML start tag, lower-cased names, entities decoded.
 pub fn extract_attributes(tag: &str) -> Vec<(String, String)> {
     static ATTR: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-        Regex::new(r#"(?s)([a-zA-Z_:][-a-zA-Z0-9_:.]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?"#)
-            .unwrap()
+        Regex::new(
+            r#"(?s)([a-zA-Z_:][-a-zA-Z0-9_:.]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?"#,
+        )
+        .unwrap()
     });
     let inner = tag
         .trim()
@@ -1218,7 +1266,11 @@ pub fn attribute(tag: &str, name: &str) -> Option<String> {
 }
 
 /// Every `<tag …>` start tag in `html` whose attributes satisfy `accept`, as raw tag text.
-pub fn tags_where(html: &str, tag: &str, accept: &dyn Fn(&[(String, String)]) -> bool) -> Vec<String> {
+pub fn tags_where(
+    html: &str,
+    tag: &str,
+    accept: &dyn Fn(&[(String, String)]) -> bool,
+) -> Vec<String> {
     let re = Regex::new(&format!(r"(?is)<{}(?:\s[^>]*)?>", regex::escape(tag))).expect("valid");
     re.find_iter(html)
         .map(|m| m.as_str().to_string())
@@ -1241,7 +1293,8 @@ pub fn element_by_attribute(html: &str, tag: &str, attr: &str, value: &str) -> O
 /// The inner HTML of the first element whose `id` is `id`.
 pub fn element_by_id(html: &str, id: &str) -> Option<String> {
     static ANY: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-        Regex::new(r#"(?is)<([a-zA-Z][a-zA-Z0-9]*)\b[^>]*\bid\s*=\s*["']?([^"'\s>]+)["'\s>]"#).unwrap()
+        Regex::new(r#"(?is)<([a-zA-Z][a-zA-Z0-9]*)\b[^>]*\bid\s*=\s*["']?([^"'\s>]+)["'\s>]"#)
+            .unwrap()
     });
     for caps in ANY.captures_iter(html) {
         if &caps[2] == id {
@@ -1410,7 +1463,10 @@ pub fn unpad_pkcs7(data: &[u8]) -> Option<Vec<u8>> {
     if last == 0 || last > 16 || last > data.len() {
         return None;
     }
-    if !data[data.len() - last..].iter().all(|b| *b as usize == last) {
+    if !data[data.len() - last..]
+        .iter()
+        .all(|b| *b as usize == last)
+    {
         return None;
     }
     Some(data[..data.len() - last].to_vec())
@@ -1519,17 +1575,31 @@ mod tests {
         assert_eq!(seconds(&json!(90.5)), Some(Duration::from_secs_f64(90.5)));
         assert_eq!(seconds(&json!("1:30")), Some(Duration::from_secs(90)));
         assert_eq!(millis(&json!("1500")), Some(Duration::from_millis(1500)));
-        assert_eq!(epoch(&json!(1_700_000_000)).unwrap().as_second(), 1_700_000_000);
-        assert_eq!(epoch(&json!("1700000000123")).unwrap().as_millisecond(), 1_700_000_000_123);
-        assert_eq!(time(&json!("2024-01-02T03:04:05Z")).unwrap().as_second(), 1_704_164_645);
-        assert_eq!(time(&json!(1_704_164_645)).unwrap().as_second(), 1_704_164_645);
+        assert_eq!(
+            epoch(&json!(1_700_000_000)).unwrap().as_second(),
+            1_700_000_000
+        );
+        assert_eq!(
+            epoch(&json!("1700000000123")).unwrap().as_millisecond(),
+            1_700_000_000_123
+        );
+        assert_eq!(
+            time(&json!("2024-01-02T03:04:05Z")).unwrap().as_second(),
+            1_704_164_645
+        );
+        assert_eq!(
+            time(&json!(1_704_164_645)).unwrap().as_second(),
+            1_704_164_645
+        );
     }
 
     #[test]
     fn links_join_and_queries_read() {
         let base = Url::parse("https://site.test/dir/page.html?x=1").unwrap();
         assert_eq!(
-            url_of(&json!("//cdn.test/v.mp4"), Some(&base)).unwrap().as_str(),
+            url_of(&json!("//cdn.test/v.mp4"), Some(&base))
+                .unwrap()
+                .as_str(),
             "https://cdn.test/v.mp4"
         );
         assert_eq!(
@@ -1597,7 +1667,10 @@ mod tests {
         assert_eq!(parse_age_limit("tv14"), Some(14));
         assert_eq!(parse_age_limit("weird"), None);
         assert_eq!(parse_resolution("1280x720"), (Some(1280), Some(720), None));
-        assert_eq!(parse_resolution("res 1920 × 1080 hd"), (Some(1920), Some(1080), None));
+        assert_eq!(
+            parse_resolution("res 1920 × 1080 hd"),
+            (Some(1920), Some(1080), None)
+        );
         assert_eq!(parse_resolution("1080p60"), (None, Some(1080), Some(60.0)));
         assert_eq!(parse_resolution("4K"), (None, Some(2160), None));
         assert_eq!(parse_resolution("hd"), (None, None, None));
@@ -1614,27 +1687,68 @@ mod tests {
     #[test]
     fn dates_in_every_shape() {
         let at = |s: &str| parse_timestamp(s).map(|t| t.to_string());
-        assert_eq!(at("2024-01-02T03:04:05Z").as_deref(), Some("2024-01-02T03:04:05Z"));
-        assert_eq!(at("2024-01-02T03:04:05.123+02:00").as_deref(), Some("2024-01-02T01:04:05.123Z"));
-        assert_eq!(at("2024-01-02T03:04:05").as_deref(), Some("2024-01-02T03:04:05Z"));
-        assert_eq!(at("2024-01-02 03:04:05").as_deref(), Some("2024-01-02T03:04:05Z"));
-        assert_eq!(at("2024-01-02 03:04").as_deref(), Some("2024-01-02T03:04:00Z"));
+        assert_eq!(
+            at("2024-01-02T03:04:05Z").as_deref(),
+            Some("2024-01-02T03:04:05Z")
+        );
+        assert_eq!(
+            at("2024-01-02T03:04:05.123+02:00").as_deref(),
+            Some("2024-01-02T01:04:05.123Z")
+        );
+        assert_eq!(
+            at("2024-01-02T03:04:05").as_deref(),
+            Some("2024-01-02T03:04:05Z")
+        );
+        assert_eq!(
+            at("2024-01-02 03:04:05").as_deref(),
+            Some("2024-01-02T03:04:05Z")
+        );
+        assert_eq!(
+            at("2024-01-02 03:04").as_deref(),
+            Some("2024-01-02T03:04:00Z")
+        );
         assert_eq!(at("2024-01-02").as_deref(), Some("2024-01-02T00:00:00Z"));
         assert_eq!(at("20240102").as_deref(), Some("2024-01-02T00:00:00Z"));
-        assert_eq!(at("20240102030405").as_deref(), Some("2024-01-02T03:04:05Z"));
-        assert_eq!(at("2 January 2024").as_deref(), Some("2024-01-02T00:00:00Z"));
-        assert_eq!(at("January 2, 2024").as_deref(), Some("2024-01-02T00:00:00Z"));
-        assert_eq!(at("Jan 2nd, 2024 10:30 PM EST").as_deref(), Some("2024-01-03T03:30:00Z"));
-        assert_eq!(at("Tue, 02 Jan 2024 03:04:05 GMT").as_deref(), Some("2024-01-02T03:04:05Z"));
-        assert_eq!(at("Tue, 02 Jan 2024 03:04:05 +0100").as_deref(), Some("2024-01-02T02:04:05Z"));
-        assert_eq!(at("02.01.2024").as_deref(), Some("2024-01-02T00:00:00Z"));
-        assert_eq!(at("02/01/2024 03:04:05").as_deref(), Some("2024-01-02T03:04:05Z"));
         assert_eq!(
-            parse_timestamp_month_first("01/02/2024").map(|t| t.to_string()).as_deref(),
+            at("20240102030405").as_deref(),
+            Some("2024-01-02T03:04:05Z")
+        );
+        assert_eq!(
+            at("2 January 2024").as_deref(),
+            Some("2024-01-02T00:00:00Z")
+        );
+        assert_eq!(
+            at("January 2, 2024").as_deref(),
+            Some("2024-01-02T00:00:00Z")
+        );
+        assert_eq!(
+            at("Jan 2nd, 2024 10:30 PM EST").as_deref(),
+            Some("2024-01-03T03:30:00Z")
+        );
+        assert_eq!(
+            at("Tue, 02 Jan 2024 03:04:05 GMT").as_deref(),
+            Some("2024-01-02T03:04:05Z")
+        );
+        assert_eq!(
+            at("Tue, 02 Jan 2024 03:04:05 +0100").as_deref(),
+            Some("2024-01-02T02:04:05Z")
+        );
+        assert_eq!(at("02.01.2024").as_deref(), Some("2024-01-02T00:00:00Z"));
+        assert_eq!(
+            at("02/01/2024 03:04:05").as_deref(),
+            Some("2024-01-02T03:04:05Z")
+        );
+        assert_eq!(
+            parse_timestamp_month_first("01/02/2024")
+                .map(|t| t.to_string())
+                .as_deref(),
             Some("2024-01-02T00:00:00Z")
         );
         assert_eq!(at("1704164645").as_deref(), Some("2024-01-02T03:04:05Z"));
-        assert_eq!(at("2024-01-02T03:04:05.123456789Z").as_deref(), Some("2024-01-02T03:04:05.123456789Z"));
+        assert_eq!(
+            at("2024-01-02T03:04:05.123456789Z").as_deref(),
+            Some("2024-01-02T03:04:05.123456789Z")
+        );
         assert_eq!(at("12:30 AM 2024-01-02"), None);
         assert_eq!(at("someday"), None);
         assert_eq!(at(""), None);
@@ -1642,8 +1756,10 @@ mod tests {
 
     #[test]
     fn javascript_literals_become_json() {
-        let v = parse_js(r#"{a: 'x', "b": 0x10, c: [1, 2,], d: undefined, e: !0, 'f': true, g: void 0, // note
-            h: `t${1}`, i: 010, 3: "k", j: "q\"q", k: 'it\'s', l: window.foo, }"#)
+        let v = parse_js(
+            r#"{a: 'x', "b": 0x10, c: [1, 2,], d: undefined, e: !0, 'f': true, g: void 0, // note
+            h: `t${1}`, i: 010, 3: "k", j: "q\"q", k: 'it\'s', l: window.foo, }"#,
+        )
         .unwrap();
         assert_eq!(v["a"], "x");
         assert_eq!(v["b"], 16);
@@ -1658,22 +1774,40 @@ mod tests {
         assert_eq!(v["j"], "q\"q");
         assert_eq!(v["k"], "it's");
         assert_eq!(v["l"], "window.foo");
-        assert_eq!(parse_js(r#"[1, 2.5, -3, 1e3, "x"]"#).unwrap(), json!([1, 2.5, -3, 1000.0, "x"]));
+        assert_eq!(
+            parse_js(r#"[1, 2.5, -3, 1e3, "x"]"#).unwrap(),
+            json!([1, 2.5, -3, 1000.0, "x"])
+        );
         assert_eq!(
             parse_js(r#"{d: new Date("2024-01-02"), a: Array(1, 2), n: parseInt("12")}"#).unwrap(),
             json!({"d": "2024-01-02", "a": [1, 2], "n": 12})
         );
-        assert_eq!(js_to_json("{/* c */ a: 1 /* d */}"), "{ a: 1 }".replace("a", "\"a\""));
+        assert_eq!(
+            js_to_json("{/* c */ a: 1 /* d */}"),
+            "{ a: 1 }".replace("a", "\"a\"")
+        );
         let page = r#"<script>window.__DATA__ = {items: [{id: 'a'}]}; var x = 1;</script>"#;
-        assert_eq!(js_object_after(page, "window.__DATA__ =").unwrap()["items"][0]["id"], "a");
-        assert_eq!(json_after_any(page, &["nothing", "window.__DATA__ ="]).unwrap()["items"][0]["id"], "a");
+        assert_eq!(
+            js_object_after(page, "window.__DATA__ =").unwrap()["items"][0]["id"],
+            "a"
+        );
+        assert_eq!(
+            json_after_any(page, &["nothing", "window.__DATA__ ="]).unwrap()["items"][0]["id"],
+            "a"
+        );
         assert_eq!(balanced_js_end("{a: '}', b: \"]\"} tail"), Some(16));
     }
 
     #[test]
     fn html_is_cleaned_and_attributes_read() {
-        assert_eq!(html_unescape("a &amp; b &lt;c&gt; &#39;d&#x27; &nbsp;&bogus; &"), "a & b <c> 'd' \u{a0}&bogus; &");
-        assert_eq!(clean_html("<p>One&nbsp;two</p><p>Three <b>four</b><br>five</p>"), "One two\nThree four\nfive");
+        assert_eq!(
+            html_unescape("a &amp; b &lt;c&gt; &#39;d&#x27; &nbsp;&bogus; &"),
+            "a & b <c> 'd' \u{a0}&bogus; &"
+        );
+        assert_eq!(
+            clean_html("<p>One&nbsp;two</p><p>Three <b>four</b><br>five</p>"),
+            "One two\nThree four\nfive"
+        );
         let tag = r#"<video id="v1" data-src='a.mp4' controls width=640 title="a &amp; b">"#;
         let attrs = extract_attributes(tag);
         assert_eq!(attribute(tag, "id").as_deref(), Some("v1"));
@@ -1682,10 +1816,16 @@ mod tests {
         assert_eq!(attribute(tag, "title").as_deref(), Some("a & b"));
         assert!(attrs.iter().any(|(k, v)| k == "controls" && v.is_empty()));
         let html = r#"<div id="x"><span class="a b">hi</span></div><div class="c">yo</div>"#;
-        assert_eq!(element_by_id(html, "x").as_deref(), Some(r#"<span class="a b">hi</span>"#));
+        assert_eq!(
+            element_by_id(html, "x").as_deref(),
+            Some(r#"<span class="a b">hi</span>"#)
+        );
         assert_eq!(element_by_class(html, "b").as_deref(), Some("hi"));
         assert_eq!(element_by_class(html, "c").as_deref(), Some("yo"));
-        assert_eq!(tags_where(html, "div", &|a| a.iter().any(|(k, _)| k == "class")).len(), 1);
+        assert_eq!(
+            tags_where(html, "div", &|a| a.iter().any(|(k, _)| k == "class")).len(),
+            1
+        );
     }
 
     #[test]
@@ -1703,17 +1843,29 @@ mod tests {
     fn hashes_ciphers_and_encodings() {
         assert_eq!(md5_hex(b"abc"), "900150983cd24fb0d6963f7d28e17f72");
         assert_eq!(sha1_hex(b"abc"), "a9993e364706816aba3e25717850c26c9cd0d89d");
-        assert_eq!(sha256_hex(b"abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
         assert_eq!(
-            hex::encode(hmac_sha256(b"key", b"The quick brown fox jumps over the lazy dog")),
+            sha256_hex(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        assert_eq!(
+            hex::encode(hmac_sha256(
+                b"key",
+                b"The quick brown fox jumps over the lazy dog"
+            )),
             "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8"
         );
         assert_eq!(
-            hex::encode(hmac_sha1(b"key", b"The quick brown fox jumps over the lazy dog")),
+            hex::encode(hmac_sha1(
+                b"key",
+                b"The quick brown fox jumps over the lazy dog"
+            )),
             "de7c9b85b8b78aa6bc8a7a36f70a90701c9db4d9"
         );
         assert_eq!(
-            hex::encode(hmac_md5(b"key", b"The quick brown fox jumps over the lazy dog")),
+            hex::encode(hmac_md5(
+                b"key",
+                b"The quick brown fox jumps over the lazy dog"
+            )),
             "80070713463e7749b90c2dc24911e275"
         );
         assert_eq!(b64_decode("aGVsbG8="), Some(b"hello".to_vec()));
@@ -1744,7 +1896,13 @@ mod tests {
         assert_eq!(random_uuid().len(), 36);
         assert_eq!(url_encode("a b&c/d~"), "a%20b%26c%2Fd~");
         assert_eq!(url_decode("a%20b"), "a b");
-        assert_eq!(parse_query("?a=1&b=x+y"), vec![("a".to_string(), "1".to_string()), ("b".to_string(), "x y".to_string())]);
+        assert_eq!(
+            parse_query("?a=1&b=x+y"),
+            vec![
+                ("a".to_string(), "1".to_string()),
+                ("b".to_string(), "x y".to_string())
+            ]
+        );
         assert_eq!(encode_query(&[("a", "1"), ("b", "x y")]), "a=1&b=x+y");
     }
 }
@@ -1770,38 +1928,194 @@ pub fn clean_podcast_url(url: Url) -> Url {
 
 /// ISO 639-2 three-letter language codes and their ISO 639-1 two-letter forms.
 const ISO639_CODES: &[(&str, &str)] = &[
-    ("aa", "aar"), ("ab", "abk"), ("ae", "ave"), ("af", "afr"), ("ak", "aka"), ("am", "amh"),
-    ("an", "arg"), ("ar", "ara"), ("as", "asm"), ("av", "ava"), ("ay", "aym"), ("az", "aze"),
-    ("ba", "bak"), ("be", "bel"), ("bg", "bul"), ("bh", "bih"), ("bi", "bis"), ("bm", "bam"),
-    ("bn", "ben"), ("bo", "bod"), ("br", "bre"), ("bs", "bos"), ("ca", "cat"), ("ce", "che"),
-    ("ch", "cha"), ("co", "cos"), ("cr", "cre"), ("cs", "ces"), ("cu", "chu"), ("cv", "chv"),
-    ("cy", "cym"), ("da", "dan"), ("de", "deu"), ("dv", "div"), ("dz", "dzo"), ("ee", "ewe"),
-    ("el", "ell"), ("en", "eng"), ("eo", "epo"), ("es", "spa"), ("et", "est"), ("eu", "eus"),
-    ("fa", "fas"), ("ff", "ful"), ("fi", "fin"), ("fj", "fij"), ("fo", "fao"), ("fr", "fra"),
-    ("fy", "fry"), ("ga", "gle"), ("gd", "gla"), ("gl", "glg"), ("gn", "grn"), ("gu", "guj"),
-    ("gv", "glv"), ("ha", "hau"), ("he", "heb"), ("hi", "hin"), ("ho", "hmo"), ("hr", "hrv"),
-    ("ht", "hat"), ("hu", "hun"), ("hy", "hye"), ("hz", "her"), ("ia", "ina"), ("id", "ind"),
-    ("ie", "ile"), ("ig", "ibo"), ("ii", "iii"), ("ik", "ipk"), ("in", "ind"), ("io", "ido"),
-    ("is", "isl"), ("it", "ita"), ("iu", "iku"), ("iw", "heb"), ("ja", "jpn"), ("ji", "yid"),
-    ("jv", "jav"), ("ka", "kat"), ("kg", "kon"), ("ki", "kik"), ("kj", "kua"), ("kk", "kaz"),
-    ("kl", "kal"), ("km", "khm"), ("kn", "kan"), ("ko", "kor"), ("kr", "kau"), ("ks", "kas"),
-    ("ku", "kur"), ("kv", "kom"), ("kw", "cor"), ("ky", "kir"), ("la", "lat"), ("lb", "ltz"),
-    ("lg", "lug"), ("li", "lim"), ("ln", "lin"), ("lo", "lao"), ("lt", "lit"), ("lu", "lub"),
-    ("lv", "lav"), ("mg", "mlg"), ("mh", "mah"), ("mi", "mri"), ("mk", "mkd"), ("ml", "mal"),
-    ("mn", "mon"), ("mr", "mar"), ("ms", "msa"), ("mt", "mlt"), ("my", "mya"), ("na", "nau"),
-    ("nb", "nob"), ("nd", "nde"), ("ne", "nep"), ("ng", "ndo"), ("nl", "nld"), ("nn", "nno"),
-    ("no", "nor"), ("nr", "nbl"), ("nv", "nav"), ("ny", "nya"), ("oc", "oci"), ("oj", "oji"),
-    ("om", "orm"), ("or", "ori"), ("os", "oss"), ("pa", "pan"), ("pe", "per"), ("pi", "pli"),
-    ("pl", "pol"), ("ps", "pus"), ("pt", "por"), ("qu", "que"), ("rm", "roh"), ("rn", "run"),
-    ("ro", "ron"), ("ru", "rus"), ("rw", "kin"), ("sa", "san"), ("sc", "srd"), ("sd", "snd"),
-    ("se", "sme"), ("sg", "sag"), ("si", "sin"), ("sk", "slk"), ("sl", "slv"), ("sm", "smo"),
-    ("sn", "sna"), ("so", "som"), ("sq", "sqi"), ("sr", "srp"), ("ss", "ssw"), ("st", "sot"),
-    ("su", "sun"), ("sv", "swe"), ("sw", "swa"), ("ta", "tam"), ("te", "tel"), ("tg", "tgk"),
-    ("th", "tha"), ("ti", "tir"), ("tk", "tuk"), ("tl", "tgl"), ("tn", "tsn"), ("to", "ton"),
-    ("tr", "tur"), ("ts", "tso"), ("tt", "tat"), ("tw", "twi"), ("ty", "tah"), ("ug", "uig"),
-    ("uk", "ukr"), ("ur", "urd"), ("uz", "uzb"), ("ve", "ven"), ("vi", "vie"), ("vo", "vol"),
-    ("wa", "wln"), ("wo", "wol"), ("xh", "xho"), ("yi", "yid"), ("yo", "yor"), ("za", "zha"),
-    ("zh", "zho"), ("zu", "zul"),
+    ("aa", "aar"),
+    ("ab", "abk"),
+    ("ae", "ave"),
+    ("af", "afr"),
+    ("ak", "aka"),
+    ("am", "amh"),
+    ("an", "arg"),
+    ("ar", "ara"),
+    ("as", "asm"),
+    ("av", "ava"),
+    ("ay", "aym"),
+    ("az", "aze"),
+    ("ba", "bak"),
+    ("be", "bel"),
+    ("bg", "bul"),
+    ("bh", "bih"),
+    ("bi", "bis"),
+    ("bm", "bam"),
+    ("bn", "ben"),
+    ("bo", "bod"),
+    ("br", "bre"),
+    ("bs", "bos"),
+    ("ca", "cat"),
+    ("ce", "che"),
+    ("ch", "cha"),
+    ("co", "cos"),
+    ("cr", "cre"),
+    ("cs", "ces"),
+    ("cu", "chu"),
+    ("cv", "chv"),
+    ("cy", "cym"),
+    ("da", "dan"),
+    ("de", "deu"),
+    ("dv", "div"),
+    ("dz", "dzo"),
+    ("ee", "ewe"),
+    ("el", "ell"),
+    ("en", "eng"),
+    ("eo", "epo"),
+    ("es", "spa"),
+    ("et", "est"),
+    ("eu", "eus"),
+    ("fa", "fas"),
+    ("ff", "ful"),
+    ("fi", "fin"),
+    ("fj", "fij"),
+    ("fo", "fao"),
+    ("fr", "fra"),
+    ("fy", "fry"),
+    ("ga", "gle"),
+    ("gd", "gla"),
+    ("gl", "glg"),
+    ("gn", "grn"),
+    ("gu", "guj"),
+    ("gv", "glv"),
+    ("ha", "hau"),
+    ("he", "heb"),
+    ("hi", "hin"),
+    ("ho", "hmo"),
+    ("hr", "hrv"),
+    ("ht", "hat"),
+    ("hu", "hun"),
+    ("hy", "hye"),
+    ("hz", "her"),
+    ("ia", "ina"),
+    ("id", "ind"),
+    ("ie", "ile"),
+    ("ig", "ibo"),
+    ("ii", "iii"),
+    ("ik", "ipk"),
+    ("in", "ind"),
+    ("io", "ido"),
+    ("is", "isl"),
+    ("it", "ita"),
+    ("iu", "iku"),
+    ("iw", "heb"),
+    ("ja", "jpn"),
+    ("ji", "yid"),
+    ("jv", "jav"),
+    ("ka", "kat"),
+    ("kg", "kon"),
+    ("ki", "kik"),
+    ("kj", "kua"),
+    ("kk", "kaz"),
+    ("kl", "kal"),
+    ("km", "khm"),
+    ("kn", "kan"),
+    ("ko", "kor"),
+    ("kr", "kau"),
+    ("ks", "kas"),
+    ("ku", "kur"),
+    ("kv", "kom"),
+    ("kw", "cor"),
+    ("ky", "kir"),
+    ("la", "lat"),
+    ("lb", "ltz"),
+    ("lg", "lug"),
+    ("li", "lim"),
+    ("ln", "lin"),
+    ("lo", "lao"),
+    ("lt", "lit"),
+    ("lu", "lub"),
+    ("lv", "lav"),
+    ("mg", "mlg"),
+    ("mh", "mah"),
+    ("mi", "mri"),
+    ("mk", "mkd"),
+    ("ml", "mal"),
+    ("mn", "mon"),
+    ("mr", "mar"),
+    ("ms", "msa"),
+    ("mt", "mlt"),
+    ("my", "mya"),
+    ("na", "nau"),
+    ("nb", "nob"),
+    ("nd", "nde"),
+    ("ne", "nep"),
+    ("ng", "ndo"),
+    ("nl", "nld"),
+    ("nn", "nno"),
+    ("no", "nor"),
+    ("nr", "nbl"),
+    ("nv", "nav"),
+    ("ny", "nya"),
+    ("oc", "oci"),
+    ("oj", "oji"),
+    ("om", "orm"),
+    ("or", "ori"),
+    ("os", "oss"),
+    ("pa", "pan"),
+    ("pe", "per"),
+    ("pi", "pli"),
+    ("pl", "pol"),
+    ("ps", "pus"),
+    ("pt", "por"),
+    ("qu", "que"),
+    ("rm", "roh"),
+    ("rn", "run"),
+    ("ro", "ron"),
+    ("ru", "rus"),
+    ("rw", "kin"),
+    ("sa", "san"),
+    ("sc", "srd"),
+    ("sd", "snd"),
+    ("se", "sme"),
+    ("sg", "sag"),
+    ("si", "sin"),
+    ("sk", "slk"),
+    ("sl", "slv"),
+    ("sm", "smo"),
+    ("sn", "sna"),
+    ("so", "som"),
+    ("sq", "sqi"),
+    ("sr", "srp"),
+    ("ss", "ssw"),
+    ("st", "sot"),
+    ("su", "sun"),
+    ("sv", "swe"),
+    ("sw", "swa"),
+    ("ta", "tam"),
+    ("te", "tel"),
+    ("tg", "tgk"),
+    ("th", "tha"),
+    ("ti", "tir"),
+    ("tk", "tuk"),
+    ("tl", "tgl"),
+    ("tn", "tsn"),
+    ("to", "ton"),
+    ("tr", "tur"),
+    ("ts", "tso"),
+    ("tt", "tat"),
+    ("tw", "twi"),
+    ("ty", "tah"),
+    ("ug", "uig"),
+    ("uk", "ukr"),
+    ("ur", "urd"),
+    ("uz", "uzb"),
+    ("ve", "ven"),
+    ("vi", "vie"),
+    ("vo", "vol"),
+    ("wa", "wln"),
+    ("wo", "wol"),
+    ("xh", "xho"),
+    ("yi", "yid"),
+    ("yo", "yor"),
+    ("za", "zha"),
+    ("zh", "zho"),
+    ("zu", "zul"),
 ];
 
 /// The two-letter ISO 639-1 code of a language named by its three-letter ISO 639-2
@@ -1809,7 +2123,10 @@ const ISO639_CODES: &[(&str, &str)] = &[
 pub fn iso639_short(code: &str) -> Option<&'static str> {
     let code = code.trim().to_ascii_lowercase();
     if code.len() == 2 && code.chars().all(|c| c.is_ascii_alphabetic()) {
-        return ISO639_CODES.iter().find(|(_, short)| *short == code).map(|(_, short)| *short);
+        return ISO639_CODES
+            .iter()
+            .find(|(_, short)| *short == code)
+            .map(|(_, short)| *short);
     }
     ISO639_CODES
         .iter()
@@ -1820,19 +2137,58 @@ pub fn iso639_short(code: &str) -> Option<&'static str> {
 /// English names of languages and their ISO 639-1 codes, for players that label
 /// subtitle tracks by name.
 const LANGUAGE_NAMES: &[(&str, &str)] = &[
-    ("afrikaans", "af"), ("arabic", "ar"), ("basque", "eu"), ("bengali", "bn"),
-    ("bulgarian", "bg"), ("catalan", "ca"), ("chinese", "zh"), ("croatian", "hr"),
-    ("czech", "cs"), ("danish", "da"), ("dutch", "nl"), ("english", "en"),
-    ("esperanto", "eo"), ("estonian", "et"), ("filipino", "tl"), ("finnish", "fi"),
-    ("french", "fr"), ("galician", "gl"), ("german", "de"), ("greek", "el"),
-    ("hebrew", "he"), ("hindi", "hi"), ("hungarian", "hu"), ("icelandic", "is"),
-    ("indonesian", "id"), ("irish", "ga"), ("italian", "it"), ("japanese", "ja"),
-    ("korean", "ko"), ("latin", "la"), ("latvian", "lv"), ("lithuanian", "lt"),
-    ("malay", "ms"), ("norwegian", "no"), ("persian", "fa"), ("polish", "pl"),
-    ("portuguese", "pt"), ("romanian", "ro"), ("russian", "ru"), ("serbian", "sr"),
-    ("slovak", "sk"), ("slovenian", "sl"), ("spanish", "es"), ("swahili", "sw"),
-    ("swedish", "sv"), ("tagalog", "tl"), ("tamil", "ta"), ("thai", "th"),
-    ("turkish", "tr"), ("ukrainian", "uk"), ("urdu", "ur"), ("vietnamese", "vi"),
+    ("afrikaans", "af"),
+    ("arabic", "ar"),
+    ("basque", "eu"),
+    ("bengali", "bn"),
+    ("bulgarian", "bg"),
+    ("catalan", "ca"),
+    ("chinese", "zh"),
+    ("croatian", "hr"),
+    ("czech", "cs"),
+    ("danish", "da"),
+    ("dutch", "nl"),
+    ("english", "en"),
+    ("esperanto", "eo"),
+    ("estonian", "et"),
+    ("filipino", "tl"),
+    ("finnish", "fi"),
+    ("french", "fr"),
+    ("galician", "gl"),
+    ("german", "de"),
+    ("greek", "el"),
+    ("hebrew", "he"),
+    ("hindi", "hi"),
+    ("hungarian", "hu"),
+    ("icelandic", "is"),
+    ("indonesian", "id"),
+    ("irish", "ga"),
+    ("italian", "it"),
+    ("japanese", "ja"),
+    ("korean", "ko"),
+    ("latin", "la"),
+    ("latvian", "lv"),
+    ("lithuanian", "lt"),
+    ("malay", "ms"),
+    ("norwegian", "no"),
+    ("persian", "fa"),
+    ("polish", "pl"),
+    ("portuguese", "pt"),
+    ("romanian", "ro"),
+    ("russian", "ru"),
+    ("serbian", "sr"),
+    ("slovak", "sk"),
+    ("slovenian", "sl"),
+    ("spanish", "es"),
+    ("swahili", "sw"),
+    ("swedish", "sv"),
+    ("tagalog", "tl"),
+    ("tamil", "ta"),
+    ("thai", "th"),
+    ("turkish", "tr"),
+    ("ukrainian", "uk"),
+    ("urdu", "ur"),
+    ("vietnamese", "vi"),
     ("welsh", "cy"),
 ];
 

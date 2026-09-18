@@ -252,6 +252,14 @@ CREATE TABLE platform_cookies (
 );
 ",
     },
+    Migration {
+        version: 16,
+        name: "fixture_login_required",
+        sql: "
+ALTER TABLE fixture_results ADD COLUMN login_required INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE fixture_platforms ADD COLUMN login_required INTEGER NOT NULL DEFAULT 0;
+",
+    },
 ];
 
 /// Brings the application's tables up to date; returns how many migrations ran.

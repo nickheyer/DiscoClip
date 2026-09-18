@@ -36,7 +36,10 @@ const NEWS: u64 = 11;
 pub enum Link {
     Live,
     /// A player embed naming the material and its type: `/embed/<uid>:<type>`.
-    Embed { uid: u64, kind: u64 },
+    Embed {
+        uid: u64,
+        kind: u64,
+    },
     /// Any other page of the site, by its path.
     Page(String),
 }
@@ -105,7 +108,11 @@ pub fn inlined_materials(flight: &str) -> Vec<(u64, u64)> {
         let uid: String = after.chars().take_while(char::is_ascii_digit).collect();
         let kind = after[uid.len()..]
             .strip_prefix(",\"type\":")
-            .map(|k| k.chars().take_while(char::is_ascii_digit).collect::<String>())
+            .map(|k| {
+                k.chars()
+                    .take_while(char::is_ascii_digit)
+                    .collect::<String>()
+            })
             .and_then(|k| k.parse().ok());
         if let (Ok(uid), Some(kind)) = (uid.parse::<u64>(), kind)
             && !found.contains(&(uid, kind))
@@ -219,6 +226,9 @@ pub fn file_variants(item: &Value, hls: &[Variant]) -> Vec<Variant> {
                     .is_some_and(|b| b.abs_diff(k * 1000) <= k * 1000 / 5)
             })
         });
+        if !hls.is_empty() && kbps.is_some() && rendition.is_none() {
+            continue;
+        }
         let mut v = Variant::new(url, VariantKind::File);
         v.container = Some(Container::Mp4);
         v.video = Some(VideoCodec::H264);
@@ -390,7 +400,9 @@ impl FirstTvResolver {
             .into_iter()
             .flatten()
             .filter(|s| {
-                s["type"].as_str().is_some_and(|t| t.eq_ignore_ascii_case("application/dash+xml"))
+                s["type"]
+                    .as_str()
+                    .is_some_and(|t| t.eq_ignore_ascii_case("application/dash+xml"))
                     || s["src"].as_str().is_some_and(|src| src.ends_with(".mpd"))
             })
             .filter_map(|s| s["src"].as_str().and_then(absolute))
@@ -453,7 +465,9 @@ impl FirstTvResolver {
             .into_iter()
             .flatten()
             .filter(|item| {
-                item["uid"].as_u64().is_some_and(|uid| wanted.is_empty() || wanted.contains(&uid))
+                item["uid"]
+                    .as_u64()
+                    .is_some_and(|uid| wanted.is_empty() || wanted.contains(&uid))
             })
             .collect();
         match items.as_slice() {
@@ -548,7 +562,9 @@ impl FirstTvResolver {
         .await
         {
             Ok(fetched) if fetched.status.is_success() => {
-                Page::parse(&fetched.text(), &fetched.url).title().and_then(|t| clean_title(&t))
+                Page::parse(&fetched.text(), &fetched.url)
+                    .title()
+                    .and_then(|t| clean_title(&t))
             }
             _ => None,
         };
@@ -575,7 +591,14 @@ impl FirstTvResolver {
         // names their sizes, and the rest stay as whole manifests to fall back to.
         if let Some(first) = variants.first().cloned() {
             let mut subtitles = Vec::new();
-            let expanded = super::manifests::expand_all(&self.http, PLATFORM, vec![first], &mut subtitles, None).await;
+            let expanded = super::manifests::expand_all(
+                &self.http,
+                PLATFORM,
+                vec![first],
+                &mut subtitles,
+                None,
+            )
+            .await;
             if expanded.len() > 1 || expanded.first().is_some_and(|v| v.height.is_some()) {
                 let mut sized: Vec<Variant> = expanded
                     .into_iter()
@@ -646,7 +669,8 @@ mod tests {
     use crate::http::Fixture;
 
     const FRAGMENT: &str = "https://www.1tv.ru/shows/dobroe-utro/pro-zdorove/vesennyaya-allergiya-dobroe-utro-fragment-vypuska-ot-07042016";
-    const SPORT: &str = "https://www.sport1tv.ru/sport/chempionat-rossii-po-figurnomu-kataniyu-2025";
+    const SPORT: &str =
+        "https://www.sport1tv.ru/sport/chempionat-rossii-po-figurnomu-kataniyu-2025";
     const NEWS_STORY: &str = "https://www.1tv.ru/news/2026-09-14/553139";
     const NEWS_ISSUE: &str = "https://www.1tv.ru/news/issue/2026-09-13/21:00";
 
@@ -690,12 +714,21 @@ mod tests {
                 "/sport/chempionat-rossii-po-figurnomu-kataniyu-2025".into()
             ))
         );
-        assert_eq!(link("https://www.1tv.ru/-/oomxxj"), Some(Link::Page("/-/oomxxj".into())));
+        assert_eq!(
+            link("https://www.1tv.ru/-/oomxxj"),
+            Some(Link::Page("/-/oomxxj".into()))
+        );
         assert_eq!(link("https://www.1tv.ru/"), None);
         assert_eq!(link("https://www.1tv.ru/shows"), None);
         assert_eq!(link("https://www.1tv.ru/embed/abc"), None);
-        assert_eq!(link("https://static.1tv.ru/eump/embeds/public_vod.html"), None);
-        assert_eq!(link("https://1tv.ru.evil.test/news/2026-09-14/553139"), None);
+        assert_eq!(
+            link("https://static.1tv.ru/eump/embeds/public_vod.html"),
+            None
+        );
+        assert_eq!(
+            link("https://1tv.ru.evil.test/news/2026-09-14/553139"),
+            None
+        );
         assert_eq!(embed_url(1, 12).as_str(), "https://www.1tv.ru/embed/1:12");
     }
 
@@ -710,7 +743,10 @@ mod tests {
             ids("https://www.1tv.ru/playlist?videos_ids[]=1&videos_ids[]=2&news_ids[]=3"),
             vec![1, 2, 3]
         );
-        assert_eq!(ids("https://www.1tv.ru/playlist?collection_id=6497"), Vec::<u64>::new());
+        assert_eq!(
+            ids("https://www.1tv.ru/playlist?collection_id=6497"),
+            Vec::<u64>::new()
+        );
     }
 
     #[test]
@@ -718,7 +754,10 @@ mod tests {
         let flight = r#"2f:[["$","$L32",null,{"options":{"video":{"uid":553139,"type":11},"options":{"title":false}}}]]
 30:{"video":{"uid":553139,"type":11}} 31:{"video":{"uid":7,"type":12}}"#;
         assert_eq!(inlined_materials(flight), vec![(553139, 11), (7, 12)]);
-        assert_eq!(inlined_materials(r#"{"video":{"uid":"x","type":11}}"#), vec![]);
+        assert_eq!(
+            inlined_materials(r#"{"video":{"uid":"x","type":11}}"#),
+            vec![]
+        );
 
         let issue = r#"{"mainNewsId":553085,"mainNewsVideoMaterialPresent":true,"releaseNewsSize":19,"fragments":[{"id":553095,"link":"https://www.1tv.ru/news/2026-09-13/553095","title":"Главное событие","time":"21:01"},{"id":553096,"title":"Без ссылки"}]}"#;
         let entries = issue_entries(issue, "2026-09-13");
@@ -731,7 +770,10 @@ mod tests {
             ]
         );
         assert_eq!(entries[1].title.as_deref(), Some("Главное событие"));
-        let without_main = issue.replace("\"mainNewsVideoMaterialPresent\":true", "\"mainNewsVideoMaterialPresent\":false");
+        let without_main = issue.replace(
+            "\"mainNewsVideoMaterialPresent\":true",
+            "\"mainNewsVideoMaterialPresent\":false",
+        );
         assert_eq!(issue_entries(&without_main, "2026-09-13").len(), 2);
     }
 
@@ -764,8 +806,16 @@ mod tests {
                 .map(|v| (v.label.as_deref().unwrap(), v.url.as_str(), v.height))
                 .collect::<Vec<_>>(),
             vec![
-                ("sd", "https://balancer-vod.1tv.ru/video/x_950.mp4", Some(360)),
-                ("ld", "https://balancer-vod.1tv.ru/video/x_350.mp4", Some(270)),
+                (
+                    "sd",
+                    "https://balancer-vod.1tv.ru/video/x_950.mp4",
+                    Some(360)
+                ),
+                (
+                    "ld",
+                    "https://balancer-vod.1tv.ru/video/x_350.mp4",
+                    Some(270)
+                ),
             ]
         );
         assert_eq!(files[0].bitrate, Some(950_000));
@@ -780,7 +830,12 @@ mod tests {
     async fn show_fragments_resolve_through_the_player_list() {
         let resolver = resolver();
         assert!(resolver.matches(&url(FRAGMENT)));
-        let resolved = resolver.resolve(&url(FRAGMENT)).await.unwrap().media().unwrap();
+        let resolved = resolver
+            .resolve(&url(FRAGMENT))
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
         assert_eq!(resolved.id.as_deref(), Some("364746"));
         assert_eq!(
             resolved.title.as_deref(),
@@ -796,21 +851,44 @@ mod tests {
             resolved.thumbnail.as_ref().map(Url::as_str),
             Some("https://static.1tv.ru/uploads/photo/image/6/big/198806_big_ba3653ef60.jpg")
         );
-        assert_eq!(resolved.webpage_url.as_ref().map(Url::as_str), Some(FRAGMENT));
-        let hls: Vec<&Variant> = resolved.variants.iter().filter(|v| v.kind == VariantKind::Hls).collect();
+        assert_eq!(
+            resolved.webpage_url.as_ref().map(Url::as_str),
+            Some(FRAGMENT)
+        );
+        let hls: Vec<&Variant> = resolved
+            .variants
+            .iter()
+            .filter(|v| v.kind == VariantKind::Hls)
+            .collect();
         assert!(!hls.is_empty(), "{:?}", resolved.variants);
-        assert!(hls.iter().all(|v| v.height.is_some() && v.bitrate.is_some()));
-        let files: Vec<&Variant> = resolved.variants.iter().filter(|v| v.kind == VariantKind::File).collect();
+        assert!(
+            hls.iter()
+                .all(|v| v.height.is_some() && v.bitrate.is_some())
+        );
+        let files: Vec<&Variant> = resolved
+            .variants
+            .iter()
+            .filter(|v| v.kind == VariantKind::File)
+            .collect();
         assert!(!files.is_empty());
         assert!(files.iter().all(|v| v.container == Some(Container::Mp4)));
         assert!(files.iter().any(|v| v.height.is_some()));
-        assert!(files.iter().all(|v| v.url.as_str().starts_with("https://balancer-vod.1tv.ru/")));
+        assert!(
+            files
+                .iter()
+                .all(|v| v.url.as_str().starts_with("https://balancer-vod.1tv.ru/"))
+        );
     }
 
     #[tokio::test]
     async fn sport_links_redirect_to_the_site_and_resolve_by_collection() {
         let resolver = resolver();
-        let resolved = resolver.resolve(&url(SPORT)).await.unwrap().media().unwrap();
+        let resolved = resolver
+            .resolve(&url(SPORT))
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
         assert_eq!(resolved.id.as_deref(), Some("791002"));
         assert_eq!(
             resolved.title.as_deref(),
@@ -823,13 +901,26 @@ mod tests {
     #[tokio::test]
     async fn news_stories_resolve_by_their_inlined_material() {
         let resolver = resolver();
-        let resolved = resolver.resolve(&url(NEWS_STORY)).await.unwrap().media().unwrap();
+        let resolved = resolver
+            .resolve(&url(NEWS_STORY))
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
         assert_eq!(resolved.id.as_deref(), Some("883177"));
-        assert_eq!(resolved.title.as_deref(), Some("Выпуск новостей в 09:00 от 14.09.2026"));
+        assert_eq!(
+            resolved.title.as_deref(),
+            Some("Выпуск новостей в 09:00 от 14.09.2026")
+        );
         assert_eq!(resolved.duration, Some(Duration::from_secs(1314)));
         assert!(resolved.description.is_some());
         assert!(resolved.variants.iter().any(|v| v.kind == VariantKind::Hls));
-        assert!(resolved.variants.iter().any(|v| v.kind == VariantKind::File));
+        assert!(
+            resolved
+                .variants
+                .iter()
+                .any(|v| v.kind == VariantKind::File)
+        );
 
         let embed = resolver
             .resolve(&url("https://www.1tv.ru/embed/553139:11"))
@@ -850,15 +941,21 @@ mod tests {
         assert_eq!(playlist.id.as_deref(), Some("553085"));
         assert_eq!(
             playlist.title.as_deref(),
-            Some("Выпуск программы «Воскресное время» в 21:00 от 13.09.2026. Новости. Первый канал")
+            Some(
+                "Выпуск программы «Воскресное время» в 21:00 от 13.09.2026. Новости. Первый канал"
+            )
         );
         assert_eq!(
             playlist.entries[0].url.as_str(),
             "https://www.1tv.ru/news/2026-09-13/553085"
         );
         assert!(playlist.entries.len() > 2);
-        assert!(playlist.entries[1..].iter().all(|e| e.title.is_some()
-            && e.url.as_str().starts_with("https://www.1tv.ru/news/2026-09-13/")));
+        assert!(playlist.entries[1..].iter().all(|e| {
+            e.title.is_some()
+                && e.url
+                    .as_str()
+                    .starts_with("https://www.1tv.ru/news/2026-09-13/")
+        }));
         assert_eq!(playlist.total, Some(playlist.entries.len()));
     }
 
@@ -873,13 +970,13 @@ mod tests {
             .unwrap();
         assert!(resolved.live);
         assert_eq!(resolved.id.as_deref(), Some("live"));
-        assert_eq!(
-            resolved.title.as_deref(),
-            Some("Первый канал онлайн")
-        );
+        assert_eq!(resolved.title.as_deref(), Some("Первый канал онлайн"));
         assert!(!resolved.variants.is_empty());
-        assert!(resolved.variants.iter().all(|v| v.kind == VariantKind::Dash
-            && v.live
-            && v.url.path().ends_with(".mpd")));
+        assert!(
+            resolved
+                .variants
+                .iter()
+                .all(|v| v.kind == VariantKind::Dash && v.live && v.url.path().ends_with(".mpd"))
+        );
     }
 }

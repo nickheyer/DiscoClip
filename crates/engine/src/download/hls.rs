@@ -2,8 +2,8 @@
 //! then muxes video and audio locally.
 
 use std::collections::HashMap;
-use std::time::Duration;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use aes::cipher::{BlockModeDecrypt, KeyIvInit, block_padding::Pkcs7};
 use async_trait::async_trait;
@@ -134,9 +134,18 @@ struct KeepaliveTask {
 }
 
 impl KeepaliveTask {
-    fn start(http: Http, keepalive: Keepalive, platform: String, headers: Vec<(String, String)>) -> Self {
+    fn start(
+        http: Http,
+        keepalive: Keepalive,
+        platform: String,
+        headers: Vec<(String, String)>,
+    ) -> Self {
         let handle = tokio::spawn(async move {
-            let Keepalive::BunnyPing { url, secret, context_id } = keepalive;
+            let Keepalive::BunnyPing {
+                url,
+                secret,
+                context_id,
+            } = keepalive;
             let mut elapsed = 0u64;
             loop {
                 tokio::time::sleep(Duration::from_secs(2)).await;
@@ -346,10 +355,14 @@ impl Downloader for HlsDownloader {
         let headers = &variant.headers;
         let platform = context.platform.as_str();
         let query = &variant.query;
-        let _keepalive = variant
-            .keepalive
-            .clone()
-            .map(|keepalive| KeepaliveTask::start(self.http.clone(), keepalive, platform.to_string(), headers.clone()));
+        let _keepalive = variant.keepalive.clone().map(|keepalive| {
+            KeepaliveTask::start(
+                self.http.clone(),
+                keepalive,
+                platform.to_string(),
+                headers.clone(),
+            )
+        });
         let (video_base, video_playlist) =
             load_media_playlist(&self.http, &variant.url, platform, headers, query, 2).await?;
         let video = build_track(&video_base, &video_playlist, query)?;

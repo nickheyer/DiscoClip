@@ -18,18 +18,19 @@ use crate::http::{BROWSER_UA, Http};
 pub const PLATFORM: &str = "cpac";
 
 /// The episode id every CPAC link carries: `?id={uuid}`.
-static RE_ID: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$").unwrap()
-});
+static RE_ID: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$").unwrap());
 /// `/episode`, `/l-episode`, or `/{category}/episode/{slug}`.
-static RE_PATH: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^/(?:l-)?episode/?$|^/[^/]+/(?:episode|l-episode|episode-fr)/[^/]+/?$").unwrap());
+static RE_PATH: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^/(?:l-)?episode/?$|^/[^/]+/(?:episode|l-episode|episode-fr)/[^/]+/?$").unwrap()
+});
 /// The site's content services, which its app reads.
 const EPISODE_SERVICE: &str = "https://www.cpac.ca/api/1/services/episode-info.json";
 const PROGRAM_SERVICE: &str = "https://www.cpac.ca/api/1/services/item-list-program.json";
 const SITE_KEY: &str = "cpacca";
 /// The player's attributes.
-static RE_PLAYER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(<[^>]+\bdata-videourl=[^>]*>)").unwrap());
+static RE_PLAYER: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(<[^>]+\bdata-videourl=[^>]*>)").unwrap());
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Kind {
@@ -76,7 +77,9 @@ pub fn parse_link(url: &Url) -> Option<Link> {
     Some(Link {
         kind: Kind::Episode,
         id,
-        french: path.starts_with("/l-episode") || path.contains("/l-episode/") || path.contains("/episode-fr/"),
+        french: path.starts_with("/l-episode")
+            || path.contains("/l-episode/")
+            || path.contains("/episode-fr/"),
     })
 }
 
@@ -114,7 +117,11 @@ impl CpacResolver {
 
     /// An episode as the episode service describes it, in the link's language: the
     /// stream, titles, description, poster and air time.
-    async fn resolve_episode_from_service(&self, link: &Link, url: &Url) -> Result<Resolution, ResolveError> {
+    async fn resolve_episode_from_service(
+        &self,
+        link: &Link,
+        url: &Url,
+    ) -> Result<Resolution, ResolveError> {
         let answer = self.service(EPISODE_SERVICE, &link.id, url).await?;
         let details = &answer["component"]["details"];
         let stream = util::url_of(&details["videoUrl"], None)
@@ -129,13 +136,18 @@ impl CpacResolver {
         resolved.description = localized(details, "description", link.french)
             .map(|d| util::clean_html(&d))
             .and_then(|d| clean_title(&d));
-        resolved.thumbnail = localized(details, "image", link.french).and_then(|i| util::join_url(Some(url), &i));
+        resolved.thumbnail =
+            localized(details, "image", link.french).and_then(|i| util::join_url(Some(url), &i));
         resolved.duration = util::text(&details["videoDuration"])
             .and_then(|span| parse_time_stamp(&span))
             .or(expanded.duration);
-        resolved.uploaded_at = util::text(&details["liveDateTime"]).and_then(|t| util::parse_timestamp(&t));
+        resolved.uploaded_at =
+            util::text(&details["liveDateTime"]).and_then(|t| util::parse_timestamp(&t));
         resolved.uploader = Some("CPAC".to_string());
-        resolved.live = details["type"].as_str().is_some_and(|t| t.eq_ignore_ascii_case("live")) || expanded.live;
+        resolved.live = details["type"]
+            .as_str()
+            .is_some_and(|t| t.eq_ignore_ascii_case("live"))
+            || expanded.live;
         resolved.webpage_url = localized(details, "url", link.french)
             .and_then(|path| util::join_url(Some(url), &path))
             .or_else(|| Some(url.clone()));
@@ -164,7 +176,8 @@ impl CpacResolver {
                 Some(super::PlaylistEntry {
                     url: episode,
                     title: localized(item, "title", link.french).and_then(|t| clean_title(&t)),
-                    duration: util::text(&item["videoDuration"]).and_then(|span| parse_time_stamp(&span)),
+                    duration: util::text(&item["videoDuration"])
+                        .and_then(|span| parse_time_stamp(&span)),
                 })
             })
             .collect();
@@ -176,7 +189,11 @@ impl CpacResolver {
             id: Some(format!("program{}", link.id)),
             title: localized(&answer, "title", link.french)
                 .and_then(|t| clean_title(&t))
-                .or_else(|| entries.first().and_then(|_| localized(&answer["item"][0], "category", link.french))),
+                .or_else(|| {
+                    entries
+                        .first()
+                        .and_then(|_| localized(&answer["item"][0], "category", link.french))
+                }),
             total: Some(entries.len()),
             entries,
         }))
@@ -254,9 +271,12 @@ impl Resolver for CpacResolver {
         let (title, description, thumbnail) = {
             let page = Page::parse(&html, &fetched.url);
             (
-                page.meta("og:title").and_then(|t| clean_title(&t)).or_else(|| page.title()),
+                page.meta("og:title")
+                    .and_then(|t| clean_title(&t))
+                    .or_else(|| page.title()),
                 page.meta("og:description").and_then(|d| clean_title(&d)),
-                page.meta("og:image").and_then(|t| util::join_url(Some(&fetched.url), &t)),
+                page.meta("og:image")
+                    .and_then(|t| util::join_url(Some(&fetched.url), &t)),
             )
         };
         let live = attribute("data-type").is_some_and(|kind| kind.eq_ignore_ascii_case("live"));
@@ -268,7 +288,8 @@ impl Resolver for CpacResolver {
         resolved.duration = attribute("data-videoduration")
             .and_then(|span| parse_time_stamp(&span))
             .or(expanded.duration);
-        resolved.uploaded_at = attribute("data-livedatetime").and_then(|t| util::parse_timestamp(&t));
+        resolved.uploaded_at =
+            attribute("data-livedatetime").and_then(|t| util::parse_timestamp(&t));
         resolved.uploader = Some("CPAC".to_string());
         resolved.live = live || expanded.live;
         resolved.webpage_url = Some(fetched.url.clone());
@@ -318,20 +339,51 @@ mod tests {
         let link = |s: &str| parse_link(&Url::parse(s).unwrap());
         assert_eq!(
             link("https://www.cpac.ca/episode?id=fc7edcae-4660-47e1-ba61-5b7f29a9db0f"),
-            Some(Link { kind: Kind::Episode, id: ID.into(), french: false })
+            Some(Link {
+                kind: Kind::Episode,
+                id: ID.into(),
+                french: false
+            })
         );
         assert_eq!(
             link("https://www.cpac.ca/l-episode?id=FC7EDCAE-4660-47E1-BA61-5B7F29A9DB0F"),
-            Some(Link { kind: Kind::Episode, id: ID.into(), french: true })
+            Some(Link {
+                kind: Kind::Episode,
+                id: ID.into(),
+                french: true
+            })
         );
         assert_eq!(
-            link("https://www.cpac.ca/headline-politics/episode/news-conference?id=fc7edcae-4660-47e1-ba61-5b7f29a9db0f"),
-            Some(Link { kind: Kind::Episode, id: ID.into(), french: false })
+            link(
+                "https://www.cpac.ca/headline-politics/episode/news-conference?id=fc7edcae-4660-47e1-ba61-5b7f29a9db0f"
+            ),
+            Some(Link {
+                kind: Kind::Episode,
+                id: ID.into(),
+                french: false
+            })
         );
         assert_eq!(link("https://www.cpac.ca/episode?id=123"), None);
-        assert_eq!(link("https://www.cpac.ca/program?id=6"), Some(Link { kind: Kind::Program, id: "6".into(), french: false }));
-        assert_eq!(link("https://www.cpac.ca/emission?id=6"), Some(Link { kind: Kind::Program, id: "6".into(), french: true }));
-        assert_eq!(link("https://example.com/episode?id=fc7edcae-4660-47e1-ba61-5b7f29a9db0f"), None);
+        assert_eq!(
+            link("https://www.cpac.ca/program?id=6"),
+            Some(Link {
+                kind: Kind::Program,
+                id: "6".into(),
+                french: false
+            })
+        );
+        assert_eq!(
+            link("https://www.cpac.ca/emission?id=6"),
+            Some(Link {
+                kind: Kind::Program,
+                id: "6".into(),
+                french: true
+            })
+        );
+        assert_eq!(
+            link("https://example.com/episode?id=fc7edcae-4660-47e1-ba61-5b7f29a9db0f"),
+            None
+        );
     }
 
     #[tokio::test]
@@ -343,12 +395,19 @@ mod tests {
         ), id = ID).replace("{id}", ID);
         let mut fixture = Fixture::new(PLATFORM, None);
         fixture.exchanges.push(get(
-            &format!("https://www.cpac.ca/api/1/services/episode-info.json?crafterSite=cpacca&id={ID}"),
+            &format!(
+                "https://www.cpac.ca/api/1/services/episode-info.json?crafterSite=cpacca&id={ID}"
+            ),
             404,
             "text/html",
             "<html>Page not found</html>".into(),
         ));
-        fixture.exchanges.push(get(&format!("https://www.cpac.ca/episode?id={ID}"), 200, "text/html", page));
+        fixture.exchanges.push(get(
+            &format!("https://www.cpac.ca/episode?id={ID}"),
+            200,
+            "text/html",
+            page,
+        ));
         fixture.exchanges.push(get(
             &format!("https://cpac-vod.cdn.vustreams.com/cpac/vod/{ID}/{ID}_nodrm.ism/.m3u8"),
             200,
@@ -377,13 +436,21 @@ mod tests {
             Some("News Conference to Celebrate National Kindness Week – February 15, 2022")
         );
         assert_eq!(resolved.duration, Some(Duration::from_secs(53 * 60 + 36)));
-        assert_eq!(resolved.uploaded_at.map(|t| t.as_second()), Some(1644901200));
+        assert_eq!(
+            resolved.uploaded_at.map(|t| t.as_second()),
+            Some(1644901200)
+        );
         assert!(!resolved.live);
         assert_eq!(resolved.variants.len(), 1);
         assert_eq!(resolved.variants[0].height, Some(720));
         assert!(matches!(
             resolver
-                .resolve(&Url::parse("https://www.cpac.ca/episode?id=00000000-0000-0000-0000-000000000000").unwrap())
+                .resolve(
+                    &Url::parse(
+                        "https://www.cpac.ca/episode?id=00000000-0000-0000-0000-000000000000"
+                    )
+                    .unwrap()
+                )
                 .await
                 .unwrap_err(),
             ResolveError::NotFound(_)

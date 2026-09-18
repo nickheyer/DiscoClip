@@ -285,7 +285,12 @@ impl Resolver for JixieResolver {
         Platform {
             id: PLATFORM,
             name: "Jixie",
-            hosts: &["video.kompas.com", "apiv.kompas.com", "apidam.jixie.io", "stream.jixie.media"],
+            hosts: &[
+                "video.kompas.com",
+                "apiv.kompas.com",
+                "apidam.jixie.io",
+                "stream.jixie.media",
+            ],
             features: &["videos"],
             formats: &["mp4", "hls"],
             session: SessionSupport::None,
@@ -369,7 +374,10 @@ mod tests {
             id("https://video.kompas.com/watch/1924197/chitra-subyakto-bajumu"),
             Some("1924197".into())
         );
-        assert_eq!(id("https://video.kompas.com/watch/1924197"), Some("1924197".into()));
+        assert_eq!(
+            id("https://video.kompas.com/watch/1924197"),
+            Some("1924197".into())
+        );
         assert_eq!(id("https://video.kompas.com/channel/beginu"), None);
         assert_eq!(id("https://apiv.kompas.com/other?video_id=1"), None);
         assert_eq!(id("https://apidam.jixie.io/api/public/stream"), None);

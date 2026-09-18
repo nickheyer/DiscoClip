@@ -376,7 +376,11 @@ impl DrtvResolver {
             };
             duration = duration.or(expanded.duration);
             live |= expanded.live;
-            let named = name_variants(expanded.variants, &format_id, is_assisted.then_some(service));
+            let named = name_variants(
+                expanded.variants,
+                &format_id,
+                is_assisted.then_some(service),
+            );
             for variant in named {
                 if is_assisted {
                     assisted.push(variant);

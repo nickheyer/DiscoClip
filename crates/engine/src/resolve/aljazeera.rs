@@ -29,8 +29,10 @@ static RE_HOST: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(?:[a-z0-9-]+\.)?aljazeera\.(?:com|net)$").unwrap());
 /// A Brightcove player on a page, for posts whose video the API withholds.
 static RE_BRIGHTCOVE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"https?://players\.brightcove\.net/(\d+)/([^/_]+)_([^/]+)/index\.html\?videoId=(\d+)"#)
-        .unwrap()
+    Regex::new(
+        r#"https?://players\.brightcove\.net/(\d+)/([^/_]+)_([^/]+)/index\.html\?videoId=(\d+)"#,
+    )
+    .unwrap()
 });
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -119,7 +121,8 @@ impl Resolver for AljazeeraResolver {
 
     async fn resolve(&self, url: &Url) -> Result<Resolution, ResolveError> {
         let link = parse_link(url).ok_or_else(|| ResolveError::NotFound(url.clone()))?;
-        let variables = serde_json::json!({"name": link.name, "postType": link.post_type}).to_string();
+        let variables =
+            serde_json::json!({"name": link.name, "postType": link.post_type}).to_string();
         let api = util::with_query(
             &Url::parse(&format!("https://{}/graphql", link.host)).expect("valid"),
             &[
@@ -148,7 +151,8 @@ impl Resolver for AljazeeraResolver {
         }
         let video = &article["video"];
         let video_id = util::text(&video["id"]);
-        let account = util::text(&video["accountId"]).unwrap_or_else(|| DEFAULT_ACCOUNT.to_string());
+        let account =
+            util::text(&video["accountId"]).unwrap_or_else(|| DEFAULT_ACCOUNT.to_string());
         let player = util::text(&video["playerId"]).unwrap_or_else(|| DEFAULT_PLAYER.to_string());
 
         // The video plays through the network's Brightcove player, which the API names
@@ -159,7 +163,11 @@ impl Resolver for AljazeeraResolver {
             None => {
                 let page = fetch(&self.http, url, PLATFORM, BROWSER_UA, &[], MAX_PAGE).await?;
                 RE_BRIGHTCOVE.captures(&page.text()).map(|caps| {
-                    (caps[1].to_string(), caps[2].to_string(), caps[4].to_string())
+                    (
+                        caps[1].to_string(),
+                        caps[2].to_string(),
+                        caps[4].to_string(),
+                    )
                 })
             }
         };
@@ -269,7 +277,11 @@ mod tests {
         let variables = json!({"name": name, "postType": post_type}).to_string();
         util::with_query(
             &Url::parse(&format!("https://{host}/graphql")).unwrap(),
-            &[("wp-site", site), ("operationName", "ArchipelagoSingleArticleQuery"), ("variables", &variables)],
+            &[
+                ("wp-site", site),
+                ("operationName", "ArchipelagoSingleArticleQuery"),
+                ("variables", &variables),
+            ],
         )
         .to_string()
     }
@@ -283,9 +295,11 @@ mod tests {
         assert_eq!(episode.name, "will-foreign-workers-leave-south-africa");
         let balkans = link("https://balkans.aljazeera.net/videos/2021/11/6/pojedini-domovi-u-sarajevu-jos-pod-vodom").unwrap();
         assert_eq!((balkans.site, balkans.post_type), ("ajb", "video"));
-        let news = link("https://www.aljazeera.com/news/2026/9/15/can-china-play-peacemaker").unwrap();
+        let news =
+            link("https://www.aljazeera.com/news/2026/9/15/can-china-play-peacemaker").unwrap();
         assert_eq!(news.post_type, "news");
-        let programme = link("https://www.aljazeera.com/program/the-listening-post/2026/9/13/x").unwrap();
+        let programme =
+            link("https://www.aljazeera.com/program/the-listening-post/2026/9/13/x").unwrap();
         assert_eq!(programme.post_type, "episode");
         let feature = link("https://www.aljazeera.com/features/2026/9/1/x").unwrap();
         assert_eq!(feature.post_type, "post");
@@ -329,7 +343,13 @@ mod tests {
                           "sourceUrl": "https://ajmn-aje-vod.akamaized.net/media/v1/pmp4/static/clear/665003303001/x/main.mp4"}
             }}}).to_string(),
         ));
-        brightcove(&mut fixture, "665003303001", "6tKQRAx7lu", "6404882346112", "Inside Story");
+        brightcove(
+            &mut fixture,
+            "665003303001",
+            "6tKQRAx7lu",
+            "6404882346112",
+            "Inside Story",
+        );
         let resolver = AljazeeraResolver::new(Http::replay(fixture));
         let url = Url::parse(EPISODE).unwrap();
         assert!(resolver.matches(&url));
@@ -342,9 +362,16 @@ mod tests {
         );
         assert_eq!(resolved.description.as_deref(), Some("Inside Story asks."));
         assert_eq!(resolved.duration, Some(Duration::from_secs(27 * 60 + 37)));
-        assert_eq!(resolved.uploaded_at.map(|t| t.as_second()), Some(1789065000));
+        assert_eq!(
+            resolved.uploaded_at.map(|t| t.as_second()),
+            Some(1789065000)
+        );
         assert_eq!(resolved.uploader.as_deref(), Some("Al Jazeera"));
-        assert_eq!(resolved.variants.len(), 2, "the player's rendition and the network's file");
+        assert_eq!(
+            resolved.variants.len(),
+            2,
+            "the player's rendition and the network's file"
+        );
         assert_eq!(resolved.variants[0].height, Some(720));
         assert_eq!(
             resolved.variants[1].url.as_str(),
@@ -369,16 +396,32 @@ mod tests {
             Some("Will foreign workers leave South Africa? I Inside story")
         );
         assert!(resolved.variants.len() > 10, "{}", resolved.variants.len());
-        assert!(resolved.variants.iter().any(|v| v.kind == super::super::VariantKind::File));
-        assert!(resolved.variants.iter().any(|v| v.kind == super::super::VariantKind::Hls && v.height.is_some()));
+        assert!(
+            resolved
+                .variants
+                .iter()
+                .any(|v| v.kind == super::super::VariantKind::File)
+        );
+        assert!(
+            resolved
+                .variants
+                .iter()
+                .any(|v| v.kind == super::super::VariantKind::Hls && v.height.is_some())
+        );
         assert!(resolved.variants.iter().any(|v| v.height == Some(1080)));
         assert!(
-            resolved.variants.iter().any(|v| v.url.host_str() == Some("ajmn-aje-vod.akamaized.net")),
+            resolved
+                .variants
+                .iter()
+                .any(|v| v.url.host_str() == Some("ajmn-aje-vod.akamaized.net")),
             "the network's own file is among the renditions"
         );
         assert!(matches!(
             resolver
-                .resolve(&Url::parse("https://www.aljazeera.com/news/2026/9/10/no-such-post-here").unwrap())
+                .resolve(
+                    &Url::parse("https://www.aljazeera.com/news/2026/9/10/no-such-post-here")
+                        .unwrap()
+                )
                 .await
                 .unwrap_err(),
             ResolveError::NotFound(_)
@@ -394,18 +437,26 @@ mod tests {
             "application/json",
             json!({"data": {"article": {"id": "1", "title": "Djokovic", "video": {"id": "6285347919001", "accountId": "911432371001", "playerId": "csvTfAlKW"}}}}).to_string(),
         ));
-        brightcove(&mut fixture, "911432371001", "csvTfAlKW", "6285347919001", "Djokovic u finalu");
+        brightcove(
+            &mut fixture,
+            "911432371001",
+            "csvTfAlKW",
+            "6285347919001",
+            "Djokovic u finalu",
+        );
         fixture.exchanges.push(get(
             &api("www.aljazeera.com", "aje", "no-such-post", "news"),
             200,
             "application/json",
-            json!({"errors": [{"message": "no_posts_found"}], "data": {"article": null}}).to_string(),
+            json!({"errors": [{"message": "no_posts_found"}], "data": {"article": null}})
+                .to_string(),
         ));
         fixture.exchanges.push(get(
             &api("www.aljazeera.com", "aje", "player-on-page", "news"),
             200,
             "application/json",
-            json!({"data": {"article": {"id": "2", "title": "On the page", "video": null}}}).to_string(),
+            json!({"data": {"article": {"id": "2", "title": "On the page", "video": null}}})
+                .to_string(),
         ));
         fixture.exchanges.push(get(
             "https://www.aljazeera.com/news/2026/9/15/player-on-page",
@@ -413,7 +464,13 @@ mod tests {
             "text/html",
             r#"<html><iframe src="https://players.brightcove.net/665003303001/6tKQRAx7lu_default/index.html?videoId=6404882346112"></iframe></html>"#.into(),
         ));
-        brightcove(&mut fixture, "665003303001", "6tKQRAx7lu", "6404882346112", "From the page");
+        brightcove(
+            &mut fixture,
+            "665003303001",
+            "6tKQRAx7lu",
+            "6404882346112",
+            "From the page",
+        );
         fixture.exchanges.push(get(
             &api("www.aljazeera.com", "aje", "text-only", "news"),
             200,
@@ -428,7 +485,12 @@ mod tests {
         ));
         let resolver = AljazeeraResolver::new(Http::replay(fixture));
         let resolved = resolver
-            .resolve(&Url::parse("https://balkans.aljazeera.net/videos/2021/11/6/djokovic-usao-u-finale").unwrap())
+            .resolve(
+                &Url::parse(
+                    "https://balkans.aljazeera.net/videos/2021/11/6/djokovic-usao-u-finale",
+                )
+                .unwrap(),
+            )
             .await
             .unwrap()
             .media()
@@ -439,13 +501,17 @@ mod tests {
         assert_eq!(resolved.variants[0].height, Some(720));
         assert!(matches!(
             resolver
-                .resolve(&Url::parse("https://www.aljazeera.com/news/2026/9/15/no-such-post").unwrap())
+                .resolve(
+                    &Url::parse("https://www.aljazeera.com/news/2026/9/15/no-such-post").unwrap()
+                )
                 .await
                 .unwrap_err(),
             ResolveError::NotFound(_)
         ));
         let resolved = resolver
-            .resolve(&Url::parse("https://www.aljazeera.com/news/2026/9/15/player-on-page").unwrap())
+            .resolve(
+                &Url::parse("https://www.aljazeera.com/news/2026/9/15/player-on-page").unwrap(),
+            )
             .await
             .unwrap()
             .media()

@@ -33,9 +33,14 @@ static RE_BANGUMI_LIST: LazyLock<Regex> =
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Link {
-    Video { id: String },
+    Video {
+        id: String,
+    },
     /// A bangumi episode; `ac` picks a highlight clip of the page instead.
-    Bangumi { id: String, ac: Option<String> },
+    Bangumi {
+        id: String,
+        ac: Option<String>,
+    },
 }
 
 pub fn parse_link(url: &Url) -> Option<Link> {
@@ -65,7 +70,9 @@ fn assigned_json(html: &str, assignment: &Regex) -> Option<Value> {
     let rest = &html[start..];
     let end = util::balanced_js_end(rest)?;
     let text = &rest[..end];
-    serde_json::from_str(text).ok().or_else(|| util::parse_js(text))
+    serde_json::from_str(text)
+        .ok()
+        .or_else(|| util::parse_js(text))
 }
 
 /// The renditions a player setup's `ksPlayJson` lists, as HLS variants played with the
@@ -151,7 +158,10 @@ impl AcfunResolver {
         let current = &info["currentVideoInfo"];
         let variants = representations(current);
         if variants.is_empty() {
-            return Err(ResolveError::unavailable(url, "the player lists no renditions"));
+            return Err(ResolveError::unavailable(
+                url,
+                "the player lists no renditions",
+            ));
         }
         let mut title = info["title"].as_str().and_then(clean_title);
         let parts = info["videoList"].as_array().cloned().unwrap_or_default();
@@ -162,8 +172,15 @@ impl AcfunResolver {
                 .enumerate()
                 .find(|(_, part)| util::text(&part["id"]).as_deref() == Some(&current_id))
         {
-            let part_title = part["title"].as_str().and_then(clean_title).unwrap_or_default();
-            title = title.map(|t| format!("{t} P{:02} {part_title}", index + 1).trim().to_string());
+            let part_title = part["title"]
+                .as_str()
+                .and_then(clean_title)
+                .unwrap_or_default();
+            title = title.map(|t| {
+                format!("{t} P{:02} {part_title}", index + 1)
+                    .trim()
+                    .to_string()
+            });
         }
         let mut resolved = Resolved::new(PLATFORM);
         resolved.id = Some(id.to_string());
@@ -208,7 +225,10 @@ impl AcfunResolver {
         };
         let variants = representations(&video_info);
         if variants.is_empty() {
-            return Err(ResolveError::unavailable(url, "the player lists no renditions"));
+            return Err(ResolveError::unavailable(
+                url,
+                "the player lists no renditions",
+            ));
         }
         resolved.id = Some(match ac {
             Some(ac) => format!("{id}__{ac}"),
@@ -308,19 +328,29 @@ mod tests {
         let link = |s: &str| parse_link(&Url::parse(s).unwrap());
         assert_eq!(
             link("https://www.acfun.cn/v/ac35457073"),
-            Some(Link::Video { id: "35457073".into() })
+            Some(Link::Video {
+                id: "35457073".into()
+            })
         );
         assert_eq!(
             link("https://www.acfun.cn/v/ac35468952_2"),
-            Some(Link::Video { id: "35468952_2".into() })
+            Some(Link::Video {
+                id: "35468952_2".into()
+            })
         );
         assert_eq!(
             link("https://www.acfun.cn/bangumi/aa6002917_36188_1745457?ac=2"),
-            Some(Link::Bangumi { id: "aa6002917_36188_1745457".into(), ac: Some("2".into()) })
+            Some(Link::Bangumi {
+                id: "aa6002917_36188_1745457".into(),
+                ac: Some("2".into())
+            })
         );
         assert_eq!(
             link("https://www.acfun.cn/bangumi/aa5023171_36188_1750645"),
-            Some(Link::Bangumi { id: "aa5023171_36188_1750645".into(), ac: None })
+            Some(Link::Bangumi {
+                id: "aa5023171_36188_1750645".into(),
+                ac: None
+            })
         );
         assert_eq!(link("https://www.acfun.cn/u/12345"), None);
         assert_eq!(link("https://example.com/v/ac35457073"), None);
@@ -338,8 +368,15 @@ mod tests {
         assert_eq!(best.bitrate, Some(2_400_000));
         assert_eq!(best.video, Some(VideoCodec::H264));
         assert_eq!(best.label.as_deref(), Some("1080P60"));
-        assert_eq!(best.headers, vec![("referer".to_string(), SITE.to_string())]);
-        assert_eq!(variants[1].video, Some(VideoCodec::H264), "codec-less renditions are H.264");
+        assert_eq!(
+            best.headers,
+            vec![("referer".to_string(), SITE.to_string())]
+        );
+        assert_eq!(
+            variants[1].video,
+            Some(VideoCodec::H264),
+            "codec-less renditions are H.264"
+        );
     }
 
     #[tokio::test]
@@ -375,7 +412,10 @@ mod tests {
             "https://www.acfun.cn/u/12345"
         );
         assert_eq!(resolved.duration, Some(Duration::from_millis(61234)));
-        assert_eq!(resolved.uploaded_at.map(|t| t.as_second()), Some(1660000000));
+        assert_eq!(
+            resolved.uploaded_at.map(|t| t.as_second()),
+            Some(1660000000)
+        );
         assert_eq!(resolved.variants.len(), 2);
         assert!(matches!(
             resolver
@@ -394,10 +434,22 @@ mod tests {
             "hlVideoInfo": {"id": 778, "title": "Highlight 2", "ksPlayJson": play_json(), "durationMillis": 5000}
         });
         let list = json!({"items": [{"videoId": 777, "durationMillis": 1440000}, {"videoId": 778, "durationMillis": 5000}]});
-        let page = format!("<html><script>window.bangumiData = {data};\nwindow.bangumiList = {list};\n</script></html>");
+        let page = format!(
+            "<html><script>window.bangumiData = {data};\nwindow.bangumiList = {list};\n</script></html>"
+        );
         let mut fixture = Fixture::new(PLATFORM, None);
-        fixture.exchanges.push(get("https://www.acfun.cn/bangumi/aa6002917_36188_1745457", 200, "text/html", page.clone()));
-        fixture.exchanges.push(get("https://www.acfun.cn/bangumi/aa6002917_36188_1745457?ac=2", 200, "text/html", page));
+        fixture.exchanges.push(get(
+            "https://www.acfun.cn/bangumi/aa6002917_36188_1745457",
+            200,
+            "text/html",
+            page.clone(),
+        ));
+        fixture.exchanges.push(get(
+            "https://www.acfun.cn/bangumi/aa6002917_36188_1745457?ac=2",
+            200,
+            "text/html",
+            page,
+        ));
         let resolver = AcfunResolver::new(Http::replay(fixture));
         let episode = resolver
             .resolve(&Url::parse("https://www.acfun.cn/bangumi/aa6002917_36188_1745457").unwrap())
@@ -410,7 +462,9 @@ mod tests {
         assert_eq!(episode.duration, Some(Duration::from_millis(1440000)));
         assert_eq!(episode.variants.len(), 2);
         let highlight = resolver
-            .resolve(&Url::parse("https://www.acfun.cn/bangumi/aa6002917_36188_1745457?ac=2").unwrap())
+            .resolve(
+                &Url::parse("https://www.acfun.cn/bangumi/aa6002917_36188_1745457?ac=2").unwrap(),
+            )
             .await
             .unwrap()
             .media()

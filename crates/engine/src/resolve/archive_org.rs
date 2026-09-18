@@ -286,7 +286,11 @@ pub fn player_playlist(html: &str) -> Vec<PlayerEntry> {
 /// its original or derive from it; without a player playlist, every original media file
 /// with its derivatives, as the metadata chains them. Private files are left out unless
 /// `logged_in`.
-pub fn recordings_of(files: &[ItemFile], playlist: &[PlayerEntry], logged_in: bool) -> Vec<Recording> {
+pub fn recordings_of(
+    files: &[ItemFile],
+    playlist: &[PlayerEntry],
+    logged_in: bool,
+) -> Vec<Recording> {
     let playable = |file: &ItemFile| is_media_name(&file.name) && (!file.private || logged_in);
     if !playlist.is_empty() {
         return playlist
@@ -322,7 +326,10 @@ pub fn recordings_of(files: &[ItemFile], playlist: &[PlayerEntry], logged_in: bo
         .into_iter()
         .filter_map(|root| {
             groups.remove(&root).map(|files| Recording {
-                title: files.iter().find(|f| f.name == root).and_then(|f| f.title.clone()),
+                title: files
+                    .iter()
+                    .find(|f| f.name == root)
+                    .and_then(|f| f.title.clone()),
                 artist: None,
                 image: None,
                 duration: files.iter().filter_map(|f| f.length).max(),
@@ -392,7 +399,11 @@ pub fn variant_of(item: &str, file: &ItemFile) -> Variant {
     v.container = Container::from_extension(&ext).or_else(|| Some(Container::Other(ext.clone())));
     let (video, audio) = codecs_for(&file.format, &ext);
     v.video = if audio_only { None } else { video };
-    v.audio = if audio_only { Some(audio_codec_for(&ext)) } else { audio };
+    v.audio = if audio_only {
+        Some(audio_codec_for(&ext))
+    } else {
+        audio
+    };
     v.audio_only = audio_only;
     v.width = file.width;
     v.height = file.height;
@@ -507,7 +518,10 @@ fn resolved_of(item: &str, metadata: &Value, recording: &Recording, alone: bool)
     resolved.title = if alone {
         item_title.or_else(|| recording.title.clone())
     } else {
-        recording.title.clone().or_else(|| Some(stem(&recording.root)))
+        recording
+            .title
+            .clone()
+            .or_else(|| Some(stem(&recording.root)))
     };
     resolved.description = joined_text(&meta["description"])
         .map(|d| util::clean_html(&d))
@@ -534,7 +548,11 @@ fn resolved_of(item: &str, metadata: &Value, recording: &Recording, alone: bool)
         .or_else(|| Url::parse(&format!("{SITE}services/img/{item}")).ok());
     resolved.webpage_url = Url::parse(&format!("{SITE}details/{item}")).ok();
     resolved.subtitles = recording.subtitles.clone();
-    resolved.variants = recording.files.iter().map(|f| variant_of(item, f)).collect();
+    resolved.variants = recording
+        .files
+        .iter()
+        .map(|f| variant_of(item, f))
+        .collect();
     resolved
 }
 
@@ -549,8 +567,17 @@ impl Resolver for ArchiveOrgResolver {
             id: PLATFORM,
             name: "Internet Archive",
             hosts: &["archive.org"],
-            features: &["items", "files", "embeds", "multi-recording items", "audio", "subtitles"],
-            formats: &["mp4", "webm", "ogv", "avi", "mkv", "mov", "mp3", "ogg", "flac"],
+            features: &[
+                "items",
+                "files",
+                "embeds",
+                "multi-recording items",
+                "audio",
+                "subtitles",
+            ],
+            formats: &[
+                "mp4", "webm", "ogv", "avi", "mkv", "mov", "mp3", "ogg", "flac",
+            ],
             session: SessionSupport::Optional,
             examples: &[
                 "https://archive.org/details/BigBuckBunny_124",
@@ -679,14 +706,18 @@ mod tests {
             })
         );
         assert_eq!(
-            link("https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4"),
+            link(
+                "https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4"
+            ),
             Some(Link {
                 item: "BigBuckBunny_124".into(),
                 file: Some("Content/big_buck_bunny_720p_surround.mp4".into())
             })
         );
         assert_eq!(
-            link("https://archive.org/details/x/My%20File.mp4").unwrap().file,
+            link("https://archive.org/details/x/My%20File.mp4")
+                .unwrap()
+                .file,
             Some("My File.mp4".into())
         );
         assert_eq!(link("https://archive.org/search?query=bunny"), None);
@@ -696,10 +727,16 @@ mod tests {
     #[tokio::test]
     async fn an_item_with_one_video_resolves_with_every_derivative() {
         let mut fixture = Fixture::new("archive_org", None);
-        fixture
-            .exchanges
-            .push(get("https://archive.org/metadata/BigBuckBunny_124", 200, ITEM));
-        fixture.exchanges.push(get("https://archive.org/embed/BigBuckBunny_124", 404, "<html>not found</html>"));
+        fixture.exchanges.push(get(
+            "https://archive.org/metadata/BigBuckBunny_124",
+            200,
+            ITEM,
+        ));
+        fixture.exchanges.push(get(
+            "https://archive.org/embed/BigBuckBunny_124",
+            404,
+            "<html>not found</html>",
+        ));
         let resolver = ArchiveOrgResolver::new(Http::replay(fixture));
         let url = Url::parse("https://archive.org/details/BigBuckBunny_124").unwrap();
         assert!(resolver.matches(&url));
@@ -773,12 +810,24 @@ mod tests {
         fixture
             .exchanges
             .push(get("https://archive.org/metadata/two", 200, two));
-        fixture.exchanges.push(get("https://archive.org/embed/two", 404, "<html>not found</html>"));
+        fixture.exchanges.push(get(
+            "https://archive.org/embed/two",
+            404,
+            "<html>not found</html>",
+        ));
         fixture
             .exchanges
             .push(get("https://archive.org/metadata/nothing", 200, "{}"));
-        fixture.exchanges.push(get("https://archive.org/embed/nothing", 404, "<html>not found</html>"));
-        fixture.exchanges.push(get("https://archive.org/embed/text", 404, "<html>not found</html>"));
+        fixture.exchanges.push(get(
+            "https://archive.org/embed/nothing",
+            404,
+            "<html>not found</html>",
+        ));
+        fixture.exchanges.push(get(
+            "https://archive.org/embed/text",
+            404,
+            "<html>not found</html>",
+        ));
         fixture.exchanges.push(get(
             "https://archive.org/metadata/text",
             200,
@@ -882,7 +931,11 @@ mod tests {
             Some("https://archive.org/download/speeches/One.png")
         );
         assert_eq!(one.variants.len(), 3);
-        assert!(one.variants.iter().all(|v| v.audio_only && v.video.is_none() && v.width.is_none()));
+        assert!(
+            one.variants
+                .iter()
+                .all(|v| v.audio_only && v.video.is_none() && v.width.is_none())
+        );
         assert_eq!(one.variants[0].label.as_deref(), Some("original"));
         assert_eq!(one.variants[0].audio, Some(AudioCodec::Mp3));
         assert_eq!(one.variants[2].label.as_deref(), Some("Ogg Vorbis"));
@@ -906,7 +959,10 @@ mod tests {
         assert_eq!(two.variants.len(), 1);
         assert!(two.variants[0].url.path().ends_with("/Two.mp3"));
         assert_eq!(
-            parse_link(&Url::parse("https://archive.org/details/speeches/Number+One.mp3").unwrap()).unwrap().file.as_deref(),
+            parse_link(&Url::parse("https://archive.org/details/speeches/Number+One.mp3").unwrap())
+                .unwrap()
+                .file
+                .as_deref(),
             Some("Number One.mp3")
         );
     }

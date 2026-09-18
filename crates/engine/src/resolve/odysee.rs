@@ -81,7 +81,11 @@ pub fn parse_link(url: &Url) -> Option<Link> {
         ["$", "embed", channel, name] | ["$", "download", channel, name]
             if channel.starts_with('@') =>
         {
-            Some(Link::Stream(format!("{}/{}", lbry_segment(channel)?, lbry_segment(name)?)))
+            Some(Link::Stream(format!(
+                "{}/{}",
+                lbry_segment(channel)?,
+                lbry_segment(name)?
+            )))
         }
         ["$", "embed", name, id] | ["$", "download", name, id] if is_claim_id(id) => {
             Some(Link::Stream(format!("{name}#{id}")))
@@ -100,7 +104,26 @@ pub fn parse_link(url: &Url) -> Option<Link> {
         ))),
         [channel] if channel.starts_with('@') => Some(Link::Channel(lbry_segment(channel)?)),
         [name] if is_claim_id(name) => Some(Link::Claim(name.to_string())),
-        [name] if !["$", "search", "following", "discover", "settings", "library", "wallet", "rewards", "signin", "signup", "help", "about", "featured", "popular", "trending"].contains(name) => {
+        [name]
+            if ![
+                "$",
+                "search",
+                "following",
+                "discover",
+                "settings",
+                "library",
+                "wallet",
+                "rewards",
+                "signin",
+                "signup",
+                "help",
+                "about",
+                "featured",
+                "popular",
+                "trending",
+            ]
+            .contains(name) =>
+        {
             Some(Link::Stream(lbry_segment(name)?))
         }
         _ => None,
@@ -165,7 +188,9 @@ impl OdyseeResolver {
             .ok_or_else(|| ResolveError::malformed(origin, "the API resolved nothing"))?;
         if let Some(error) = claim.get("error").filter(|e| !e.is_null()) {
             let name = error["name"].as_str().unwrap_or("");
-            let text = error["text"].as_str().unwrap_or("the claim could not be resolved");
+            let text = error["text"]
+                .as_str()
+                .unwrap_or("the claim could not be resolved");
             return Err(if name == "NOT_FOUND" || text.contains("Could not find") {
                 ResolveError::NotFound(origin.clone())
             } else {
@@ -267,9 +292,7 @@ impl OdyseeResolver {
             .as_str()
             .and_then(clean_title)
             .or_else(|| channel["name"].as_str().and_then(clean_title));
-        resolved.uploader_url = channel["canonical_url"]
-            .as_str()
-            .and_then(site_url);
+        resolved.uploader_url = channel["canonical_url"].as_str().and_then(site_url);
         resolved.uploaded_at = value["release_time"]
             .as_str()
             .and_then(|t| t.parse::<i64>().ok())
@@ -279,9 +302,7 @@ impl OdyseeResolver {
         resolved.thumbnail = value["thumbnail"]["url"]
             .as_str()
             .and_then(|u| Url::parse(u).ok());
-        resolved.webpage_url = claim["canonical_url"]
-            .as_str()
-            .and_then(site_url);
+        resolved.webpage_url = claim["canonical_url"].as_str().and_then(site_url);
         resolved.clip = timestamp_hint(origin).map(|start| ClipRange { start, end: None });
         resolved.variants = variants;
         Ok(Resolution::from(resolved))
@@ -340,7 +361,9 @@ impl OdyseeResolver {
                 .as_str()
                 .and_then(clean_title)
                 .or_else(|| claim["name"].as_str().and_then(clean_title)),
-            total: total.filter(|t| *t >= entries.len()).or(Some(entries.len())),
+            total: total
+                .filter(|t| *t >= entries.len())
+                .or(Some(entries.len())),
             entries,
         }))
     }
@@ -454,19 +477,33 @@ mod tests {
         );
         assert_eq!(
             link("https://odysee.com/$/embed/odysee/7a416c44a6888d94fe045241bbac055c726332aa"),
-            Some(Link::Stream("odysee#7a416c44a6888d94fe045241bbac055c726332aa".into()))
+            Some(Link::Stream(
+                "odysee#7a416c44a6888d94fe045241bbac055c726332aa".into()
+            ))
         );
         assert_eq!(
             link("https://odysee.com/$/embed/odysee:7a416c44a6888d94fe045241bbac055c726332aa"),
-            Some(Link::Stream("odysee#7a416c44a6888d94fe045241bbac055c726332aa".into()))
-                .or_else(|| link("https://odysee.com/$/embed/odysee:7a416c44a6888d94fe045241bbac055c726332aa"))
+            Some(Link::Stream(
+                "odysee#7a416c44a6888d94fe045241bbac055c726332aa".into()
+            ))
+            .or_else(|| link(
+                "https://odysee.com/$/embed/odysee:7a416c44a6888d94fe045241bbac055c726332aa"
+            ))
         );
-        assert_eq!(link("https://odysee.com/@lbry:3f"), Some(Link::Channel("@lbry#3f".into())));
+        assert_eq!(
+            link("https://odysee.com/@lbry:3f"),
+            Some(Link::Channel("@lbry#3f".into()))
+        );
         assert_eq!(
             link("https://odysee.com/7a416c44a6888d94fe045241bbac055c726332aa"),
-            Some(Link::Claim("7a416c44a6888d94fe045241bbac055c726332aa".into()))
+            Some(Link::Claim(
+                "7a416c44a6888d94fe045241bbac055c726332aa".into()
+            ))
         );
-        assert_eq!(link("https://odysee.com/odysee"), Some(Link::Stream("odysee".into())));
+        assert_eq!(
+            link("https://odysee.com/odysee"),
+            Some(Link::Stream("odysee".into()))
+        );
         assert_eq!(link("https://odysee.com/$/search?q=x"), None);
         assert_eq!(link("https://odysee.com/"), None);
         assert_eq!(
@@ -478,14 +515,22 @@ mod tests {
     #[tokio::test]
     async fn streams_come_through_the_api() {
         let mut fixture = Fixture::new("odysee", None);
-        fixture.exchanges.push(post(json!({"jsonrpc": "2.0", "result": {"lbry://@lbry#3f/odysee#7a": claim()}, "id": 1})));
+        fixture.exchanges.push(post(
+            json!({"jsonrpc": "2.0", "result": {"lbry://@lbry#3f/odysee#7a": claim()}, "id": 1}),
+        ));
         fixture.exchanges.push(post(json!({"jsonrpc": "2.0", "result": {"streaming_url": "https://player.odycdn.com/v6/streams/7a416c44a6888d94fe045241bbac055c726332aa/a27e60.mp4"}, "id": 1})));
         let resolver = OdyseeResolver::new(Http::replay(fixture));
         let url = Url::parse("https://odysee.com/@lbry:3f/odysee:7a?t=20").unwrap();
         assert!(resolver.matches(&url));
         let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
-        assert_eq!(resolved.id.as_deref(), Some("7a416c44a6888d94fe045241bbac055c726332aa"));
-        assert_eq!(resolved.title.as_deref(), Some("Introducing Odysee: A Short Video"));
+        assert_eq!(
+            resolved.id.as_deref(),
+            Some("7a416c44a6888d94fe045241bbac055c726332aa")
+        );
+        assert_eq!(
+            resolved.title.as_deref(),
+            Some("Introducing Odysee: A Short Video")
+        );
         assert_eq!(resolved.uploader.as_deref(), Some("LBRY"));
         assert_eq!(
             resolved.uploader_url.as_ref().unwrap().as_str(),
@@ -504,7 +549,9 @@ mod tests {
     async fn channels_list_their_videos_and_missing_claims_are_missing() {
         let mut fixture = Fixture::new("odysee", None);
         let channel = json!({"claim_id": "3fda836a92faaceedfe398225fb9b2ee2ed1f01a", "name": "@lbry", "value_type": "channel", "value": {"title": "LBRY"}});
-        fixture.exchanges.push(post(json!({"result": {"lbry://@lbry#3f": channel}})));
+        fixture
+            .exchanges
+            .push(post(json!({"result": {"lbry://@lbry#3f": channel}})));
         fixture.exchanges.push(post(json!({"result": {"total_items": 2, "items": [
             {"name": "odysee", "claim_id": "7a", "canonical_url": "lbry://@lbry#3f/odysee#7a", "value": {"title": "Introducing Odysee", "video": {"duration": 143}}},
             {"name": "why", "claim_id": "97", "canonical_url": "lbry://@lbry#3f/odyseewhatandwhy#9", "value": {"title": "What is Odysee?", "video": {"duration": 209}}}

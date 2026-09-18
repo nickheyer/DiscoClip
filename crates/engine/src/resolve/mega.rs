@@ -7,7 +7,9 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use aes::Aes128;
-use aes::cipher::{BlockCipherDecrypt, BlockModeDecrypt, KeyInit, KeyIvInit, block_padding::NoPadding};
+use aes::cipher::{
+    BlockCipherDecrypt, BlockModeDecrypt, KeyInit, KeyIvInit, block_padding::NoPadding,
+};
 use async_trait::async_trait;
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -30,7 +32,12 @@ pub enum Link {
     /// A file, by its handle and the key the link carries.
     File { id: String, key: Vec<u8> },
     /// A folder, by its handle and key, and the node within it the link names.
-    Folder { id: String, key: Vec<u8>, node: Option<String>, subfolder: Option<String> },
+    Folder {
+        id: String,
+        key: Vec<u8>,
+        node: Option<String>,
+        subfolder: Option<String>,
+    },
 }
 
 fn decode_key(text: &str) -> Option<Vec<u8>> {
@@ -56,7 +63,10 @@ pub fn parse_link(url: &Url) -> Option<Link> {
         return None;
     }
     let host = url.host_str()?.to_ascii_lowercase();
-    if !matches!(host.as_str(), "mega.nz" | "www.mega.nz" | "mega.co.nz" | "www.mega.co.nz" | "mega.io") {
+    if !matches!(
+        host.as_str(),
+        "mega.nz" | "www.mega.nz" | "mega.co.nz" | "www.mega.co.nz" | "mega.io"
+    ) {
         return None;
     }
     let segments: Vec<&str> = url
@@ -77,8 +87,12 @@ pub fn parse_link(url: &Url) -> Option<Link> {
             let key = decode_key(parts.next()?).filter(|k| k.len() == 16)?;
             let (mut node, mut subfolder) = (None, None);
             match (parts.next(), parts.next()) {
-                (Some("file"), Some(handle)) if is_handle(handle) => node = Some(handle.to_string()),
-                (Some("folder"), Some(handle)) if is_handle(handle) => subfolder = Some(handle.to_string()),
+                (Some("file"), Some(handle)) if is_handle(handle) => {
+                    node = Some(handle.to_string())
+                }
+                (Some("folder"), Some(handle)) if is_handle(handle) => {
+                    subfolder = Some(handle.to_string())
+                }
                 _ => {}
             }
             Some(Link::Folder {
@@ -234,7 +248,9 @@ pub fn nodes_of(listing: &Value, folder_key: &[u8]) -> Vec<Node> {
                 name: attrs["n"].as_str().unwrap_or_default().to_string(),
                 size: node["s"].as_u64(),
                 key,
-                modified: node["ts"].as_i64().and_then(|t| Timestamp::from_second(t).ok()),
+                modified: node["ts"]
+                    .as_i64()
+                    .and_then(|t| Timestamp::from_second(t).ok()),
             })
         })
         .collect()
@@ -286,10 +302,17 @@ impl MegaResolver {
     }
 
     /// One request to the API, in the folder's context when `folder` is given.
-    async fn call(&self, request: Value, folder: Option<&str>, origin: &Url) -> Result<Value, ResolveError> {
+    async fn call(
+        &self,
+        request: Value,
+        folder: Option<&str>,
+        origin: &Url,
+    ) -> Result<Value, ResolveError> {
         let mut api = Url::parse(API).expect("valid");
-        api.query_pairs_mut()
-            .append_pair("id", &self.sequence.fetch_add(1, Ordering::Relaxed).to_string());
+        api.query_pairs_mut().append_pair(
+            "id",
+            &self.sequence.fetch_add(1, Ordering::Relaxed).to_string(),
+        );
         if let Some(folder) = folder {
             api.query_pairs_mut().append_pair("n", folder);
         }
@@ -310,7 +333,10 @@ impl MegaResolver {
                 format!("the API answered HTTP {}", response.status),
             ));
         }
-        let answer: Value = response.json(MAX_PAGE).await.map_err(|e| ResolveError::malformed(origin, e.to_string()))?;
+        let answer: Value = response
+            .json(MAX_PAGE)
+            .await
+            .map_err(|e| ResolveError::malformed(origin, e.to_string()))?;
         let first = match &answer {
             Value::Array(items) => items.first().cloned().unwrap_or(Value::Null),
             other => other.clone(),
@@ -318,24 +344,38 @@ impl MegaResolver {
         match first {
             Value::Number(code) => Err(api_error(code.as_i64().unwrap_or(-1), origin)),
             Value::Object(_) => Ok(first),
-            _ => Err(ResolveError::malformed(origin, "the API answered with neither a record nor an error")),
+            _ => Err(ResolveError::malformed(
+                origin,
+                "the API answered with neither a record nor an error",
+            )),
         }
     }
 
     async fn file(&self, id: &str, key: &[u8], origin: &Url) -> Result<Resolved, ResolveError> {
-        let folded = fold_key(key).ok_or_else(|| ResolveError::unavailable(origin, "the link carries no usable key"))?;
-        let record = self.call(json!({"a": "g", "g": 1, "p": id}), None, origin).await?;
+        let folded = fold_key(key)
+            .ok_or_else(|| ResolveError::unavailable(origin, "the link carries no usable key"))?;
+        let record = self
+            .call(json!({"a": "g", "g": 1, "p": id}), None, origin)
+            .await?;
         let attrs = record["at"]
             .as_str()
             .and_then(|at| decrypt_attributes(&folded.key, at))
-            .ok_or_else(|| ResolveError::unavailable(origin, "the key in the link does not decrypt the file's name"))?;
+            .ok_or_else(|| {
+                ResolveError::unavailable(
+                    origin,
+                    "the key in the link does not decrypt the file's name",
+                )
+            })?;
         let name = attrs["n"].as_str().unwrap_or_default().to_string();
         let download = record["g"]
             .as_str()
             .and_then(|u| Url::parse(u).ok())
             .ok_or_else(|| ResolveError::unavailable(origin, "the API gave no download link"))?;
         if media_container(&name).is_none() {
-            return Err(ResolveError::unavailable(origin, format!("{name} is not a video file")));
+            return Err(ResolveError::unavailable(
+                origin,
+                format!("{name} is not a video file"),
+            ));
         }
         let mut resolved = Resolved::new(PLATFORM);
         resolved.id = Some(id.to_string());
@@ -353,31 +393,54 @@ impl MegaResolver {
         subfolder: Option<&str>,
         origin: &Url,
     ) -> Result<Resolution, ResolveError> {
-        let listing = self.call(json!({"a": "f", "c": 1, "r": 1}), Some(id), origin).await?;
+        let listing = self
+            .call(json!({"a": "f", "c": 1, "r": 1}), Some(id), origin)
+            .await?;
         let nodes = nodes_of(&listing, key);
         if nodes.is_empty() {
-            return Err(ResolveError::unavailable(origin, "the key in the link does not decrypt the folder"));
+            return Err(ResolveError::unavailable(
+                origin,
+                "the key in the link does not decrypt the folder",
+            ));
         }
         if let Some(handle) = node {
             let file = nodes
                 .iter()
                 .find(|n| n.handle == handle && !n.is_folder)
                 .ok_or_else(|| ResolveError::NotFound(origin.clone()))?;
-            let folded = file.key.ok_or_else(|| ResolveError::unavailable(origin, "the node's key does not decrypt"))?;
+            let folded = file.key.ok_or_else(|| {
+                ResolveError::unavailable(origin, "the node's key does not decrypt")
+            })?;
             if media_container(&file.name).is_none() {
-                return Err(ResolveError::unavailable(origin, format!("{} is not a video file", file.name)));
+                return Err(ResolveError::unavailable(
+                    origin,
+                    format!("{} is not a video file", file.name),
+                ));
             }
-            let record = self.call(json!({"a": "g", "g": 1, "n": handle}), Some(id), origin).await?;
+            let record = self
+                .call(json!({"a": "g", "g": 1, "n": handle}), Some(id), origin)
+                .await?;
             let download = record["g"]
                 .as_str()
                 .and_then(|u| Url::parse(u).ok())
-                .ok_or_else(|| ResolveError::unavailable(origin, "the API gave no download link"))?;
+                .ok_or_else(|| {
+                    ResolveError::unavailable(origin, "the API gave no download link")
+                })?;
             let mut resolved = Resolved::new(PLATFORM);
             resolved.id = Some(handle.to_string());
-            resolved.title = clean_title(file.name.rsplit_once('.').map_or(file.name.as_str(), |(s, _)| s));
+            resolved.title = clean_title(
+                file.name
+                    .rsplit_once('.')
+                    .map_or(file.name.as_str(), |(s, _)| s),
+            );
             resolved.uploaded_at = file.modified;
             resolved.webpage_url = Some(origin.clone());
-            resolved.variants = vec![variant_for(download, &file.name, record["s"].as_u64().or(file.size), folded)];
+            resolved.variants = vec![variant_for(
+                download,
+                &file.name,
+                record["s"].as_u64().or(file.size),
+                folded,
+            )];
             return Ok(Resolution::from(resolved));
         }
         let root = subfolder.map(String::from).or_else(|| {
@@ -395,13 +458,20 @@ impl MegaResolver {
             .into_iter()
             .filter(|n| media_container(&n.name).is_some())
             .map(|n| PlaylistEntry {
-                url: Url::parse(&format!("https://mega.nz/folder/{id}#{key_text}/file/{}", n.handle)).expect("valid"),
+                url: Url::parse(&format!(
+                    "https://mega.nz/folder/{id}#{key_text}/file/{}",
+                    n.handle
+                ))
+                .expect("valid"),
                 title: clean_title(n.name.rsplit_once('.').map_or(n.name.as_str(), |(s, _)| s)),
                 duration: None,
             })
             .collect();
         if entries.is_empty() {
-            return Err(ResolveError::unavailable(origin, "the folder holds no video files"));
+            return Err(ResolveError::unavailable(
+                origin,
+                "the folder holds no video files",
+            ));
         }
         Ok(Resolution::Playlist(Playlist {
             resolver: PLATFORM.into(),
@@ -424,7 +494,13 @@ impl Resolver for MegaResolver {
             id: PLATFORM,
             name: "MEGA",
             hosts: &["mega.nz", "mega.co.nz"],
-            features: &["files", "folders", "files within folders", "legacy links", "embeds"],
+            features: &[
+                "files",
+                "folders",
+                "files within folders",
+                "legacy links",
+                "embeds",
+            ],
             formats: &["mp4", "mkv", "webm", "mov"],
             session: SessionSupport::None,
             examples: &[
@@ -441,8 +517,14 @@ impl Resolver for MegaResolver {
     async fn resolve(&self, url: &Url) -> Result<Resolution, ResolveError> {
         match parse_link(url).ok_or_else(|| ResolveError::NotFound(url.clone()))? {
             Link::File { id, key } => Ok(Resolution::from(self.file(&id, &key, url).await?)),
-            Link::Folder { id, key, node, subfolder } => {
-                self.folder(&id, &key, node.as_deref(), subfolder.as_deref(), url).await
+            Link::Folder {
+                id,
+                key,
+                node,
+                subfolder,
+            } => {
+                self.folder(&id, &key, node.as_deref(), subfolder.as_deref(), url)
+                    .await
             }
         }
     }
@@ -473,7 +555,8 @@ mod tests {
         }
     }
 
-    const FILE_LINK: &str = "https://mega.nz/file/MR5F3QCI#Vj2aut_FqBVciXFJ9eck22uczDouiElMTBdwmGnk9-g";
+    const FILE_LINK: &str =
+        "https://mega.nz/file/MR5F3QCI#Vj2aut_FqBVciXFJ9eck22uczDouiElMTBdwmGnk9-g";
     const FILE_RECORD: &str = r#"[{"s":373612482,"at":"VeW4iFVfMp8-_iXmtyqIr_1rO1yXC17RN6v52jIyJuV4tdYJru1-HiiLgj8jCL8CYlPAj5xiZpFlILcMoRA85dGk9NNI9N42__HPC_923ks","msd":1,"fa":"251:8*0ZchrMcp-NQ","g":"http://gfs204n338.userstorage.mega.co.nz/dl/A2qfpogNUsOB_QcmljQ5cNABdK9HrKRhv8t9DwZN0z","ip":["1.2.3.4"],"fh":"x"}]"#;
     const FOLDER_LINK: &str = "https://mega.nz/folder/qQVUTAyZ#YJSPh-G_gZGDkg14ck-NLA";
 
@@ -486,13 +569,29 @@ mod tests {
     #[test]
     fn links_are_read_in_every_shape() {
         let link = |s: &str| parse_link(&Url::parse(s).unwrap());
-        assert!(matches!(link(FILE_LINK), Some(Link::File { id, key }) if id == "MR5F3QCI" && key.len() == 32));
-        assert!(matches!(link("https://mega.nz/#!MR5F3QCI!Vj2aut_FqBVciXFJ9eck22uczDouiElMTBdwmGnk9-g"), Some(Link::File { id, .. }) if id == "MR5F3QCI"));
-        assert!(matches!(link("https://mega.nz/embed/MR5F3QCI#Vj2aut_FqBVciXFJ9eck22uczDouiElMTBdwmGnk9-g"), Some(Link::File { .. })));
-        assert!(matches!(link(FOLDER_LINK), Some(Link::Folder { id, key, node: None, subfolder: None }) if id == "qQVUTAyZ" && key.len() == 16));
-        assert!(matches!(link(&format!("{FOLDER_LINK}/file/XJtTFSAA")), Some(Link::Folder { node: Some(n), .. }) if n == "XJtTFSAA"));
-        assert!(matches!(link(&format!("{FOLDER_LINK}/folder/OV0B1KIL")), Some(Link::Folder { subfolder: Some(s), .. }) if s == "OV0B1KIL"));
-        assert!(matches!(link("https://mega.nz/#F!qQVUTAyZ!YJSPh-G_gZGDkg14ck-NLA"), Some(Link::Folder { .. })));
+        assert!(
+            matches!(link(FILE_LINK), Some(Link::File { id, key }) if id == "MR5F3QCI" && key.len() == 32)
+        );
+        assert!(
+            matches!(link("https://mega.nz/#!MR5F3QCI!Vj2aut_FqBVciXFJ9eck22uczDouiElMTBdwmGnk9-g"), Some(Link::File { id, .. }) if id == "MR5F3QCI")
+        );
+        assert!(matches!(
+            link("https://mega.nz/embed/MR5F3QCI#Vj2aut_FqBVciXFJ9eck22uczDouiElMTBdwmGnk9-g"),
+            Some(Link::File { .. })
+        ));
+        assert!(
+            matches!(link(FOLDER_LINK), Some(Link::Folder { id, key, node: None, subfolder: None }) if id == "qQVUTAyZ" && key.len() == 16)
+        );
+        assert!(
+            matches!(link(&format!("{FOLDER_LINK}/file/XJtTFSAA")), Some(Link::Folder { node: Some(n), .. }) if n == "XJtTFSAA")
+        );
+        assert!(
+            matches!(link(&format!("{FOLDER_LINK}/folder/OV0B1KIL")), Some(Link::Folder { subfolder: Some(s), .. }) if s == "OV0B1KIL")
+        );
+        assert!(matches!(
+            link("https://mega.nz/#F!qQVUTAyZ!YJSPh-G_gZGDkg14ck-NLA"),
+            Some(Link::Folder { .. })
+        ));
         assert_eq!(link("https://mega.nz/file/MR5F3QCI"), None);
         assert_eq!(link("https://mega.nz/file/MR5F3QCI#tooshort"), None);
         assert_eq!(link("https://mega.nz/pro"), None);
@@ -504,49 +603,97 @@ mod tests {
         let folded = fold_key(&raw).unwrap();
         let attrs = decrypt_attributes(&folded.key, "VeW4iFVfMp8-_iXmtyqIr_1rO1yXC17RN6v52jIyJuV4tdYJru1-HiiLgj8jCL8CYlPAj5xiZpFlILcMoRA85dGk9NNI9N42__HPC_923ks").unwrap();
         assert_eq!(attrs["n"], "All To Ourselves Deluxe 1080p.mp4");
-        assert!(decrypt_attributes(&[0u8; 16], "VeW4iFVfMp8-_iXmtyqIr_1rO1yXC17RN6v52jIyJuU").is_none());
+        assert!(
+            decrypt_attributes(&[0u8; 16], "VeW4iFVfMp8-_iXmtyqIr_1rO1yXC17RN6v52jIyJuU").is_none()
+        );
     }
 
     #[tokio::test]
     async fn files_resolve_with_their_cipher() {
         let mut fixture = Fixture::new("mega", None);
-        fixture.exchanges.push(post("https://g.api.mega.co.nz/cs?id=0", FILE_RECORD));
-        fixture.exchanges.push(post("https://g.api.mega.co.nz/cs?id=1", "[-9]"));
-        fixture.exchanges.push(post("https://g.api.mega.co.nz/cs?id=2", "[-17]"));
+        fixture
+            .exchanges
+            .push(post("https://g.api.mega.co.nz/cs?id=0", FILE_RECORD));
+        fixture
+            .exchanges
+            .push(post("https://g.api.mega.co.nz/cs?id=1", "[-9]"));
+        fixture
+            .exchanges
+            .push(post("https://g.api.mega.co.nz/cs?id=2", "[-17]"));
         let resolver = MegaResolver::new(Http::replay(fixture));
         let url = Url::parse(FILE_LINK).unwrap();
         assert!(resolver.matches(&url));
         let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
-        assert_eq!(resolved.title.as_deref(), Some("All To Ourselves Deluxe 1080p"));
+        assert_eq!(
+            resolved.title.as_deref(),
+            Some("All To Ourselves Deluxe 1080p")
+        );
         assert_eq!(resolved.variants.len(), 1);
         let v = &resolved.variants[0];
-        assert!(v.url.as_str().starts_with("http://gfs204n338.userstorage.mega.co.nz/dl/"));
+        assert!(
+            v.url
+                .as_str()
+                .starts_with("http://gfs204n338.userstorage.mega.co.nz/dl/")
+        );
         assert_eq!(v.size, Some(373612482));
         assert_eq!(v.container, Some(Container::Mp4));
         let Some(Cipher::Aes128Ctr { key, nonce }) = &v.cipher else {
             panic!("no cipher");
         };
-        let expected = fold_key(&decode_key("Vj2aut_FqBVciXFJ9eck22uczDouiElMTBdwmGnk9-g").unwrap()).unwrap();
+        let expected =
+            fold_key(&decode_key("Vj2aut_FqBVciXFJ9eck22uczDouiElMTBdwmGnk9-g").unwrap()).unwrap();
         assert_eq!(key, &expected.key);
         assert_eq!(nonce, &expected.nonce);
         assert_eq!(hex::encode(key), "3da15680f14de159109e01d19c03d333");
         assert_eq!(hex::encode(nonce), "6b9ccc3a2e88494c");
         assert!(matches!(
-            resolver.resolve(&Url::parse("https://mega.nz/file/gone1234#Vj2aut_FqBVciXFJ9eck22uczDouiElMTBdwmGnk9-g").unwrap()).await.unwrap_err(),
+            resolver
+                .resolve(
+                    &Url::parse(
+                        "https://mega.nz/file/gone1234#Vj2aut_FqBVciXFJ9eck22uczDouiElMTBdwmGnk9-g"
+                    )
+                    .unwrap()
+                )
+                .await
+                .unwrap_err(),
             ResolveError::NotFound(_)
         ));
-        let error = resolver.resolve(&Url::parse("https://mega.nz/file/quota123#Vj2aut_FqBVciXFJ9eck22uczDouiElMTBdwmGnk9-g").unwrap()).await.unwrap_err();
-        assert!(matches!(&error, ResolveError::Unavailable { reason, .. } if reason.contains("quota")), "{error}");
+        let error = resolver
+            .resolve(
+                &Url::parse(
+                    "https://mega.nz/file/quota123#Vj2aut_FqBVciXFJ9eck22uczDouiElMTBdwmGnk9-g",
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&error, ResolveError::Unavailable { reason, .. } if reason.contains("quota")),
+            "{error}"
+        );
     }
 
     #[tokio::test]
     async fn folders_list_their_videos_and_entries_resolve_within_them() {
         let mut fixture = Fixture::new("mega", None);
-        fixture.exchanges.push(post("https://g.api.mega.co.nz/cs?id=0&n=qQVUTAyZ", &folder_listing()));
-        fixture.exchanges.push(post("https://g.api.mega.co.nz/cs?id=1&n=qQVUTAyZ", &folder_listing()));
-        fixture.exchanges.push(post("https://g.api.mega.co.nz/cs?id=2&n=qQVUTAyZ", r#"[{"s":39859166,"g":"http://gfs.userstorage.mega.co.nz/dl/token","at":"x"}]"#));
+        fixture.exchanges.push(post(
+            "https://g.api.mega.co.nz/cs?id=0&n=qQVUTAyZ",
+            &folder_listing(),
+        ));
+        fixture.exchanges.push(post(
+            "https://g.api.mega.co.nz/cs?id=1&n=qQVUTAyZ",
+            &folder_listing(),
+        ));
+        fixture.exchanges.push(post(
+            "https://g.api.mega.co.nz/cs?id=2&n=qQVUTAyZ",
+            r#"[{"s":39859166,"g":"http://gfs.userstorage.mega.co.nz/dl/token","at":"x"}]"#,
+        ));
         let resolver = MegaResolver::new(Http::replay(fixture));
-        let playlist = match resolver.resolve(&Url::parse(FOLDER_LINK).unwrap()).await.unwrap() {
+        let playlist = match resolver
+            .resolve(&Url::parse(FOLDER_LINK).unwrap())
+            .await
+            .unwrap()
+        {
             Resolution::Playlist(p) => p,
             other => panic!("expected a playlist, got {other:?}"),
         };
@@ -554,7 +701,12 @@ mod tests {
         assert_eq!(playlist.entries.len(), 1);
         let entry = &playlist.entries[0];
         assert_eq!(entry.title.as_deref(), Some("trailer"));
-        assert!(entry.url.as_str().starts_with("https://mega.nz/folder/qQVUTAyZ#YJSPh-G_gZGDkg14ck-NLA/file/"));
+        assert!(
+            entry
+                .url
+                .as_str()
+                .starts_with("https://mega.nz/folder/qQVUTAyZ#YJSPh-G_gZGDkg14ck-NLA/file/")
+        );
         let resolved = resolver.resolve(&entry.url).await.unwrap().media().unwrap();
         assert_eq!(resolved.title.as_deref(), Some("trailer"));
         assert_eq!(resolved.variants[0].size, Some(39859166));

@@ -43,7 +43,8 @@ pub fn parse_link(url: &Url) -> Option<Link> {
         return None;
     }
     let caps = RE_PATH.captures(url.path())?;
-    let episode = util::query_param(url, "i").filter(|i| !i.is_empty() && i.chars().all(|c| c.is_ascii_digit()))?;
+    let episode = util::query_param(url, "i")
+        .filter(|i| !i.is_empty() && i.chars().all(|c| c.is_ascii_digit()))?;
     Some(Link {
         country: caps.get(1).map_or("us", |m| m.as_str()).to_string(),
         episode,
@@ -57,7 +58,10 @@ pub fn page_model(html: &str) -> Option<Value> {
     let items = data["data"][0]["data"]["headerButtonItems"].as_array()?;
     items
         .iter()
-        .find(|item| item["$kind"].as_str() == Some("share") && item["modelType"].as_str() == Some("EpisodeLockup"))
+        .find(|item| {
+            item["$kind"].as_str() == Some("share")
+                && item["modelType"].as_str() == Some("EpisodeLockup")
+        })
         .map(|item| item["model"].clone())
 }
 
@@ -134,8 +138,16 @@ impl ApplePodcastsResolver {
             ));
         }
         let api = util::with_query(
-            &Url::parse(&format!("{CATALOG_API}{}/podcast-episodes/{}", link.country, link.episode)).expect("valid"),
-            &[("extend", "fullDescription"), ("include", "podcast"), ("l", "en-US")],
+            &Url::parse(&format!(
+                "{CATALOG_API}{}/podcast-episodes/{}",
+                link.country, link.episode
+            ))
+            .expect("valid"),
+            &[
+                ("extend", "fullDescription"),
+                ("include", "podcast"),
+                ("l", "en-US"),
+            ],
         );
         let response = self
             .http
@@ -237,7 +249,8 @@ impl Resolver for ApplePodcastsResolver {
         let (thumbnail, canonical) = {
             let page = Page::parse(&html, &page_url);
             (
-                page.meta("og:image").and_then(|t| util::join_url(Some(&page_url), &t)),
+                page.meta("og:image")
+                    .and_then(|t| util::join_url(Some(&page_url), &t)),
                 page.canonical(),
             )
         };
@@ -317,18 +330,26 @@ mod tests {
             })
         );
         assert_eq!(
-            link("https://podcasts.apple.com/gb/podcast/id1135137367?i=1000482637777").map(|l| l.country),
+            link("https://podcasts.apple.com/gb/podcast/id1135137367?i=1000482637777")
+                .map(|l| l.country),
             Some("gb".into())
         );
-        assert_eq!(link("https://podcasts.apple.com/us/podcast/urbana-radio-show/id1531349107"), None);
+        assert_eq!(
+            link("https://podcasts.apple.com/us/podcast/urbana-radio-show/id1531349107"),
+            None
+        );
         assert_eq!(link("https://music.apple.com/us/album/x/1?i=2"), None);
     }
 
     #[test]
     fn tokens_are_found_by_their_header() {
         let header = token_header();
-        assert_eq!(header, "eyJ0eXAiOiJKV1QiLCJhbGciOiJFUzI1NiIsImtpZCI6IkM0SjdHQlA3NEgifQ");
-        let script = format!(r#"var x=1;const t="{header}.eyJpc3MiOiJBTVAifQ.sig_part-1";fetch(t)"#);
+        assert_eq!(
+            header,
+            "eyJ0eXAiOiJKV1QiLCJhbGciOiJFUzI1NiIsImtpZCI6IkM0SjdHQlA3NEgifQ"
+        );
+        let script =
+            format!(r#"var x=1;const t="{header}.eyJpc3MiOiJBTVAifQ.sig_part-1";fetch(t)"#);
         assert_eq!(
             token_in(&script).as_deref(),
             Some(&*format!("{header}.eyJpc3MiOiJBTVAifQ.sig_part-1"))
@@ -338,13 +359,22 @@ mod tests {
         assert_eq!(token_expiry(&expiring), Some(4102444800));
         assert!(!token_expired(&expiring, 1_800_000_000));
         assert!(token_expired(&expiring, 4102444800 - 60));
-        assert!(!token_expired(&format!("{header}.eyJpc3MiOiJBTVAifQ.sig"), 1_800_000_000), "a token without expiry is taken as valid");
+        assert!(
+            !token_expired(&format!("{header}.eyJpc3MiOiJBTVAifQ.sig"), 1_800_000_000),
+            "a token without expiry is taken as valid"
+        );
         assert_eq!(
             util::clean_podcast_url(Url::parse("https://dts.podtrac.com/redirect.m4a/www.music-zone.es/PodcastDP/UrbanaRS724.m4a").unwrap()).as_str(),
             "https://www.music-zone.es/PodcastDP/UrbanaRS724.m4a"
         );
         assert_eq!(
-            util::clean_podcast_url(Url::parse("https://chtbl.com/track/ABC/pdst.fm/e/traffic.megaphone.fm/x.mp3?updated=1").unwrap()).as_str(),
+            util::clean_podcast_url(
+                Url::parse(
+                    "https://chtbl.com/track/ABC/pdst.fm/e/traffic.megaphone.fm/x.mp3?updated=1"
+                )
+                .unwrap()
+            )
+            .as_str(),
             "https://traffic.megaphone.fm/x.mp3?updated=1"
         );
     }
@@ -365,28 +395,37 @@ mod tests {
             "summary": "<p>Urbana Radio Show By David Penn Chapter #724</p>",
             "playAction": {"episodeOffer": {"streamUrl": "https://dts.podtrac.com/redirect.m4a/www.music-zone.es/PodcastDP/UrbanaRS724.m4a"}}});
         let mut fixture = Fixture::new(PLATFORM, None);
-        fixture.exchanges.push(get(
-            EPISODE,
-            200,
-            "text/html",
-            server_data_page(&model),
-        ));
+        fixture
+            .exchanges
+            .push(get(EPISODE, 200, "text/html", server_data_page(&model)));
         let resolver = ApplePodcastsResolver::new(Http::replay(fixture));
         let url = Url::parse(EPISODE).unwrap();
         assert!(resolver.matches(&url));
         let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
         assert_eq!(resolved.id.as_deref(), Some("1000748574256"));
-        assert_eq!(resolved.title.as_deref(), Some("URBANA PODCAST 724 BY DAVID PENN"));
+        assert_eq!(
+            resolved.title.as_deref(),
+            Some("URBANA PODCAST 724 BY DAVID PENN")
+        );
         assert_eq!(resolved.uploader.as_deref(), Some("Urbana Radio Show"));
-        assert_eq!(resolved.description.as_deref(), Some("Urbana Radio Show By David Penn Chapter #724"));
+        assert_eq!(
+            resolved.description.as_deref(),
+            Some("Urbana Radio Show By David Penn Chapter #724")
+        );
         assert_eq!(resolved.duration, Some(Duration::from_secs(3602)));
-        assert_eq!(resolved.uploaded_at.map(|t| t.as_second()), Some(1770400801));
+        assert_eq!(
+            resolved.uploaded_at.map(|t| t.as_second()),
+            Some(1770400801)
+        );
         assert_eq!(resolved.webpage_url.as_ref().unwrap().as_str(), EPISODE);
         assert_eq!(resolved.variants.len(), 1);
         let audio = &resolved.variants[0];
         assert!(audio.audio_only);
         assert_eq!(audio.audio, Some(AudioCodec::Aac));
-        assert_eq!(audio.url.as_str(), "https://www.music-zone.es/PodcastDP/UrbanaRS724.m4a");
+        assert_eq!(
+            audio.url.as_str(),
+            "https://www.music-zone.es/PodcastDP/UrbanaRS724.m4a"
+        );
     }
 
     #[tokio::test]
@@ -403,7 +442,9 @@ mod tests {
             "https://podcasts.apple.com/assets/index~8209afa97b.js",
             200,
             "text/javascript",
-            format!(r#"const token="{header}.eyJpc3MiOiAiQU1QIiwgImV4cCI6IDQxMDI0NDQ4MDB9.abc-def";"#),
+            format!(
+                r#"const token="{header}.eyJpc3MiOiAiQU1QIiwgImV4cCI6IDQxMDI0NDQ4MDB9.abc-def";"#
+            ),
         ));
         fixture.exchanges.push(get(
             "https://amp-api.podcasts.apple.com/v1/catalog/us/podcast-episodes/1000482637777?extend=fullDescription&include=podcast&l=en-US",
@@ -417,19 +458,28 @@ mod tests {
         ));
         let resolver = ApplePodcastsResolver::new(Http::replay(fixture));
         let resolved = resolver
-            .resolve(&Url::parse("https://podcasts.apple.com/podcast/id1135137367?i=1000482637777").unwrap())
+            .resolve(
+                &Url::parse("https://podcasts.apple.com/podcast/id1135137367?i=1000482637777")
+                    .unwrap(),
+            )
             .await
             .unwrap()
             .media()
             .unwrap();
-        assert_eq!(resolved.title.as_deref(), Some("207 - Whitney Webb Returns"));
+        assert_eq!(
+            resolved.title.as_deref(),
+            Some("207 - Whitney Webb Returns")
+        );
         assert_eq!(resolved.uploader.as_deref(), Some("The Tim Dillon Show"));
         assert_eq!(resolved.duration, Some(Duration::from_millis(5322000)));
         assert_eq!(
             resolved.thumbnail.as_ref().unwrap().as_str(),
             "https://is1-ssl.mzstatic.com/image/thumb/x/3000x3000bb.jpg"
         );
-        assert_eq!(resolved.variants[0].url.as_str(), "https://traffic.libsyn.com/x/207.mp3?dest-id=1");
+        assert_eq!(
+            resolved.variants[0].url.as_str(),
+            "https://traffic.libsyn.com/x/207.mp3?dest-id=1"
+        );
         assert_eq!(resolved.variants[0].audio, Some(AudioCodec::Mp3));
     }
 }

@@ -40,7 +40,11 @@ pub fn parse_link(url: &Url) -> Option<Link> {
         .filter(|s| !s.is_empty())
         .collect();
     match segments.as_slice() {
-        [kind @ ("video" | "gif" | "picture" | "fun" | "meme"), slug, ..] => {
+        [
+            kind @ ("video" | "gif" | "picture" | "fun" | "meme"),
+            slug,
+            ..,
+        ] => {
             let id = slug.rsplit('-').next().unwrap_or(slug);
             (id.len() >= 6 && id.chars().all(|c| c.is_ascii_alphanumeric())).then(|| Link {
                 kind: kind.to_string(),
@@ -121,7 +125,8 @@ impl Resolver for IfunnyResolver {
 
     async fn resolve(&self, url: &Url) -> Result<Resolution, ResolveError> {
         let link = parse_link(url).ok_or_else(|| ResolveError::NotFound(url.clone()))?;
-        let page_url = Url::parse(&format!("https://ifunny.co/{}/{}", link.kind, link.slug)).expect("valid");
+        let page_url =
+            Url::parse(&format!("https://ifunny.co/{}/{}", link.kind, link.slug)).expect("valid");
         let fetched = fetch(
             &self.http,
             &page_url,
@@ -166,11 +171,17 @@ impl Resolver for IfunnyResolver {
             })
             .and_then(|u| Url::parse(&u).ok());
         let Some(video_url) = video_url else {
-            return Err(if link.kind == "picture" || content.as_ref().is_some_and(|c| c["type"].as_str() == Some("pic")) {
-                ResolveError::unavailable(url, "the post is a picture")
-            } else {
-                ResolveError::NotFound(url.clone())
-            });
+            return Err(
+                if link.kind == "picture"
+                    || content
+                        .as_ref()
+                        .is_some_and(|c| c["type"].as_str() == Some("pic"))
+                {
+                    ResolveError::unavailable(url, "the post is a picture")
+                } else {
+                    ResolveError::NotFound(url.clone())
+                },
+            );
         };
         let mut v = Variant::new(video_url, VariantKind::File);
         v.container = Some(Container::Mp4);
@@ -179,18 +190,33 @@ impl Resolver for IfunnyResolver {
         v.width = page
             .meta("og:video:width")
             .and_then(|w| w.parse().ok())
-            .or_else(|| content.as_ref().and_then(|c| c["size"]["w"].as_u64()).map(|w| w as u32));
+            .or_else(|| {
+                content
+                    .as_ref()
+                    .and_then(|c| c["size"]["w"].as_u64())
+                    .map(|w| w as u32)
+            });
         v.height = page
             .meta("og:video:height")
             .and_then(|h| h.parse().ok())
-            .or_else(|| content.as_ref().and_then(|c| c["size"]["h"].as_u64()).map(|h| h as u32));
+            .or_else(|| {
+                content
+                    .as_ref()
+                    .and_then(|c| c["size"]["h"].as_u64())
+                    .map(|h| h as u32)
+            });
         let mut resolved = Resolved::new(PLATFORM);
         resolved.id = Some(link.id.clone());
         resolved.title = page
             .meta("og:title")
             .map(|t| t.trim_end_matches(" - iFunny").to_string())
             .and_then(|t| clean_title(&t))
-            .or_else(|| content.as_ref().and_then(|c| c["title"].as_str()).and_then(clean_title));
+            .or_else(|| {
+                content
+                    .as_ref()
+                    .and_then(|c| c["title"].as_str())
+                    .and_then(clean_title)
+            });
         resolved.description = content
             .as_ref()
             .and_then(|c| c["tags"].as_array())
@@ -213,9 +239,7 @@ impl Resolver for IfunnyResolver {
             .as_ref()
             .and_then(|c| c["published"].as_i64().or(c["created"].as_i64()))
             .and_then(|t| Timestamp::from_second(t).ok());
-        resolved.thumbnail = page
-            .meta("og:image")
-            .and_then(|u| Url::parse(&u).ok());
+        resolved.thumbnail = page.meta("og:image").and_then(|u| Url::parse(&u).ok());
         resolved.webpage_url = Some(fetched.url.clone());
         resolved.variants = vec![v];
         Ok(Resolution::from(resolved))
@@ -263,13 +287,22 @@ mod tests {
         let link = |s: &str| parse_link(&Url::parse(s).unwrap());
         assert_eq!(
             link("https://ifunny.co/video/veclHKeeD?s=cl"),
-            Some(Link { kind: "video".into(), slug: "veclHKeeD".into(), id: "veclHKeeD".into() })
+            Some(Link {
+                kind: "video".into(),
+                slug: "veclHKeeD".into(),
+                id: "veclHKeeD".into()
+            })
         );
         assert_eq!(
-            link("https://ifunny.co/video/me-after-she-only-gave-me-simple-hug-iJwU1NmeD").unwrap().id,
+            link("https://ifunny.co/video/me-after-she-only-gave-me-simple-hug-iJwU1NmeD")
+                .unwrap()
+                .id,
             "iJwU1NmeD"
         );
-        assert_eq!(link("https://ifunny.co/picture/abcdef12").unwrap().kind, "picture");
+        assert_eq!(
+            link("https://ifunny.co/picture/abcdef12").unwrap().kind,
+            "picture"
+        );
         assert_eq!(link("https://ifunny.co/user/someone"), None);
         assert_eq!(link("https://ifunny.co/"), None);
     }
@@ -277,23 +310,39 @@ mod tests {
     #[tokio::test]
     async fn video_posts_resolve_with_their_creator() {
         let mut fixture = Fixture::new("ifunny", None);
-        fixture.exchanges.push(get("https://ifunny.co/video/veclHKeeD", 200, PAGE));
-        fixture.exchanges.push(get("https://ifunny.co/video/gone12345", 404, ""));
+        fixture
+            .exchanges
+            .push(get("https://ifunny.co/video/veclHKeeD", 200, PAGE));
+        fixture
+            .exchanges
+            .push(get("https://ifunny.co/video/gone12345", 404, ""));
         let resolver = IfunnyResolver::new(Http::replay(fixture));
         let url = Url::parse("https://ifunny.co/video/veclHKeeD").unwrap();
         assert!(resolver.matches(&url));
         let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
-        assert_eq!(resolved.title.as_deref(), Some("Video memes veclHKeeD by Crumbob_Breadpants"));
+        assert_eq!(
+            resolved.title.as_deref(),
+            Some("Video memes veclHKeeD by Crumbob_Breadpants")
+        );
         assert_eq!(resolved.uploader.as_deref(), Some("Crumbob_Breadpants"));
-        assert_eq!(resolved.uploader_url.unwrap().as_str(), "https://ifunny.co/user/Crumbob_Breadpants");
+        assert_eq!(
+            resolved.uploader_url.unwrap().as_str(),
+            "https://ifunny.co/user/Crumbob_Breadpants"
+        );
         assert_eq!(resolved.uploaded_at.unwrap().as_second(), 1789167588);
-        assert_eq!(resolved.description.as_deref(), Some("cat, vs, bobcat, kitty, cats"));
+        assert_eq!(
+            resolved.description.as_deref(),
+            Some("cat, vs, bobcat, kitty, cats")
+        );
         assert_eq!(resolved.variants.len(), 1);
         let v = &resolved.variants[0];
         assert_eq!(v.url.as_str(), "https://img.getfn.io/videos/0e0c_1.mp4");
         assert_eq!((v.width, v.height), (Some(640), Some(1138)));
         assert!(matches!(
-            resolver.resolve(&Url::parse("https://ifunny.co/video/gone12345").unwrap()).await.unwrap_err(),
+            resolver
+                .resolve(&Url::parse("https://ifunny.co/video/gone12345").unwrap())
+                .await
+                .unwrap_err(),
             ResolveError::NotFound(_)
         ));
     }
@@ -302,12 +351,17 @@ mod tests {
     async fn pictures_are_reported_as_such() {
         let picture = r#"<html><head><meta property="og:title" content="Picture memes abcdef12 - iFunny" /><meta property="og:image" content="https://img.getfn.io/images/p.jpg" /></head><body><script>window.__INITIAL_STATE__={"content":{"items":[{"id":"abcdef12","url":"https://img.getfn.io/images/p.jpg","type":"pic"}]}};</script></body></html>"#;
         let mut fixture = Fixture::new("ifunny", None);
-        fixture.exchanges.push(get("https://ifunny.co/picture/abcdef12", 200, picture));
+        fixture
+            .exchanges
+            .push(get("https://ifunny.co/picture/abcdef12", 200, picture));
         let resolver = IfunnyResolver::new(Http::replay(fixture));
         let error = resolver
             .resolve(&Url::parse("https://ifunny.co/picture/abcdef12").unwrap())
             .await
             .unwrap_err();
-        assert!(matches!(&error, ResolveError::Unavailable { reason, .. } if reason.contains("picture")), "{error}");
+        assert!(
+            matches!(&error, ResolveError::Unavailable { reason, .. } if reason.contains("picture")),
+            "{error}"
+        );
     }
 }

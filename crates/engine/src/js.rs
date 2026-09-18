@@ -373,10 +373,7 @@ mod tests {
         ));
         tokio::time::sleep(Duration::from_millis(900)).await;
         assert!(!resident.is_alive());
-        assert!(matches!(
-            resident.eval("1").await,
-            Err(JsError::Thread(_))
-        ));
+        assert!(matches!(resident.eval("1").await, Err(JsError::Thread(_))));
 
         assert!(matches!(
             Resident::load(Arc::from("function ("), Duration::from_secs(1)).await,
@@ -394,7 +391,9 @@ mod tests {
         assert_eq!(literal("a\"b\\c\n"), "\"a\\\"b\\\\c\\n\"");
         assert_eq!(literal("\u{1}"), "\"\\u0001\"");
         assert_eq!(
-            Script::new("").eval_blocking(&format!("{} + '!'", literal("x\"y"))).unwrap(),
+            Script::new("")
+                .eval_blocking(&format!("{} + '!'", literal("x\"y")))
+                .unwrap(),
             "x\"y!"
         );
     }

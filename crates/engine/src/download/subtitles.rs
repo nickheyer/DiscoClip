@@ -214,7 +214,10 @@ fn tiktok_json_to_vtt(text: &str) -> Option<String> {
         let (Some(start), Some(end), Some(cue)) = (
             line["start_time"].as_f64(),
             line["end_time"].as_f64(),
-            line["text"].as_str().map(str::trim).filter(|t| !t.is_empty()),
+            line["text"]
+                .as_str()
+                .map(str::trim)
+                .filter(|t| !t.is_empty()),
         ) else {
             continue;
         };

@@ -11,7 +11,6 @@ use discoclip_engine::download::HttpDownloader;
 use discoclip_engine::download::dash::DashDownloader;
 use discoclip_engine::download::hls::HlsDownloader;
 use discoclip_engine::ffmpeg::Ffmpeg;
-use discoclip_engine::resolve::discord::BotTokens;
 use discoclip_engine::resolve::{Resolver, standard_resolvers};
 use discoclip_engine::store::sqlite::SqliteStore;
 use discoclip_engine::transcode::FfmpegTranscoder;
@@ -115,34 +114,14 @@ pub fn run(args: Args) -> ExitCode {
     }
 }
 
-/// The bot tokens of the running applications, for the Discord resolver to read message
-/// links with; they come and go as applications are added and removed.
-struct RunningBots(Clients);
-
-impl BotTokens for RunningBots {
-    fn tokens(&self) -> Vec<String> {
-        self.0
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .values()
-            .filter_map(|client| {
-                client
-                    .token()
-                    .map(|t| t.trim_start_matches("Bot ").to_string())
-            })
-            .collect()
-    }
-}
-
-fn resolvers(http: &Http, bots: Arc<dyn BotTokens>) -> Vec<Arc<dyn Resolver>> {
-    standard_resolvers(http, bots)
+fn resolvers(http: &Http) -> Vec<Arc<dyn Resolver>> {
+    standard_resolvers(http)
 }
 
 /// The engine as the settings shape it, with the ffmpeg handle it runs on.
 async fn builder(
     settings: &Settings,
     store: SqliteStore,
-    clients: &Clients,
 ) -> Result<(EngineBuilder, Ffmpeg), Error> {
     let engine_config = settings.engine.clone();
     tokio::fs::create_dir_all(&engine_config.cache_dir).await?;
@@ -154,7 +133,7 @@ async fn builder(
         .downloader(HlsDownloader::new(http.clone(), ffmpeg.clone()))
         .downloader(DashDownloader::new(http.clone(), ffmpeg.clone()))
         .transcoder(FfmpegTranscoder::new(ffmpeg.clone()));
-    for resolver in resolvers(&http, Arc::new(RunningBots(clients.clone()))) {
+    for resolver in resolvers(&http) {
         builder = builder.resolver_arc(resolver);
     }
     builder = builder.archiver(FsArchiver::new(engine_config.archive));
@@ -225,7 +204,7 @@ async fn serve(startup: Startup) -> Result<ExitCode, Error> {
 
     let endpoints = DiscordEndpoints::default();
     let clients: Clients = Clients::default();
-    let (mut builder, ffmpeg) = builder(&settings, store.clone(), &clients).await?;
+    let (mut builder, ffmpeg) = builder(&settings, store.clone()).await?;
     let local: SharedLocalConfig = Arc::new(std::sync::RwLock::new(settings.local.clone()));
     builder = builder
         .publisher(LocalPublisher::new(local.clone()))

@@ -788,7 +788,7 @@ export const SETTINGS_FORMATS: SettingsFormat[] = ['toml', 'yaml', 'json'];
 
 export type SessionSupport = 'none' | 'optional' | 'required';
 
-export type FixtureStatus = 'pass' | 'fail' | 'never';
+export type FixtureStatus = 'pass' | 'fail' | 'login_required' | 'never';
 
 export interface FixtureResult {
 	url: string;
@@ -822,6 +822,8 @@ export interface PlatformCoverage {
 	last_fail_at: string | null;
 	passed: number;
 	failed: number;
+	/** Fixtures of the last run that resolve only with a login the platform's jar lacks. */
+	login_required: number;
 	running: boolean;
 	cookies_updated_at: string | null;
 	session_check: SessionCheckResult | null;

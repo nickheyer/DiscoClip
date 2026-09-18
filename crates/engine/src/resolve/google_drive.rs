@@ -58,7 +58,9 @@ pub fn parse_link(url: &Url) -> Option<Link> {
     // Account prefixes: /u/0/... and /a/domain/..., before or after /drive/.
     let stripped: Vec<&str> = match segments.as_slice() {
         ["u" | "a", _, rest @ ..] => rest.to_vec(),
-        ["drive", "u" | "a", _, rest @ ..] => std::iter::once("drive").chain(rest.iter().copied()).collect(),
+        ["drive", "u" | "a", _, rest @ ..] => std::iter::once("drive")
+            .chain(rest.iter().copied())
+            .collect(),
         all => all.to_vec(),
     };
     match stripped.as_slice() {
@@ -78,13 +80,20 @@ pub fn parse_link(url: &Url) -> Option<Link> {
 
 /// The streams the player info names, from `player_response`, plus the legacy stream map.
 pub fn stream_variants(fields: &[(String, String)]) -> Vec<Variant> {
-    let field = |name: &str| fields.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str());
+    let field = |name: &str| {
+        fields
+            .iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
+    };
     let mut variants = Vec::new();
     let duration = field("length_seconds")
         .and_then(|s| s.parse::<u64>().ok())
         .filter(|s| *s > 0)
         .map(Duration::from_secs);
-    if let Some(response) = field("player_response").and_then(|r| serde_json::from_str::<Value>(r).ok()) {
+    if let Some(response) =
+        field("player_response").and_then(|r| serde_json::from_str::<Value>(r).ok())
+    {
         let streaming = &response["streamingData"];
         for (list, adaptive) in [("formats", false), ("adaptiveFormats", true)] {
             for format in streaming[list].as_array().into_iter().flatten() {
@@ -106,7 +115,9 @@ pub fn stream_variants(fields: &[(String, String)]) -> Vec<Variant> {
                 v.height = format["height"].as_u64().map(|h| h as u32);
                 v.fps = format["fps"].as_f64();
                 v.bitrate = format["bitrate"].as_u64();
-                v.size = format["contentLength"].as_str().and_then(|s| s.parse().ok());
+                v.size = format["contentLength"]
+                    .as_str()
+                    .and_then(|s| s.parse().ok());
                 v.duration = format["approxDurationMs"]
                     .as_str()
                     .and_then(|ms| ms.parse::<u64>().ok())
@@ -175,7 +186,10 @@ impl GoogleDriveResolver {
     }
 
     /// The uploaded file itself, as the download endpoint serves it to anyone.
-    async fn source_variant(&self, id: &str) -> Result<Option<(Variant, Option<String>)>, ResolveError> {
+    async fn source_variant(
+        &self,
+        id: &str,
+    ) -> Result<Option<(Variant, Option<String>)>, ResolveError> {
         let mut url = Url::parse(DOWNLOAD).expect("valid");
         url.query_pairs_mut()
             .append_pair("id", id)
@@ -221,7 +235,12 @@ impl GoogleDriveResolver {
             }
         }
         let fields = parse_fields(&fetched.text());
-        let field = |name: &str| fields.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone());
+        let field = |name: &str| {
+            fields
+                .iter()
+                .find(|(k, _)| k == name)
+                .map(|(_, v)| v.clone())
+        };
         let mut variants = stream_variants(&fields);
         let mut title = field("title").and_then(|t| clean_title(&t));
         if let Some((source, name)) = self.source_variant(id).await? {
@@ -238,24 +257,31 @@ impl GoogleDriveResolver {
                 || lower.contains("does not exist")
                 || (field("status").as_deref() == Some("fail")
                     && field("errorcode").as_deref() == Some("100"));
-            return Err(if lower.contains("sign in") || lower.contains("permission") || lower.contains("access") {
-                ResolveError::login_required(origin, PLATFORM, reason)
-            } else if missing {
-                ResolveError::NotFound(origin.clone())
-            } else {
-                ResolveError::unavailable(origin, reason)
-            });
+            return Err(
+                if lower.contains("sign in")
+                    || lower.contains("permission")
+                    || lower.contains("access")
+                {
+                    ResolveError::login_required(origin, PLATFORM, reason)
+                } else if missing {
+                    ResolveError::NotFound(origin.clone())
+                } else {
+                    ResolveError::unavailable(origin, reason)
+                },
+            );
         }
         let mut resolved = Resolved::new(PLATFORM);
         resolved.id = Some(id.to_string());
-        resolved.title = title.map(|t| t.rsplit_once('.').map_or(t.clone(), |(s, _)| s.to_string()));
+        resolved.title =
+            title.map(|t| t.rsplit_once('.').map_or(t.clone(), |(s, _)| s.to_string()));
         resolved.duration = field("length_seconds")
             .and_then(|s| s.parse::<u64>().ok())
             .filter(|s| *s > 0)
             .map(Duration::from_secs)
             .or_else(|| variants.iter().find_map(|v| v.duration));
         resolved.thumbnail = field("iurl").and_then(|u| Url::parse(&u).ok());
-        resolved.webpage_url = Url::parse(&format!("https://drive.google.com/file/d/{id}/view")).ok();
+        resolved.webpage_url =
+            Url::parse(&format!("https://drive.google.com/file/d/{id}/view")).ok();
         resolved.variants = variants;
         Ok(resolved)
     }
@@ -305,19 +331,21 @@ impl GoogleDriveResolver {
                 .next()
                 .map(|t| t.text().collect::<String>())
                 .and_then(|t| clean_title(&t));
-            let is_video = entry
-                .select(&icon_selector)
-                .any(|img| img.value().attr("src").is_some_and(|s| s.contains("/type/video/")))
-                || name
-                    .as_deref()
-                    .and_then(|n| n.rsplit('.').next())
-                    .and_then(Container::from_extension)
-                    .is_some();
+            let is_video = entry.select(&icon_selector).any(|img| {
+                img.value()
+                    .attr("src")
+                    .is_some_and(|s| s.contains("/type/video/"))
+            }) || name
+                .as_deref()
+                .and_then(|n| n.rsplit('.').next())
+                .and_then(Container::from_extension)
+                .is_some();
             if !is_video {
                 continue;
             }
             entries.push(PlaylistEntry {
-                url: Url::parse(&format!("https://drive.google.com/file/d/{file_id}/view")).expect("valid"),
+                url: Url::parse(&format!("https://drive.google.com/file/d/{file_id}/view"))
+                    .expect("valid"),
                 title: name.map(|n| n.rsplit_once('.').map_or(n.clone(), |(s, _)| s.to_string())),
                 duration: None,
             });
@@ -349,8 +377,18 @@ impl Resolver for GoogleDriveResolver {
         Platform {
             id: PLATFORM,
             name: "Google Drive",
-            hosts: &["drive.google.com", "docs.google.com", "drive.usercontent.google.com"],
-            features: &["files", "folders", "open and uc links", "original uploads", "player streams"],
+            hosts: &[
+                "drive.google.com",
+                "docs.google.com",
+                "drive.usercontent.google.com",
+            ],
+            features: &[
+                "files",
+                "folders",
+                "open and uc links",
+                "original uploads",
+                "player streams",
+            ],
             formats: &["mp4", "webm", "mkv", "mov"],
             session: SessionSupport::Optional,
             examples: &[
@@ -379,7 +417,13 @@ mod tests {
         Exchange, Fixture, RecordedBody, RecordedRequest, RecordedResponse,
     };
 
-    fn get(url: &str, status: u16, content_type: &str, body: &str, headers: &[(&str, &str)]) -> Exchange {
+    fn get(
+        url: &str,
+        status: u16,
+        content_type: &str,
+        body: &str,
+        headers: &[(&str, &str)],
+    ) -> Exchange {
         let mut all = vec![("content-type".to_string(), content_type.to_string())];
         all.extend(headers.iter().map(|(k, v)| (k.to_string(), v.to_string())));
         Exchange {
@@ -412,24 +456,80 @@ mod tests {
     #[test]
     fn links_are_read() {
         let link = |s: &str| parse_link(&Url::parse(s).unwrap());
-        assert_eq!(link("https://drive.google.com/file/d/0ByeS4oOUV-49Zzh4R1J6R09zazQ/view?usp=sharing"), Some(Link::File(ID.into())));
-        assert_eq!(link("https://drive.google.com/file/d/0ByeS4oOUV-49Zzh4R1J6R09zazQ/edit"), Some(Link::File(ID.into())));
-        assert_eq!(link("https://drive.google.com/u/0/file/d/0ByeS4oOUV-49Zzh4R1J6R09zazQ/preview"), Some(Link::File(ID.into())));
-        assert_eq!(link("https://drive.google.com/open?id=0ByeS4oOUV-49Zzh4R1J6R09zazQ"), Some(Link::File(ID.into())));
-        assert_eq!(link("https://docs.google.com/uc?id=0ByeS4oOUV-49Zzh4R1J6R09zazQ&export=download"), Some(Link::File(ID.into())));
-        assert_eq!(link("https://drive.usercontent.google.com/download?id=0ByeS4oOUV-49Zzh4R1J6R09zazQ&export=download"), Some(Link::File(ID.into())));
-        assert_eq!(link("https://drive.google.com/drive/folders/1brGvAKJB4PY_CClqqRVh31Kr8fY6cTLs?usp=sharing"), Some(Link::Folder("1brGvAKJB4PY_CClqqRVh31Kr8fY6cTLs".into())));
-        assert_eq!(link("https://drive.google.com/drive/u/1/folders/1brGvAKJB4PY_CClqqRVh31Kr8fY6cTLs"), Some(Link::Folder("1brGvAKJB4PY_CClqqRVh31Kr8fY6cTLs".into())));
-        assert_eq!(link("https://drive.google.com/embeddedfolderview?id=1brGvAKJB4PY_CClqqRVh31Kr8fY6cTLs"), Some(Link::Folder("1brGvAKJB4PY_CClqqRVh31Kr8fY6cTLs".into())));
+        assert_eq!(
+            link("https://drive.google.com/file/d/0ByeS4oOUV-49Zzh4R1J6R09zazQ/view?usp=sharing"),
+            Some(Link::File(ID.into()))
+        );
+        assert_eq!(
+            link("https://drive.google.com/file/d/0ByeS4oOUV-49Zzh4R1J6R09zazQ/edit"),
+            Some(Link::File(ID.into()))
+        );
+        assert_eq!(
+            link("https://drive.google.com/u/0/file/d/0ByeS4oOUV-49Zzh4R1J6R09zazQ/preview"),
+            Some(Link::File(ID.into()))
+        );
+        assert_eq!(
+            link("https://drive.google.com/open?id=0ByeS4oOUV-49Zzh4R1J6R09zazQ"),
+            Some(Link::File(ID.into()))
+        );
+        assert_eq!(
+            link("https://docs.google.com/uc?id=0ByeS4oOUV-49Zzh4R1J6R09zazQ&export=download"),
+            Some(Link::File(ID.into()))
+        );
+        assert_eq!(
+            link(
+                "https://drive.usercontent.google.com/download?id=0ByeS4oOUV-49Zzh4R1J6R09zazQ&export=download"
+            ),
+            Some(Link::File(ID.into()))
+        );
+        assert_eq!(
+            link(
+                "https://drive.google.com/drive/folders/1brGvAKJB4PY_CClqqRVh31Kr8fY6cTLs?usp=sharing"
+            ),
+            Some(Link::Folder("1brGvAKJB4PY_CClqqRVh31Kr8fY6cTLs".into()))
+        );
+        assert_eq!(
+            link("https://drive.google.com/drive/u/1/folders/1brGvAKJB4PY_CClqqRVh31Kr8fY6cTLs"),
+            Some(Link::Folder("1brGvAKJB4PY_CClqqRVh31Kr8fY6cTLs".into()))
+        );
+        assert_eq!(
+            link(
+                "https://drive.google.com/embeddedfolderview?id=1brGvAKJB4PY_CClqqRVh31Kr8fY6cTLs"
+            ),
+            Some(Link::Folder("1brGvAKJB4PY_CClqqRVh31Kr8fY6cTLs".into()))
+        );
         assert_eq!(link("https://drive.google.com/drive/my-drive"), None);
-        assert_eq!(link("https://docs.google.com/document/d/abcdefghijklmnop/edit"), None);
+        assert_eq!(
+            link("https://docs.google.com/document/d/abcdefghijklmnop/edit"),
+            None
+        );
     }
 
     #[tokio::test]
     async fn files_resolve_with_the_original_upload_and_the_player_streams() {
         let mut fixture = Fixture::new("google_drive", None);
-        fixture.exchanges.push(get(&format!("https://drive.google.com/get_video_info?docid={ID}"), 200, "text/plain", &info(), &[]));
-        fixture.exchanges.push(get(&format!("https://drive.usercontent.google.com/download?id={ID}&export=download&confirm=t"), 200, "video/mp4", "", &[("content-length", "185972864"), ("content-disposition", "attachment; filename=\"Big Buck Bunny.mp4\"")]));
+        fixture.exchanges.push(get(
+            &format!("https://drive.google.com/get_video_info?docid={ID}"),
+            200,
+            "text/plain",
+            &info(),
+            &[],
+        ));
+        fixture.exchanges.push(get(
+            &format!(
+                "https://drive.usercontent.google.com/download?id={ID}&export=download&confirm=t"
+            ),
+            200,
+            "video/mp4",
+            "",
+            &[
+                ("content-length", "185972864"),
+                (
+                    "content-disposition",
+                    "attachment; filename=\"Big Buck Bunny.mp4\"",
+                ),
+            ],
+        ));
         let resolver = GoogleDriveResolver::new(Http::replay(fixture));
         let url = Url::parse(&format!("https://drive.google.com/file/d/{ID}/view")).unwrap();
         let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
@@ -441,15 +541,27 @@ mod tests {
         assert_eq!(source.format_id.as_deref(), Some("source"));
         assert_eq!(source.size, Some(185972864));
         assert_eq!(source.container, Some(Container::Mp4));
-        let hd = resolved.variants.iter().find(|v| v.format_id.as_deref() == Some("22")).unwrap();
+        let hd = resolved
+            .variants
+            .iter()
+            .find(|v| v.format_id.as_deref() == Some("22"))
+            .unwrap();
         assert_eq!(hd.height, Some(718));
         assert_eq!(hd.video, Some(VideoCodec::H264));
         assert_eq!(hd.size, Some(10295612));
         assert_eq!(hd.duration, Some(Duration::from_millis(45116)));
         assert!(!hd.video_only);
-        let video_only = resolved.variants.iter().find(|v| v.format_id.as_deref() == Some("137")).unwrap();
+        let video_only = resolved
+            .variants
+            .iter()
+            .find(|v| v.format_id.as_deref() == Some("137"))
+            .unwrap();
         assert!(video_only.video_only);
-        let audio = resolved.variants.iter().find(|v| v.format_id.as_deref() == Some("140")).unwrap();
+        let audio = resolved
+            .variants
+            .iter()
+            .find(|v| v.format_id.as_deref() == Some("140"))
+            .unwrap();
         assert!(audio.audio_only);
         assert_eq!(audio.audio, Some(AudioCodec::Aac));
     }
@@ -457,17 +569,40 @@ mod tests {
     #[tokio::test]
     async fn locked_and_missing_files_say_so() {
         let mut fixture = Fixture::new("google_drive", None);
-        fixture.exchanges.push(get("https://drive.google.com/get_video_info?docid=lockedlockedlocked", 200, "text/plain", "status=fail&errorcode=150&reason=You+need+permission+to+access+this+file", &[]));
+        fixture.exchanges.push(get(
+            "https://drive.google.com/get_video_info?docid=lockedlockedlocked",
+            200,
+            "text/plain",
+            "status=fail&errorcode=150&reason=You+need+permission+to+access+this+file",
+            &[],
+        ));
         fixture.exchanges.push(get("https://drive.usercontent.google.com/download?id=lockedlockedlocked&export=download&confirm=t", 200, "text/html", "<html>sign in</html>", &[]));
-        fixture.exchanges.push(get("https://drive.google.com/get_video_info?docid=missingmissingmissing", 200, "text/plain", "status=fail&errorcode=100&reason=Video+not+found", &[]));
+        fixture.exchanges.push(get(
+            "https://drive.google.com/get_video_info?docid=missingmissingmissing",
+            200,
+            "text/plain",
+            "status=fail&errorcode=100&reason=Video+not+found",
+            &[],
+        ));
         fixture.exchanges.push(get("https://drive.usercontent.google.com/download?id=missingmissingmissing&export=download&confirm=t", 404, "text/html", "", &[]));
         let resolver = GoogleDriveResolver::new(Http::replay(fixture));
         assert!(matches!(
-            resolver.resolve(&Url::parse("https://drive.google.com/file/d/lockedlockedlocked/view").unwrap()).await.unwrap_err(),
+            resolver
+                .resolve(
+                    &Url::parse("https://drive.google.com/file/d/lockedlockedlocked/view").unwrap()
+                )
+                .await
+                .unwrap_err(),
             ResolveError::LoginRequired { .. }
         ));
         assert!(matches!(
-            resolver.resolve(&Url::parse("https://drive.google.com/file/d/missingmissingmissing/view").unwrap()).await.unwrap_err(),
+            resolver
+                .resolve(
+                    &Url::parse("https://drive.google.com/file/d/missingmissingmissing/view")
+                        .unwrap()
+                )
+                .await
+                .unwrap_err(),
             ResolveError::NotFound(_)
         ));
     }
@@ -480,15 +615,36 @@ mod tests {
         <div class="flip-entry" id="entry-1zzzzzzzzzzzzzzzzzzzzzzzzzzz"><div class="flip-entry-info"><a href="https://drive.google.com/file/d/1zzzzzzzzzzzzzzzzzzzzzzzzzzz/view" target="_blank"><div class="flip-entry-list-icon"><img src="https://drive-thirdparty.googleusercontent.com/16/type/application/pdf" alt=""/></div><div class="flip-entry-title">notes.pdf</div></a></div></div>
         </div></body></html>"#;
         let mut fixture = Fixture::new("google_drive", None);
-        fixture.exchanges.push(get("https://drive.google.com/embeddedfolderview?id=1brGvAKJB4PY_CClqqRVh31Kr8fY6cTLs", 200, "text/html", view, &[]));
+        fixture.exchanges.push(get(
+            "https://drive.google.com/embeddedfolderview?id=1brGvAKJB4PY_CClqqRVh31Kr8fY6cTLs",
+            200,
+            "text/html",
+            view,
+            &[],
+        ));
         let resolver = GoogleDriveResolver::new(Http::replay(fixture));
-        let playlist = match resolver.resolve(&Url::parse("https://drive.google.com/drive/folders/1brGvAKJB4PY_CClqqRVh31Kr8fY6cTLs").unwrap()).await.unwrap() {
+        let playlist = match resolver
+            .resolve(
+                &Url::parse(
+                    "https://drive.google.com/drive/folders/1brGvAKJB4PY_CClqqRVh31Kr8fY6cTLs",
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap()
+        {
             Resolution::Playlist(p) => p,
             other => panic!("expected a playlist, got {other:?}"),
         };
         assert_eq!(playlist.title.as_deref(), Some("Sample Videos"));
         assert_eq!(playlist.entries.len(), 2);
-        assert_eq!(playlist.entries[0].url.as_str(), "https://drive.google.com/file/d/1fDBH_uBH-LzJE3YiXq0y1HDeSBA9GcHi/view");
-        assert_eq!(playlist.entries[0].title.as_deref(), Some("Pepsi Ad Creative 2"));
+        assert_eq!(
+            playlist.entries[0].url.as_str(),
+            "https://drive.google.com/file/d/1fDBH_uBH-LzJE3YiXq0y1HDeSBA9GcHi/view"
+        );
+        assert_eq!(
+            playlist.entries[0].title.as_deref(),
+            Some("Pepsi Ad Creative 2")
+        );
     }
 }

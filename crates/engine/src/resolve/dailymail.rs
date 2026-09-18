@@ -31,7 +31,10 @@ pub fn video_id(url: &Url) -> Option<String> {
         return None;
     }
     let host = url.host_str()?.to_ascii_lowercase();
-    if !matches!(host.as_str(), "dailymail.co.uk" | "www.dailymail.co.uk" | "dailymail.com" | "www.dailymail.com") {
+    if !matches!(
+        host.as_str(),
+        "dailymail.co.uk" | "www.dailymail.co.uk" | "dailymail.com" | "www.dailymail.com"
+    ) {
         return None;
     }
     RE_PATH.captures(url.path()).map(|caps| caps[1].to_string())
@@ -124,7 +127,15 @@ impl Resolver for DailymailResolver {
         let mut resolved = Resolved::new(PLATFORM);
         let mut failure = None;
         let accept = [("accept".to_string(), "application/json".to_string())];
-        let sources = fetch(&self.http, &sources_url, PLATFORM, BROWSER_UA, &accept, MAX_PAGE).await?;
+        let sources = fetch(
+            &self.http,
+            &sources_url,
+            PLATFORM,
+            BROWSER_UA,
+            &accept,
+            MAX_PAGE,
+        )
+        .await?;
         if sources.status.is_success() {
             let listed = sources.json(url)?;
             let renditions = listed["body"]["renditions"]
@@ -137,7 +148,9 @@ impl Resolver for DailymailResolver {
                     continue;
                 };
                 let bitrate = util::uint(&rendition["encodingRate"]).filter(|b| *b > 0);
-                if rendition["videoContainer"].as_str() == Some("M2TS") || link.path().ends_with(".m3u8") {
+                if rendition["videoContainer"].as_str() == Some("M2TS")
+                    || link.path().ends_with(".m3u8")
+                {
                     match hls::expand(&self.http, &link, PLATFORM, BROWSER_UA, &[]).await {
                         Ok(expanded) => {
                             for mut variant in expanded.variants {
@@ -147,7 +160,8 @@ impl Resolver for DailymailResolver {
                                 if let Some((width, height)) = size_in_name(&link) {
                                     variant.width = variant.width.or(Some(width));
                                     variant.height = variant.height.or(Some(height));
-                                    variant.label = variant.label.clone().or(Some(format!("{height}p")));
+                                    variant.label =
+                                        variant.label.clone().or(Some(format!("{height}p")));
                                 }
                                 resolved.variants.push(variant);
                             }
@@ -156,7 +170,10 @@ impl Resolver for DailymailResolver {
                         Err(error) => failure = Some(error),
                     }
                 } else {
-                    let mut variant = mp4_variant(link, &format!("http-{}", bitrate.map(|b| b / 1000).unwrap_or(0)));
+                    let mut variant = mp4_variant(
+                        link,
+                        &format!("http-{}", bitrate.map(|b| b / 1000).unwrap_or(0)),
+                    );
                     variant.bitrate = bitrate;
                     // The rendition record names its frame and codec for files whose
                     // names do not.
@@ -191,14 +208,27 @@ impl Resolver for DailymailResolver {
         if resolved.variants.is_empty() {
             return Err(failure.unwrap_or_else(|| ResolveError::NotFound(url.clone())));
         }
-        resolved.variants.sort_by_key(|v| std::cmp::Reverse((v.height.unwrap_or(0), v.bitrate.unwrap_or(0))));
+        resolved
+            .variants
+            .sort_by_key(|v| std::cmp::Reverse((v.height.unwrap_or(0), v.bitrate.unwrap_or(0))));
         resolved.id = Some(id);
-        resolved.title = options["title"].as_str().map(util::html_unescape).and_then(|t| clean_title(&t));
-        resolved.description = options["descr"].as_str().map(util::html_unescape).and_then(|d| clean_title(&d));
-        resolved.thumbnail = util::url_of(&options["poster"], None).or_else(|| util::url_of(&options["thumbnail"], None));
+        resolved.title = options["title"]
+            .as_str()
+            .map(util::html_unescape)
+            .and_then(|t| clean_title(&t));
+        resolved.description = options["descr"]
+            .as_str()
+            .map(util::html_unescape)
+            .and_then(|d| clean_title(&d));
+        resolved.thumbnail = util::url_of(&options["poster"], None)
+            .or_else(|| util::url_of(&options["thumbnail"], None));
         resolved.duration = util::millis(&options["duration"]).or(resolved.duration);
-        resolved.uploader = options["source"].as_str().and_then(clean_title).or_else(|| Some("Daily Mail".to_string()));
-        resolved.webpage_url = util::url_of(&options["linkBaseURL"], None).or_else(|| Some(url.clone()));
+        resolved.uploader = options["source"]
+            .as_str()
+            .and_then(clean_title)
+            .or_else(|| Some("Daily Mail".to_string()));
+        resolved.webpage_url =
+            util::url_of(&options["linkBaseURL"], None).or_else(|| Some(url.clone()));
         Ok(Resolution::from(resolved))
     }
 }
@@ -237,12 +267,20 @@ mod tests {
         let id = |s: &str| video_id(&Url::parse(s).unwrap());
         assert_eq!(id(VIDEO), Some("3692517".into()));
         assert_eq!(
-            id("http://www.dailymail.co.uk/video/tvshowbiz/video-1295863/The-Mountain-appears-sparkling-water-ad-Heavy-Bubbles.html"),
+            id(
+                "http://www.dailymail.co.uk/video/tvshowbiz/video-1295863/The-Mountain-appears-sparkling-water-ad-Heavy-Bubbles.html"
+            ),
             Some("1295863".into())
         );
-        assert_eq!(id("http://www.dailymail.co.uk/embed/video/1295863.html"), Some("1295863".into()));
+        assert_eq!(
+            id("http://www.dailymail.co.uk/embed/video/1295863.html"),
+            Some("1295863".into())
+        );
         assert_eq!(id("https://www.dailymail.com/news/article-1.html"), None);
-        assert_eq!(id("https://example.com/video/royals/video-3692517/x.html"), None);
+        assert_eq!(
+            id("https://example.com/video/royals/video-3692517/x.html"),
+            None
+        );
     }
 
     #[tokio::test]
@@ -251,7 +289,15 @@ mod tests {
             "title": "Meghan Markle posts clip of her dancing", "descr": "Meghan Markle has posted a new clip &amp; more.", "thumbnail": "https://i.dailymail.com/1s/2026/08/05/01/x.jpg",
             "plugins": {"sources": {"url": "https://www.dailymail.com/api/player/234/video-sources.json"}}, "videoId": "234"});
         let mut fixture = Fixture::new(PLATFORM, None);
-        fixture.exchanges.push(get(VIDEO, 200, "text/html", format!("<html><body><div data-opts='{}'></div></body></html>", opts.to_string().replace('\'', "&#39;"))));
+        fixture.exchanges.push(get(
+            VIDEO,
+            200,
+            "text/html",
+            format!(
+                "<html><body><div data-opts='{}'></div></body></html>",
+                opts.to_string().replace('\'', "&#39;")
+            ),
+        ));
         fixture.exchanges.push(get(
             "https://www.dailymail.com/api/player/234/video-sources.json",
             200,
@@ -273,8 +319,14 @@ mod tests {
         assert!(resolver.matches(&url));
         let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
         assert_eq!(resolved.id.as_deref(), Some("3692517"));
-        assert_eq!(resolved.title.as_deref(), Some("Meghan Markle posts clip of her dancing"));
-        assert_eq!(resolved.description.as_deref(), Some("Meghan Markle has posted a new clip & more."));
+        assert_eq!(
+            resolved.title.as_deref(),
+            Some("Meghan Markle posts clip of her dancing")
+        );
+        assert_eq!(
+            resolved.description.as_deref(),
+            Some("Meghan Markle has posted a new clip & more.")
+        );
         assert_eq!(resolved.uploader.as_deref(), Some("Instagram"));
         assert_eq!(resolved.duration, Some(Duration::from_millis(44000)));
         assert_eq!(resolved.variants.len(), 3);
@@ -282,10 +334,18 @@ mod tests {
         assert_eq!(best.kind, VariantKind::File);
         assert_eq!((best.width, best.height), (Some(1024), Some(576)));
         assert_eq!(best.format_id.as_deref(), Some("player"));
-        let playlist = resolved.variants.iter().find(|v| v.kind == VariantKind::Hls).unwrap();
+        let playlist = resolved
+            .variants
+            .iter()
+            .find(|v| v.kind == VariantKind::Hls)
+            .unwrap();
         assert_eq!(playlist.height, Some(360));
         assert_eq!(playlist.bitrate, Some(679936));
-        let small = resolved.variants.iter().find(|v| v.format_id.as_deref() == Some("http-372")).unwrap();
+        let small = resolved
+            .variants
+            .iter()
+            .find(|v| v.format_id.as_deref() == Some("http-372"))
+            .unwrap();
         assert_eq!(small.height, Some(270));
     }
 

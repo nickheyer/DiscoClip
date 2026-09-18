@@ -70,7 +70,9 @@ pub fn parse_link(url: &Url) -> Option<PostRef> {
     })
 }
 
-/// Every `thread_items` post the page's data blobs carry.
+/// Every post the page's data blobs carry: the post the page is for, which the page's
+/// own query answers as its `media`, and the `thread_items` posts of the threads around
+/// it.
 pub fn posts_in(page: &Page) -> Vec<Value> {
     fn walk(value: &Value, out: &mut Vec<Value>) {
         match value {
@@ -82,6 +84,13 @@ pub fn posts_in(page: &Page) -> Vec<Value> {
                         }
                     }
                 }
+                if let Some(media) = map.get("media")
+                    && media.is_object()
+                    && media["code"].is_string()
+                    && media["pk"].is_string()
+                {
+                    out.push(media.clone());
+                }
                 for child in map.values() {
                     walk(child, out);
                 }
@@ -91,11 +100,11 @@ pub fn posts_in(page: &Page) -> Vec<Value> {
         }
     }
     let mut out = Vec::new();
-    let selector = scraper::Selector::parse("script[type='application/json'][data-sjs]")
-        .expect("valid");
+    let selector =
+        scraper::Selector::parse("script[type='application/json'][data-sjs]").expect("valid");
     for script in page.document().select(&selector) {
         let text: String = script.text().collect();
-        if !text.contains("thread_items") {
+        if !text.contains("thread_items") && !text.contains("\"media\":") {
             continue;
         }
         if let Ok(value) = serde_json::from_str::<Value>(&text) {
@@ -120,8 +129,14 @@ pub fn variants_of(media: &Value, fallback_size: (Option<u32>, Option<u32>)) -> 
         v.container = Some(Container::Mp4);
         v.video = Some(VideoCodec::H264);
         v.audio = (media["has_audio"].as_bool() != Some(false)).then_some(AudioCodec::Aac);
-        v.width = version["width"].as_u64().map(|w| w as u32).or(fallback_size.0);
-        v.height = version["height"].as_u64().map(|h| h as u32).or(fallback_size.1);
+        v.width = version["width"]
+            .as_u64()
+            .map(|w| w as u32)
+            .or(fallback_size.0);
+        v.height = version["height"]
+            .as_u64()
+            .map(|h| h as u32)
+            .or(fallback_size.1);
         v.format_id = version["type"].as_u64().map(|t| format!("type-{t}"));
         v.duration = media["video_duration"]
             .as_f64()
@@ -171,7 +186,10 @@ impl ThreadsResolver {
             .get(page_url.clone())
             .platform(PLATFORM)
             .user_agent(BROWSER_UA)
-            .header("accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            .header(
+                "accept",
+                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            )
             .header("accept-language", "en-US,en;q=0.9")
             .header("sec-fetch-mode", "navigate")
             .header("sec-fetch-site", "none")
@@ -205,7 +223,7 @@ impl ThreadsResolver {
             .into_iter()
             .find(|p| p["code"].as_str() == Some(post_ref.code.as_str()))
             .ok_or_else(|| {
-                if html.contains("thread_items") {
+                if html.contains("thread_items") || html.contains("\"media\":") {
                     ResolveError::NotFound(origin.clone())
                 } else {
                     ResolveError::unavailable(
@@ -279,7 +297,11 @@ impl Resolver for ThreadsResolver {
             .as_array()
             .into_iter()
             .flatten()
-            .filter(|m| m["video_versions"].as_array().is_some_and(|v| !v.is_empty()))
+            .filter(|m| {
+                m["video_versions"]
+                    .as_array()
+                    .is_some_and(|v| !v.is_empty())
+            })
             .collect();
         if !carousel.is_empty() {
             if let Some(item) = post_ref.item {
@@ -333,14 +355,16 @@ impl Resolver for ThreadsResolver {
         }
         let variants = variants_of(&post, size_of(&post));
         if variants.is_empty() {
-            return Err(if post["image_versions2"]["candidates"]
-                .as_array()
-                .is_some_and(|c| !c.is_empty())
-            {
-                ResolveError::unavailable(url, "the post carries images, not a video")
-            } else {
-                ResolveError::NotFound(url.clone())
-            });
+            return Err(
+                if post["image_versions2"]["candidates"]
+                    .as_array()
+                    .is_some_and(|c| !c.is_empty())
+                {
+                    ResolveError::unavailable(url, "the post carries images, not a video")
+                } else {
+                    ResolveError::NotFound(url.clone())
+                },
+            );
         }
         let mut resolved = base;
         resolved.duration = variants.iter().find_map(|v| v.duration);
@@ -380,6 +404,17 @@ mod tests {
         let data = json!({"require": [["ScheduledServerJS", "handle", null, [{"__bbox": {"require": [["RelayPrefetchedStreamCache", "next", [], ["adp_BarcelonaPostPageQuery", {"__bbox": {"result": {"data": {"data": {"edges": [{"node": {"thread_items": posts.iter().map(|p| json!({"post": p})).collect::<Vec<_>>()}}]}}}}}]]]}}]]]});
         format!(
             r#"<html><head><script type="application/json" data-content-len="1" data-sjs>{{"define":[]}}</script><script type="application/json" data-sjs>{data}</script></head><body></body></html>"#
+        )
+    }
+
+    /// A page as the site renders it since September 2026: the post the page is for is
+    /// the `media` its own query answers with, and `thread_items` hold only the threads
+    /// recommended beside it.
+    fn target_page(post: Value, related: Vec<Value>) -> String {
+        let target = json!({"require": [["ScheduledServerJS", "handle", null, [{"__bbox": {"require": [["RelayPrefetchedStreamCache", "next", [], ["adp_BarcelonaPostPageTargetQueryRelayPreloader_6aabafbbe1a389d81752929", {"__bbox": {"complete": true, "result": {"data": {"media": post, "viewer": {"user": null}}, "extensions": {"is_final": true}}}}]]]}}]]]});
+        let around = json!({"require": [["ScheduledServerJS", "handle", null, [{"__bbox": {"require": [["RelayPrefetchedStreamCache", "next", [], ["adp_BarcelonaLoggedOutRelatedPostsQueryRelayPreloader_6aabafbbe1a590e7", {"__bbox": {"complete": true, "result": {"data": {"relatedPosts": {"threads": related.iter().map(|p| json!({"id": p["pk"], "header": null, "thread_items": [{"post": p}]})).collect::<Vec<_>>()}}}}}]]]}}]]]});
+        format!(
+            r#"<html><head><script type="application/json" data-content-len="1" data-sjs>{{"define":[]}}</script><script type="application/json" data-sjs>{target}</script><script type="application/json" data-sjs>{around}</script></head><body></body></html>"#
         )
     }
 
@@ -461,6 +496,40 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_post_is_read_from_its_own_query_beside_the_recommended_threads() {
+        let mut related = video_post();
+        related["code"] = json!("Dc6N2Ifku3s");
+        related["pk"] = json!("3979554115311300076");
+        related["caption"]["text"] = json!("Something else entirely");
+        let mut fixture = Fixture::new("threads", None);
+        fixture.exchanges.push(get(
+            "https://www.threads.net/@netflix/post/DdKHPefAvpb",
+            200,
+            &target_page(video_post(), vec![related.clone()]),
+        ));
+        fixture.exchanges.push(get(
+            "https://www.threads.net/@netflix/post/DdKHPefAvpc",
+            200,
+            &target_page(json!(null), vec![related]),
+        ));
+        let resolver = ThreadsResolver::new(Http::replay(fixture));
+        let url = Url::parse("https://www.threads.net/@netflix/post/DdKHPefAvpb").unwrap();
+        let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
+        assert_eq!(resolved.id.as_deref(), Some("DdKHPefAvpb"));
+        assert_eq!(
+            resolved.title.as_deref(),
+            Some("The OGs vs Gen Z! A DIFFERENT WORLD premieres September 24")
+        );
+        assert_eq!(resolved.variants.len(), 3);
+        // A page whose own query answers nothing names only the threads around it.
+        let url = Url::parse("https://www.threads.net/@netflix/post/DdKHPefAvpc").unwrap();
+        assert!(matches!(
+            resolver.resolve(&url).await.unwrap_err(),
+            ResolveError::NotFound(_)
+        ));
+    }
+
+    #[tokio::test]
     async fn carousels_list_their_videos_and_images_are_refused() {
         let mut carousel = video_post();
         carousel["code"] = json!("DcULMjPEsV3");
@@ -508,13 +577,18 @@ mod tests {
         );
         assert_eq!(playlist.entries[1].duration, Some(Duration::from_secs(7)));
         let second = resolver
-            .resolve(&Url::parse("https://www.threads.net/@mosseri/post/DcULMjPEsV3#item-2").unwrap())
+            .resolve(
+                &Url::parse("https://www.threads.net/@mosseri/post/DcULMjPEsV3#item-2").unwrap(),
+            )
             .await
             .unwrap()
             .media()
             .unwrap();
         assert_eq!(second.id.as_deref(), Some("DcULMjPEsV3-2"));
-        assert_eq!(second.variants[0].url.as_str(), "https://scontent.cdninstagram.com/two.mp4");
+        assert_eq!(
+            second.variants[0].url.as_str(),
+            "https://scontent.cdninstagram.com/two.mp4"
+        );
         assert_eq!(second.variants[0].height, Some(1280));
         let error = resolver
             .resolve(&Url::parse("https://www.threads.net/@netflix/post/Dimages1234").unwrap())

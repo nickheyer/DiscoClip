@@ -53,7 +53,9 @@ pub fn parse_link(url: &Url) -> Option<Link> {
         .map(String::from);
     let mut share = url.clone();
     share.set_fragment(None);
-    let has_path = share.path_segments().is_some_and(|mut s| s.any(|p| !p.is_empty()));
+    let has_path = share
+        .path_segments()
+        .is_some_and(|mut s| s.any(|p| !p.is_empty()));
     let has_id = share
         .query_pairs()
         .any(|(k, _)| matches!(k.as_ref(), "id" | "resid" | "cid" | "redeem"));
@@ -98,7 +100,10 @@ pub fn variant_of(item: &Value) -> Option<Variant> {
         .as_u64()
         .filter(|d| *d > 0)
         .map(Duration::from_millis);
-    if video["fourCC"].as_str().is_some_and(|c| c.eq_ignore_ascii_case("H264")) {
+    if video["fourCC"]
+        .as_str()
+        .is_some_and(|c| c.eq_ignore_ascii_case("H264"))
+    {
         v.video = Some(VideoCodec::H264);
         v.audio = Some(AudioCodec::Aac);
     }
@@ -107,9 +112,8 @@ pub fn variant_of(item: &Value) -> Option<Variant> {
 }
 
 fn resolved_of(item: &Value, share: &Url) -> Result<Resolved, ResolveError> {
-    let variant = variant_of(item).ok_or_else(|| {
-        ResolveError::unavailable(share, "the item carries no download link")
-    })?;
+    let variant = variant_of(item)
+        .ok_or_else(|| ResolveError::unavailable(share, "the item carries no download link"))?;
     let name = item["name"].as_str().unwrap_or_default();
     let mut resolved = Resolved::new(PLATFORM);
     resolved.id = item["id"].as_str().map(String::from);
@@ -144,7 +148,8 @@ impl OnedriveResolver {
     /// An anonymous token for the share API, kept until it nears its end.
     async fn token(&self, origin: &Url, fresh: bool) -> Result<String, ResolveError> {
         if !fresh
-            && let Some((token, issued)) = self.token.read().unwrap_or_else(|e| e.into_inner()).clone()
+            && let Some((token, issued)) =
+                self.token.read().unwrap_or_else(|e| e.into_inner()).clone()
             && issued.elapsed() < TOKEN_LIFETIME
         {
             return Ok(token);
@@ -169,7 +174,8 @@ impl OnedriveResolver {
             .filter(|t| !t.is_empty())
             .ok_or_else(|| ResolveError::malformed(origin, "the token service issued no token"))?
             .to_string();
-        *self.token.write().unwrap_or_else(|e| e.into_inner()) = Some((token.clone(), Instant::now()));
+        *self.token.write().unwrap_or_else(|e| e.into_inner()) =
+            Some((token.clone(), Instant::now()));
         Ok(token)
     }
 
@@ -223,7 +229,10 @@ impl OnedriveResolver {
         for _ in 0..50 {
             let page = self.api(share, &path, origin).await?;
             all.extend(page["value"].as_array().cloned().unwrap_or_default());
-            match page["@odata.nextLink"].as_str().and_then(|u| Url::parse(u).ok()) {
+            match page["@odata.nextLink"]
+                .as_str()
+                .and_then(|u| Url::parse(u).ok())
+            {
                 Some(next) => {
                     let base = format!("{SHARES_API}{}/", share_id(share));
                     match next.as_str().strip_prefix(&base) {
@@ -351,7 +360,10 @@ mod tests {
     const VIDEO: &str = r#"{"@content.downloadUrl":"https://my.microsoftpersonalcontent.com/personal/49e18460ed20d89c/_layouts/15/download.aspx?UniqueId=a080fb34&tempauth=t","id":"49E18460ED20D89C!sa080fb348e34477493d1aa1ddd2c41a8","name":"Screenbox playback bug.mp4","size":132636591,"webUrl":"https://onedrive.live.com?cid=49E18460ED20D89C&id=49E18460ED20D89C!sa080","file":{"fileExtension":".mp4","mimeType":"video/mp4"},"video":{"audioChannels":1,"bitRate":426340,"duration":1996240,"fourCC":"H264","frameRate":25.0,"height":780,"width":936},"createdDateTime":"2025-12-22T23:42:09Z","lastModifiedDateTime":"2025-12-20T12:36:42Z","createdBy":{"user":{"displayName":"Armin Osaj","id":"49E18460ED20D89C"}}}"#;
 
     fn api(share: &str, path: &str) -> String {
-        format!("{SHARES_API}{}/{path}", share_id(&Url::parse(share).unwrap()))
+        format!(
+            "{SHARES_API}{}/{path}",
+            share_id(&Url::parse(share).unwrap())
+        )
     }
 
     #[test]
@@ -363,12 +375,19 @@ mod tests {
         let with_item = link(&format!("{FOLDER}#item=ABC!123")).unwrap();
         assert_eq!(with_item.item.as_deref(), Some("ABC!123"));
         assert_eq!(with_item.share.as_str(), FOLDER);
-        assert!(link("https://onedrive.live.com/?cid=49E18460ED20D89C&id=49E18460ED20D89C!322970").is_some());
-        assert!(link("https://contoso-my.sharepoint.com/:v:/g/personal/someone/EaBc?e=1").is_some());
+        assert!(
+            link("https://onedrive.live.com/?cid=49E18460ED20D89C&id=49E18460ED20D89C!322970")
+                .is_some()
+        );
+        assert!(
+            link("https://contoso-my.sharepoint.com/:v:/g/personal/someone/EaBc?e=1").is_some()
+        );
         assert_eq!(link("https://onedrive.live.com/"), None);
         assert_eq!(link("https://1drv.ms/"), None);
         assert_eq!(
-            share_id(&Url::parse("https://1drv.ms/u/s!Atj71Lw5QEdsrQnTRHMj-fjGc49N?e=hOB5gO").unwrap()),
+            share_id(
+                &Url::parse("https://1drv.ms/u/s!Atj71Lw5QEdsrQnTRHMj-fjGc49N?e=hOB5gO").unwrap()
+            ),
             "u!aHR0cHM6Ly8xZHJ2Lm1zL3UvcyFBdGo3MUx3NVFFZHNyUW5UUkhNai1makdjNDlOP2U9aE9CNWdP"
         );
     }
@@ -376,8 +395,12 @@ mod tests {
     #[tokio::test]
     async fn shared_videos_resolve_with_their_download_link() {
         let mut fixture = Fixture::new("onedrive", None);
-        fixture.exchanges.push(exchange("POST", TOKEN_API, 200, TOKEN));
-        fixture.exchanges.push(exchange("GET", &api(SHARE, "driveitem"), 200, VIDEO));
+        fixture
+            .exchanges
+            .push(exchange("POST", TOKEN_API, 200, TOKEN));
+        fixture
+            .exchanges
+            .push(exchange("GET", &api(SHARE, "driveitem"), 200, VIDEO));
         let resolver = OnedriveResolver::new(Http::replay(fixture));
         let url = Url::parse(SHARE).unwrap();
         let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
@@ -401,25 +424,54 @@ mod tests {
             r#"{{"value":[{VIDEO},{{"id":"N1","name":"notes.txt","size":3,"file":{{"mimeType":"text/plain"}}}},{{"id":"SUB","name":"more","folder":{{"childCount":0}}}}]}}"#
         );
         let mut fixture = Fixture::new("onedrive", None);
-        fixture.exchanges.push(exchange("POST", TOKEN_API, 200, TOKEN));
-        fixture.exchanges.push(exchange("GET", &api(FOLDER, "driveitem"), 200, folder));
-        fixture.exchanges.push(exchange("GET", &api(FOLDER, "driveitem/children"), 200, &children));
-        fixture.exchanges.push(exchange("GET", &api(FOLDER, "driveitem/children"), 200, &children));
-        fixture.exchanges.push(exchange("GET", &api("https://1drv.ms/v/c/x/gone", "driveitem"), 404, r#"{"error":{"code":"itemNotFound"}}"#));
+        fixture
+            .exchanges
+            .push(exchange("POST", TOKEN_API, 200, TOKEN));
+        fixture
+            .exchanges
+            .push(exchange("GET", &api(FOLDER, "driveitem"), 200, folder));
+        fixture.exchanges.push(exchange(
+            "GET",
+            &api(FOLDER, "driveitem/children"),
+            200,
+            &children,
+        ));
+        fixture.exchanges.push(exchange(
+            "GET",
+            &api(FOLDER, "driveitem/children"),
+            200,
+            &children,
+        ));
+        fixture.exchanges.push(exchange(
+            "GET",
+            &api("https://1drv.ms/v/c/x/gone", "driveitem"),
+            404,
+            r#"{"error":{"code":"itemNotFound"}}"#,
+        ));
         let resolver = OnedriveResolver::new(Http::replay(fixture));
-        let playlist = match resolver.resolve(&Url::parse(FOLDER).unwrap()).await.unwrap() {
+        let playlist = match resolver
+            .resolve(&Url::parse(FOLDER).unwrap())
+            .await
+            .unwrap()
+        {
             Resolution::Playlist(p) => p,
             other => panic!("expected a playlist, got {other:?}"),
         };
         assert_eq!(playlist.title.as_deref(), Some("Clips"));
         assert_eq!(playlist.entries.len(), 1);
         let entry = &playlist.entries[0];
-        assert_eq!(entry.url.fragment(), Some("item=49E18460ED20D89C!sa080fb348e34477493d1aa1ddd2c41a8"));
+        assert_eq!(
+            entry.url.fragment(),
+            Some("item=49E18460ED20D89C!sa080fb348e34477493d1aa1ddd2c41a8")
+        );
         assert_eq!(entry.title.as_deref(), Some("Screenbox playback bug"));
         let resolved = resolver.resolve(&entry.url).await.unwrap().media().unwrap();
         assert_eq!(resolved.variants[0].size, Some(132636591));
         assert!(matches!(
-            resolver.resolve(&Url::parse("https://1drv.ms/v/c/x/gone").unwrap()).await.unwrap_err(),
+            resolver
+                .resolve(&Url::parse("https://1drv.ms/v/c/x/gone").unwrap())
+                .await
+                .unwrap_err(),
             ResolveError::NotFound(_)
         ));
     }

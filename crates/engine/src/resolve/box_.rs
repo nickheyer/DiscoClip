@@ -18,8 +18,7 @@ use crate::media::Container;
 
 pub const PLATFORM: &str = "box";
 const FILES_API: &str = "https://api.box.com/2.0/files/";
-const FILE_FIELDS: &str =
-    "authenticated_download_url,created_at,created_by,description,extension,is_download_available,name,representations,size";
+const FILE_FIELDS: &str = "authenticated_download_url,created_at,created_by,description,extension,is_download_available,name,representations,size";
 
 static RE_HOST: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(?:[^.]+\.)?(app|ent)\.box\.com$").unwrap());
@@ -60,7 +59,9 @@ pub fn shared_file_id(html: &str) -> Option<String> {
     let start = RE_POST_STREAM.find(html)?.end();
     let rest = &html[start..];
     let end = util::balanced_js_end(rest)?;
-    let data: Value = serde_json::from_str(&rest[..end]).ok().or_else(|| util::parse_js(&rest[..end]))?;
+    let data: Value = serde_json::from_str(&rest[..end])
+        .ok()
+        .or_else(|| util::parse_js(&rest[..end]))?;
     let item = &data["/app-api/enduserapp/shared-item"];
     if item["itemType"].as_str() != Some("file") {
         return None;
@@ -109,7 +110,8 @@ impl Resolver for BoxResolver {
             Some(id) => format!("{shared_link}/file/{id}"),
             None => shared_link.clone(),
         };
-        let page_url = Url::parse(&page_url).map_err(|e| ResolveError::malformed(url, e.to_string()))?;
+        let page_url =
+            Url::parse(&page_url).map_err(|e| ResolveError::malformed(url, e.to_string()))?;
         let fetched = fetch(
             &self.http,
             &page_url,
@@ -126,7 +128,10 @@ impl Resolver for BoxResolver {
         let file_id = match link.file_id.clone().or_else(|| shared_file_id(&html)) {
             Some(id) => id,
             None => {
-                return Err(ResolveError::unavailable(url, "the shared link is not a file"));
+                return Err(ResolveError::unavailable(
+                    url,
+                    "the shared link is not a file",
+                ));
             }
         };
         let request_token = util::search(&RE_REQUEST_TOKEN, &html)
@@ -134,8 +139,11 @@ impl Resolver for BoxResolver {
 
         // The read token, minted for the file with the page's own request token and
         // session cookies.
-        let tokens_url = Url::parse(&format!("https://{}/app-api/enduserapp/elements/tokens", link.host))
-            .map_err(|e| ResolveError::malformed(url, e.to_string()))?;
+        let tokens_url = Url::parse(&format!(
+            "https://{}/app-api/enduserapp/elements/tokens",
+            link.host
+        ))
+        .map_err(|e| ResolveError::malformed(url, e.to_string()))?;
         let response = self
             .http
             .post(tokens_url)
@@ -145,7 +153,10 @@ impl Resolver for BoxResolver {
             .header("origin", &format!("https://{}", link.host))
             .header("referer", page_url.as_str())
             .header("x-request-token", &request_token)
-            .header("x-box-enduser-api", &format!("sharedName={}", link.shared_name))
+            .header(
+                "x-box-enduser-api",
+                &format!("sharedName={}", link.shared_name),
+            )
             .json(&serde_json::json!({"fileIDs": [file_id]}))
             .send()
             .await?;
@@ -165,7 +176,10 @@ impl Resolver for BoxResolver {
         );
         let headers = [
             ("accept".to_string(), "application/json".to_string()),
-            ("authorization".to_string(), format!("Bearer {access_token}")),
+            (
+                "authorization".to_string(),
+                format!("Bearer {access_token}"),
+            ),
             ("boxapi".to_string(), format!("shared_link={shared_link}")),
             ("x-rep-hints".to_string(), "[hls][dash]".to_string()),
         ];
@@ -174,12 +188,22 @@ impl Resolver for BoxResolver {
             return Err(error);
         }
         let file = described.json(url)?;
-        let query = [("access_token", access_token.as_str()), ("shared_link", shared_link.as_str())];
-        let extension = file["extension"].as_str().unwrap_or("").to_ascii_lowercase();
+        let query = [
+            ("access_token", access_token.as_str()),
+            ("shared_link", shared_link.as_str()),
+        ];
+        let extension = file["extension"]
+            .as_str()
+            .unwrap_or("")
+            .to_ascii_lowercase();
 
         let mut resolved = Resolved::new(PLATFORM);
         let mut failure = None;
-        for entry in file["representations"]["entries"].as_array().into_iter().flatten() {
+        for entry in file["representations"]["entries"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
             let Some(template) = entry["content"]["url_template"].as_str() else {
                 continue;
             };
@@ -236,7 +260,10 @@ impl Resolver for BoxResolver {
         {
             let mut variant = Variant::file(util::with_query(&download, &query));
             variant.size = util::uint(&file["size"]);
-            variant.container = Some(Container::from_extension(&extension).unwrap_or(Container::Other(extension.clone())));
+            variant.container = Some(
+                Container::from_extension(&extension)
+                    .unwrap_or(Container::Other(extension.clone())),
+            );
             variant.format_id = Some("download".to_string());
             variant.label = Some("original".to_string());
             resolved.variants.push(variant);
@@ -261,7 +288,13 @@ mod tests {
     use crate::resolve::VariantKind;
     use serde_json::json;
 
-    fn exchange(method: &str, url: &str, status: u16, content_type: &str, body: String) -> Exchange {
+    fn exchange(
+        method: &str,
+        url: &str,
+        status: u16,
+        content_type: &str,
+        body: String,
+    ) -> Exchange {
         Exchange {
             request: RecordedRequest {
                 method: method.into(),
@@ -279,7 +312,8 @@ mod tests {
         }
     }
 
-    const SHARED: &str = "https://mlssoccer.app.box.com/s/0evd2o3e08l60lr4ygukepvnkord1o1x/file/510727257538";
+    const SHARED: &str =
+        "https://mlssoccer.app.box.com/s/0evd2o3e08l60lr4ygukepvnkord1o1x/file/510727257538";
 
     #[test]
     fn links_are_read() {
@@ -307,11 +341,15 @@ mod tests {
         assert_eq!(link("https://app.box.com/folder/1"), None);
         assert_eq!(link("https://www.box.com/s/abc"), None);
         assert_eq!(
-            shared_file_id(r#"<script>Box.postStreamData = {"/app-api/enduserapp/shared-item":{"itemType":"file","itemID":510727257538,"sharedName":"x"}};</script>"#),
+            shared_file_id(
+                r#"<script>Box.postStreamData = {"/app-api/enduserapp/shared-item":{"itemType":"file","itemID":510727257538,"sharedName":"x"}};</script>"#
+            ),
             Some("510727257538".into())
         );
         assert_eq!(
-            shared_file_id(r#"Box.postStreamData = {"/app-api/enduserapp/shared-item":{"itemType":"folder","itemID":1}};"#),
+            shared_file_id(
+                r#"Box.postStreamData = {"/app-api/enduserapp/shared-item":{"itemType":"folder","itemID":1}};"#
+            ),
             None
         );
     }
@@ -365,9 +403,15 @@ mod tests {
         assert!(resolver.matches(&url));
         let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
         assert_eq!(resolved.id.as_deref(), Some("510727257538"));
-        assert_eq!(resolved.title.as_deref(), Some("Garber St. Louis will be 28th MLS team.mp4"));
+        assert_eq!(
+            resolved.title.as_deref(),
+            Some("Garber St. Louis will be 28th MLS team.mp4")
+        );
         assert_eq!(resolved.uploader.as_deref(), Some("MLS Digital"));
-        assert_eq!(resolved.uploaded_at.map(|t| t.as_second()), Some(1566334800));
+        assert_eq!(
+            resolved.uploaded_at.map(|t| t.as_second()),
+            Some(1566334800)
+        );
         assert_eq!(resolved.variants.len(), 2);
         assert_eq!(resolved.variants[0].kind, VariantKind::Hls);
         assert_eq!(resolved.variants[0].height, Some(720));

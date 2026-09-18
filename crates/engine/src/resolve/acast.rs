@@ -42,7 +42,10 @@ pub fn parse_link(url: &Url) -> Option<Link> {
     };
     let caps = RE_PATH.captures(path)?;
     let show = caps[1].to_string();
-    if matches!(show.as_str(), "episodes" | "s" | "api" | "static" | "about" | "blog") {
+    if matches!(
+        show.as_str(),
+        "episodes" | "s" | "api" | "static" | "about" | "blog"
+    ) {
         return None;
     }
     Some(match caps.get(2) {
@@ -89,7 +92,12 @@ impl AcastResolver {
         Self { http }
     }
 
-    async fn api(&self, path: &str, query: &[(&str, &str)], origin: &Url) -> Result<Value, ResolveError> {
+    async fn api(
+        &self,
+        path: &str,
+        query: &[(&str, &str)],
+        origin: &Url,
+    ) -> Result<Value, ResolveError> {
         let api = util::with_query(&Url::parse(&format!("{API}{path}")).expect("valid"), query);
         let accept = [("accept".to_string(), "application/json".to_string())];
         let fetched = fetch(&self.http, &api, PLATFORM, BROWSER_UA, &accept, MAX_PAGE).await?;
@@ -99,9 +107,18 @@ impl AcastResolver {
         fetched.json(origin)
     }
 
-    async fn resolve_episode(&self, show: &str, episode: &str, url: &Url) -> Result<Resolution, ResolveError> {
+    async fn resolve_episode(
+        &self,
+        show: &str,
+        episode: &str,
+        url: &Url,
+    ) -> Result<Resolution, ResolveError> {
         let entry = self
-            .api(&format!("{show}/episodes/{episode}"), &[("showInfo", "true")], url)
+            .api(
+                &format!("{show}/episodes/{episode}"),
+                &[("showInfo", "true")],
+                url,
+            )
             .await?;
         let audio = util::url_of(&entry["url"], None)
             .map(util::clean_podcast_url)
@@ -172,7 +189,12 @@ impl Resolver for AcastResolver {
         Platform {
             id: PLATFORM,
             name: "Acast",
-            hosts: &["acast.com", "shows.acast.com", "play.acast.com", "embed.acast.com"],
+            hosts: &[
+                "acast.com",
+                "shows.acast.com",
+                "play.acast.com",
+                "embed.acast.com",
+            ],
             features: &["audio", "podcasts", "shows"],
             formats: &["mp3", "m4a"],
             session: SessionSupport::None,
@@ -232,7 +254,9 @@ mod tests {
             })
         };
         assert_eq!(
-            link("https://shows.acast.com/sparpodcast/episodes/2.raggarmordet-rosterurdetforflutna"),
+            link(
+                "https://shows.acast.com/sparpodcast/episodes/2.raggarmordet-rosterurdetforflutna"
+            ),
             episode("sparpodcast", "2.raggarmordet-rosterurdetforflutna")
         );
         assert_eq!(
@@ -292,11 +316,20 @@ mod tests {
         assert!(resolver.matches(&url));
         let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
         assert_eq!(resolved.id.as_deref(), Some("6a2fbf52685069f99fec1577"));
-        assert_eq!(resolved.title.as_deref(), Some("1. Mordet på Sargonia Dankha"));
-        assert_eq!(resolved.description.as_deref(), Some("Appelationsdomstolen i Genua."));
+        assert_eq!(
+            resolved.title.as_deref(),
+            Some("1. Mordet på Sargonia Dankha")
+        );
+        assert_eq!(
+            resolved.description.as_deref(),
+            Some("Appelationsdomstolen i Genua.")
+        );
         assert_eq!(resolved.uploader.as_deref(), Some("Spår"));
         assert_eq!(resolved.duration, Some(Duration::from_secs(2825)));
-        assert_eq!(resolved.uploaded_at.map(|t| t.as_second()), Some(1782172800));
+        assert_eq!(
+            resolved.uploaded_at.map(|t| t.as_second()),
+            Some(1782172800)
+        );
         assert_eq!(
             resolved.thumbnail.as_ref().unwrap().as_str(),
             "https://assets.pippa.io/shows/6/1.jpeg"
@@ -306,7 +339,10 @@ mod tests {
         assert!(audio.audio_only);
         assert_eq!(audio.size, Some(45210226));
         assert_eq!(audio.audio, Some(AudioCodec::Mp3));
-        assert_eq!(audio.url.as_str(), "https://sphinx.acast.com/p/acast/s/sparpodcast/e/6a2f/media.mp3");
+        assert_eq!(
+            audio.url.as_str(),
+            "https://sphinx.acast.com/p/acast/s/sparpodcast/e/6a2f/media.mp3"
+        );
     }
 
     #[tokio::test]
@@ -343,7 +379,10 @@ mod tests {
             playlist.entries[1].url.as_str(),
             "https://shows.acast.com/sparpodcast/episodes/2-raggarmordet"
         );
-        assert_eq!(playlist.entries[0].duration, Some(Duration::from_secs(2825)));
+        assert_eq!(
+            playlist.entries[0].duration,
+            Some(Duration::from_secs(2825))
+        );
         assert!(matches!(
             resolver
                 .resolve(&Url::parse("https://www.acast.com/nothing").unwrap())

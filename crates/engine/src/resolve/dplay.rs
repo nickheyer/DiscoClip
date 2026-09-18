@@ -893,7 +893,9 @@ impl DiscoApi {
                 .await
             {
                 Ok(resolved) => return Ok(resolved),
-                Err(failure @ (Failure::Geoblocked | Failure::Missing)) if forwarded_for.is_none() => {
+                Err(failure @ (Failure::Geoblocked | Failure::Missing))
+                    if forwarded_for.is_none() =>
+                {
                     match geo::random_ipv4(&site.country) {
                         Some(address) => forwarded_for = Some(address),
                         None => return Err(self.settle(failure, url, &site.country)),
@@ -1172,7 +1174,9 @@ impl DiscoApi {
                 .await
             {
                 Ok(playlist) => return Ok(playlist),
-                Err(failure @ (Failure::Geoblocked | Failure::Missing)) if forwarded_for.is_none() => {
+                Err(failure @ (Failure::Geoblocked | Failure::Missing))
+                    if forwarded_for.is_none() =>
+                {
                     match geo::random_ipv4(catalogue.country()) {
                         Some(address) => forwarded_for = Some(address),
                         None => return Err(self.settle(failure, url, catalogue.country())),
@@ -2600,7 +2604,10 @@ mod tests {
             "the second token is minted behind the faked address"
         );
         assert!(
-            !tokens[1].header("cookie").unwrap_or("").contains("outside-india"),
+            !tokens[1]
+                .header("cookie")
+                .unwrap_or("")
+                .contains("outside-india"),
             "the refused token's cookie is dropped before the fresh mint"
         );
         let retried = sent
@@ -2611,7 +2618,10 @@ mod tests {
         assert_eq!(retried.header("authorization"), Some("Bearer inside-india"));
         assert!(retried.header(FORWARDED_FOR).is_some());
         assert!(
-            !retried.header("cookie").unwrap_or("").contains("outside-india"),
+            !retried
+                .header("cookie")
+                .unwrap_or("")
+                .contains("outside-india"),
             "the cookie of the refused token is not sent again"
         );
     }

@@ -143,7 +143,10 @@ pub enum Link {
     /// A media list, played from its page.
     MediaList(Url),
     /// A category's newest videos.
-    Category { category: String, rid: u64 },
+    Category {
+        category: String,
+        rid: u64,
+    },
     /// A favourites folder, by its media id.
     Favourites(u64),
     /// A collection (a "season" of a user's own videos).
@@ -157,7 +160,10 @@ pub enum Link {
         series: u64,
     },
     /// Every video a user uploaded, in the order the link asks for.
-    Space { mid: u64, order: Option<String> },
+    Space {
+        mid: u64,
+        order: Option<String>,
+    },
     /// A `b23.tv` short link.
     Short(Url),
 }
@@ -204,7 +210,8 @@ pub fn parse_link(url: &Url) -> Option<Link> {
     }
     if host == "space.bilibili.com" {
         let mid = digits(segments.first()?)?;
-        let order = query(url, "order").filter(|o| matches!(o.as_str(), "pubdate" | "click" | "stow"));
+        let order =
+            query(url, "order").filter(|o| matches!(o.as_str(), "pubdate" | "click" | "stow"));
         return Some(match segments.get(1).copied() {
             Some("audio") => Link::SpaceAudio(mid),
             Some("upload") if segments.get(2).copied() == Some("audio") => Link::SpaceAudio(mid),
@@ -636,9 +643,11 @@ impl BilibiliResolver {
             // Only whole files are served: every quality the answer accepts is asked
             // for in turn, since each play request answers one quality.
             let has_quality = |variants: &[Variant], quality: u64| {
-                variants
-                    .iter()
-                    .any(|v| v.format_id.as_deref().is_some_and(|id| id.ends_with(&format!("-{quality}"))))
+                variants.iter().any(|v| {
+                    v.format_id
+                        .as_deref()
+                        .is_some_and(|id| id.ends_with(&format!("-{quality}")))
+                })
             };
             let qualities: Vec<u64> = data["accept_quality"]
                 .as_array()
@@ -687,12 +696,20 @@ impl BilibiliResolver {
             }
             // A quality stored as several segments plays only in sequence; when a
             // quality served whole exists, the segmented ones are left out.
-            let whole: Vec<Variant> = variants.iter().filter(|v| v.label.as_deref() != Some("segmented")).cloned().collect();
+            let whole: Vec<Variant> = variants
+                .iter()
+                .filter(|v| v.label.as_deref() != Some("segmented"))
+                .cloned()
+                .collect();
             if !whole.is_empty() {
                 variants = whole;
             }
         }
-        if variants.iter().all(|v| v.label.as_deref() == Some("segmented")) && !variants.is_empty() {
+        if variants
+            .iter()
+            .all(|v| v.label.as_deref() == Some("segmented"))
+            && !variants.is_empty()
+        {
             return Err(ResolveError::unavailable(
                 origin,
                 format!(
@@ -775,8 +792,12 @@ impl BilibiliResolver {
                 .first()
                 .and_then(|p| p["cid"].as_u64())
                 .or_else(|| view["cid"].as_u64())
-                .ok_or_else(|| ResolveError::malformed(origin, "the interactive video has no cid"))?;
-            return self.interactive(&id, &bvid, root_cid, title, webpage, origin).await;
+                .ok_or_else(|| {
+                    ResolveError::malformed(origin, "the interactive video has no cid")
+                })?;
+            return self
+                .interactive(&id, &bvid, root_cid, title, webpage, origin)
+                .await;
         }
         if pages.len() > 1 && page.is_none() && cid_wanted.is_none() {
             let entries = pages
@@ -912,7 +933,9 @@ impl BilibiliResolver {
             .await?;
         let graph = player["data"]["interaction"]["graph_version"]
             .as_u64()
-            .ok_or_else(|| ResolveError::malformed(origin, "the interactive video names no graph"))?;
+            .ok_or_else(|| {
+                ResolveError::malformed(origin, "the interactive video names no graph")
+            })?;
         // Every edge names its own cid; edges of the same cid are one part.
         let mut parts: Vec<(u64, String)> = Vec::new();
         let mut pending: Vec<u64> = vec![1];
@@ -942,7 +965,9 @@ impl BilibiliResolver {
                 .find(|item| item["edge_id"].as_u64() == Some(edge))
                 .cloned()
                 .unwrap_or(Value::Null);
-            let cid = story["cid"].as_u64().unwrap_or(if edge == 1 { root_cid } else { 0 });
+            let cid = story["cid"]
+                .as_u64()
+                .unwrap_or(if edge == 1 { root_cid } else { 0 });
             let edge_title = data["title"]
                 .as_str()
                 .or(story["title"].as_str())
@@ -989,7 +1014,12 @@ impl BilibiliResolver {
     /// A bangumi named by its media id: the season it stands for.
     async fn media(&self, media_id: u64, origin: &Url) -> Result<Resolution, ResolveError> {
         let answer = self
-            .api("/pgc/review/user", &[("media_id", media_id.to_string())], false, origin)
+            .api(
+                "/pgc/review/user",
+                &[("media_id", media_id.to_string())],
+                false,
+                origin,
+            )
             .await?;
         let season = answer["result"]["media"]["season_id"]
             .as_u64()
@@ -1000,7 +1030,12 @@ impl BilibiliResolver {
     /// A course's record, by episode or by season.
     async fn cheese_season(&self, key: &str, id: u64, origin: &Url) -> Result<Value, ResolveError> {
         let answer = self
-            .api("/pugv/view/web/season", &[(key, id.to_string())], false, origin)
+            .api(
+                "/pugv/view/web/season",
+                &[(key, id.to_string())],
+                false,
+                origin,
+            )
             .await?;
         Ok(answer["data"].clone())
     }
@@ -1015,7 +1050,10 @@ impl BilibiliResolver {
             .cloned()
             .ok_or_else(|| ResolveError::NotFound(origin.clone()))?;
         if episode["ep_status"].as_i64() == Some(-1) {
-            return Err(ResolveError::unavailable(origin, "the course episode is not yet available"));
+            return Err(ResolveError::unavailable(
+                origin,
+                "the course episode is not yet available",
+            ));
         }
         if episode["playable"].as_bool() != Some(true) {
             return Err(if self.logged_in() {
@@ -1056,7 +1094,10 @@ impl BilibiliResolver {
         }
         let mut resolved = Resolved::new(PLATFORM);
         resolved.id = Some(format!("cheese-ep{ep}"));
-        resolved.title = match (episode["index"].as_u64(), episode["title"].as_str().and_then(clean_title)) {
+        resolved.title = match (
+            episode["index"].as_u64(),
+            episode["title"].as_str().and_then(clean_title),
+        ) {
             (Some(index), Some(title)) => Some(format!("{index} - {title}")),
             (_, title) => title,
         };
@@ -1110,7 +1151,12 @@ impl BilibiliResolver {
     }
 
     /// One call of the audio service, read with the site as referer.
-    async fn audio_api(&self, path: &str, params: &[(&str, String)], origin: &Url) -> Result<Value, ResolveError> {
+    async fn audio_api(
+        &self,
+        path: &str,
+        params: &[(&str, String)],
+        origin: &Url,
+    ) -> Result<Value, ResolveError> {
         let mut url = Url::parse(&format!("{AUDIO_API}{path}")).expect("valid");
         url.query_pairs_mut()
             .extend_pairs(params.iter().map(|(k, v)| (*k, v.as_str())));
@@ -1129,7 +1175,10 @@ impl BilibiliResolver {
                 .to_string();
             return Err(match code {
                 7201006 | 72000000 | 404 => ResolveError::NotFound(origin.clone()),
-                _ => ResolveError::unavailable(origin, format!("the audio service answered code {code} {message}")),
+                _ => ResolveError::unavailable(
+                    origin,
+                    format!("the audio service answered code {code} {message}"),
+                ),
             });
         }
         Ok(answer["data"].clone())
@@ -1138,7 +1187,15 @@ impl BilibiliResolver {
     /// A song: its file from the audio service, with the song's record.
     async fn audio(&self, sid: u64, origin: &Url) -> Result<Resolution, ResolveError> {
         let play = self
-            .audio_api("url", &[("sid", sid.to_string()), ("privilege", "2".to_string()), ("quality", "2".to_string())], origin)
+            .audio_api(
+                "url",
+                &[
+                    ("sid", sid.to_string()),
+                    ("privilege", "2".to_string()),
+                    ("quality", "2".to_string()),
+                ],
+                origin,
+            )
             .await?;
         let file = play["cdns"]
             .as_array()
@@ -1146,11 +1203,19 @@ impl BilibiliResolver {
             .flatten()
             .find_map(|c| c.as_str().and_then(|u| Url::parse(u).ok()))
             .ok_or_else(|| ResolveError::NotFound(origin.clone()))?;
-        let song = self.audio_api("song/info", &[("sid", sid.to_string())], origin).await?;
+        let song = self
+            .audio_api("song/info", &[("sid", sid.to_string())], origin)
+            .await?;
         let mut variant = Variant::file(file);
         variant.audio_only = true;
         variant.container = Some(Container::Other(
-            variant.url.path().rsplit('.').next().unwrap_or("m4a").to_ascii_lowercase(),
+            variant
+                .url
+                .path()
+                .rsplit('.')
+                .next()
+                .unwrap_or("m4a")
+                .to_ascii_lowercase(),
         ));
         variant.audio = Some(if variant.url.path().ends_with(".mp3") {
             AudioCodec::Mp3
@@ -1158,7 +1223,10 @@ impl BilibiliResolver {
             AudioCodec::Aac
         });
         variant.size = play["size"].as_u64().filter(|s| *s > 0);
-        variant.duration = song["duration"].as_u64().filter(|d| *d > 0).map(Duration::from_secs);
+        variant.duration = song["duration"]
+            .as_u64()
+            .filter(|d| *d > 0)
+            .map(Duration::from_secs);
         variant.format_id = Some("audio".to_string());
         variant.headers = vec![("referer".to_string(), origin.to_string())];
         let mut resolved = Resolved::new(PLATFORM);
@@ -1197,7 +1265,11 @@ impl BilibiliResolver {
         let songs = self
             .audio_api(
                 "song/of-menu",
-                &[("sid", am.to_string()), ("pn", "1".to_string()), ("ps", "100".to_string())],
+                &[
+                    ("sid", am.to_string()),
+                    ("pn", "1".to_string()),
+                    ("ps", "100".to_string()),
+                ],
                 origin,
             )
             .await?;
@@ -1210,7 +1282,10 @@ impl BilibiliResolver {
                 Some(PlaylistEntry {
                     url: Url::parse(&format!("{SITE}audio/au{id}")).ok()?,
                     title: song["title"].as_str().and_then(clean_title),
-                    duration: song["duration"].as_u64().filter(|d| *d > 0).map(Duration::from_secs),
+                    duration: song["duration"]
+                        .as_u64()
+                        .filter(|d| *d > 0)
+                        .map(Duration::from_secs),
                 })
             })
             .collect();
@@ -1264,7 +1339,10 @@ impl BilibiliResolver {
                 entries.push(PlaylistEntry {
                     url: Url::parse(&format!("{SITE}audio/au{id}")).expect("valid"),
                     title: song["title"].as_str().and_then(clean_title),
-                    duration: song["duration"].as_u64().filter(|d| *d > 0).map(Duration::from_secs),
+                    duration: song["duration"]
+                        .as_u64()
+                        .filter(|d| *d > 0)
+                        .map(Duration::from_secs),
                 });
             }
             if items.len() < PAGE_SIZE || total.is_some_and(|t| entries.len() >= t) {
@@ -1278,17 +1356,27 @@ impl BilibiliResolver {
             resolver: PLATFORM.into(),
             id: Some(format!("space{mid}-audio")),
             title: Some(format!("Songs of user {mid}")),
-            total: total.filter(|t| *t >= entries.len()).or(Some(entries.len())),
+            total: total
+                .filter(|t| *t >= entries.len())
+                .or(Some(entries.len())),
             entries,
         }))
     }
 
     /// One call of the live service.
-    async fn live_api(&self, path: &str, params: &[(&str, String)], origin: &Url) -> Result<Value, ResolveError> {
+    async fn live_api(
+        &self,
+        path: &str,
+        params: &[(&str, String)],
+        origin: &Url,
+    ) -> Result<Value, ResolveError> {
         let mut url = Url::parse(&format!("{LIVE_API}{path}")).expect("valid");
         url.query_pairs_mut()
             .extend_pairs(params.iter().map(|(k, v)| (*k, v.as_str())));
-        let headers = [("referer".to_string(), "https://live.bilibili.com/".to_string())];
+        let headers = [(
+            "referer".to_string(),
+            "https://live.bilibili.com/".to_string(),
+        )];
         let fetched = fetch(&self.http, &url, PLATFORM, BROWSER_UA, &headers, MAX_PAGE).await?;
         if let Some(error) = status_error(fetched.status, origin) {
             return Err(error);
@@ -1303,7 +1391,10 @@ impl BilibiliResolver {
                 .to_string();
             return Err(match code {
                 1 | 60004 | 19002003 => ResolveError::NotFound(origin.clone()),
-                _ => ResolveError::unavailable(origin, format!("the live service answered code {code} {message}")),
+                _ => ResolveError::unavailable(
+                    origin,
+                    format!("the live service answered code {code} {message}"),
+                ),
             });
         }
         Ok(answer["data"].clone())
@@ -1315,7 +1406,10 @@ impl BilibiliResolver {
             .live_api("room/v1/Room/get_info", &[("id", room.to_string())], origin)
             .await?;
         if info["live_status"].as_i64() != Some(1) {
-            return Err(ResolveError::unavailable(origin, "the streamer is not live"));
+            return Err(ResolveError::unavailable(
+                origin,
+                "the streamer is not live",
+            ));
         }
         let room_id = info["room_id"].as_u64().unwrap_or(room);
         let mut variants: Vec<Variant> = Vec::new();
@@ -1348,7 +1442,11 @@ impl BilibiliResolver {
             if live_time.is_none() {
                 live_time = play["live_time"].as_i64().filter(|t| *t > 0);
             }
-            for stream in play["playurl_info"]["playurl"]["stream"].as_array().into_iter().flatten() {
+            for stream in play["playurl_info"]["playurl"]["stream"]
+                .as_array()
+                .into_iter()
+                .flatten()
+            {
                 for format in stream["format"].as_array().into_iter().flatten() {
                     let format_name = format["format_name"].as_str().unwrap_or("");
                     for codec in format["codec"].as_array().into_iter().flatten() {
@@ -1358,7 +1456,9 @@ impl BilibiliResolver {
                         let base = codec["base_url"].as_str().unwrap_or("");
                         let codec_name = codec["codec_name"].as_str().unwrap_or("avc");
                         for info in codec["url_info"].as_array().into_iter().flatten() {
-                            let (Some(host), Some(extra)) = (info["host"].as_str(), info["extra"].as_str()) else {
+                            let (Some(host), Some(extra)) =
+                                (info["host"].as_str(), info["extra"].as_str())
+                            else {
                                 continue;
                             };
                             let Ok(url) = Url::parse(&format!("{host}{base}{extra}")) else {
@@ -1380,9 +1480,13 @@ impl BilibiliResolver {
                             });
                             variant.audio = Some(AudioCodec::Aac);
                             variant.live = true;
-                            variant.format_id = Some(format!("{format_id}-{format_name}-{codec_name}"));
+                            variant.format_id =
+                                Some(format!("{format_id}-{format_name}-{codec_name}"));
                             variant.label = Some((*note).to_string());
-                            variant.headers = vec![("referer".to_string(), "https://live.bilibili.com/".to_string())];
+                            variant.headers = vec![(
+                                "referer".to_string(),
+                                "https://live.bilibili.com/".to_string(),
+                            )];
                             variants.push(variant);
                         }
                     }
@@ -1390,13 +1494,24 @@ impl BilibiliResolver {
             }
         }
         if variants.is_empty() {
-            return Err(ResolveError::unavailable(origin, "the room serves no stream"));
+            return Err(ResolveError::unavailable(
+                origin,
+                "the room serves no stream",
+            ));
         }
         // The HLS streams name their sizes in their master playlists.
         let mut expanded: Vec<Variant> = Vec::new();
         for variant in variants {
             if variant.kind == VariantKind::Hls {
-                match hls::expand(&self.http, &variant.url, PLATFORM, BROWSER_UA, &variant.headers).await {
+                match hls::expand(
+                    &self.http,
+                    &variant.url,
+                    PLATFORM,
+                    BROWSER_UA,
+                    &variant.headers,
+                )
+                .await
+                {
                     Ok(streams) if !streams.variants.is_empty() => {
                         for mut stream in streams.variants {
                             stream.live = true;
@@ -1439,7 +1554,12 @@ impl BilibiliResolver {
     /// A post on the dynamic feed: the video it shares.
     async fn dynamic(&self, post: u64, origin: &Url) -> Result<Resolution, ResolveError> {
         let answer = self
-            .api("/x/polymer/web-dynamic/v1/detail", &[("id", post.to_string())], false, origin)
+            .api(
+                "/x/polymer/web-dynamic/v1/detail",
+                &[("id", post.to_string())],
+                false,
+                origin,
+            )
             .await?;
         let item = &answer["data"]["item"];
         let mut found = None;
@@ -1464,7 +1584,10 @@ impl BilibiliResolver {
             Some(link) if !matches!(parse_link(&link), Some(Link::Dynamic(id)) if id == post) => {
                 Err(ResolveError::Redirect(link))
             }
-            _ => Err(ResolveError::unavailable(origin, "the post shares no video")),
+            _ => Err(ResolveError::unavailable(
+                origin,
+                "the post shares no video",
+            )),
         }
     }
 
@@ -1477,10 +1600,11 @@ impl BilibiliResolver {
                 "the watch-later list is the account's own",
             ));
         }
-        let answer = self
-            .api("/x/v2/history/toview", &[], false, origin)
-            .await?;
-        let items = answer["data"]["list"].as_array().cloned().unwrap_or_default();
+        let answer = self.api("/x/v2/history/toview", &[], false, origin).await?;
+        let items = answer["data"]["list"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
         let entries = Self::entries_of(&items);
         Ok(Resolution::Playlist(Playlist {
             resolver: PLATFORM.into(),
@@ -1499,7 +1623,10 @@ impl BilibiliResolver {
     /// media list API pages through.
     async fn media_list(&self, page_url: &Url, origin: &Url) -> Result<Resolution, ResolveError> {
         let headers = [("referer".to_string(), SITE.to_string())];
-        let fetched = fetch(&self.http, page_url, PLATFORM, BROWSER_UA, &headers, MAX_PAGE).await?;
+        let fetched = fetch(
+            &self.http, page_url, PLATFORM, BROWSER_UA, &headers, MAX_PAGE,
+        )
+        .await?;
         if let Some(error) = status_error(fetched.status, origin) {
             return Err(error);
         }
@@ -1512,15 +1639,25 @@ impl BilibiliResolver {
             let code = error["trueCode"].as_i64().unwrap_or(0);
             let message = error["message"].as_str().unwrap_or("").to_string();
             return Err(match code {
-                -403 => ResolveError::login_required(origin, PLATFORM, "the list is private to its owner"),
+                -403 => ResolveError::login_required(
+                    origin,
+                    PLATFORM,
+                    "the list is private to its owner",
+                ),
                 11010 => ResolveError::NotFound(origin.clone()),
-                _ => ResolveError::unavailable(origin, format!("the list page refused: {code} {message}")),
+                _ => ResolveError::unavailable(
+                    origin,
+                    format!("the list page refused: {code} {message}"),
+                ),
             });
         }
         let list_type = state["playlist"]["type"].as_u64();
         let biz_id = state["playlist"]["id"].as_u64();
         let (Some(list_type), Some(biz_id)) = (list_type, biz_id) else {
-            return Err(ResolveError::malformed(origin, "the list page names no list"));
+            return Err(ResolveError::malformed(
+                origin,
+                "the list page names no list",
+            ));
         };
         let mut entries: Vec<PlaylistEntry> = Vec::new();
         let mut oid: Option<u64> = None;
@@ -1549,13 +1686,20 @@ impl BilibiliResolver {
             let data = &answer["data"];
             let items = data["media_list"].as_array().cloned().unwrap_or_default();
             for item in &items {
-                let Some(bvid) = item["bv_id"].as_str().or(item["bvid"].as_str()).filter(|b| !b.is_empty()) else {
+                let Some(bvid) = item["bv_id"]
+                    .as_str()
+                    .or(item["bvid"].as_str())
+                    .filter(|b| !b.is_empty())
+                else {
                     continue;
                 };
                 entries.push(PlaylistEntry {
                     url: Url::parse(&format!("{SITE}video/{bvid}/")).expect("valid"),
                     title: item["title"].as_str().and_then(clean_title),
-                    duration: item["duration"].as_u64().filter(|d| *d > 0).map(Duration::from_secs),
+                    duration: item["duration"]
+                        .as_u64()
+                        .filter(|d| *d > 0)
+                        .map(Duration::from_secs),
                 });
             }
             oid = items.last().and_then(|item| item["id"].as_u64());
@@ -1566,7 +1710,9 @@ impl BilibiliResolver {
         Ok(Resolution::Playlist(Playlist {
             resolver: PLATFORM.into(),
             id: Some(format!("{list_type}_{biz_id}")),
-            title: state["mediaListInfo"]["title"].as_str().and_then(clean_title),
+            title: state["mediaListInfo"]["title"]
+                .as_str()
+                .and_then(clean_title),
             total: state["mediaListInfo"]["media_count"]
                 .as_u64()
                 .map(|c| c as usize)
@@ -1577,7 +1723,12 @@ impl BilibiliResolver {
     }
 
     /// A category's newest videos.
-    async fn category(&self, name: &str, rid: u64, origin: &Url) -> Result<Resolution, ResolveError> {
+    async fn category(
+        &self,
+        name: &str,
+        rid: u64,
+        origin: &Url,
+    ) -> Result<Resolution, ResolveError> {
         let mut entries = Vec::new();
         let mut total = None;
         for page in 1..=MAX_PAGES {
@@ -1611,7 +1762,9 @@ impl BilibiliResolver {
             resolver: PLATFORM.into(),
             id: Some(format!("category-{rid}")),
             title: Some(format!("Newest in {name}")),
-            total: total.filter(|t| *t >= entries.len()).or(Some(entries.len())),
+            total: total
+                .filter(|t| *t >= entries.len())
+                .or(Some(entries.len())),
             entries,
         }))
     }
@@ -1703,16 +1856,19 @@ impl BilibiliResolver {
         duration: Option<Duration>,
         origin: &Url,
     ) -> Result<Vec<Variant>, ResolveError> {
-        let mut params: Vec<(&str, String)> = vec![
-            ("fnval", "12240".to_string()),
-            ("ep_id", ep.to_string()),
-        ];
+        let mut params: Vec<(&str, String)> =
+            vec![("fnval", "12240".to_string()), ("ep_id", ep.to_string())];
         if !self.logged_in() {
             params.push(("try_look", "1".to_string()));
         }
-        let answer = match self.api("/pgc/player/web/v2/playurl", &params, false, origin).await {
+        let answer = match self
+            .api("/pgc/player/web/v2/playurl", &params, false, origin)
+            .await
+        {
             Ok(answer) => answer,
-            Err(ResolveError::Unavailable { .. }) | Err(ResolveError::LoginRequired { .. }) | Err(ResolveError::Malformed { .. }) => {
+            Err(ResolveError::Unavailable { .. })
+            | Err(ResolveError::LoginRequired { .. })
+            | Err(ResolveError::Malformed { .. }) => {
                 return self
                     .streams(
                         "/pgc/player/web/playurl",
@@ -1757,7 +1913,10 @@ impl BilibiliResolver {
         let variants = variants_of(video_info, duration);
         if variants.is_empty() {
             if geo_blocked {
-                return Err(ResolveError::unavailable(origin, "it is not available in this region"));
+                return Err(ResolveError::unavailable(
+                    origin,
+                    "it is not available in this region",
+                ));
             }
             if premium_only {
                 return Err(if self.logged_in() {
@@ -1988,7 +2147,12 @@ impl BilibiliResolver {
         }))
     }
 
-    async fn space(&self, mid: u64, order: Option<&str>, origin: &Url) -> Result<Resolution, ResolveError> {
+    async fn space(
+        &self,
+        mid: u64,
+        order: Option<&str>,
+        origin: &Url,
+    ) -> Result<Resolution, ResolveError> {
         let mut entries = Vec::new();
         let mut title = None;
         let mut total = None;
@@ -2170,7 +2334,12 @@ impl Resolver for BilibiliResolver {
         Platform {
             id: PLATFORM,
             name: "Bilibili",
-            hosts: &["bilibili.com", "b23.tv", "live.bilibili.com", "t.bilibili.com"],
+            hosts: &[
+                "bilibili.com",
+                "b23.tv",
+                "live.bilibili.com",
+                "t.bilibili.com",
+            ],
             features: &[
                 "videos",
                 "multi-part videos",
@@ -2410,37 +2579,68 @@ mod tests {
             link("https://www.bilibili.com/cheese/play/ss5918"),
             Some(Link::CheeseSeason(5918))
         );
-        assert_eq!(link("https://www.bilibili.com/audio/au1003142"), Some(Link::Audio(1003142)));
-        assert_eq!(link("https://www.bilibili.com/audio/am10624"), Some(Link::AudioAlbum(10624)));
-        assert_eq!(link("https://space.bilibili.com/313580179/audio"), Some(Link::SpaceAudio(313580179)));
+        assert_eq!(
+            link("https://www.bilibili.com/audio/au1003142"),
+            Some(Link::Audio(1003142))
+        );
+        assert_eq!(
+            link("https://www.bilibili.com/audio/am10624"),
+            Some(Link::AudioAlbum(10624))
+        );
+        assert_eq!(
+            link("https://space.bilibili.com/313580179/audio"),
+            Some(Link::SpaceAudio(313580179))
+        );
         assert_eq!(
             link("https://space.bilibili.com/313580179/upload/audio"),
             Some(Link::SpaceAudio(313580179))
         );
         assert_eq!(link("https://live.bilibili.com/196"), Some(Link::Live(196)));
-        assert_eq!(link("https://live.bilibili.com/blanc/196?x=1"), Some(Link::Live(196)));
-        assert_eq!(link("https://t.bilibili.com/998134289197432852"), Some(Link::Dynamic(998134289197432852)));
-        assert_eq!(link("https://www.bilibili.com/opus/998134289197432852"), Some(Link::Dynamic(998134289197432852)));
-        assert_eq!(link("https://www.bilibili.com/watchlater/#/list"), Some(Link::WatchLater));
-        assert_eq!(link("https://www.bilibili.com/list/watchlater?oid=1&bvid=x"), Some(Link::WatchLater));
+        assert_eq!(
+            link("https://live.bilibili.com/blanc/196?x=1"),
+            Some(Link::Live(196))
+        );
+        assert_eq!(
+            link("https://t.bilibili.com/998134289197432852"),
+            Some(Link::Dynamic(998134289197432852))
+        );
+        assert_eq!(
+            link("https://www.bilibili.com/opus/998134289197432852"),
+            Some(Link::Dynamic(998134289197432852))
+        );
+        assert_eq!(
+            link("https://www.bilibili.com/watchlater/#/list"),
+            Some(Link::WatchLater)
+        );
+        assert_eq!(
+            link("https://www.bilibili.com/list/watchlater?oid=1&bvid=x"),
+            Some(Link::WatchLater)
+        );
         assert!(matches!(
             link("https://www.bilibili.com/list/1958703906?sid=547718&oid=687146339"),
             Some(Link::MediaList(_))
         ));
         assert!(
             matches!(
-                link("https://www.bilibili.com/list/1958703906?sid=547718&oid=687146339&bvid=BV1DU4y1r7tz"),
+                link(
+                    "https://www.bilibili.com/list/1958703906?sid=547718&oid=687146339&bvid=BV1DU4y1r7tz"
+                ),
                 Some(Link::Video { .. })
             ),
             "a list link naming a video is that video"
         );
         assert!(matches!(
-            link("https://www.bilibili.com/medialist/play/1958703906?business=space_series&business_id=547718&desc=1"),
+            link(
+                "https://www.bilibili.com/medialist/play/1958703906?business=space_series&business_id=547718&desc=1"
+            ),
             Some(Link::MediaList(_))
         ));
         assert_eq!(
             link("https://www.bilibili.com/v/kichiku/mad"),
-            Some(Link::Category { category: "kichiku/mad".into(), rid: 26 })
+            Some(Link::Category {
+                category: "kichiku/mad".into(),
+                rid: 26
+            })
         );
         assert_eq!(link("https://www.bilibili.com/v/nothing/here"), None);
         assert_eq!(
@@ -2475,11 +2675,17 @@ mod tests {
         );
         assert_eq!(
             link("https://space.bilibili.com/946974/video"),
-            Some(Link::Space { mid: 946974, order: None })
+            Some(Link::Space {
+                mid: 946974,
+                order: None
+            })
         );
         assert_eq!(
             link("https://space.bilibili.com/946974/video?tid=0&order=click"),
-            Some(Link::Space { mid: 946974, order: Some("click".into()) })
+            Some(Link::Space {
+                mid: 946974,
+                order: Some("click".into())
+            })
         );
         assert!(matches!(
             link("https://b23.tv/abc123"),
@@ -2907,7 +3113,12 @@ mod tests {
         assert_eq!(lesson.title.as_deref(), Some("1 - 课程先导片"));
         assert_eq!(lesson.uploader.as_deref(), Some("马督工"));
         assert!(lesson.variants.len() > 5);
-        assert!(lesson.variants.iter().any(|v| v.height.is_some_and(|h| h >= 720)));
+        assert!(
+            lesson
+                .variants
+                .iter()
+                .any(|v| v.height.is_some_and(|h| h >= 720))
+        );
 
         assert!(matches!(
             resolver

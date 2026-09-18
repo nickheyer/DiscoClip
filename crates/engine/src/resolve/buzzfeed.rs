@@ -225,8 +225,7 @@ mod tests {
     use crate::http::Fixture;
     use serde_json::json;
 
-    const RAM: &str =
-        "http://www.buzzfeed.com/abagg/this-angry-ram-destroys-a-punching-bag-like-a-boss?utm_term=4ldqpia";
+    const RAM: &str = "http://www.buzzfeed.com/abagg/this-angry-ram-destroys-a-punching-bag-like-a-boss?utm_term=4ldqpia";
     const GOSLING: &str =
         "http://www.buzzfeed.com/craigsilverman/the-most-adorable-crash-landing-ever#.eq7pX0BAmK";
     const MANY: &str = "https://www.buzzfeed.com/emlyntravis/the-30-best-k-pop-music-videos-of-the-year-5bhzmv5641";
@@ -347,7 +346,9 @@ mod tests {
         );
         assert_eq!(
             playlist.title.as_deref(),
-            Some("30 K-Pop Music Videos Released This Year That Prove You Need To Start Listening To K-Pop, Like, Yesterday")
+            Some(
+                "30 K-Pop Music Videos Released This Year That Prove You Need To Start Listening To K-Pop, Like, Yesterday"
+            )
         );
         assert_eq!(playlist.entries.len(), 30);
         assert_eq!(playlist.total, Some(30));
@@ -367,6 +368,11 @@ mod tests {
             playlist.entries[29].title.as_deref(),
             Some("1. \"Zimzalabim\" by Red Velvet")
         );
-        assert!(playlist.entries.iter().all(|e| e.url.host_str() == Some("www.youtube.com")));
+        assert!(
+            playlist
+                .entries
+                .iter()
+                .all(|e| e.url.host_str() == Some("www.youtube.com"))
+        );
     }
 }

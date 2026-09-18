@@ -485,7 +485,8 @@ g.cfg={signatureTimestamp:19999,x:1};
         let closing_at = assembled.rfind("})(_yt_player);").unwrap();
         assert!(solver_at < closing_at);
         assert!(assembled.contains(r#"var url = Ix("https://youtube.com/watch?v=yt-dlp-wins""#));
-        let tv = SCRIPT.replace("var _yt_player={};(function(g){", "(function(){var g={};")
+        let tv = SCRIPT
+            .replace("var _yt_player={};(function(g){", "(function(){var g={};")
             .replace("})(_yt_player);", "}).call(this);");
         assert!(assemble(&tv).unwrap().ends_with("}).call(this);"));
         assert!(matches!(

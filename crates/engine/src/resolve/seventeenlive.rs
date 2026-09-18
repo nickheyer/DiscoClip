@@ -88,12 +88,10 @@ pub fn parse_link(url: &Url) -> Option<Link> {
     match segments.as_slice() {
         ["live", room] if is_digits(room) => Some(Link::Live(room.to_string())),
         ["profile", "r", room] if is_digits(room) => Some(Link::Live(room.to_string())),
-        ["profile", "r", room, "clip", id] if is_digits(room) && is_token(id) => {
-            Some(Link::Clip {
-                room: room.to_string(),
-                id: id.to_string(),
-            })
-        }
+        ["profile", "r", room, "clip", id] if is_digits(room) && is_token(id) => Some(Link::Clip {
+            room: room.to_string(),
+            id: id.to_string(),
+        }),
         ["vod", room, id] if is_token(room) && is_token(id) => Some(Link::Vod {
             room: room.to_string(),
             id: id.to_string(),
@@ -148,7 +146,12 @@ fn mp4(url: Url, format_id: &str, label: &str, referer: &Url) -> Variant {
 /// them, each by quality, without repeating a link.
 pub fn live_variants(room: &Value, referer: &Url) -> Vec<Variant> {
     let mut variants: Vec<Variant> = Vec::new();
-    for (index, provider) in room["rtmpUrls"].as_array().into_iter().flatten().enumerate() {
+    for (index, provider) in room["rtmpUrls"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .enumerate()
+    {
         for (key, quality) in LIVE_PULLS {
             let Some(url) = provider[key].as_str().and_then(|u| Url::parse(u).ok()) else {
                 continue;
@@ -282,9 +285,8 @@ impl SeventeenLiveResolver {
             .and_then(clean_title)
             .or_else(|| resolved.uploader.as_ref().map(|who| format!("{who} live")));
         resolved.description = data["userInfo"]["bio"].as_str().and_then(clean_title);
-        resolved.uploader_url = Some(
-            Url::parse(&format!("{SITE}profile/r/{room}")).expect("valid"),
-        );
+        resolved.uploader_url =
+            Some(Url::parse(&format!("{SITE}profile/r/{room}")).expect("valid"));
         resolved.uploaded_at = unix(&data["beginTime"]);
         resolved.duration = seconds(&data["duration"]);
         resolved.thumbnail = picture(&data["coverPhoto"])
@@ -321,10 +323,14 @@ impl SeventeenLiveResolver {
         resolved.title = clip["caption"]
             .as_str()
             .and_then(|c| c.lines().find_map(clean_title))
-            .or_else(|| resolved.uploader.as_ref().map(|who| format!("{who}'s clip")));
-        resolved.uploader_url = Some(
-            Url::parse(&format!("{SITE}profile/r/{room}")).expect("valid"),
-        );
+            .or_else(|| {
+                resolved
+                    .uploader
+                    .as_ref()
+                    .map(|who| format!("{who}'s clip"))
+            });
+        resolved.uploader_url =
+            Some(Url::parse(&format!("{SITE}profile/r/{room}")).expect("valid"));
         resolved.uploaded_at = unix(&clip["createdAt"]);
         resolved.duration = seconds(&clip["duration"]);
         resolved.thumbnail = picture(&clip["imageURL"]);
@@ -381,10 +387,12 @@ impl SeventeenLiveResolver {
             .map(str::to_string)
             .or_else(|| Some(id.to_string()));
         resolved.uploader = streamer(&vod["userInfo"]);
-        resolved.title = vod["title"]
-            .as_str()
-            .and_then(clean_title)
-            .or_else(|| resolved.uploader.as_ref().map(|who| format!("{who}'s recording")));
+        resolved.title = vod["title"].as_str().and_then(clean_title).or_else(|| {
+            resolved
+                .uploader
+                .as_ref()
+                .map(|who| format!("{who}'s recording"))
+        });
         resolved.description = vod["description"].as_str().and_then(clean_title);
         resolved.uploader_url = vod["userInfo"]["roomID"]
             .as_i64()
@@ -453,7 +461,10 @@ mod tests {
     #[test]
     fn links_are_read() {
         let link = |s: &str| parse_link(&url(s));
-        assert_eq!(link("https://17.live/live/3773096"), Some(Link::Live("3773096".into())));
+        assert_eq!(
+            link("https://17.live/live/3773096"),
+            Some(Link::Live("3773096".into()))
+        );
         assert_eq!(
             link("https://17.live/ja/live/3773096?foo=bar"),
             Some(Link::Live("3773096".into()))
@@ -504,7 +515,10 @@ mod tests {
         assert!(resolver.matches(&url(CLIP)));
         let resolved = resolver.resolve(&url(CLIP)).await.unwrap().media().unwrap();
         assert_eq!(resolved.id.as_deref(), Some("1bHQSK8KUieruFXaCH4A4upCzlN"));
-        assert_eq!(resolved.title.as_deref(), Some("マチ戦隊 第一次 バスターコール"));
+        assert_eq!(
+            resolved.title.as_deref(),
+            Some("マチ戦隊 第一次 バスターコール")
+        );
         assert_eq!(resolved.uploader.as_deref(), Some("マチコ先生🦋Class💋"));
         assert_eq!(
             resolved.uploader_url.as_ref().map(Url::as_str),
@@ -646,12 +660,9 @@ mod tests {
         unique.sort();
         unique.dedup();
         assert_eq!(urls.len(), unique.len(), "no pull is listed twice");
-        assert!(
-            resolved
-                .variants
-                .iter()
-                .any(|v| v.format_id.as_deref() == Some("1-url264") && v.video == Some(VideoCodec::H264))
-        );
+        assert!(resolved.variants.iter().any(
+            |v| v.format_id.as_deref() == Some("1-url264") && v.video == Some(VideoCodec::H264)
+        ));
 
         let error = resolver
             .resolve(&url("https://17.live/profile/r/1789280"))
@@ -695,7 +706,9 @@ mod tests {
     #[test]
     fn pictures_are_taken_from_the_cdn_when_bare() {
         assert_eq!(
-            picture(&serde_json::json!("42DE18C1.jpg")).unwrap().as_str(),
+            picture(&serde_json::json!("42DE18C1.jpg"))
+                .unwrap()
+                .as_str(),
             "https://cdn.17app.co/42DE18C1.jpg"
         );
         assert_eq!(

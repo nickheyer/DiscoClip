@@ -28,13 +28,16 @@ const SITE: &str = "https://www.xiaohongshu.com/";
 /// The cookie a logged-in xiaohongshu.com session carries.
 const SESSION_COOKIE: &str = "web_session";
 /// The headers a browser sends with a page it navigates to; the site sends a request
-/// without them to its login page.
-const PAGE_HEADERS: [(&str, &str); 2] = [
+/// without them to its login page. Its edge reads `accept-encoding` too: a request that
+/// does not offer the four encodings Chrome offers, in Chrome's order, is sent to log
+/// in whatever else it carries.
+const PAGE_HEADERS: [(&str, &str); 3] = [
     (
         "accept",
         "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     ),
     ("accept-language", "zh-CN,zh;q=0.9,en;q=0.8"),
+    ("accept-encoding", "gzip, deflate, br, zstd"),
 ];
 /// How many redirects a share link is followed through for the note it names.
 const SHARE_LINK_HOPS: usize = 5;
@@ -289,7 +292,10 @@ impl XiaohongshuResolver {
             if next.as_ref().is_some_and(|l| l.path().starts_with("/404")) {
                 return Err(self.refused_to(&next.expect("checked above"), origin));
             }
-            if next.as_ref().is_some_and(|l| l.path().starts_with("/login")) {
+            if next
+                .as_ref()
+                .is_some_and(|l| l.path().starts_with("/login"))
+            {
                 return Err(ResolveError::login_required(
                     origin,
                     PLATFORM,
@@ -387,7 +393,9 @@ impl XiaohongshuResolver {
             let location = response
                 .header("location")
                 .and_then(|l| current.join(l).ok())
-                .ok_or_else(|| ResolveError::malformed(origin, "the share link redirects nowhere"))?;
+                .ok_or_else(|| {
+                    ResolveError::malformed(origin, "the share link redirects nowhere")
+                })?;
             match parse_link(&location) {
                 Some(Link::Note { id, page }) => return self.note(&id, &page, origin).await,
                 Some(Link::Short(next)) => current = next,
@@ -600,8 +608,7 @@ mod tests {
     }
 
     const ID: &str = "6411cf99000000001300b6d9";
-    const EXPLORE: &str =
-        "https://www.xiaohongshu.com/explore/6411cf99000000001300b6d9?xsec_token=CBtok%3D&xsec_source=app_share";
+    const EXPLORE: &str = "https://www.xiaohongshu.com/explore/6411cf99000000001300b6d9?xsec_token=CBtok%3D&xsec_source=app_share";
     /// Where the site sends a visitor for a note it could not serve, with the reason
     /// percent-encoded twice: 该内容暂时无法查看.
     const FALLBACK: &str = "https://www.xiaohongshu.com/explore?xsec_token=CBtok%3D&xsec_source=app_share&target_note_id=6411cf99000000001300b6d9&undertake_note_error=%25E8%25AF%25A5%25E5%2586%2585%25E5%25AE%25B9%25E6%259A%2582%25E6%2597%25B6%25E6%2597%25A0%25E6%25B3%2595%25E6%259F%25A5%25E7%259C%258B";
@@ -638,9 +645,7 @@ mod tests {
         if let Some(shown) = shown {
             state["note"]["undertakeNoteError"] = json!(shown);
         }
-        format!(
-            r#"<html><script>window.__INITIAL_STATE__={state}</script></html>"#
-        )
+        format!(r#"<html><script>window.__INITIAL_STATE__={state}</script></html>"#)
     }
 
     fn video_note() -> Value {
@@ -687,9 +692,18 @@ mod tests {
         assert!(is_fallback(&fallback, ID));
         assert!(!is_fallback(&fallback, "6411cf99000000001300b6d0"));
         assert!(!is_fallback(&Url::parse(EXPLORE).unwrap(), ID));
-        assert_eq!(fallback_reason(&fallback).as_deref(), Some("该内容暂时无法查看"));
         assert_eq!(
-            fallback_reason(&Url::parse("https://www.xiaohongshu.com/explore?undertake_note_error=%E7%AC%94%E8%AE%B0").unwrap()).as_deref(),
+            fallback_reason(&fallback).as_deref(),
+            Some("该内容暂时无法查看")
+        );
+        assert_eq!(
+            fallback_reason(
+                &Url::parse(
+                    "https://www.xiaohongshu.com/explore?undertake_note_error=%E7%AC%94%E8%AE%B0"
+                )
+                .unwrap()
+            )
+            .as_deref(),
             Some("笔记")
         );
         assert_eq!(
@@ -811,15 +825,23 @@ mod tests {
             "http://xhslink.com/o/walled",
             302,
             "",
-            &[("location", "https://www.xiaohongshu.com/login?redirectPath=x")],
+            &[(
+                "location",
+                "https://www.xiaohongshu.com/login?redirectPath=x",
+            )],
         ));
         fixture.exchanges.push(exchange(
             "http://xhslink.com/o/elsewhere",
             302,
             "",
-            &[("location", "https://www.xiaohongshu.com/user/profile/5ff1e0a0000000000101d1c5")],
+            &[(
+                "location",
+                "https://www.xiaohongshu.com/user/profile/5ff1e0a0000000000101d1c5",
+            )],
         ));
-        fixture.exchanges.push(exchange("http://xhslink.com/o/gone", 404, "", &[]));
+        fixture
+            .exchanges
+            .push(exchange("http://xhslink.com/o/gone", 404, "", &[]));
         fixture.exchanges.push(exchange(
             "http://xhslink.com/o/loop",
             302,
@@ -865,8 +887,12 @@ mod tests {
         let discovery = "https://www.xiaohongshu.com/discovery/item/6411cf99000000001300b6d9?xsec_source=app_share&type=video&xsec_token=CBtok%3D";
         let fallback_fixture = |page: String| {
             let mut fixture = Fixture::new("xiaohongshu", None);
-            fixture.exchanges.push(exchange(short, 302, "", &[("location", discovery)]));
-            fixture.exchanges.push(exchange(EXPLORE, 302, "", &[("location", FALLBACK)]));
+            fixture
+                .exchanges
+                .push(exchange(short, 302, "", &[("location", discovery)]));
+            fixture
+                .exchanges
+                .push(exchange(EXPLORE, 302, "", &[("location", FALLBACK)]));
             fixture.exchanges.push(exchange(FALLBACK, 200, &page, &[]));
             fixture
         };
@@ -937,29 +963,45 @@ mod tests {
 
         // The fallback page itself sending the client on to log in, or to a refusal.
         let mut fixture = Fixture::new("xiaohongshu", None);
-        fixture.exchanges.push(exchange(EXPLORE, 302, "", &[("location", FALLBACK)]));
+        fixture
+            .exchanges
+            .push(exchange(EXPLORE, 302, "", &[("location", FALLBACK)]));
         fixture.exchanges.push(exchange(
             FALLBACK,
             302,
             "",
-            &[("location", "https://www.xiaohongshu.com/login?redirectPath=x")],
+            &[(
+                "location",
+                "https://www.xiaohongshu.com/login?redirectPath=x",
+            )],
         ));
         let resolver = XiaohongshuResolver::new(Http::replay(fixture));
-        let error = resolver.resolve(&Url::parse(EXPLORE).unwrap()).await.unwrap_err();
+        let error = resolver
+            .resolve(&Url::parse(EXPLORE).unwrap())
+            .await
+            .unwrap_err();
         assert!(
             matches!(&error, ResolveError::LoginRequired { reason, .. } if reason.contains("log in")),
             "{error}"
         );
         let mut fixture = Fixture::new("xiaohongshu", None);
-        fixture.exchanges.push(exchange(EXPLORE, 302, "", &[("location", FALLBACK)]));
+        fixture
+            .exchanges
+            .push(exchange(EXPLORE, 302, "", &[("location", FALLBACK)]));
         fixture.exchanges.push(exchange(
             FALLBACK,
             302,
             "",
-            &[("location", "https://www.xiaohongshu.com/404/sec_x?error_code=300012&error_msg=gone")],
+            &[(
+                "location",
+                "https://www.xiaohongshu.com/404/sec_x?error_code=300012&error_msg=gone",
+            )],
         ));
         let resolver = XiaohongshuResolver::new(Http::replay(fixture));
-        let error = resolver.resolve(&Url::parse(EXPLORE).unwrap()).await.unwrap_err();
+        let error = resolver
+            .resolve(&Url::parse(EXPLORE).unwrap())
+            .await
+            .unwrap_err();
         assert!(matches!(error, ResolveError::NotFound(_)), "{error}");
 
         // A redirect that is neither the wall nor the fallback is handed on.
@@ -968,10 +1010,16 @@ mod tests {
             EXPLORE,
             302,
             "",
-            &[("location", "https://www.xiaohongshu.com/explore?target_note_id=6411cf99000000001300b6d0")],
+            &[(
+                "location",
+                "https://www.xiaohongshu.com/explore?target_note_id=6411cf99000000001300b6d0",
+            )],
         ));
         let resolver = XiaohongshuResolver::new(Http::replay(fixture));
-        let error = resolver.resolve(&Url::parse(EXPLORE).unwrap()).await.unwrap_err();
+        let error = resolver
+            .resolve(&Url::parse(EXPLORE).unwrap())
+            .await
+            .unwrap_err();
         assert!(
             matches!(&error, ResolveError::Redirect(to) if to.query().unwrap().contains("6411cf99000000001300b6d0")),
             "{error}"

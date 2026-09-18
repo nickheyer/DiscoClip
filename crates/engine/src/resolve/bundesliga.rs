@@ -78,8 +78,8 @@ impl Resolver for BundesligaResolver {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::VariantKind;
+    use super::*;
     use crate::http::Fixture;
 
     #[test]
@@ -125,11 +125,22 @@ mod tests {
         assert!(resolved.title.is_some());
         assert!(resolved.duration.is_some());
         assert!(resolved.thumbnail.is_some());
-        assert!(resolved.variants.iter().any(|v| v.kind == VariantKind::File));
+        assert!(
+            resolved
+                .variants
+                .iter()
+                .any(|v| v.kind == VariantKind::File)
+        );
         assert!(resolved.variants.iter().any(|v| v.kind == VariantKind::Hls));
-        assert!(resolved.variants.iter().all(|v| v.kind != VariantKind::Hls || v.height.is_some()));
+        assert!(
+            resolved
+                .variants
+                .iter()
+                .all(|v| v.kind != VariantKind::Hls || v.height.is_some())
+        );
         assert!(resolved.variants.iter().any(|v| v.height == Some(1080)));
-        let missing = Url::parse("https://www.bundesliga.com/en/bundesliga/videos?vid=zzzzzzzz").unwrap();
+        let missing =
+            Url::parse("https://www.bundesliga.com/en/bundesliga/videos?vid=zzzzzzzz").unwrap();
         assert!(matches!(
             resolver.resolve(&missing).await.unwrap_err(),
             ResolveError::NotFound(_)

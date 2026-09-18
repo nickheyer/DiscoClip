@@ -53,14 +53,19 @@ pub fn variants_of(post: &Value) -> Vec<Variant> {
         .as_f64()
         .filter(|d| *d > 0.0)
         .map(Duration::from_secs_f64);
-    let has_audio = source["hasAudio"].as_i64().unwrap_or(0) != 0
-        || source["hasAudio"].as_bool() == Some(true);
+    let has_audio =
+        source["hasAudio"].as_i64().unwrap_or(0) != 0 || source["hasAudio"].as_bool() == Some(true);
     let mut variants = Vec::new();
     for (key, container, video, audio) in [
         ("url", Container::Mp4, VideoCodec::H264, AudioCodec::Aac),
         ("h265Url", Container::Mp4, VideoCodec::H265, AudioCodec::Aac),
         ("vp9Url", Container::Webm, VideoCodec::Vp9, AudioCodec::Opus),
-        ("vp8Url", Container::Webm, VideoCodec::Vp8, AudioCodec::Vorbis),
+        (
+            "vp8Url",
+            Container::Webm,
+            VideoCodec::Vp8,
+            AudioCodec::Vorbis,
+        ),
     ] {
         let Some(url) = source[key].as_str().and_then(|u| Url::parse(u).ok()) else {
             continue;
@@ -142,7 +147,10 @@ impl Resolver for NinegagResolver {
             }
         }
         let answer = fetched.json(url)?;
-        if answer["meta"]["status"].as_str().is_some_and(|s| s != "Success") {
+        if answer["meta"]["status"]
+            .as_str()
+            .is_some_and(|s| s != "Success")
+        {
             let message = answer["meta"]["errorMessage"]
                 .as_str()
                 .unwrap_or("the API reported a failure")
@@ -175,7 +183,10 @@ impl Resolver for NinegagResolver {
         if variants.is_empty() {
             return Err(match post["type"].as_str() {
                 Some("Photo") => ResolveError::unavailable(url, "the post is a photo"),
-                Some(kind) => ResolveError::unavailable(url, format!("the post is a {kind} without a video file")),
+                Some(kind) => ResolveError::unavailable(
+                    url,
+                    format!("the post is a {kind} without a video file"),
+                ),
                 None => ResolveError::NotFound(url.clone()),
             });
         }
@@ -248,7 +259,10 @@ mod tests {
     fn links_are_read() {
         let id = |s: &str| post_id(&Url::parse(s).unwrap());
         assert_eq!(id("https://9gag.com/gag/ae5Ag7B"), Some("ae5Ag7B".into()));
-        assert_eq!(id("https://9gag.com/gag/ae5Ag7B?ref=android"), Some("ae5Ag7B".into()));
+        assert_eq!(
+            id("https://9gag.com/gag/ae5Ag7B?ref=android"),
+            Some("ae5Ag7B".into())
+        );
         assert_eq!(id("https://9gag.com/tag/awesome"), None);
         assert_eq!(id("https://9gag.com/"), None);
     }
@@ -256,7 +270,11 @@ mod tests {
     #[tokio::test]
     async fn animated_posts_resolve_with_every_codec() {
         let mut fixture = Fixture::new("9gag", None);
-        fixture.exchanges.push(get("https://9gag.com/v1/post?id=ae5Ag7B", 200, post().to_string()));
+        fixture.exchanges.push(get(
+            "https://9gag.com/v1/post?id=ae5Ag7B",
+            200,
+            post().to_string(),
+        ));
         let resolver = NinegagResolver::new(Http::replay(fixture));
         let url = Url::parse("https://9gag.com/gag/ae5Ag7B").unwrap();
         let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
@@ -266,7 +284,10 @@ mod tests {
         assert!(resolved.uploader.is_none());
         assert_eq!(resolved.variants.len(), 4);
         let h264 = &resolved.variants[0];
-        assert_eq!(h264.url.as_str(), "https://img-9gag-fun.9cache.com/photo/ae5Ag7B_460sv.mp4");
+        assert_eq!(
+            h264.url.as_str(),
+            "https://img-9gag-fun.9cache.com/photo/ae5Ag7B_460sv.mp4"
+        );
         assert_eq!(h264.video, Some(VideoCodec::H264));
         assert_eq!(h264.audio, Some(AudioCodec::Aac));
         assert_eq!((h264.width, h264.height), (Some(460), Some(288)));
@@ -285,16 +306,43 @@ mod tests {
         youtube["data"]["post"]["type"] = json!("Video");
         youtube["data"]["post"]["youtubeVideoId"] = json!("dQw4w9WgXcQ");
         let mut fixture = Fixture::new("9gag", None);
-        fixture.exchanges.push(get("https://9gag.com/v1/post?id=aPhoto1", 200, photo.to_string()));
-        fixture.exchanges.push(get("https://9gag.com/v1/post?id=aVideo1", 200, youtube.to_string()));
-        fixture.exchanges.push(get("https://9gag.com/v1/post?id=aGone11", 200, json!({"meta": {"status": "Failure", "errorMessage": "Post not found"}}).to_string()));
+        fixture.exchanges.push(get(
+            "https://9gag.com/v1/post?id=aPhoto1",
+            200,
+            photo.to_string(),
+        ));
+        fixture.exchanges.push(get(
+            "https://9gag.com/v1/post?id=aVideo1",
+            200,
+            youtube.to_string(),
+        ));
+        fixture.exchanges.push(get(
+            "https://9gag.com/v1/post?id=aGone11",
+            200,
+            json!({"meta": {"status": "Failure", "errorMessage": "Post not found"}}).to_string(),
+        ));
         let resolver = NinegagResolver::new(Http::replay(fixture));
-        let error = resolver.resolve(&Url::parse("https://9gag.com/gag/aPhoto1").unwrap()).await.unwrap_err();
-        assert!(matches!(&error, ResolveError::Unavailable { reason, .. } if reason.contains("photo")), "{error}");
-        let error = resolver.resolve(&Url::parse("https://9gag.com/gag/aVideo1").unwrap()).await.unwrap_err();
-        assert!(matches!(&error, ResolveError::Redirect(u) if u.as_str() == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"), "{error}");
+        let error = resolver
+            .resolve(&Url::parse("https://9gag.com/gag/aPhoto1").unwrap())
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&error, ResolveError::Unavailable { reason, .. } if reason.contains("photo")),
+            "{error}"
+        );
+        let error = resolver
+            .resolve(&Url::parse("https://9gag.com/gag/aVideo1").unwrap())
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&error, ResolveError::Redirect(u) if u.as_str() == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"),
+            "{error}"
+        );
         assert!(matches!(
-            resolver.resolve(&Url::parse("https://9gag.com/gag/aGone11").unwrap()).await.unwrap_err(),
+            resolver
+                .resolve(&Url::parse("https://9gag.com/gag/aGone11").unwrap())
+                .await
+                .unwrap_err(),
             ResolveError::NotFound(_)
         ));
     }

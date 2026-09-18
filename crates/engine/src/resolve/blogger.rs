@@ -177,8 +177,7 @@ pub fn variants_of(payload: &Value) -> Vec<Variant> {
         variant.duration = util::query_param(&variant.url, "dur")
             .as_deref()
             .and_then(parse_seconds);
-        variant.size = util::query_param(&variant.url, "clen")
-            .and_then(|clen| clen.parse().ok());
+        variant.size = util::query_param(&variant.url, "clen").and_then(|clen| clen.parse().ok());
         variant.format_id = itag;
         variants.push(variant);
     }
@@ -346,7 +345,16 @@ mod tests {
             false,
             player.to_string()
         ]);
-        let entry = json!([["wrb.fr", "WcwnYd", payload.to_string(), null, null, null, "generic"]]).to_string();
+        let entry = json!([[
+            "wrb.fr",
+            "WcwnYd",
+            payload.to_string(),
+            null,
+            null,
+            null,
+            "generic"
+        ]])
+        .to_string();
         format!(
             ")]}}'\n\n{}\n{entry}\n56\n[[\"di\",151],[\"af.httprm\",150,\"-35296437412991160\",12]]\n27\n[[\"e\",4,null,null,12992]]\n",
             entry.len() + 1
@@ -380,7 +388,10 @@ mod tests {
         let RpcAnswer::Payload(payload) = found else {
             panic!("{found:?}");
         };
-        assert_eq!(payload[4].as_str(), Some("BLOGGER-video-3c740e3a49197e16-3566"));
+        assert_eq!(
+            payload[4].as_str(),
+            Some("BLOGGER-video-3c740e3a49197e16-3566")
+        );
         assert_eq!(rpc_answer(&answer(), "Other"), None);
         assert_eq!(
             rpc_answer(
@@ -391,7 +402,10 @@ mod tests {
         );
         assert_eq!(rpc_answer("<html>busy</html>", "WcwnYd"), None);
         assert_eq!(
-            rpc_answer(")]}'\n\n40\n[[\"wrb.fr\",\"WcwnYd\",\"not json\"]]\n", "WcwnYd"),
+            rpc_answer(
+                ")]}'\n\n40\n[[\"wrb.fr\",\"WcwnYd\",\"not json\"]]\n",
+                "WcwnYd"
+            ),
             None
         );
         assert_eq!(
@@ -404,9 +418,12 @@ mod tests {
     #[tokio::test]
     async fn videos_resolve_with_every_stream() {
         let mut fixture = Fixture::new(PLATFORM, None);
-        fixture
-            .exchanges
-            .push(post(RPC_URL, 200, "application/json; charset=utf-8", answer()));
+        fixture.exchanges.push(post(
+            RPC_URL,
+            200,
+            "application/json; charset=utf-8",
+            answer(),
+        ));
         let resolver = BloggerResolver::new(Http::replay(fixture));
         let url = Url::parse(PLAYER).unwrap();
         assert!(resolver.matches(&url));
@@ -495,7 +512,10 @@ mod tests {
             let resolver = &resolver;
             async move { resolver.resolve(&url).await.unwrap_err() }
         };
-        assert!(matches!(resolve("unknown").await, ResolveError::NotFound(_)));
+        assert!(matches!(
+            resolve("unknown").await,
+            ResolveError::NotFound(_)
+        ));
         let error = resolve("refused").await;
         assert!(
             matches!(&error, ResolveError::Unavailable { reason, .. } if reason.contains("refused the token: [7]")),

@@ -155,7 +155,10 @@ impl Resolver for LinkedinResolver {
             .get(post.page.clone())
             .platform(PLATFORM)
             .user_agent(BROWSER_UA)
-            .header("accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            .header(
+                "accept",
+                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            )
             .header("accept-language", "en-US,en;q=0.9")
             .send()
             .await?;
@@ -240,7 +243,11 @@ impl Resolver for LinkedinResolver {
         resolved.id = Some(post.id.clone());
         resolved.title = title
             .clone()
-            .or_else(|| video_object.and_then(|v| v["name"].as_str()).and_then(clean_title))
+            .or_else(|| {
+                video_object
+                    .and_then(|v| v["name"].as_str())
+                    .and_then(clean_title)
+            })
             .or_else(|| page.meta("description").and_then(|d| clean_title(&d)));
         resolved.description = page
             .meta("description")
@@ -257,7 +264,11 @@ impl Resolver for LinkedinResolver {
                 u
             });
         resolved.uploaded_at = video_object
-            .and_then(|v| v["uploadDate"].as_str().or_else(|| v["datePublished"].as_str()))
+            .and_then(|v| {
+                v["uploadDate"]
+                    .as_str()
+                    .or_else(|| v["datePublished"].as_str())
+            })
             .or_else(|| {
                 ld_objects_of_type(&ld, "SocialMediaPosting")
                     .into_iter()
@@ -375,15 +386,20 @@ mod tests {
             Some("6850898786781339649".into())
         );
         assert_eq!(
-            link("https://www.linkedin.com/feed/update/urn:li:activity:7151241570371948544/").map(|p| p.id),
+            link("https://www.linkedin.com/feed/update/urn:li:activity:7151241570371948544/")
+                .map(|p| p.id),
             Some("7151241570371948544".into())
         );
         assert_eq!(
-            link("https://www.linkedin.com/embed/feed/update/urn:li:ugcPost:6850898786781339649").map(|p| p.id),
+            link("https://www.linkedin.com/embed/feed/update/urn:li:ugcPost:6850898786781339649")
+                .map(|p| p.id),
             Some("6850898786781339649".into())
         );
         assert_eq!(link("https://www.linkedin.com/in/someone/"), None);
-        assert_eq!(link("https://www.linkedin.com/posts/someone_no-id-here"), None);
+        assert_eq!(
+            link("https://www.linkedin.com/posts/someone_no-id-here"),
+            None
+        );
     }
 
     #[tokio::test]
@@ -446,7 +462,12 @@ mod tests {
         ));
         let resolver = LinkedinResolver::new(Http::replay(fixture));
         let walled = resolver
-            .resolve(&Url::parse("https://www.linkedin.com/posts/someone_activity-7000000000000000000-abcd").unwrap())
+            .resolve(
+                &Url::parse(
+                    "https://www.linkedin.com/posts/someone_activity-7000000000000000000-abcd",
+                )
+                .unwrap(),
+            )
             .await
             .unwrap_err();
         assert!(
@@ -455,7 +476,12 @@ mod tests {
         );
         assert!(matches!(
             resolver
-                .resolve(&Url::parse("https://www.linkedin.com/posts/someone_activity-7000000000000000001-abcd").unwrap())
+                .resolve(
+                    &Url::parse(
+                        "https://www.linkedin.com/posts/someone_activity-7000000000000000001-abcd"
+                    )
+                    .unwrap()
+                )
                 .await
                 .unwrap_err(),
             ResolveError::NotFound(_)

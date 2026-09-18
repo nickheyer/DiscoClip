@@ -90,12 +90,15 @@ pub fn parse_link(url: &Url) -> Option<Link> {
     match segments.as_slice() {
         ["wiki", title] => Some(Link {
             wiki,
-            title: file_title(title).filter(|_| {
-                title.starts_with("File:") || title.starts_with("Image:")
-            })?,
+            title: file_title(title)
+                .filter(|_| title.starts_with("File:") || title.starts_with("Image:"))?,
         }),
         ["w", "index.php"] => {
-            let title = url.query_pairs().find(|(k, _)| k == "title")?.1.into_owned();
+            let title = url
+                .query_pairs()
+                .find(|(k, _)| k == "title")?
+                .1
+                .into_owned();
             (title.starts_with("File:") || title.starts_with("Image:")).then(|| Link {
                 wiki,
                 title: file_title(&title).expect("non-empty"),
@@ -221,8 +224,17 @@ impl Resolver for WikimediaResolver {
         Platform {
             id: PLATFORM,
             name: "Wikimedia Commons",
-            hosts: &["commons.wikimedia.org", "wikipedia.org", "upload.wikimedia.org"],
-            features: &["file pages", "wikipedia file pages", "direct uploads", "transcodes"],
+            hosts: &[
+                "commons.wikimedia.org",
+                "wikipedia.org",
+                "upload.wikimedia.org",
+            ],
+            features: &[
+                "file pages",
+                "wikipedia file pages",
+                "direct uploads",
+                "transcodes",
+            ],
             formats: &["webm", "mp4", "mov", "ogv"],
             session: SessionSupport::None,
             examples: &[
@@ -277,7 +289,14 @@ impl Resolver for WikimediaResolver {
         if !mime.starts_with("video/") && !mime.starts_with("application/ogg") {
             return Err(ResolveError::unavailable(
                 url,
-                format!("the file is {}, not a video", if mime.is_empty() { "of an unknown type" } else { mime.as_str() }),
+                format!(
+                    "the file is {}, not a video",
+                    if mime.is_empty() {
+                        "of an unknown type"
+                    } else {
+                        mime.as_str()
+                    }
+                ),
             ));
         }
         let variants = variants_of(info);
@@ -285,7 +304,12 @@ impl Resolver for WikimediaResolver {
             return Err(ResolveError::NotFound(url.clone()));
         }
         let meta = &info["extmetadata"];
-        let title_of = |key: &str| meta[key]["value"].as_str().map(strip_tags).and_then(|t| clean_title(&t));
+        let title_of = |key: &str| {
+            meta[key]["value"]
+                .as_str()
+                .map(strip_tags)
+                .and_then(|t| clean_title(&t))
+        };
         let canonical = info["canonicaltitle"]
             .as_str()
             .or(page["title"].as_str())
@@ -297,7 +321,8 @@ impl Resolver for WikimediaResolver {
             clean_title(bare.rsplit_once('.').map_or(bare, |(s, _)| s))
         });
         resolved.description = title_of("ImageDescription");
-        resolved.uploader = title_of("Artist").or_else(|| info["user"].as_str().and_then(clean_title));
+        resolved.uploader =
+            title_of("Artist").or_else(|| info["user"].as_str().and_then(clean_title));
         resolved.uploaded_at = info["timestamp"]
             .as_str()
             .and_then(|t| t.parse::<Timestamp>().ok());
@@ -354,11 +379,15 @@ mod tests {
             })
         );
         assert_eq!(
-            link("https://en.wikipedia.org/wiki/File:Some_video.ogv").unwrap().wiki,
+            link("https://en.wikipedia.org/wiki/File:Some_video.ogv")
+                .unwrap()
+                .wiki,
             "en.wikipedia.org"
         );
         assert_eq!(
-            link("https://en.m.wikipedia.org/w/index.php?title=File:Some_video.ogv&x=1").unwrap().title,
+            link("https://en.m.wikipedia.org/w/index.php?title=File:Some_video.ogv&x=1")
+                .unwrap()
+                .title,
             "File:Some video.ogv"
         );
         assert_eq!(
@@ -374,7 +403,8 @@ mod tests {
         let mut fixture = Fixture::new("wikimedia", None);
         fixture.exchanges.push(get(API, INFO));
         let resolver = WikimediaResolver::new(Http::replay(fixture));
-        let url = Url::parse("https://commons.wikimedia.org/wiki/File:Big_Buck_Bunny_4K.webm").unwrap();
+        let url =
+            Url::parse("https://commons.wikimedia.org/wiki/File:Big_Buck_Bunny_4K.webm").unwrap();
         let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
         assert_eq!(resolved.title.as_deref(), Some("Big Buck Bunny 4K"));
         assert_eq!(
@@ -391,12 +421,20 @@ mod tests {
         assert_eq!(original.audio, Some(AudioCodec::Vorbis));
         assert_eq!(original.size, Some(2964839055));
         assert_eq!(original.height, Some(2250));
-        let hd = resolved.variants.iter().find(|v| v.height == Some(1080)).unwrap();
+        let hd = resolved
+            .variants
+            .iter()
+            .find(|v| v.height == Some(1080))
+            .unwrap();
         assert_eq!(hd.video, Some(VideoCodec::Vp9));
         assert_eq!(hd.audio, Some(AudioCodec::Opus));
         assert_eq!(hd.bitrate, Some(3788064));
         assert_eq!(hd.container, Some(Container::Webm));
-        let mov = resolved.variants.iter().find(|v| v.height == Some(360)).unwrap();
+        let mov = resolved
+            .variants
+            .iter()
+            .find(|v| v.height == Some(360))
+            .unwrap();
         assert_eq!(mov.container, Some(Container::Mov));
         assert_eq!(mov.video, Some(VideoCodec::Other("mpeg4".into())));
     }

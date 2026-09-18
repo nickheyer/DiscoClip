@@ -13,8 +13,8 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Page, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved,
-    Resolver, SessionSupport, clean_title, fetch_as_browser, hls, navigation_headers,
-    status_error, util,
+    Resolver, SessionSupport, clean_title, fetch_as_browser, hls, navigation_headers, status_error,
+    util,
 };
 use crate::http::{BROWSER_UA, Http};
 
@@ -150,8 +150,11 @@ impl BongacamsResolver {
         let performer = &data["performerData"];
         let username = util::text(&performer["username"]).unwrap_or_else(|| room.to_string());
         let display_name = performer["displayName"].as_str().and_then(clean_title);
-        let playlist = util::join_url(None, &format!("{server}/hls/stream_{username}/playlist.m3u8"))
-            .ok_or_else(|| ResolveError::malformed(url, format!("bad video server {server}")))?;
+        let playlist = util::join_url(
+            None,
+            &format!("{server}/hls/stream_{username}/playlist.m3u8"),
+        )
+        .ok_or_else(|| ResolveError::malformed(url, format!("bad video server {server}")))?;
         let mut expanded = match hls::expand(&self.http, &playlist, PLATFORM, BROWSER_UA, &[]).await
         {
             Ok(expanded) => expanded,
@@ -183,21 +186,35 @@ impl BongacamsResolver {
 
     /// The rooms online that the listing at `path` carries, as a playlist.
     async fn resolve_listing(&self, link: &Link, url: &Url) -> Result<Resolution, ResolveError> {
-        let path = link.name.as_deref().map_or(String::new(), |name| format!("{name}/"));
+        let path = link
+            .name
+            .as_deref()
+            .map_or(String::new(), |name| format!("{name}/"));
         let page_url = Url::parse(&format!("https://{}/{path}", link.host))
             .map_err(|e| ResolveError::malformed(url, e.to_string()))?;
-        let fetched =
-            fetch_as_browser(&self.http, &page_url, PLATFORM, &navigation_headers(), MAX_PAGE)
-                .await?;
+        let fetched = fetch_as_browser(
+            &self.http,
+            &page_url,
+            PLATFORM,
+            &navigation_headers(),
+            MAX_PAGE,
+        )
+        .await?;
         if let Some(error) = status_error(fetched.status, url) {
             return Err(error);
         }
         let html = fetched.text();
-        if link.name.as_deref().is_some_and(|name| !page_lists(&html, name)) {
+        if link
+            .name
+            .as_deref()
+            .is_some_and(|name| !page_lists(&html, name))
+        {
             return Err(ResolveError::NotFound(url.clone()));
         }
         let rooms = listing_rooms(&html).ok_or_else(|| ResolveError::NotFound(url.clone()))?;
-        let title = Page::parse(&html, url).title().and_then(|t| clean_title(&t));
+        let title = Page::parse(&html, url)
+            .title()
+            .and_then(|t| clean_title(&t));
         let entries = rooms
             .into_iter()
             .filter_map(|(username, display)| {
@@ -371,7 +388,10 @@ mod tests {
             server("https://ws.bcvcdn.test/").as_deref(),
             Some("https://ws.bcvcdn.test")
         );
-        assert_eq!(server("ws.bcvcdn.test").as_deref(), Some("https://ws.bcvcdn.test"));
+        assert_eq!(
+            server("ws.bcvcdn.test").as_deref(),
+            Some("https://ws.bcvcdn.test")
+        );
         assert_eq!(server(""), None);
     }
 

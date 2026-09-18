@@ -13,7 +13,7 @@ use scraper::Selector;
 use serde_json::Value;
 use url::Url;
 
-use super::page::{Page, ld_objects_of_type, leading_json};
+use super::page::{Page, balanced_end, ld_objects_of_type};
 use super::web::parse_iso_duration;
 use super::{
     ClipRange, MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved,
@@ -30,7 +30,8 @@ const EMBED_API: &str = "https://rumble.com/embedJS/u3/";
 const SESSION_COOKIE: &str = "u_s";
 const MAX_PAGES: usize = 5;
 
-static RE_VIDEO_PATH: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^v[a-z0-9]{4,}(?:-|\.html$)").unwrap());
+static RE_VIDEO_PATH: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^v[a-z0-9]{4,}(?:-|\.html$)").unwrap());
 static RE_EMBED_ID: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^v[a-z0-9]{4,}$").unwrap());
 
 /// What a link names.
@@ -80,7 +81,10 @@ pub fn embed_id_in(page: &Page) -> Option<String> {
         .find_map(|v| v["embedUrl"].as_str().map(String::from));
     let embed_url = from_ld
         .or_else(|| page.meta("og:video").or_else(|| page.meta("og:video:url")))
-        .or_else(|| page.between("\"embedUrl\":\"", "\"").map(|s| s.replace("\\/", "/")))?;
+        .or_else(|| {
+            page.between("\"embedUrl\":\"", "\"")
+                .map(|s| s.replace("\\/", "/"))
+        })?;
     let url = Url::parse(&embed_url).ok()?;
     match parse_link(&url) {
         Some(Link::Embed(id)) => Some(id),
@@ -114,10 +118,16 @@ impl PageDetails {
     }
 }
 
-/// The player's JSON as the embed page inlines it.
+/// The members the embed page's player literal ends with that call the page's own
+/// functions (`loaded:h()`), which JSON has no room for.
+static RE_SCRIPT_MEMBERS: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?:,\s*[A-Za-z_$][\w$]*\s*:\s*[A-Za-z_$][\w$.]*\([^()]*\))+\s*\}$").unwrap()
+});
+
+/// The player's data as the embed page inlines it: a JavaScript object literal assigned
+/// to `m.f["<id>"]`, JSON but for the members at its end that call the page's functions.
 pub fn embed_json_in(html: &str) -> Option<Value> {
     let at = html.find("\"ua\":")?;
-    let start = html[..at].rfind('{')?;
     // Walk back to the object that holds `ua`, which starts the player's data.
     let mut depth = 0i32;
     let mut begin = None;
@@ -134,8 +144,12 @@ pub fn embed_json_in(html: &str) -> Option<Value> {
             _ => {}
         }
     }
-    let begin = begin.unwrap_or(start);
-    leading_json(&html[begin..]).map(|(v, _)| v).filter(|v| v["ua"].is_object() || v["u"].is_object())
+    let text = &html[begin?..];
+    let literal = &text[..balanced_end(text)?];
+    let value: Value = serde_json::from_str(literal)
+        .or_else(|_| serde_json::from_str(&RE_SCRIPT_MEMBERS.replace(literal, "}")))
+        .ok()?;
+    (value["ua"].is_object() || value["u"].is_object()).then_some(value)
 }
 
 pub struct RumbleResolver {
@@ -174,7 +188,15 @@ impl RumbleResolver {
             return Err(ResolveError::RateLimited(origin.clone()));
         }
         let embed_page = Url::parse(&format!("{SITE}embed/{id}/")).expect("valid");
-        let fetched = fetch(&self.http, &embed_page, PLATFORM, BROWSER_UA, &headers, MAX_PAGE).await?;
+        let fetched = fetch(
+            &self.http,
+            &embed_page,
+            PLATFORM,
+            BROWSER_UA,
+            &headers,
+            MAX_PAGE,
+        )
+        .await?;
         match fetched.status.as_u16() {
             200..=299 => {}
             404 | 410 => return Err(ResolveError::NotFound(origin.clone())),
@@ -222,9 +244,16 @@ impl RumbleResolver {
         Ok((Page::parse(&html, &final_url), final_url))
     }
 
-    async fn video(&self, embed_id: &str, page: Option<&PageDetails>, page_url: &Url, origin: &Url) -> Result<Resolution, ResolveError> {
+    async fn video(
+        &self,
+        embed_id: &str,
+        page: Option<&PageDetails>,
+        page_url: &Url,
+        origin: &Url,
+    ) -> Result<Resolution, ResolveError> {
         let data = self.embed(embed_id, page_url, origin).await?;
-        let live = matches!(data["live"].as_i64(), Some(1) | Some(2)) || data["live"].as_bool() == Some(true);
+        let live = matches!(data["live"].as_i64(), Some(1) | Some(2))
+            || data["live"].as_bool() == Some(true);
         let duration = data["duration"]
             .as_f64()
             .filter(|d| *d > 0.0)
@@ -237,7 +266,8 @@ impl RumbleResolver {
                 .or_else(|| data["ua"]["hls"]["auto"]["url"].as_str())
                 .and_then(|u| Url::parse(u).ok())
             {
-                let expanded = super::hls::expand(&self.http, &hls, PLATFORM, BROWSER_UA, &[]).await?;
+                let expanded =
+                    super::hls::expand(&self.http, &hls, PLATFORM, BROWSER_UA, &[]).await?;
                 variants = expanded.variants;
                 for v in &mut variants {
                     v.live |= live;
@@ -261,7 +291,9 @@ impl RumbleResolver {
             .or_else(|| page.and_then(|p| p.title.clone()));
         resolved.description = page.and_then(|p| p.description.clone());
         resolved.uploader = data["author"]["name"].as_str().and_then(clean_title);
-        resolved.uploader_url = data["author"]["url"].as_str().and_then(|u| Url::parse(u).ok());
+        resolved.uploader_url = data["author"]["url"]
+            .as_str()
+            .and_then(|u| Url::parse(u).ok());
         resolved.uploaded_at = data["pubDate"]
             .as_str()
             .and_then(|t| t.parse::<Timestamp>().ok());
@@ -278,7 +310,10 @@ impl RumbleResolver {
                 let url = track["path"].as_str().and_then(|u| Url::parse(u).ok())?;
                 Some(SubtitleTrack {
                     url,
-                    auto: language.ends_with("-auto") || track["language"].as_str().is_some_and(|l| l.contains("auto")),
+                    auto: language.ends_with("-auto")
+                        || track["language"]
+                            .as_str()
+                            .is_some_and(|l| l.contains("auto")),
                     language: language.trim_end_matches("-auto").to_string(),
                     name: track["language"].as_str().map(String::from),
                     format: SubtitleFormat::Vtt,
@@ -297,12 +332,15 @@ impl RumbleResolver {
         for page_number in 1..=MAX_PAGES {
             let mut url = Url::parse(&format!("{SITE}{base}/videos")).expect("valid");
             if page_number > 1 {
-                url.query_pairs_mut().append_pair("page", &page_number.to_string());
+                url.query_pairs_mut()
+                    .append_pair("page", &page_number.to_string());
             }
             let fetched = fetch(&self.http, &url, PLATFORM, BROWSER_UA, &[], MAX_PAGE).await?;
             match fetched.status.as_u16() {
                 200..=299 => {}
-                404 | 410 if page_number == 1 => return Err(ResolveError::NotFound(origin.clone())),
+                404 | 410 if page_number == 1 => {
+                    return Err(ResolveError::NotFound(origin.clone()));
+                }
                 404 | 410 => break,
                 429 => return Err(ResolveError::RateLimited(origin.clone())),
                 status => {
@@ -363,10 +401,9 @@ pub fn listed_videos(page: &Page) -> Vec<PlaylistEntry> {
         "a.videostream__link, a.video-item--a, a.thumbnail__link, a[href*='.html']",
     )
     .expect("valid");
-    let title_selector = Selector::parse(
-        ".videostream__title, .thumbnail__title, .video-item--title, h3",
-    )
-    .expect("valid");
+    let title_selector =
+        Selector::parse(".videostream__title, .thumbnail__title, .video-item--title, h3")
+            .expect("valid");
     let duration_selector = Selector::parse(
         ".videostream__status--duration, .video-item--duration, .thumbnail__duration, [data-value]",
     )
@@ -447,7 +484,10 @@ pub fn variants_of(data: &Value, duration: Option<Duration>, live: bool) -> Vec<
                 .as_u64()
                 .map(|h| h as u32)
                 .or_else(|| quality.parse().ok());
-            v.bitrate = meta["bitrate"].as_u64().filter(|b| *b > 0).map(|kbps| kbps * 1000);
+            v.bitrate = meta["bitrate"]
+                .as_u64()
+                .filter(|b| *b > 0)
+                .map(|kbps| kbps * 1000);
             v.size = meta["size"].as_u64().filter(|s| *s > 0);
             v.duration = duration;
             v.format_id = Some(format!("{format}-{quality}"));
@@ -467,8 +507,14 @@ pub fn variants_of(data: &Value, duration: Option<Duration>, live: bool) -> Vec<
             let meta = &entry["meta"];
             let mut v = Variant::new(url, VariantKind::Hls);
             v.width = meta["w"].as_u64().map(|w| w as u32);
-            v.height = meta["h"].as_u64().map(|h| h as u32).or_else(|| quality.parse().ok());
-            v.bitrate = meta["bitrate"].as_u64().filter(|b| *b > 0).map(|kbps| kbps * 1000);
+            v.height = meta["h"]
+                .as_u64()
+                .map(|h| h as u32)
+                .or_else(|| quality.parse().ok());
+            v.bitrate = meta["bitrate"]
+                .as_u64()
+                .filter(|b| *b > 0)
+                .map(|kbps| kbps * 1000);
             v.duration = duration;
             v.live = live;
             v.format_id = Some(format!("hls-{quality}"));
@@ -476,7 +522,9 @@ pub fn variants_of(data: &Value, duration: Option<Duration>, live: bool) -> Vec<
             variants.push(v);
         }
     }
-    if let Some(url) = data["u"]["mp4"]["url"].as_str().and_then(|u| Url::parse(u).ok())
+    if let Some(url) = data["u"]["mp4"]["url"]
+        .as_str()
+        .and_then(|u| Url::parse(u).ok())
         && !variants.iter().any(|v| v.url == url)
     {
         let meta = &data["u"]["mp4"]["meta"];
@@ -486,7 +534,10 @@ pub fn variants_of(data: &Value, duration: Option<Duration>, live: bool) -> Vec<
         v.audio = Some(AudioCodec::Aac);
         v.width = meta["w"].as_u64().map(|w| w as u32);
         v.height = meta["h"].as_u64().map(|h| h as u32);
-        v.bitrate = meta["bitrate"].as_u64().filter(|b| *b > 0).map(|kbps| kbps * 1000);
+        v.bitrate = meta["bitrate"]
+            .as_u64()
+            .filter(|b| *b > 0)
+            .map(|kbps| kbps * 1000);
         v.size = meta["size"].as_u64().filter(|s| *s > 0);
         v.duration = duration;
         v.format_id = Some("mp4".into());
@@ -507,7 +558,14 @@ impl Resolver for RumbleResolver {
             id: PLATFORM,
             name: "Rumble",
             hosts: &["rumble.com"],
-            features: &["videos", "embeds", "live", "subtitles", "channels", "user pages"],
+            features: &[
+                "videos",
+                "embeds",
+                "live",
+                "subtitles",
+                "channels",
+                "user pages",
+            ],
             formats: &["mp4", "webm", "hls"],
             session: SessionSupport::Optional,
             examples: &[
@@ -566,7 +624,12 @@ impl Resolver for RumbleResolver {
         let page = Page::parse(&html, &Url::parse(SITE).expect("valid"));
         let name = page
             .document()
-            .select(&Selector::parse("[data-js='user_name'], .header-user-name, .main-menu-item-label-user").expect("valid"))
+            .select(
+                &Selector::parse(
+                    "[data-js='user_name'], .header-user-name, .main-menu-item-label-user",
+                )
+                .expect("valid"),
+            )
             .next()
             .and_then(|n| clean_title(&n.text().collect::<String>()))
             .or_else(|| page.between("\"username\":\"", "\"").and_then(clean_title));
@@ -629,13 +692,22 @@ mod tests {
             link("https://rumble.com/v6rrcbh-channel-update-vid.html?e9s=src"),
             Some(Link::Video("v6rrcbh-channel-update-vid.html".into()))
         );
-        assert_eq!(link("https://rumble.com/embed/v6pkg2n/"), Some(Link::Embed("v6pkg2n".into())));
+        assert_eq!(
+            link("https://rumble.com/embed/v6pkg2n/"),
+            Some(Link::Embed("v6pkg2n".into()))
+        );
         assert_eq!(
             link("https://rumble.com/embedJS/u3/?request=video&ver=2&v=v6pkg2n"),
             Some(Link::Embed("v6pkg2n".into()))
         );
-        assert_eq!(link("https://rumble.com/c/Rumble"), Some(Link::Channel("Rumble".into())));
-        assert_eq!(link("https://rumble.com/user/WolfBlitzerTTV/videos"), Some(Link::User("WolfBlitzerTTV".into())));
+        assert_eq!(
+            link("https://rumble.com/c/Rumble"),
+            Some(Link::Channel("Rumble".into()))
+        );
+        assert_eq!(
+            link("https://rumble.com/user/WolfBlitzerTTV/videos"),
+            Some(Link::User("WolfBlitzerTTV".into()))
+        );
         assert_eq!(link("https://rumble.com/videos?date=today"), None);
         assert_eq!(link("https://rumble.com/"), None);
     }
@@ -643,8 +715,18 @@ mod tests {
     #[tokio::test]
     async fn videos_resolve_through_the_embed_api() {
         let mut fixture = Fixture::new("rumble", None);
-        fixture.exchanges.push(get("https://rumble.com/v6rrcbh-channel-update-vid.html", 200, "text/html", VIDEO_PAGE));
-        fixture.exchanges.push(get(EMBED_API, 200, "application/json", &embed_json().to_string()));
+        fixture.exchanges.push(get(
+            "https://rumble.com/v6rrcbh-channel-update-vid.html",
+            200,
+            "text/html",
+            VIDEO_PAGE,
+        ));
+        fixture.exchanges.push(get(
+            EMBED_API,
+            200,
+            "application/json",
+            &embed_json().to_string(),
+        ));
         let resolver = RumbleResolver::new(Http::replay(fixture));
         let url = Url::parse("https://rumble.com/v6rrcbh-channel-update-vid.html?t=30").unwrap();
         assert!(resolver.matches(&url));
@@ -653,7 +735,9 @@ mod tests {
         assert_eq!(resolved.title.as_deref(), Some("Channel Update vid"));
         assert_eq!(
             resolved.description.as_deref(),
-            Some("Just a quick update about the channel, new changes, and what to expect for a while.")
+            Some(
+                "Just a quick update about the channel, new changes, and what to expect for a while."
+            )
         );
         assert_eq!(resolved.uploader.as_deref(), Some("WolfBlitzerTTV"));
         assert_eq!(
@@ -665,7 +749,11 @@ mod tests {
         assert_eq!(resolved.clip.unwrap().start, Duration::from_secs(30));
         assert!(!resolved.live);
         assert_eq!(resolved.variants.len(), 3);
-        let tallest = resolved.variants.iter().find(|v| v.height == Some(1080)).unwrap();
+        let tallest = resolved
+            .variants
+            .iter()
+            .find(|v| v.height == Some(1080))
+            .unwrap();
         assert_eq!(tallest.size, Some(43000000));
         assert_eq!(tallest.bitrate, Some(4_133_000));
         assert_eq!(tallest.label.as_deref(), Some("1080p"));
@@ -686,8 +774,15 @@ mod tests {
             live
         );
         let mut fixture = Fixture::new("rumble", None);
-        fixture.exchanges.push(get(EMBED_API, 200, "text/html", challenge));
-        fixture.exchanges.push(get("https://rumble.com/embed/v6pkg2n/", 200, "text/html", &embed_page));
+        fixture
+            .exchanges
+            .push(get(EMBED_API, 200, "text/html", challenge));
+        fixture.exchanges.push(get(
+            "https://rumble.com/embed/v6pkg2n/",
+            200,
+            "text/html",
+            &embed_page,
+        ));
         let resolver = RumbleResolver::new(Http::replay(fixture));
         let resolved = resolver
             .resolve(&Url::parse("https://rumble.com/embed/v6pkg2n/").unwrap())
@@ -701,6 +796,22 @@ mod tests {
         assert!(resolved.variants[0].live);
     }
 
+    #[test]
+    fn the_embed_page_literal_ends_in_the_players_own_members() {
+        // The literal as the embed page assigns it since September 2026: JSON up to the
+        // members that call the page's functions.
+        let mut literal = embed_json().to_string();
+        literal.truncate(literal.len() - 1);
+        let html = format!(
+            r#"<script type="text/javascript">!function(u,a){{var m={{F:0}};(a=u["Rumble"]=u["Rumble"]||function(){{a._.push(arguments)}})._=a._||[],m.f={{}},m.b={{}};m.f["v6pkg2n"]={literal},"viewer_id":"jT6W6D_PTX4",loaded:h()}};if(!m.k){{var b="https://rumble.com",p="/embedJS/u4"}}}}(window);</script>"#
+        );
+        let data = embed_json_in(&html).unwrap();
+        assert_eq!(data["title"], "Channel Update vid");
+        assert_eq!(data["viewer_id"], "jT6W6D_PTX4");
+        assert_eq!(data["ua"]["mp4"]["1080"]["meta"]["h"], 1080);
+        assert!(embed_json_in("<script>var x = {\"ua\": 1};</script>").is_none());
+    }
+
     #[tokio::test]
     async fn listings_and_missing_pages() {
         let listing = r#"<html><head><title>Rumble</title></head><body><h1>Rumble</h1>
@@ -709,10 +820,25 @@ mod tests {
             <div class="videostream thumbnail__grid--item"><a class="videostream__link link" href="/v5abcde-second.html"><h3 class="thumbnail__title">Second</h3></a></div>
           </div></body></html>"#;
         let mut fixture = Fixture::new("rumble", None);
-        fixture.exchanges.push(get("https://rumble.com/c/Rumble/videos", 200, "text/html", listing));
-        fixture.exchanges.push(get("https://rumble.com/c/Rumble/videos?page=2", 404, "text/html", "<html>404</html>"));
+        fixture.exchanges.push(get(
+            "https://rumble.com/c/Rumble/videos",
+            200,
+            "text/html",
+            listing,
+        ));
+        fixture.exchanges.push(get(
+            "https://rumble.com/c/Rumble/videos?page=2",
+            404,
+            "text/html",
+            "<html>404</html>",
+        ));
         fixture.exchanges.push(get("https://rumble.com/c/Empty/videos", 200, "text/html", "<html><body><h1>Empty</h1><section class=\"channel-listing__container\"></section></body></html>"));
-        fixture.exchanges.push(get("https://rumble.com/v5qvf5-this-is-rumble.html", 404, "text/html", "<html><title>404 Video not found</title></html>"));
+        fixture.exchanges.push(get(
+            "https://rumble.com/v5qvf5-this-is-rumble.html",
+            404,
+            "text/html",
+            "<html><title>404 Video not found</title></html>",
+        ));
         let resolver = RumbleResolver::new(Http::replay(fixture));
         let playlist = match resolver
             .resolve(&Url::parse("https://rumble.com/c/Rumble").unwrap())

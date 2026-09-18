@@ -53,7 +53,9 @@ pub fn drm_system(scheme_id_uri: &str, value: Option<&str>) -> Option<String> {
     if scheme == "urn:mpeg:dash:mp4protection:2011" {
         // Only says the content is encrypted; the system comes from another element,
         // and when none does the content is at least CENC locked.
-        return value.map(|v| format!("cenc ({})", v.trim())).or(Some("cenc".into()));
+        return value
+            .map(|v| format!("cenc ({})", v.trim()))
+            .or(Some("cenc".into()));
     }
     let uuid = scheme.strip_prefix("urn:uuid:").unwrap_or(&scheme);
     Some(
@@ -61,7 +63,9 @@ pub fn drm_system(scheme_id_uri: &str, value: Option<&str>) -> Option<String> {
             "edef8ba9-79d6-4ace-a3c8-27dcd51d21ed" => "widevine",
             "9a04f079-9840-4286-ab92-e65be0885f95" => "playready",
             "94ce86fb-07ff-4f43-adb8-93d2fa968ca2" => "fairplay",
-            "e2719d58-a985-b3c9-781a-b030af78d30e" | "1077efec-c0b2-4d02-ace3-3c1e52e2fb4b" => "clearkey",
+            "e2719d58-a985-b3c9-781a-b030af78d30e" | "1077efec-c0b2-4d02-ace3-3c1e52e2fb4b" => {
+                "clearkey"
+            }
             "5e629af5-38da-4063-8977-97ffbd9902d4" => "marlin",
             "adb41c24-2dbf-4a6d-958b-4457c0d27b95" => "nagra",
             "a68129d3-575b-4f1a-9cba-3223846cf7c3" => "videoguard",
@@ -118,7 +122,10 @@ pub fn expand_manifest(
 ) -> Result<Expanded, ResolveError> {
     let mpd = dash_mpd::parse(text)
         .map_err(|e| ResolveError::malformed(url, format!("invalid MPD: {e}")))?;
-    let live = mpd.mpdtype.as_deref().is_some_and(|t| t.eq_ignore_ascii_case("dynamic"));
+    let live = mpd
+        .mpdtype
+        .as_deref()
+        .is_some_and(|t| t.eq_ignore_ascii_case("dynamic"));
     let duration = duration_of(&mpd);
     let mut variants = Vec::new();
     let mut subtitles = Vec::new();
@@ -139,19 +146,24 @@ pub fn expand_manifest(
             parse_codecs(codecs).1
         });
         let audio_bitrate = best_audio.and_then(|(_, rep)| rep.bandwidth);
-        let audio_language = best_audio.and_then(|(set, rep)| rep.lang.clone().or_else(|| set.lang.clone()));
-        for set in period.adaptations.iter().filter(dash_mpd::is_video_adaptation) {
+        let audio_language =
+            best_audio.and_then(|(set, rep)| rep.lang.clone().or_else(|| set.lang.clone()));
+        for set in period
+            .adaptations
+            .iter()
+            .filter(dash_mpd::is_video_adaptation)
+        {
             for representation in &set.representations {
-                let codecs = representation
-                    .codecs
-                    .as_deref()
-                    .or(set.codecs.as_deref());
+                let codecs = representation.codecs.as_deref().or(set.codecs.as_deref());
                 let (video, audio_in_video) = parse_codecs(codecs);
                 let mut v = Variant::new(url.clone(), VariantKind::Dash);
-                v.format_id = representation
-                    .id
-                    .clone()
-                    .map(|id| if period_index == 0 { id } else { format!("p{period_index}-{id}") });
+                v.format_id = representation.id.clone().map(|id| {
+                    if period_index == 0 {
+                        id
+                    } else {
+                        format!("p{period_index}-{id}")
+                    }
+                });
                 v.width = representation.width.or(set.width).map(|w| w as u32);
                 v.height = representation.height.or(set.height).map(|h| h as u32);
                 v.fps = representation
@@ -159,9 +171,13 @@ pub fn expand_manifest(
                     .as_deref()
                     .or(set.frameRate.as_deref())
                     .and_then(parse_rate);
-                v.bitrate = representation
-                    .bandwidth
-                    .map(|b| b + if audio_in_video.is_some() { 0 } else { audio_bitrate.unwrap_or(0) });
+                v.bitrate = representation.bandwidth.map(|b| {
+                    b + if audio_in_video.is_some() {
+                        0
+                    } else {
+                        audio_bitrate.unwrap_or(0)
+                    }
+                });
                 v.codecs = codecs.map(str::to_string);
                 v.video = video.or_else(|| {
                     representation
@@ -171,9 +187,9 @@ pub fn expand_manifest(
                         .filter(|m| m.contains("webm"))
                         .map(|_| VideoCodec::Vp9)
                 });
-                v.audio = audio_in_video.or(audio_codec.clone()).or_else(|| {
-                    (!audio_sets.is_empty()).then_some(AudioCodec::Aac)
-                });
+                v.audio = audio_in_video
+                    .or(audio_codec.clone())
+                    .or_else(|| (!audio_sets.is_empty()).then_some(AudioCodec::Aac));
                 v.container = container_of(
                     representation
                         .mimeType
@@ -322,7 +338,13 @@ mod tests {
     #[test]
     fn representations_become_variants_with_audio_and_subtitles() {
         let url = Url::parse("https://cdn.test/v/manifest.mpd").unwrap();
-        let expanded = expand_manifest(&url, &url, MPD, &[("referer".into(), "https://s.test/".into())]).unwrap();
+        let expanded = expand_manifest(
+            &url,
+            &url,
+            MPD,
+            &[("referer".into(), "https://s.test/".into())],
+        )
+        .unwrap();
         assert_eq!(expanded.variants.len(), 2);
         assert_eq!(expanded.duration, Some(Duration::from_secs_f64(90.5)));
         assert!(!expanded.live);
@@ -340,7 +362,10 @@ mod tests {
         assert_eq!(best.headers[0].0, "referer");
         assert!((expanded.variants[0].fps.unwrap() - 29.97).abs() < 0.01);
         assert_eq!(expanded.subtitles.len(), 1);
-        assert_eq!(expanded.subtitles[0].url.as_str(), "https://cdn.test/v/subs/de.vtt");
+        assert_eq!(
+            expanded.subtitles[0].url.as_str(),
+            "https://cdn.test/v/subs/de.vtt"
+        );
         assert_eq!(expanded.subtitles[0].name.as_deref(), Some("Deutsch"));
         assert_eq!(expanded.subtitles[0].format, SubtitleFormat::Vtt);
     }
@@ -359,9 +384,20 @@ mod tests {
         let expanded = expand_manifest(&url, &url, &locked, &[]).unwrap();
         assert_eq!(expanded.drm.as_deref(), Some("widevine"));
         assert!(expanded.live);
-        assert!(expanded.variants.iter().all(|v| v.drm.as_deref() == Some("widevine") && v.live));
-        assert_eq!(drm_system("urn:uuid:9a04f079-9840-4286-ab92-e65be0885f95", None).as_deref(), Some("playready"));
-        assert_eq!(drm_system("urn:mpeg:dash:mp4protection:2011", Some("cbcs")).as_deref(), Some("cenc (cbcs)"));
+        assert!(
+            expanded
+                .variants
+                .iter()
+                .all(|v| v.drm.as_deref() == Some("widevine") && v.live)
+        );
+        assert_eq!(
+            drm_system("urn:uuid:9a04f079-9840-4286-ab92-e65be0885f95", None).as_deref(),
+            Some("playready")
+        );
+        assert_eq!(
+            drm_system("urn:mpeg:dash:mp4protection:2011", Some("cbcs")).as_deref(),
+            Some("cenc (cbcs)")
+        );
         let broken = expand_manifest(&url, &url, "<MPD", &[]);
         assert!(matches!(broken, Err(ResolveError::Malformed { .. })));
     }
@@ -385,9 +421,15 @@ mod tests {
             },
         });
         let http = Http::replay(fixture);
-        let expanded = expand(&http, &Url::parse("https://cdn.test/v/manifest.mpd").unwrap(), "web", "ua", &[])
-            .await
-            .unwrap();
+        let expanded = expand(
+            &http,
+            &Url::parse("https://cdn.test/v/manifest.mpd").unwrap(),
+            "web",
+            "ua",
+            &[],
+        )
+        .await
+        .unwrap();
         assert_eq!(expanded.variants.len(), 2);
         assert_eq!(expanded.variants[0].kind, VariantKind::Dash);
     }

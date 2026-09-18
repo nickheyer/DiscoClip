@@ -89,7 +89,8 @@ impl MastodonResolver {
         let mut declined = self.declined.lock().unwrap_or_else(|e| e.into_inner());
         let now = Timestamp::now();
         declined.retain(|_, at| {
-            now.duration_since(*at) < jiff::SignedDuration::try_from(DECLINE_MEMORY).unwrap_or_default()
+            now.duration_since(*at)
+                < jiff::SignedDuration::try_from(DECLINE_MEMORY).unwrap_or_default()
         });
         declined.contains_key(host)
     }
@@ -119,7 +120,10 @@ impl MastodonResolver {
             .send()
             .await?;
         let code = response.status.as_u16();
-        let content_type = response.content_type().map(str::to_owned).unwrap_or_default();
+        let content_type = response
+            .content_type()
+            .map(str::to_owned)
+            .unwrap_or_default();
         let text = response.text(MAX_PAGE).await?;
         let json: Option<Value> = serde_json::from_str(&text).ok();
         let Some(json) = json.filter(|j| j.is_object()) else {
@@ -265,7 +269,12 @@ fn base_of(status: &Value, status_ref: &StatusRef) -> Resolved {
     resolved.webpage_url = status["url"]
         .as_str()
         .and_then(|u| Url::parse(u).ok())
-        .or_else(|| status_ref.server.join(&format!("@{acct}/{}", status_ref.id)).ok());
+        .or_else(|| {
+            status_ref
+                .server
+                .join(&format!("@{acct}/{}", status_ref.id))
+                .ok()
+        });
     resolved.age_limit = status["sensitive"].as_bool().filter(|s| *s).map(|_| 18);
     resolved
 }
@@ -300,14 +309,16 @@ impl Resolver for MastodonResolver {
         }
         let attachments = video_attachments(&status);
         if attachments.is_empty() {
-            return Err(if status["media_attachments"]
-                .as_array()
-                .is_some_and(|a| !a.is_empty())
-            {
-                ResolveError::unavailable(url, "the post's attachments are not videos")
-            } else {
-                ResolveError::NotFound(url.clone())
-            });
+            return Err(
+                if status["media_attachments"]
+                    .as_array()
+                    .is_some_and(|a| !a.is_empty())
+                {
+                    ResolveError::unavailable(url, "the post's attachments are not videos")
+                } else {
+                    ResolveError::NotFound(url.clone())
+                },
+            );
         }
         let base = base_of(&status, &status_ref);
         if attachments.len() > 1 {
@@ -322,7 +333,9 @@ impl Resolver for MastodonResolver {
                         title: attachment["description"]
                             .as_str()
                             .and_then(clean_title)
-                            .or_else(|| base.title.as_ref().map(|t| format!("{t} ({})", index + 1))),
+                            .or_else(|| {
+                                base.title.as_ref().map(|t| format!("{t} ({})", index + 1))
+                            }),
                         duration: attachment["meta"]["original"]["duration"]
                             .as_f64()
                             .filter(|d| *d > 0.0)
@@ -456,7 +469,8 @@ mod tests {
             &status(vec![gifv()]).to_string(),
         ));
         let resolver = MastodonResolver::new(Http::replay(fixture));
-        let url = Url::parse("https://mastodon.social/@sonic_hedgeblog/117256980960208736").unwrap();
+        let url =
+            Url::parse("https://mastodon.social/@sonic_hedgeblog/117256980960208736").unwrap();
         assert!(resolver.matches(&url));
         let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
         assert_eq!(resolved.id.as_deref(), Some("117256980960208736"));
@@ -495,7 +509,8 @@ mod tests {
             &status(vec![gifv(), second]).to_string(),
         ));
         let resolver = MastodonResolver::new(Http::replay(fixture));
-        let url = Url::parse("https://mastodon.social/@sonic_hedgeblog/117256980960208736").unwrap();
+        let url =
+            Url::parse("https://mastodon.social/@sonic_hedgeblog/117256980960208736").unwrap();
         let playlist = match resolver.resolve(&url).await.unwrap() {
             Resolution::Playlist(playlist) => playlist,
             other => panic!("expected a playlist, got {other:?}"),
@@ -514,7 +529,10 @@ mod tests {
             .unwrap();
         assert_eq!(second.id.as_deref(), Some("117256980960208736-2"));
         assert_eq!(second.title.as_deref(), Some("Second clip"));
-        assert_eq!(second.variants[0].url.as_str(), "https://files.mastodon.social/second.mp4");
+        assert_eq!(
+            second.variants[0].url.as_str(),
+            "https://files.mastodon.social/second.mp4"
+        );
         assert_eq!(second.variants[0].audio, Some(AudioCodec::Aac));
     }
 
@@ -548,25 +566,41 @@ mod tests {
         let resolver = MastodonResolver::new(Http::replay(fixture));
         let url = |s: &str| Url::parse(s).unwrap();
         assert!(matches!(
-            resolver.resolve(&url("https://blog.example/@someone/123456789")).await.unwrap_err(),
+            resolver
+                .resolve(&url("https://blog.example/@someone/123456789"))
+                .await
+                .unwrap_err(),
             ResolveError::Unsupported(_)
         ));
         // Remembered: no request is made the second time.
         assert!(matches!(
-            resolver.resolve(&url("https://blog.example/@someone/123456789")).await.unwrap_err(),
+            resolver
+                .resolve(&url("https://blog.example/@someone/123456789"))
+                .await
+                .unwrap_err(),
             ResolveError::Unsupported(_)
         ));
         let missing = resolver
-            .resolve(&url("https://pixelfed.social/p/TiredMa1d/1004264982774109168"))
+            .resolve(&url(
+                "https://pixelfed.social/p/TiredMa1d/1004264982774109168",
+            ))
             .await
             .unwrap_err();
         assert!(matches!(missing, ResolveError::NotFound(_)), "{missing}");
         assert!(matches!(
-            resolver.resolve(&url("https://mastodon.social/@x/999999999999999999")).await.unwrap_err(),
+            resolver
+                .resolve(&url("https://mastodon.social/@x/999999999999999999"))
+                .await
+                .unwrap_err(),
             ResolveError::NotFound(_)
         ));
         assert!(matches!(
-            resolver.resolve(&url("https://mastodon.social/@sonic_hedgeblog/117256980960208736")).await.unwrap_err(),
+            resolver
+                .resolve(&url(
+                    "https://mastodon.social/@sonic_hedgeblog/117256980960208736"
+                ))
+                .await
+                .unwrap_err(),
             ResolveError::NotFound(_)
         ));
     }

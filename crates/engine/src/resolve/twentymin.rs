@@ -86,7 +86,11 @@ pub fn number_of(object: &Value) -> Option<String> {
     let content = object["contentUrl"].as_str()?;
     let name = content.rsplit('/').next()?;
     let stem = name.strip_suffix(".mp4")?;
-    video_number(stem.strip_suffix('h').or_else(|| stem.strip_suffix('p')).unwrap_or(stem))
+    video_number(
+        stem.strip_suffix('h')
+            .or_else(|| stem.strip_suffix('p'))
+            .unwrap_or(stem),
+    )
 }
 
 /// The video records a page's structured data carries, with their numbers.
@@ -236,8 +240,10 @@ impl TwentyMinResolver {
         let (videos, title, page_size) = {
             let page = Page::parse(&html, &fetched.url);
             let size = match (
-                page.meta("og:video:width").and_then(|w| w.parse::<u32>().ok()),
-                page.meta("og:video:height").and_then(|h| h.parse::<u32>().ok()),
+                page.meta("og:video:width")
+                    .and_then(|w| w.parse::<u32>().ok()),
+                page.meta("og:video:height")
+                    .and_then(|h| h.parse::<u32>().ok()),
             ) {
                 (Some(w), Some(h)) if w > 0 && h > 0 => Some((w, h)),
                 _ => None,
@@ -247,8 +253,14 @@ impl TwentyMinResolver {
         match videos.as_slice() {
             [] => Err(ResolveError::NotFound(link.clone())),
             [(number, record)] => {
-                self.video(number, Some(record), Some(fetched.url.clone()), page_size, link)
-                    .await
+                self.video(
+                    number,
+                    Some(record),
+                    Some(fetched.url.clone()),
+                    page_size,
+                    link,
+                )
+                .await
             }
             many => Ok(Resolution::Playlist(Playlist {
                 resolver: PLATFORM.to_string(),
@@ -333,7 +345,9 @@ mod tests {
             Some(Link::Page("/fr/video/un-titre-123".into()))
         );
         assert_eq!(
-            link("https://www.20min.ch/story/so-kommen-sie-bei-eis-und-schnee-sicher-an-557858045456"),
+            link(
+                "https://www.20min.ch/story/so-kommen-sie-bei-eis-und-schnee-sicher-an-557858045456"
+            ),
             Some(Link::Page(
                 "/story/so-kommen-sie-bei-eis-und-schnee-sicher-an-557858045456".into()
             ))
@@ -343,7 +357,10 @@ mod tests {
         assert_eq!(link("https://www.20min.ch/video"), None);
         assert_eq!(link("https://www.20min.ch/"), None);
         assert_eq!(link("https://20min.ch.evil.test/video/x-1"), None);
-        assert_eq!(player_url("uv1").as_str(), "https://videoplayer.20min.ch/?videoId=uv1");
+        assert_eq!(
+            player_url("uv1").as_str(),
+            "https://videoplayer.20min.ch/?videoId=uv1"
+        );
     }
 
     #[test]
@@ -359,7 +376,12 @@ mod tests {
     async fn video_pages_resolve_to_the_playlist_and_files() {
         let resolver = resolver();
         assert!(resolver.matches(&url(VIDEO)));
-        let resolved = resolver.resolve(&url(VIDEO)).await.unwrap().media().unwrap();
+        let resolved = resolver
+            .resolve(&url(VIDEO))
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
         assert_eq!(resolved.id.as_deref(), Some("uv10924877"));
         assert_eq!(
             resolved.title.as_deref(),
@@ -370,7 +392,11 @@ mod tests {
         assert!(resolved.uploaded_at.is_some());
         assert!(resolved.thumbnail.is_some());
         assert_eq!(resolved.webpage_url.as_ref().map(Url::as_str), Some(VIDEO));
-        let hls: Vec<&Variant> = resolved.variants.iter().filter(|v| v.kind == VariantKind::Hls).collect();
+        let hls: Vec<&Variant> = resolved
+            .variants
+            .iter()
+            .filter(|v| v.kind == VariantKind::Hls)
+            .collect();
         assert_eq!(hls.len(), 2, "{:?}", resolved.variants);
         assert!(hls.iter().all(|v| v.bitrate.is_some()));
         let files: Vec<(&str, &str, Option<u64>)> = resolved
@@ -381,16 +407,35 @@ mod tests {
             .collect();
         assert_eq!(files.len(), 2);
         assert_eq!(files[0].0, "high");
-        assert_eq!(files[0].1, "https://unityvideo.appuser.ch/video/uv10924877h.mp4");
-        assert_eq!(files[1].1, "https://unityvideo.appuser.ch/video/uv10924877.mp4");
+        assert_eq!(
+            files[0].1,
+            "https://unityvideo.appuser.ch/video/uv10924877h.mp4"
+        );
+        assert_eq!(
+            files[1].1,
+            "https://unityvideo.appuser.ch/video/uv10924877.mp4"
+        );
         assert!(files.iter().all(|(_, _, size)| size.is_some_and(|s| s > 0)));
-        assert_eq!(resolved.variants.iter().find(|v| v.label.as_deref() == Some("high")).unwrap().width, Some(1280));
+        assert_eq!(
+            resolved
+                .variants
+                .iter()
+                .find(|v| v.label.as_deref() == Some("high"))
+                .unwrap()
+                .width,
+            Some(1280)
+        );
     }
 
     #[tokio::test]
     async fn player_links_resolve_by_number_alone() {
         let resolver = resolver();
-        let resolved = resolver.resolve(&url(PLAYER_LINK)).await.unwrap().media().unwrap();
+        let resolved = resolver
+            .resolve(&url(PLAYER_LINK))
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
         assert_eq!(resolved.id.as_deref(), Some("uv10924877"));
         assert_eq!(resolved.title.as_deref(), Some("uv10924877"));
         assert_eq!(

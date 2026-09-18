@@ -97,7 +97,8 @@ impl Resolver for DbtvResolver {
                 let mut resolved = jwplayer::media(&self.http, PLATFORM, &id, url).await?;
                 resolved.id = Some(id);
                 resolved.uploader = Some("Dagbladet".into());
-                resolved.uploader_url = Some(Url::parse("https://www.dagbladet.no/video/").expect("valid"));
+                resolved.uploader_url =
+                    Some(Url::parse("https://www.dagbladet.no/video/").expect("valid"));
                 resolved.webpage_url = Some(url.clone());
                 Ok(Resolution::from(resolved))
             }
@@ -107,8 +108,8 @@ impl Resolver for DbtvResolver {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::VariantKind;
+    use super::*;
     use crate::http::Fixture;
 
     const VIDEO: &str = "https://www.dagbladet.no/video/ranet-bank-med-chilipulver/J12GzewM";
@@ -138,7 +139,10 @@ mod tests {
             })
         );
         assert_eq!(link("https://www.dagbladet.no/video/"), None);
-        assert_eq!(link("https://www.dagbladet.no/video/category/underholdning"), None);
+        assert_eq!(
+            link("https://www.dagbladet.no/video/category/underholdning"),
+            None
+        );
         assert_eq!(
             link("https://www.dagbladet.no/video/PynxJnNWChE/"),
             Some(Link {
@@ -160,12 +164,28 @@ mod tests {
         let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
         assert_eq!(resolved.resolver, PLATFORM);
         assert_eq!(resolved.id.as_deref(), Some("J12GzewM"));
-        assert_eq!(resolved.title.as_deref(), Some("Ranet bank med chilipulver"));
+        assert_eq!(
+            resolved.title.as_deref(),
+            Some("Ranet bank med chilipulver")
+        );
         assert_eq!(resolved.webpage_url.as_ref(), Some(&url));
         assert!(resolved.duration.is_some());
-        assert!(resolved.variants.len() > 1, "the HLS manifest expands into its streams");
-        assert!(resolved.variants.iter().all(|v| v.kind == VariantKind::Hls && v.height.is_some()));
-        assert!(resolved.variants.iter().any(|v| v.height.is_some_and(|h| h >= 1080)));
+        assert!(
+            resolved.variants.len() > 1,
+            "the HLS manifest expands into its streams"
+        );
+        assert!(
+            resolved
+                .variants
+                .iter()
+                .all(|v| v.kind == VariantKind::Hls && v.height.is_some())
+        );
+        assert!(
+            resolved
+                .variants
+                .iter()
+                .any(|v| v.height.is_some_and(|h| h >= 1080))
+        );
         let youtube = Url::parse("https://www.dagbladet.no/video/PynxJnNWChE/").unwrap();
         assert!(matches!(
             resolver.resolve(&youtube).await.unwrap_err(),

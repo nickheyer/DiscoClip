@@ -57,8 +57,9 @@ static RE_IFRAME: LazyLock<Regex> = LazyLock::new(|| {
         .unwrap()
 });
 /// `<video …>` or `<video-js …>` elements, whose attributes name the video.
-static RE_VIDEO_TAG: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?is)<video(?:-js)?\s+[^>]*\bdata-video-id\s*=\s*[^>]*>").unwrap());
+static RE_VIDEO_TAG: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?is)<video(?:-js)?\s+[^>]*\bdata-video-id\s*=\s*[^>]*>").unwrap()
+});
 /// `<script src="//players.brightcove.net/{account}/{player}_{embed}/index.min.js">`.
 static RE_PLAYER_SCRIPT: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"(?i)<script[^>]+src=["'](?:https?:)?//players\.brightcove\.net/(\d+)/([^/_"']+)_([^/"']+)/index(?:\.min)?\.js"#)
@@ -145,12 +146,20 @@ pub fn embed_url(account: &str, player: &str, video: &str) -> Url {
 }
 
 /// A player embed link with its build and the page it was found on.
-fn player_url(account: &str, player: &str, embed: &str, key: &str, id: &str, referrer: Option<&Url>) -> Url {
+fn player_url(
+    account: &str,
+    player: &str,
+    embed: &str,
+    key: &str,
+    id: &str,
+    referrer: Option<&Url>,
+) -> Url {
     let mut url =
         Url::parse(&format!("{PLAYERS}{account}/{player}_{embed}/index.html")).expect("valid");
     url.query_pairs_mut().append_pair(key, id);
     if let Some(referrer) = referrer {
-        url.query_pairs_mut().append_pair("referrer", referrer.as_str());
+        url.query_pairs_mut()
+            .append_pair("referrer", referrer.as_str());
     }
     url
 }
@@ -206,7 +215,8 @@ pub fn parse_legacy(url: &Url) -> Option<Legacy> {
         "brightcove" => url.as_str().trim_start_matches("brightcove:").to_string(),
         "http" | "https" => {
             let host = url.host_str()?.to_ascii_lowercase();
-            if !(host.ends_with("brightcove.com") && (url.path().contains("/services/") || url.path().contains("/viewer")))
+            if !(host.ends_with("brightcove.com")
+                && (url.path().contains("/services/") || url.path().contains("/viewer")))
                 && host != "bcove.me"
             {
                 return None;
@@ -281,7 +291,8 @@ pub fn embeds_in(page: &Page) -> Vec<Url> {
             continue;
         };
         if parse_link(&url).is_some() {
-            url.query_pairs_mut().append_pair("referrer", page.url().as_str());
+            url.query_pairs_mut()
+                .append_pair("referrer", page.url().as_str());
             push(url);
         }
     }
@@ -326,13 +337,23 @@ pub fn embeds_in(page: &Page) -> Vec<Url> {
         if !RE_PLAYER.is_match(&player) || !RE_PLAYER.is_match(&embed) {
             continue;
         }
-        push(player_url(&account, &player, &embed, "videoId", &video, Some(page.url())));
+        push(player_url(
+            &account,
+            &player,
+            &embed,
+            "videoId",
+            &video,
+            Some(page.url()),
+        ));
     }
-    let selector = Selector::parse("video[data-playlist-id], video-js[data-playlist-id]").expect("valid");
+    let selector =
+        Selector::parse("video[data-playlist-id], video-js[data-playlist-id]").expect("valid");
     for element in page.document().select(&selector) {
         let attrs = element.value();
         let (Some(account), Some(playlist)) = (
-            attrs.attr("data-account").filter(|s| RE_ACCOUNT.is_match(s)),
+            attrs
+                .attr("data-account")
+                .filter(|s| RE_ACCOUNT.is_match(s)),
             attrs.attr("data-playlist-id").filter(|s| !s.is_empty()),
         ) else {
             continue;
@@ -340,12 +361,21 @@ pub fn embeds_in(page: &Page) -> Vec<Url> {
         let player = attrs.attr("data-player").unwrap_or("default");
         let embed = attrs.attr("data-embed").unwrap_or("default");
         if RE_PLAYER.is_match(player) && RE_PLAYER.is_match(embed) {
-            push(player_url(account, player, embed, "playlistId", playlist, Some(page.url())));
+            push(player_url(
+                account,
+                player,
+                embed,
+                "playlistId",
+                playlist,
+                Some(page.url()),
+            ));
         }
     }
     for caps in RE_META_LEGACY.captures_iter(html) {
         let content = util::html_unescape(&caps[1]);
-        if ["playerKey", "videoId", "idVideo"].iter().any(|k| content.contains(k))
+        if ["playerKey", "videoId", "idVideo"]
+            .iter()
+            .any(|k| content.contains(k))
             && let Ok(url) = Url::parse(&content)
             && parse_legacy(&url).is_some()
         {
@@ -423,7 +453,9 @@ fn container_of(ext: &str, container: Option<&str>) -> Option<Container> {
         "webm" => Some(Container::Webm),
         "flv" => Some(Container::Flv),
         "mov" => Some(Container::Mov),
-        other => Container::from_extension(other).or_else(|| Some(Container::Other(other.to_string()))),
+        other => {
+            Container::from_extension(other).or_else(|| Some(Container::Other(other.to_string())))
+        }
     }
 }
 
@@ -452,7 +484,10 @@ pub fn variants_of(video: &Value) -> Vec<Variant> {
             VariantKind::Hls
         } else if is_dash_type(&mime) || ext == "mpd" {
             VariantKind::Dash
-        } else if (is_ism_type(&mime) && mime != "text/xml" && mime != "application/xml") || ext == "ism" || ext == "isml" {
+        } else if (is_ism_type(&mime) && mime != "text/xml" && mime != "application/xml")
+            || ext == "ism"
+            || ext == "isml"
+        {
             VariantKind::Ism
         } else if src.is_some() {
             VariantKind::File
@@ -463,7 +498,9 @@ pub fn variants_of(video: &Value) -> Vec<Variant> {
             (Some(url), VariantKind::Rtmp) => url.clone(),
             (Some(url), _) => url.clone(),
             (None, _) => {
-                let (Some(app), Some(stream)) = (source["app_name"].as_str(), source["stream_name"].as_str()) else {
+                let (Some(app), Some(stream)) =
+                    (source["app_name"].as_str(), source["stream_name"].as_str())
+                else {
                     continue;
                 };
                 match Url::parse(&format!("{}/{}", app.trim_end_matches('/'), stream)) {
@@ -474,9 +511,9 @@ pub fn variants_of(video: &Value) -> Vec<Variant> {
         };
         if url.scheme() == "http"
             && sources.iter().any(|other| {
-                other["src"]
-                    .as_str()
-                    .is_some_and(|o| o.strip_prefix("https://") == url.as_str().strip_prefix("http://"))
+                other["src"].as_str().is_some_and(|o| {
+                    o.strip_prefix("https://") == url.as_str().strip_prefix("http://")
+                })
             })
         {
             continue;
@@ -490,7 +527,14 @@ pub fn variants_of(video: &Value) -> Vec<Variant> {
         let bitrate = source["avg_bitrate"].as_u64().filter(|b| *b > 0);
         match kind {
             VariantKind::File | VariantKind::Rtmp => {
-                v.container = container_of(if kind == VariantKind::Rtmp { "flv" } else { &ext }, container.as_deref());
+                v.container = container_of(
+                    if kind == VariantKind::Rtmp {
+                        "flv"
+                    } else {
+                        &ext
+                    },
+                    container.as_deref(),
+                );
                 if width == Some(0) && height == Some(0) {
                     v.audio_only = true;
                     v.audio = Some(AudioCodec::Aac);
@@ -600,14 +644,22 @@ impl BrightcoveResolver {
 
     /// The publisher a legacy link's video belongs to: named outright, encoded in the
     /// player's key, or in the key on the player's page.
-    async fn legacy_publisher(&self, legacy: &Legacy, origin: &Url) -> Result<String, ResolveError> {
+    async fn legacy_publisher(
+        &self,
+        legacy: &Legacy,
+        origin: &Url,
+    ) -> Result<String, ResolveError> {
         if let Some(publisher) = &legacy.publisher {
             return Ok(publisher.clone());
         }
         if let Some(publisher) = legacy.player_key.as_deref().and_then(publisher_of_key) {
             return Ok(publisher);
         }
-        let Some(player_id) = legacy.player_id.as_deref().filter(|p| p.chars().all(|c| c.is_ascii_digit())) else {
+        let Some(player_id) = legacy
+            .player_id
+            .as_deref()
+            .filter(|p| p.chars().all(|c| c.is_ascii_digit()))
+        else {
             return Err(ResolveError::unavailable(
                 origin,
                 "the legacy player link names neither a publisher nor a player",
@@ -628,7 +680,9 @@ impl BrightcoveResolver {
         util::search(&RE_PARAM_PLAYER_KEY, &fetched.text())
             .as_deref()
             .and_then(publisher_of_key)
-            .ok_or_else(|| ResolveError::unavailable(origin, "the legacy player page names no publisher"))
+            .ok_or_else(|| {
+                ResolveError::unavailable(origin, "the legacy player page names no publisher")
+            })
     }
 }
 
@@ -645,7 +699,9 @@ pub async fn policy_key(
     if let Ok(fetched) = fetch(http, &config, platform, BROWSER_UA, &[], MAX_PAGE).await
         && fetched.status.is_success()
         && let Ok(config) = fetched.json(origin)
-        && let Some(key) = config["video_cloud"]["policy_key"].as_str().filter(|k| !k.is_empty())
+        && let Some(key) = config["video_cloud"]["policy_key"]
+            .as_str()
+            .filter(|k| !k.is_empty())
     {
         return Ok(key.to_string());
     }
@@ -656,7 +712,10 @@ pub async fn policy_key(
         404 => {
             return Err(ResolveError::unavailable(
                 origin,
-                format!("the account has no player called {}_{}", link.player, link.embed),
+                format!(
+                    "the account has no player called {}_{}",
+                    link.player, link.embed
+                ),
             ));
         }
         status => {
@@ -694,7 +753,8 @@ async fn playback(
         Content::Video(id) => ("videos", id),
         Content::Playlist(id) => ("playlists", id),
     };
-    let mut api = Url::parse(&format!("{PLAYBACK_API}{}/{resource}/", link.account)).expect("valid");
+    let mut api =
+        Url::parse(&format!("{PLAYBACK_API}{}/{resource}/", link.account)).expect("valid");
     api.path_segments_mut()
         .expect("base URL")
         .pop_if_empty()
@@ -749,7 +809,10 @@ async fn playback(
             }
         }
     }
-    Err(ResolveError::unavailable(origin, "the playback API refused the player's key twice"))
+    Err(ResolveError::unavailable(
+        origin,
+        "the playback API refused the player's key twice",
+    ))
 }
 
 /// The video `link` names, read as `platform` from the Playback API with the player's
@@ -830,7 +893,12 @@ impl Resolver for BrightcoveResolver {
         Platform {
             id: PLATFORM,
             name: "Brightcove",
-            hosts: &["players.brightcove.net", "c.brightcove.com", "link.brightcove.com", "bcove.me"],
+            hosts: &[
+                "players.brightcove.net",
+                "c.brightcove.com",
+                "link.brightcove.com",
+                "bcove.me",
+            ],
             features: &[
                 "player embeds",
                 "legacy players",
@@ -856,15 +924,19 @@ impl Resolver for BrightcoveResolver {
         let link = match parse_link(url) {
             Some(link) => link,
             None => {
-                let legacy = parse_legacy(url).ok_or_else(|| ResolveError::NotFound(url.clone()))?;
+                let legacy =
+                    parse_legacy(url).ok_or_else(|| ResolveError::NotFound(url.clone()))?;
                 let publisher = self.legacy_publisher(&legacy, url).await?;
-                let mut link = Link::new(publisher, "default", Content::Video(legacy.video.clone()));
+                let mut link =
+                    Link::new(publisher, "default", Content::Video(legacy.video.clone()));
                 link.referrer = legacy.referrer.clone();
                 link
             }
         };
         match &link.content {
-            Content::Video(_) => Ok(Resolution::from(media(&self.http, PLATFORM, &link, url).await?)),
+            Content::Video(_) => Ok(Resolution::from(
+                media(&self.http, PLATFORM, &link, url).await?,
+            )),
             Content::Playlist(id) => {
                 let key = policy_key(&self.http, PLATFORM, &link, url).await?;
                 let body = playback(&self.http, PLATFORM, &link, &key, url).await?;
@@ -940,7 +1012,11 @@ mod tests {
             link(
                 "https://players.brightcove.net/1752604059001/default_default/index.html?videoId=4457254747001"
             ),
-            Some(Link::new("1752604059001", "default", Content::Video("4457254747001".into())))
+            Some(Link::new(
+                "1752604059001",
+                "default",
+                Content::Video("4457254747001".into())
+            ))
         );
         assert_eq!(
             link("https://players.brightcove.net/929656772001/e41d32dc-ec74-459e-a845-6c69f7b724ea_default/index.html?videoId=ref:myref").unwrap().content,
@@ -1069,24 +1145,39 @@ mod tests {
         let by_key = legacy("http://link.brightcove.com/services/player/bcpid756015033001?bckey=AQ~~,AAAApYJi_Ck~,GxhXCegT1Dp39ilhXuxMJxasUhVNZiil&bctid=2878862109001").unwrap();
         assert_eq!(by_key.video, "2878862109001");
         assert_eq!(by_key.player_id.as_deref(), Some("756015033001"));
-        assert_eq!(publisher_of_key(by_key.player_key.as_deref().unwrap()).as_deref(), Some("710857129001"));
+        assert_eq!(
+            publisher_of_key(by_key.player_key.as_deref().unwrap()).as_deref(),
+            Some("710857129001")
+        );
         let by_player = legacy("http://c.brightcove.com/services/viewer/htmlFederated?playerID=1654948606001&flashID=myExperience&%40videoPlayer=2371591881001").unwrap();
         assert_eq!(by_player.video, "2371591881001");
         assert_eq!(by_player.player_id.as_deref(), Some("1654948606001"));
         assert_eq!(by_player.player_key, None);
         let by_reference = legacy("http://c.brightcove.com/services/viewer/htmlFederated?%40videoPlayer=ref%3Aevent-stream-356&linkBaseURL=http%3A%2F%2Fwww.redbull.com%2Fen%2Fbike%2Fvideos%2F1331655630249%2Freplay&playerKey=AQ%7E%7E%2CAAAApYJ7UqE%7E%2Cxqr_zXk0I-zzNndy8NlHogrCb5QdyZRf&playerID=1398061561001").unwrap();
         assert_eq!(by_reference.video, "ref:event-stream-356");
-        assert_eq!(by_reference.referrer.as_ref().unwrap().host_str(), Some("www.redbull.com"));
-        assert_eq!(publisher_of_key(by_reference.player_key.as_deref().unwrap()).as_deref(), Some("710858724001"));
+        assert_eq!(
+            by_reference.referrer.as_ref().unwrap().host_str(),
+            Some("www.redbull.com")
+        );
+        assert_eq!(
+            publisher_of_key(by_reference.player_key.as_deref().unwrap()).as_deref(),
+            Some("710858724001")
+        );
         let by_publisher = legacy("http://c.brightcove.com/services/viewer/federated_f9?&playerID=1265504713001&publisherID=AQ%7E%7E%2CAAABBzUwv1E%7E%2CxP-xFHVUstiMFlNYfvF4G9yFnNaqCw_9&videoID=2750934548001").unwrap();
         assert_eq!(by_publisher.video, "2750934548001");
-        assert_eq!(publisher_of_key("AQ~~,AAABmA9XpXk~,-Kp7jNgisre1fG5OdqpAFUTcs0lP_ZoL").as_deref(), Some("1752604059001"));
+        assert_eq!(
+            publisher_of_key("AQ~~,AAABmA9XpXk~,-Kp7jNgisre1fG5OdqpAFUTcs0lP_ZoL").as_deref(),
+            Some("1752604059001")
+        );
         assert!(legacy("http://c.brightcove.com/services/viewer/htmlFederated?playerID=3550052898001&playerKey=AQ%7E%7E%2CAAABmA9XpXk%7E%2C-Kp7jNgisre1fG5OdqpAFUTcs0lP_ZoL").is_none(), "no video named");
         assert!(legacy("https://example.com/services/viewer?videoId=1").is_none());
         let embed = parse_link(&Url::parse("https://players.brightcove.net/929656772001/abc_myembed/index.html?videoId=1&referrer=https%3A%2F%2Fexample.com%2Fpage").unwrap()).unwrap();
         assert_eq!(embed.player, "abc");
         assert_eq!(embed.embed, "myembed");
-        assert_eq!(embed.referrer.as_ref().unwrap().as_str(), "https://example.com/page");
+        assert_eq!(
+            embed.referrer.as_ref().unwrap().as_str(),
+            "https://example.com/page"
+        );
     }
 
     #[test]
@@ -1106,14 +1197,48 @@ mod tests {
         let found: Vec<String> = embeds_in(&page).iter().map(|u| u.to_string()).collect();
         assert_eq!(found.len(), 7, "{found:?}");
         let has = |needle: &str| found.iter().any(|u| u.contains(needle));
-        assert!(has("https://players.brightcove.net/1752604059001/default_default/index.html?videoId=4457254747001&referrer="), "{found:?}");
-        assert!(has("https://players.brightcove.net/3910869709001/default_default/index.html?videoId=5636927002001&referrer="), "{found:?}");
-        assert!(has("https://players.brightcove.net/4463156585001/rJ7KKq2c_default/index.html?videoId=4463156585001&referrer="), "{found:?}");
-        assert!(has("htmlFederated?playerID=1654948606001&%40videoPlayer=2371591881001&playerKey="), "{found:?}");
-        assert!(has("playerID=3550052898001&playerKey=AQ") && has("%40videoPlayer=4457254747001"), "{found:?}");
-        assert!(has("https://c.brightcove.com/services/viewer/htmlFederated?playerID=1&"), "{found:?}");
-        assert!(has("https://link.brightcove.com/services/player/bcpid756015033001?bctid=2878862109001"), "{found:?}");
-        assert!(found.iter().all(|u| parse_link(&Url::parse(u).unwrap()).is_some() || parse_legacy(&Url::parse(u).unwrap()).is_some()));
+        assert!(
+            has(
+                "https://players.brightcove.net/1752604059001/default_default/index.html?videoId=4457254747001&referrer="
+            ),
+            "{found:?}"
+        );
+        assert!(
+            has(
+                "https://players.brightcove.net/3910869709001/default_default/index.html?videoId=5636927002001&referrer="
+            ),
+            "{found:?}"
+        );
+        assert!(
+            has(
+                "https://players.brightcove.net/4463156585001/rJ7KKq2c_default/index.html?videoId=4463156585001&referrer="
+            ),
+            "{found:?}"
+        );
+        assert!(
+            has("htmlFederated?playerID=1654948606001&%40videoPlayer=2371591881001&playerKey="),
+            "{found:?}"
+        );
+        assert!(
+            has("playerID=3550052898001&playerKey=AQ") && has("%40videoPlayer=4457254747001"),
+            "{found:?}"
+        );
+        assert!(
+            has("https://c.brightcove.com/services/viewer/htmlFederated?playerID=1&"),
+            "{found:?}"
+        );
+        assert!(
+            has(
+                "https://link.brightcove.com/services/player/bcpid756015033001?bctid=2878862109001"
+            ),
+            "{found:?}"
+        );
+        assert!(
+            found
+                .iter()
+                .all(|u| parse_link(&Url::parse(u).unwrap()).is_some()
+                    || parse_legacy(&Url::parse(u).unwrap()).is_some())
+        );
     }
 
     #[test]
@@ -1131,14 +1256,31 @@ mod tests {
             {"src": "https://h/d.wvm", "container": "WVM", "width": 640, "height": 360}
         ]});
         let variants = variants_of(&video);
-        let ids: Vec<&str> = variants.iter().filter_map(|v| v.format_id.as_deref()).collect();
+        let ids: Vec<&str> = variants
+            .iter()
+            .filter_map(|v| v.format_id.as_deref())
+            .collect();
         assert_eq!(
             ids,
-            vec!["hls-v4", "dash", "ism", "http-500k-360p", "http-streaming-720p", "http-128k", "http-1080p", "rtmp-480p", "http-360p"]
+            vec![
+                "hls-v4",
+                "dash",
+                "ism",
+                "http-500k-360p",
+                "http-streaming-720p",
+                "http-128k",
+                "http-1080p",
+                "rtmp-480p",
+                "http-360p"
+            ]
         );
         assert_eq!(variants[2].kind, VariantKind::Ism);
         assert_eq!(variants[2].drm.as_deref(), Some("playready"));
-        assert_eq!(variants[3].url.as_str(), "https://h/b.mp4", "the HTTPS copy stands for both");
+        assert_eq!(
+            variants[3].url.as_str(),
+            "https://h/b.mp4",
+            "the HTTPS copy stands for both"
+        );
         assert!(variants[5].audio_only);
         assert_eq!(variants[6].video, Some(VideoCodec::Vp9));
         assert_eq!(variants[6].container, Some(Container::Webm));

@@ -20,9 +20,8 @@ const SITE: &str = "https://www.aparat.com/";
 const API: &str = "https://www.aparat.com/api/fa/v1/video/video/show/videohash/";
 
 /// `/v/{hash}` or `/video/video/embed/videohash/{hash}`.
-static RE_PATH: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^/(?:v/|video/video/embed/videohash/)([a-zA-Z0-9]+)").unwrap()
-});
+static RE_PATH: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^/(?:v/|video/video/embed/videohash/)([a-zA-Z0-9]+)").unwrap());
 static RE_HEIGHT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(\d+)[pP]").unwrap());
 
 pub fn video_id(url: &Url) -> Option<String> {
@@ -239,7 +238,10 @@ mod tests {
         assert_eq!(resolved.title.as_deref(), Some("تیم گلکسی 11 - زومیت"));
         assert_eq!(resolved.uploader.as_deref(), Some("zoomit"));
         assert_eq!(resolved.duration, Some(Duration::from_secs(231)));
-        assert_eq!(resolved.uploaded_at.map(|t| t.as_second()), Some(1387394820));
+        assert_eq!(
+            resolved.uploaded_at.map(|t| t.as_second()),
+            Some(1387394820)
+        );
         assert_eq!(resolved.variants.len(), 3);
         assert_eq!(resolved.variants[0].kind, VariantKind::Hls);
         assert_eq!(resolved.variants[0].height, Some(352));

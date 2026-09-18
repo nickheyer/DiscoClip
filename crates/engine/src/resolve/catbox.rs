@@ -17,7 +17,12 @@ use crate::http::{BROWSER_UA, Http};
 use crate::media::{AudioCodec, Container, VideoCodec};
 
 pub const PLATFORM: &str = "catbox";
-const FILE_HOSTS: [&str; 4] = ["files.catbox.moe", "litter.catbox.moe", "de.catbox.moe", "litterbox.catbox.moe"];
+const FILE_HOSTS: [&str; 4] = [
+    "files.catbox.moe",
+    "litter.catbox.moe",
+    "de.catbox.moe",
+    "litterbox.catbox.moe",
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Link {
@@ -53,7 +58,9 @@ pub fn parse_link(url: &Url) -> Option<Link> {
     None
 }
 
-const AUDIO_EXTENSIONS: &[&str] = &["mp3", "ogg", "oga", "opus", "flac", "m4a", "wav", "aac", "wma", "aiff"];
+const AUDIO_EXTENSIONS: &[&str] = &[
+    "mp3", "ogg", "oga", "opus", "flac", "m4a", "wav", "aac", "wma", "aiff",
+];
 
 /// The container a file name's extension names: a video container, or an audio one.
 fn media_container(name: &str) -> Option<Container> {
@@ -116,21 +123,32 @@ impl CatboxResolver {
         v.container = Some(container.clone());
         if is_audio_name(&name) {
             v.audio_only = true;
-            v.audio = Some(match name.rsplit('.').next().map(|e| e.to_ascii_lowercase()).as_deref() {
-                Some("mp3") => AudioCodec::Mp3,
-                Some("m4a") | Some("aac") => AudioCodec::Aac,
-                Some("ogg") | Some("oga") => AudioCodec::Vorbis,
-                Some("opus") => AudioCodec::Opus,
-                Some(other) => AudioCodec::Other(other.to_string()),
-                None => AudioCodec::Other("audio".to_string()),
-            });
+            v.audio = Some(
+                match name
+                    .rsplit('.')
+                    .next()
+                    .map(|e| e.to_ascii_lowercase())
+                    .as_deref()
+                {
+                    Some("mp3") => AudioCodec::Mp3,
+                    Some("m4a") | Some("aac") => AudioCodec::Aac,
+                    Some("ogg") | Some("oga") => AudioCodec::Vorbis,
+                    Some("opus") => AudioCodec::Opus,
+                    Some(other) => AudioCodec::Other(other.to_string()),
+                    None => AudioCodec::Other("audio".to_string()),
+                },
+            );
         } else if container == Container::Mp4 {
             v.video = Some(VideoCodec::H264);
             v.audio = Some(AudioCodec::Aac);
         }
         v.size = probed.size;
         let mut resolved = Resolved::new(PLATFORM);
-        resolved.id = Some(name.rsplit_once('.').map_or(name.as_str(), |(s, _)| s).to_string());
+        resolved.id = Some(
+            name.rsplit_once('.')
+                .map_or(name.as_str(), |(s, _)| s)
+                .to_string(),
+        );
         resolved.title = resolved.id.clone();
         resolved.webpage_url = Some(file.clone());
         resolved.variants = vec![v];
@@ -165,10 +183,15 @@ impl CatboxResolver {
                 .document()
                 .select(&Selector::parse(".title p").expect("valid"))
                 .find_map(|p| parse_created(&p.text().collect::<String>()));
-            let links = Selector::parse(".imagecontainer a[href], .imagelist a[href]").expect("valid");
+            let links =
+                Selector::parse(".imagecontainer a[href], .imagelist a[href]").expect("valid");
             let mut entries: Vec<PlaylistEntry> = Vec::new();
             for anchor in page.document().select(&links) {
-                let Some(file) = anchor.value().attr("href").and_then(|h| page_url.join(h).ok()) else {
+                let Some(file) = anchor
+                    .value()
+                    .attr("href")
+                    .and_then(|h| page_url.join(h).ok())
+                else {
                     continue;
                 };
                 if !matches!(parse_link(&file), Some(Link::File(_))) {
@@ -180,7 +203,11 @@ impl CatboxResolver {
                 }
                 entries.push(PlaylistEntry {
                     url: file,
-                    title: Some(name.rsplit_once('.').map_or(name.as_str(), |(s, _)| s).to_string()),
+                    title: Some(
+                        name.rsplit_once('.')
+                            .map_or(name.as_str(), |(s, _)| s)
+                            .to_string(),
+                    ),
                     duration: None,
                 });
             }
@@ -222,7 +249,13 @@ impl Resolver for CatboxResolver {
         Platform {
             id: PLATFORM,
             name: "Catbox",
-            hosts: &["catbox.moe", "files.catbox.moe", "de.catbox.moe", "litter.catbox.moe", "litterbox.catbox.moe"],
+            hosts: &[
+                "catbox.moe",
+                "files.catbox.moe",
+                "de.catbox.moe",
+                "litter.catbox.moe",
+                "litterbox.catbox.moe",
+            ],
             features: &["files", "litterbox files", "albums", "audio"],
             formats: &["mp4", "webm", "mkv", "mov", "gif", "mp3", "ogg", "flac"],
             session: SessionSupport::None,
@@ -252,7 +285,13 @@ mod tests {
         Exchange, Fixture, RecordedBody, RecordedRequest, RecordedResponse,
     };
 
-    fn get(url: &str, status: u16, content_type: &str, body: &str, headers: &[(&str, &str)]) -> Exchange {
+    fn get(
+        url: &str,
+        status: u16,
+        content_type: &str,
+        body: &str,
+        headers: &[(&str, &str)],
+    ) -> Exchange {
         let mut all = vec![("content-type".to_string(), content_type.to_string())];
         all.extend(headers.iter().map(|(k, v)| (k.to_string(), v.to_string())));
         Exchange {
@@ -279,9 +318,18 @@ mod tests {
     #[test]
     fn links_are_read() {
         let link = |s: &str| parse_link(&Url::parse(s).unwrap());
-        assert!(matches!(link("https://files.catbox.moe/safuz8.mp4"), Some(Link::File(_))));
-        assert!(matches!(link("https://litter.catbox.moe/t8v3n9.webm"), Some(Link::File(_))));
-        assert_eq!(link("https://catbox.moe/c/8xw6g4"), Some(Link::Album("8xw6g4".into())));
+        assert!(matches!(
+            link("https://files.catbox.moe/safuz8.mp4"),
+            Some(Link::File(_))
+        ));
+        assert!(matches!(
+            link("https://litter.catbox.moe/t8v3n9.webm"),
+            Some(Link::File(_))
+        ));
+        assert_eq!(
+            link("https://catbox.moe/c/8xw6g4"),
+            Some(Link::Album("8xw6g4".into()))
+        );
         assert_eq!(link("https://catbox.moe/faq.php"), None);
         assert_eq!(link("https://files.catbox.moe/"), None);
     }
@@ -289,8 +337,20 @@ mod tests {
     #[tokio::test]
     async fn files_are_probed_for_their_length() {
         let mut fixture = Fixture::new("catbox", None);
-        fixture.exchanges.push(get("https://files.catbox.moe/safuz8.mp4", 206, "video/mp4", "", &[("content-range", "bytes 0-0/7971211")]));
-        fixture.exchanges.push(get("https://files.catbox.moe/zzzzzz.mp4", 404, "text/html; charset=UTF-8", "<html>404</html>", &[]));
+        fixture.exchanges.push(get(
+            "https://files.catbox.moe/safuz8.mp4",
+            206,
+            "video/mp4",
+            "",
+            &[("content-range", "bytes 0-0/7971211")],
+        ));
+        fixture.exchanges.push(get(
+            "https://files.catbox.moe/zzzzzz.mp4",
+            404,
+            "text/html; charset=UTF-8",
+            "<html>404</html>",
+            &[],
+        ));
         let resolver = CatboxResolver::new(Http::replay(fixture));
         let resolved = resolver
             .resolve(&Url::parse("https://files.catbox.moe/safuz8.mp4").unwrap())
@@ -302,29 +362,60 @@ mod tests {
         assert_eq!(resolved.variants[0].size, Some(7971211));
         assert_eq!(resolved.variants[0].container, Some(Container::Mp4));
         assert!(matches!(
-            resolver.resolve(&Url::parse("https://files.catbox.moe/zzzzzz.mp4").unwrap()).await.unwrap_err(),
+            resolver
+                .resolve(&Url::parse("https://files.catbox.moe/zzzzzz.mp4").unwrap())
+                .await
+                .unwrap_err(),
             ResolveError::NotFound(_)
         ));
-        let error = resolver.resolve(&Url::parse("https://files.catbox.moe/ulnqno.py").unwrap()).await.unwrap_err();
-        assert!(matches!(&error, ResolveError::Unavailable { reason, .. } if reason.contains("not a video")), "{error}");
+        let error = resolver
+            .resolve(&Url::parse("https://files.catbox.moe/ulnqno.py").unwrap())
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&error, ResolveError::Unavailable { reason, .. } if reason.contains("not a video")),
+            "{error}"
+        );
     }
 
     #[tokio::test]
     async fn albums_list_their_video_files() {
         let mut fixture = Fixture::new("catbox", None);
-        fixture.exchanges.push(get("https://catbox.moe/c/8xw6g4", 200, "text/html; charset=UTF-8", ALBUM, &[]));
+        fixture.exchanges.push(get(
+            "https://catbox.moe/c/8xw6g4",
+            200,
+            "text/html; charset=UTF-8",
+            ALBUM,
+            &[],
+        ));
         fixture.exchanges.push(get("https://catbox.moe/c/zeara1", 200, "text/html; charset=UTF-8", r#"<html><body><div class="title"><h1>Six</h1></div><div class="imagecontainer"><a href='https://files.catbox.moe/3bs9a6.png'><img src='x'></a></div></body></html>"#, &[]));
         let resolver = CatboxResolver::new(Http::replay(fixture));
-        let playlist = match resolver.resolve(&Url::parse("https://catbox.moe/c/8xw6g4").unwrap()).await.unwrap() {
+        let playlist = match resolver
+            .resolve(&Url::parse("https://catbox.moe/c/8xw6g4").unwrap())
+            .await
+            .unwrap()
+        {
             Resolution::Playlist(p) => p,
             other => panic!("expected a playlist, got {other:?}"),
         };
         assert_eq!(playlist.title.as_deref(), Some("blender_dump"));
         assert_eq!(playlist.entries.len(), 2);
-        assert_eq!(playlist.entries[0].url.as_str(), "https://files.catbox.moe/s2dd6o.gif");
+        assert_eq!(
+            playlist.entries[0].url.as_str(),
+            "https://files.catbox.moe/s2dd6o.gif"
+        );
         assert_eq!(playlist.entries[1].title.as_deref(), Some("clip42"));
-        let error = resolver.resolve(&Url::parse("https://catbox.moe/c/zeara1").unwrap()).await.unwrap_err();
-        assert!(matches!(&error, ResolveError::Unavailable { reason, .. } if reason.contains("no video")), "{error}");
-        assert_eq!(parse_created("Created March 19 2022").unwrap().to_string(), "2022-03-19T00:00:00Z");
+        let error = resolver
+            .resolve(&Url::parse("https://catbox.moe/c/zeara1").unwrap())
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&error, ResolveError::Unavailable { reason, .. } if reason.contains("no video")),
+            "{error}"
+        );
+        assert_eq!(
+            parse_created("Created March 19 2022").unwrap().to_string(),
+            "2022-03-19T00:00:00Z"
+        );
     }
 }

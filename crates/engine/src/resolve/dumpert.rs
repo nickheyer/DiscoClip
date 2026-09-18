@@ -30,7 +30,10 @@ pub fn item_id(url: &Url) -> Option<String> {
         return None;
     }
     let host = url.host_str()?.to_ascii_lowercase();
-    if !matches!(host.as_str(), "dumpert.nl" | "www.dumpert.nl" | "legacy.dumpert.nl") {
+    if !matches!(
+        host.as_str(),
+        "dumpert.nl" | "www.dumpert.nl" | "legacy.dumpert.nl"
+    ) {
         return None;
     }
     if let Some(caps) = RE_PATH.captures(url.path()) {
@@ -42,7 +45,9 @@ pub fn item_id(url: &Url) -> Option<String> {
         return Some(format!("{number}_{hash}"));
     }
     let selected = util::query_param(url, "selectedId")?;
-    RE_SELECTED.captures(&selected).map(|caps| format!("{}_{}", &caps[1], &caps[2]))
+    RE_SELECTED
+        .captures(&selected)
+        .map(|caps| format!("{}_{}", &caps[1], &caps[2]))
 }
 
 /// The order the site's renditions rank in.
@@ -101,7 +106,11 @@ impl Resolver for DumpertResolver {
             return Err(error);
         }
         let answer = fetched.json(url)?;
-        let Some(item) = answer["items"].as_array().and_then(|items| items.first()).cloned() else {
+        let Some(item) = answer["items"]
+            .as_array()
+            .and_then(|items| items.first())
+            .cloned()
+        else {
             return Err(ResolveError::NotFound(url.clone()));
         };
         let Some(media) = item["media"]
@@ -129,7 +138,8 @@ impl Resolver for DumpertResolver {
                 continue;
             }
             let version = rendition["version"].as_str().unwrap_or("").to_string();
-            let version_height: Option<u32> = version.strip_suffix('p').and_then(|h| h.parse().ok());
+            let version_height: Option<u32> =
+                version.strip_suffix('p').and_then(|h| h.parse().ok());
             if link.path().ends_with(".m3u8") {
                 match hls::expand(&self.http, &link, PLATFORM, BROWSER_UA, &[]).await {
                     Ok(expanded) => {
@@ -188,9 +198,16 @@ impl Resolver for DumpertResolver {
             .as_str()
             .map(util::clean_html)
             .and_then(|d| clean_title(&d));
-        resolved.thumbnail = ["still-large", "still-medium", "still", "thumb-large", "thumb-medium", "thumb"]
-            .iter()
-            .find_map(|key| util::url_of(&item["stills"][*key], None));
+        resolved.thumbnail = [
+            "still-large",
+            "still-medium",
+            "still",
+            "thumb-large",
+            "thumb-medium",
+            "thumb",
+        ]
+        .iter()
+        .find_map(|key| util::url_of(&item["stills"][*key], None));
         resolved.duration = util::seconds(&media["duration"]).or(resolved.duration);
         resolved.uploaded_at = util::time(&item["date"]);
         resolved.uploader = item["uploader"]["name"]
@@ -232,12 +249,30 @@ mod tests {
     #[test]
     fn links_are_read() {
         let id = |s: &str| item_id(&Url::parse(s).unwrap());
-        assert_eq!(id("https://www.dumpert.nl/item/6646981_951bc60f"), Some("6646981_951bc60f".into()));
-        assert_eq!(id("https://www.dumpert.nl/embed/6675421_dc440fe7"), Some("6675421_dc440fe7".into()));
-        assert_eq!(id("http://legacy.dumpert.nl/mediabase/6646981/951bc60f"), Some("6646981_951bc60f".into()));
-        assert_eq!(id("http://legacy.dumpert.nl/embed/6675421/dc440fe7"), Some("6675421_dc440fe7".into()));
-        assert_eq!(id("https://www.dumpert.nl/toppers?selectedId=100031688_b317a185"), Some("100031688_b317a185".into()));
-        assert_eq!(id("https://www.dumpert.nl/?selectedId=100031688_b317a185"), Some("100031688_b317a185".into()));
+        assert_eq!(
+            id("https://www.dumpert.nl/item/6646981_951bc60f"),
+            Some("6646981_951bc60f".into())
+        );
+        assert_eq!(
+            id("https://www.dumpert.nl/embed/6675421_dc440fe7"),
+            Some("6675421_dc440fe7".into())
+        );
+        assert_eq!(
+            id("http://legacy.dumpert.nl/mediabase/6646981/951bc60f"),
+            Some("6646981_951bc60f".into())
+        );
+        assert_eq!(
+            id("http://legacy.dumpert.nl/embed/6675421/dc440fe7"),
+            Some("6675421_dc440fe7".into())
+        );
+        assert_eq!(
+            id("https://www.dumpert.nl/toppers?selectedId=100031688_b317a185"),
+            Some("100031688_b317a185".into())
+        );
+        assert_eq!(
+            id("https://www.dumpert.nl/?selectedId=100031688_b317a185"),
+            Some("100031688_b317a185".into())
+        );
         assert_eq!(id("https://www.dumpert.nl/toppers/dag"), None);
         assert_eq!(id("https://example.com/item/6646981_951bc60f"), None);
     }
@@ -287,7 +322,10 @@ mod tests {
         assert_eq!(resolved.title.as_deref(), Some("Die zag je niet"));
         assert_eq!(resolved.description.as_deref(), Some("Die zag je niet eh"));
         assert_eq!(resolved.duration, Some(Duration::from_secs(12)));
-        assert_eq!(resolved.uploaded_at.map(|t| t.as_second()), Some(1653592379));
+        assert_eq!(
+            resolved.uploaded_at.map(|t| t.as_second()),
+            Some(1653592379)
+        );
         assert_eq!(
             resolved.thumbnail.as_ref().unwrap().as_str(),
             "https://media.dumpert.nl/still-large.jpg"

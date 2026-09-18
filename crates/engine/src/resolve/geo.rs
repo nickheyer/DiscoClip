@@ -267,8 +267,16 @@ pub fn random_ipv4(country: &str) -> Option<String> {
 pub fn random_in_block(net: [u8; 4], prefix: u8) -> String {
     let base = u32::from_be_bytes(net);
     let host_bits = 32u32.saturating_sub(u32::from(prefix.min(32)));
-    let mask: u32 = if host_bits >= 32 { u32::MAX } else { (1u32 << host_bits) - 1 };
-    let offset: u32 = if mask == 0 { 0 } else { rand::rng().random_range(0..=mask) };
+    let mask: u32 = if host_bits >= 32 {
+        u32::MAX
+    } else {
+        (1u32 << host_bits) - 1
+    };
+    let offset: u32 = if mask == 0 {
+        0
+    } else {
+        rand::rng().random_range(0..=mask)
+    };
     let address = (base & !mask) | offset;
     let bytes = address.to_be_bytes();
     format!("{}.{}.{}.{}", bytes[0], bytes[1], bytes[2], bytes[3])

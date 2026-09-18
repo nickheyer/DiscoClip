@@ -49,7 +49,11 @@ pub fn parse_link(url: &Url) -> Option<VideoRef> {
         .filter(|s| !s.is_empty())
         .collect();
     let id = match segments.as_slice() {
-        ["share", id, ..] | ["embed", id, ..] | ["i", id, ..] | ["v", id, ..] if RE_ID.is_match(id) => *id,
+        ["share", id, ..] | ["embed", id, ..] | ["i", id, ..] | ["v", id, ..]
+            if RE_ID.is_match(id) =>
+        {
+            *id
+        }
         [id] if RE_ID.is_match(id) => *id,
         _ => return None,
     };
@@ -130,24 +134,38 @@ impl LoomResolver {
             )),
             None if record.is_null() => {
                 let message = answer["errors"][0]["message"].as_str().unwrap_or("");
-                Err(if message.to_ascii_lowercase().contains("not found") || message.is_empty() {
-                    ResolveError::NotFound(origin.clone())
-                } else {
-                    ResolveError::unavailable(origin, message.to_string())
-                })
+                Err(
+                    if message.to_ascii_lowercase().contains("not found") || message.is_empty() {
+                        ResolveError::NotFound(origin.clone())
+                    } else {
+                        ResolveError::unavailable(origin, message.to_string())
+                    },
+                )
             }
             Some(other) => Err(ResolveError::unavailable(
                 origin,
                 format!("the site describes the recording as {other}"),
             )),
-            None => Err(ResolveError::malformed(origin, "the GraphQL answer names no type")),
+            None => Err(ResolveError::malformed(
+                origin,
+                "the GraphQL answer names no type",
+            )),
         }
     }
 
     /// Asks one of the session URL endpoints for the recording's file: the transcoded MP4
     /// or the raw HLS stream with its CloudFront credentials.
-    async fn url_of(&self, video: &VideoRef, endpoint: &str, origin: &Url) -> Result<Option<Value>, ResolveError> {
-        let api = Url::parse(&format!("{SITE}api/campaigns/sessions/{}/{endpoint}", video.id)).expect("valid");
+    async fn url_of(
+        &self,
+        video: &VideoRef,
+        endpoint: &str,
+        origin: &Url,
+    ) -> Result<Option<Value>, ResolveError> {
+        let api = Url::parse(&format!(
+            "{SITE}api/campaigns/sessions/{}/{endpoint}",
+            video.id
+        ))
+        .expect("valid");
         let body = json!({
             "anonID": uuid::Uuid::now_v7().to_string(),
             "deviceID": null,
@@ -177,7 +195,10 @@ impl LoomResolver {
             404 => Err(ResolveError::NotFound(origin.clone())),
             429 => Err(ResolveError::RateLimited(origin.clone())),
             401 | 403 => Err(if self.logged_in() {
-                ResolveError::unavailable(origin, format!("the {endpoint} endpoint refused the request"))
+                ResolveError::unavailable(
+                    origin,
+                    format!("the {endpoint} endpoint refused the request"),
+                )
             } else {
                 ResolveError::login_required(origin, PLATFORM, "the recording is not public")
             }),
@@ -290,18 +311,27 @@ impl Resolver for LoomResolver {
             }
         }
         if variants.is_empty() {
-            return Err(ResolveError::unavailable(url, "the site handed out no stream for the recording"));
+            return Err(ResolveError::unavailable(
+                url,
+                "the site handed out no stream for the recording",
+            ));
         }
         let mut resolved = Resolved::new(PLATFORM);
         resolved.id = Some(video.id.clone());
         resolved.title = record["name"].as_str().and_then(clean_title);
         resolved.description = record["description"].as_str().and_then(clean_title);
-        resolved.uploader = record["owner"]["display_name"].as_str().and_then(clean_title);
+        resolved.uploader = record["owner"]["display_name"]
+            .as_str()
+            .and_then(clean_title);
         resolved.uploaded_at = record["createdAt"]
             .as_str()
             .and_then(|t| t.parse::<Timestamp>().ok());
         resolved.duration = duration;
-        resolved.thumbnail = Url::parse(&format!("https://cdn.loom.com/sessions/thumbnails/{}-00001.jpg", video.id)).ok();
+        resolved.thumbnail = Url::parse(&format!(
+            "https://cdn.loom.com/sessions/thumbnails/{}-00001.jpg",
+            video.id
+        ))
+        .ok();
         resolved.webpage_url = Url::parse(&format!("{SITE}share/{}", video.id)).ok();
         resolved.clip = timestamp_hint(url).map(|start| ClipRange { start, end: None });
         resolved.variants = variants;
@@ -336,14 +366,21 @@ impl Resolver for LoomResolver {
             Err(_) => return Ok(SessionCheck::LoggedOut),
         };
         let user = &answer["data"]["getUser"];
-        Ok(match user["display_name"].as_str().or_else(|| user["email"].as_str()) {
-            Some(name) if user["__typename"].as_str() == Some("RegularUser") && !name.is_empty() => {
-                SessionCheck::LoggedIn {
-                    account: name.to_string(),
+        Ok(
+            match user["display_name"]
+                .as_str()
+                .or_else(|| user["email"].as_str())
+            {
+                Some(name)
+                    if user["__typename"].as_str() == Some("RegularUser") && !name.is_empty() =>
+                {
+                    SessionCheck::LoggedIn {
+                        account: name.to_string(),
+                    }
                 }
-            }
-            _ => SessionCheck::LoggedOut,
-        })
+                _ => SessionCheck::LoggedOut,
+            },
+        )
     }
 }
 
@@ -393,7 +430,9 @@ mod tests {
             })
         );
         assert_eq!(
-            link(&format!("https://www.loom.com/embed/{ID}?sid=abc&password=secret")),
+            link(&format!(
+                "https://www.loom.com/embed/{ID}?sid=abc&password=secret"
+            )),
             Some(VideoRef {
                 id: ID.into(),
                 password: Some("secret".into())
@@ -406,8 +445,20 @@ mod tests {
     #[tokio::test]
     async fn recordings_resolve_with_their_credentials_kept_as_cookies() {
         let mut fixture = Fixture::new("loom", None);
-        fixture.exchanges.push(exchange("POST", GRAPHQL, 200, "application/json", &metadata("RegularUserVideo")));
-        fixture.exchanges.push(exchange("POST", &format!("{SITE}api/campaigns/sessions/{ID}/transcoded-url"), 204, "text/plain", ""));
+        fixture.exchanges.push(exchange(
+            "POST",
+            GRAPHQL,
+            200,
+            "application/json",
+            &metadata("RegularUserVideo"),
+        ));
+        fixture.exchanges.push(exchange(
+            "POST",
+            &format!("{SITE}api/campaigns/sessions/{ID}/transcoded-url"),
+            204,
+            "text/plain",
+            "",
+        ));
         fixture.exchanges.push(exchange(
             "POST",
             &format!("{SITE}api/campaigns/sessions/{ID}/raw-url"),
@@ -415,7 +466,13 @@ mod tests {
             "application/json",
             &json!({"url": STREAM, "part_credentials": "{\"Policy\":\"POLICY\",\"Key-Pair-Id\":\"KEYPAIR\",\"Signature\":\"SIG\"}"}).to_string(),
         ));
-        fixture.exchanges.push(exchange("GET", STREAM, 200, "application/vnd.apple.mpegurl", MASTER));
+        fixture.exchanges.push(exchange(
+            "GET",
+            STREAM,
+            200,
+            "application/vnd.apple.mpegurl",
+            MASTER,
+        ));
         fixture.exchanges.push(exchange(
             "GET",
             "https://luna.loom.com/id/43d05f362f734614a2e81b4694a3a523/rev/8edb/resource/hls/mediaplaylist-video-bitrate1500.m3u8",
@@ -429,7 +486,10 @@ mod tests {
         assert!(resolver.matches(&url));
         let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
         assert_eq!(resolved.id.as_deref(), Some(ID));
-        assert_eq!(resolved.title.as_deref(), Some("A Ruler for Windows - 28 March 2022"));
+        assert_eq!(
+            resolved.title.as_deref(),
+            Some("A Ruler for Windows - 28 March 2022")
+        );
         assert_eq!(resolved.uploader.as_deref(), Some("wILLIAM PIP"));
         assert!(resolved.uploaded_at.is_some());
         assert_eq!(resolved.duration, Some(Duration::from_secs(27)));
@@ -439,35 +499,75 @@ mod tests {
         assert!(resolved.variants[0].audio_url.is_some());
         let jar = http.jar(PLATFORM);
         assert_eq!(jar.get("CloudFront-Policy").unwrap().value, "POLICY");
-        assert_eq!(jar.get("CloudFront-Key-Pair-Id").unwrap().domain, "luna.loom.com");
+        assert_eq!(
+            jar.get("CloudFront-Key-Pair-Id").unwrap().domain,
+            "luna.loom.com"
+        );
         assert!(
-            jar.header_for(&Url::parse("https://luna.loom.com/id/x/video-0.ts").unwrap(), Timestamp::now())
-                .unwrap()
-                .contains("CloudFront-Signature=SIG")
+            jar.header_for(
+                &Url::parse("https://luna.loom.com/id/x/video-0.ts").unwrap(),
+                Timestamp::now()
+            )
+            .unwrap()
+            .contains("CloudFront-Signature=SIG")
         );
     }
 
     #[tokio::test]
     async fn transcoded_files_private_and_locked_recordings() {
         let mut fixture = Fixture::new("loom", None);
-        fixture.exchanges.push(exchange("POST", GRAPHQL, 200, "application/json", &metadata("RegularUserVideo")));
+        fixture.exchanges.push(exchange(
+            "POST",
+            GRAPHQL,
+            200,
+            "application/json",
+            &metadata("RegularUserVideo"),
+        ));
         fixture.exchanges.push(exchange(
             "POST",
             &format!("{SITE}api/campaigns/sessions/{ID}/transcoded-url"),
             200,
             "application/json",
-            &json!({"url": "https://cdn.loom.com/sessions/transcoded/43d05f.mp4?Policy=p"}).to_string(),
+            &json!({"url": "https://cdn.loom.com/sessions/transcoded/43d05f.mp4?Policy=p"})
+                .to_string(),
         ));
-        fixture.exchanges.push(exchange("POST", &format!("{SITE}api/campaigns/sessions/{ID}/raw-url"), 204, "text/plain", ""));
-        fixture.exchanges.push(exchange("POST", GRAPHQL, 200, "application/json", &metadata("PrivateVideo")));
-        fixture.exchanges.push(exchange("POST", GRAPHQL, 200, "application/json", &metadata("VideoPasswordMissingOrIncorrect")));
-        fixture.exchanges.push(exchange("POST", GRAPHQL, 200, "application/json", r#"{"data":{"getVideo":null},"errors":[{"message":"Video not found"}]}"#));
+        fixture.exchanges.push(exchange(
+            "POST",
+            &format!("{SITE}api/campaigns/sessions/{ID}/raw-url"),
+            204,
+            "text/plain",
+            "",
+        ));
+        fixture.exchanges.push(exchange(
+            "POST",
+            GRAPHQL,
+            200,
+            "application/json",
+            &metadata("PrivateVideo"),
+        ));
+        fixture.exchanges.push(exchange(
+            "POST",
+            GRAPHQL,
+            200,
+            "application/json",
+            &metadata("VideoPasswordMissingOrIncorrect"),
+        ));
+        fixture.exchanges.push(exchange(
+            "POST",
+            GRAPHQL,
+            200,
+            "application/json",
+            r#"{"data":{"getVideo":null},"errors":[{"message":"Video not found"}]}"#,
+        ));
         let resolver = LoomResolver::new(Http::replay(fixture));
         let url = Url::parse(&format!("https://www.loom.com/share/{ID}")).unwrap();
         let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
         assert_eq!(resolved.variants.len(), 1);
         assert_eq!(resolved.variants[0].kind, VariantKind::File);
-        assert_eq!(resolved.variants[0].format_id.as_deref(), Some("transcoded"));
+        assert_eq!(
+            resolved.variants[0].format_id.as_deref(),
+            Some("transcoded")
+        );
         assert!(matches!(
             resolver.resolve(&url).await.unwrap_err(),
             ResolveError::LoginRequired { .. }

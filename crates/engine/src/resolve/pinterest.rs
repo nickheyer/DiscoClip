@@ -80,14 +80,21 @@ impl PinterestResolver {
     /// The pin's record through the resource API.
     async fn pin(&self, id: &str, origin: &Url) -> Result<Value, ResolveError> {
         let mut url = Url::parse(PIN_RESOURCE).expect("valid");
-        let data = json!({"options": {"field_set_key": "unauth_react_main_pin", "id": id}, "context": {}});
+        let data =
+            json!({"options": {"field_set_key": "unauth_react_main_pin", "id": id}, "context": {}});
         url.query_pairs_mut()
             .append_pair("source_url", &format!("/pin/{id}/"))
             .append_pair("data", &data.to_string());
         let headers = [
-            ("x-pinterest-pws-handler".to_string(), "www/pin/[id].js".to_string()),
+            (
+                "x-pinterest-pws-handler".to_string(),
+                "www/pin/[id].js".to_string(),
+            ),
             ("x-requested-with".to_string(), "XMLHttpRequest".to_string()),
-            ("accept".to_string(), "application/json, text/javascript, */*, q=0.01".to_string()),
+            (
+                "accept".to_string(),
+                "application/json, text/javascript, */*, q=0.01".to_string(),
+            ),
             ("referer".to_string(), format!("{SITE}pin/{id}/")),
         ];
         let fetched = fetch(&self.http, &url, PLATFORM, BROWSER_UA, &headers, MAX_PAGE).await?;
@@ -246,10 +253,15 @@ impl Resolver for PinterestResolver {
         let username = pinner["username"].as_str().unwrap_or("");
         let mut base = Resolved::new(PLATFORM);
         base.id = Some(id.clone());
-        base.title = ["title", "grid_title", "closeup_unified_description", "description"]
-            .iter()
-            .find_map(|k| pin[k].as_str().and_then(clean_title))
-            .or_else(|| (!username.is_empty()).then(|| format!("Pin by {username}")));
+        base.title = [
+            "title",
+            "grid_title",
+            "closeup_unified_description",
+            "description",
+        ]
+        .iter()
+        .find_map(|k| pin[k].as_str().and_then(clean_title))
+        .or_else(|| (!username.is_empty()).then(|| format!("Pin by {username}")));
         base.description = pin["closeup_unified_description"]
             .as_str()
             .or_else(|| pin["description"].as_str())
@@ -334,7 +346,8 @@ mod tests {
     };
 
     fn get(url: &str, status: u16, body: &str, headers: &[(&str, &str)]) -> Exchange {
-        let mut all: Vec<(String, String)> = vec![("content-type".into(), "application/json".into())];
+        let mut all: Vec<(String, String)> =
+            vec![("content-type".into(), "application/json".into())];
         all.extend(headers.iter().map(|(k, v)| (k.to_string(), v.to_string())));
         Exchange {
             request: RecordedRequest {
@@ -395,7 +408,9 @@ mod tests {
     #[tokio::test]
     async fn video_pins_resolve_through_the_resource_api() {
         let mut fixture = Fixture::new("pinterest", None);
-        fixture.exchanges.push(get(PIN_RESOURCE, 200, &answer(video_pin()), &[]));
+        fixture
+            .exchanges
+            .push(get(PIN_RESOURCE, 200, &answer(video_pin()), &[]));
         let resolver = PinterestResolver::new(Http::replay(fixture));
         let url = Url::parse("https://www.pinterest.com/pin/4855512095534420/").unwrap();
         assert!(resolver.matches(&url));
@@ -436,11 +451,36 @@ mod tests {
             ]}
         });
         let mut fixture = Fixture::new("pinterest", None);
-        fixture.exchanges.push(get("https://pin.it/1abc", 308, "", &[("location", "https://api.pinterest.com/url_shortener/1abc/redirect/")]));
-        fixture.exchanges.push(get("https://api.pinterest.com/url_shortener/1abc/redirect/", 302, "", &[("location", "https://www.pinterest.com/pin/1089589703629338745/?invite_code=x")]));
-        fixture.exchanges.push(get("https://www.pinterest.com/pin/1089589703629338745/?invite_code=x", 200, "<html></html>", &[("content-type", "text/html")]));
-        fixture.exchanges.push(get(PIN_RESOURCE, 200, &answer(story.clone()), &[]));
-        fixture.exchanges.push(get(PIN_RESOURCE, 200, &answer(story), &[]));
+        fixture.exchanges.push(get(
+            "https://pin.it/1abc",
+            308,
+            "",
+            &[(
+                "location",
+                "https://api.pinterest.com/url_shortener/1abc/redirect/",
+            )],
+        ));
+        fixture.exchanges.push(get(
+            "https://api.pinterest.com/url_shortener/1abc/redirect/",
+            302,
+            "",
+            &[(
+                "location",
+                "https://www.pinterest.com/pin/1089589703629338745/?invite_code=x",
+            )],
+        ));
+        fixture.exchanges.push(get(
+            "https://www.pinterest.com/pin/1089589703629338745/?invite_code=x",
+            200,
+            "<html></html>",
+            &[("content-type", "text/html")],
+        ));
+        fixture
+            .exchanges
+            .push(get(PIN_RESOURCE, 200, &answer(story.clone()), &[]));
+        fixture
+            .exchanges
+            .push(get(PIN_RESOURCE, 200, &answer(story), &[]));
         fixture.exchanges.push(get(
             PIN_RESOURCE,
             404,
@@ -461,7 +501,10 @@ mod tests {
             playlist.entries[1].url.as_str(),
             "https://www.pinterest.com/pin/1089589703629338745/#page-2"
         );
-        assert_eq!(playlist.entries[1].duration, Some(Duration::from_millis(12000)));
+        assert_eq!(
+            playlist.entries[1].duration,
+            Some(Duration::from_millis(12000))
+        );
         let second = resolver
             .resolve(&playlist.entries[1].url)
             .await

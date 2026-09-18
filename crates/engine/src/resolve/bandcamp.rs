@@ -31,15 +31,15 @@ static RE_PATH: LazyLock<Regex> =
 static RE_ENCODING: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([a-z0-9]+)-(\d+)$").unwrap());
 /// `<li data-item-id="…"><a href="/album/x">`: a release in a discography (merch items
 /// are listed the same way and left out by their path).
-static RE_DISCOGRAPHY_ITEM: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"<li data-item-id=["'][^>]+>\s*<a href=["']([^"']+)"#).unwrap()
-});
+static RE_DISCOGRAPHY_ITEM: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"<li data-item-id=["'][^>]+>\s*<a href=["']([^"']+)"#).unwrap());
 /// `<div class="trackTitle" href="/track/x">`: a release of an older discography layout.
 static RE_DISCOGRAPHY_TRACK: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"<div[^>]+trackTitle["'][^"']+["']([^"']+)"#).unwrap());
 /// `<h3 class="albumTitle">… by <span><a href="…">Artist</a>`: the album's artist.
 static RE_ALBUM_ARTIST: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"<h3 class="albumTitle">[\S\s]*?by\s*<span>\s*<a href="[^>]+">\s*([^>]+?)\s*</a>"#).unwrap()
+    Regex::new(r#"<h3 class="albumTitle">[\S\s]*?by\s*<span>\s*<a href="[^>]+">\s*([^>]+?)\s*</a>"#)
+        .unwrap()
 });
 /// `<meta property="og:url" content="https://x.bandcamp.com/track/y">`: how other pages
 /// embed a release.
@@ -50,13 +50,23 @@ static RE_OG_URL: LazyLock<Regex> = LazyLock::new(|| {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Link {
-    Track { artist: String, slug: String },
+    Track {
+        artist: String,
+        slug: String,
+    },
     /// An album, on an artist's subdomain or on the main site.
-    Album { artist: Option<String>, slug: String },
+    Album {
+        artist: Option<String>,
+        slug: String,
+    },
     /// A Bandcamp Weekly radio show.
-    Weekly { show: u64 },
+    Weekly {
+        show: u64,
+    },
     /// An artist's discography.
-    User { artist: String },
+    User {
+        artist: String,
+    },
 }
 
 pub fn parse_link(url: &Url) -> Option<Link> {
@@ -180,7 +190,8 @@ fn track_variants(track: &Value) -> Vec<Variant> {
 
 /// The cover art a release names.
 fn art_url(release: &Value) -> Option<Url> {
-    let art_id = util::uint(&release["art_id"]).or_else(|| util::uint(&release["current"]["art_id"]))?;
+    let art_id =
+        util::uint(&release["art_id"]).or_else(|| util::uint(&release["current"]["art_id"]))?;
     Url::parse(&format!("https://f4.bcbits.com/img/a{art_id:010}_10.jpg")).ok()
 }
 
@@ -234,7 +245,10 @@ impl BandcampResolver {
             .filter_map(|f| {
                 Some((
                     f["name"].as_str()?.to_string(),
-                    f["file_extension"].as_str()?.trim_start_matches('.').to_string(),
+                    f["file_extension"]
+                        .as_str()?
+                        .trim_start_matches('.')
+                        .to_string(),
                 ))
             })
             .collect();
@@ -255,7 +269,10 @@ impl BandcampResolver {
                 .unwrap_or_else(|_| link.clone());
             stat.query_pairs_mut().append_pair(
                 ".rand",
-                &format!("{}", jiff::Timestamp::now().as_millisecond() % 1_000_000_007),
+                &format!(
+                    "{}",
+                    jiff::Timestamp::now().as_millisecond() % 1_000_000_007
+                ),
             );
             let answer = match fetch_as_browser(&self.http, &stat, PLATFORM, &[], MAX_PAGE).await {
                 Ok(fetched) if fetched.status.is_success() => fetched.text(),
@@ -279,7 +296,11 @@ impl BandcampResolver {
             };
             let mut variant = Variant::file(retry);
             variant.audio_only = true;
-            let codec = format_id.split('-').next().unwrap_or(&format_id).to_string();
+            let codec = format_id
+                .split('-')
+                .next()
+                .unwrap_or(&format_id)
+                .to_string();
             let ext = extensions
                 .iter()
                 .find(|(name, _)| *name == format_id)
@@ -311,7 +332,12 @@ impl BandcampResolver {
         variants
     }
 
-    async fn resolve_track(&self, artist: &str, slug: &str, url: &Url) -> Result<Resolution, ResolveError> {
+    async fn resolve_track(
+        &self,
+        artist: &str,
+        slug: &str,
+        url: &Url,
+    ) -> Result<Resolution, ResolveError> {
         let html = self.page(url).await?;
         let release = tralbum(&html).ok_or_else(|| ResolveError::NotFound(url.clone()))?;
         let track = release["trackinfo"]
@@ -319,7 +345,11 @@ impl BandcampResolver {
             .and_then(|tracks| {
                 tracks
                     .iter()
-                    .find(|t| t["title_link"].as_str().is_some_and(|link| link.ends_with(slug)))
+                    .find(|t| {
+                        t["title_link"]
+                            .as_str()
+                            .is_some_and(|link| link.ends_with(slug))
+                    })
                     .or_else(|| tracks.first())
             })
             .cloned()
@@ -342,7 +372,8 @@ impl BandcampResolver {
             let page = Page::parse(&html, url);
             (
                 page.meta("og:description").and_then(|d| clean_title(&d)),
-                page.meta("og:image").and_then(|t| util::join_url(Some(url), &t)),
+                page.meta("og:image")
+                    .and_then(|t| util::join_url(Some(url), &t)),
                 page.meta("duration")
                     .and_then(|d| d.trim().parse::<f64>().ok())
                     .filter(|d| *d > 0.0)
@@ -462,7 +493,8 @@ impl BandcampResolver {
         variant.duration = util::seconds(&audio["duration"]);
         variant.format_id = format_id.clone();
         variant.label = format_id;
-        let released = release_date(&data["date"]).or_else(|| release_date(&data["published_date"]));
+        let released =
+            release_date(&data["date"]).or_else(|| release_date(&data["published_date"]));
         let mut resolved = Resolved::new(PLATFORM);
         resolved.id = Some(show.to_string());
         resolved.title = match (data["subtitle"].as_str().and_then(clean_title), released) {
@@ -493,7 +525,12 @@ impl BandcampResolver {
         let entries: Vec<PlaylistEntry> = discography_of(&html)
             .into_iter()
             .filter_map(|item| page_url.join(&item).ok())
-            .filter(|link| matches!(parse_link(link), Some(Link::Track { .. } | Link::Album { .. })))
+            .filter(|link| {
+                matches!(
+                    parse_link(link),
+                    Some(Link::Track { .. } | Link::Album { .. })
+                )
+            })
             .map(|link| PlaylistEntry {
                 url: link,
                 title: None,
@@ -538,7 +575,14 @@ impl Resolver for BandcampResolver {
             id: PLATFORM,
             name: "Bandcamp",
             hosts: &["bandcamp.com"],
-            features: &["audio", "tracks", "albums", "free downloads", "discographies", "weekly shows"],
+            features: &[
+                "audio",
+                "tracks",
+                "albums",
+                "free downloads",
+                "discographies",
+                "weekly shows",
+            ],
             formats: &["mp3", "flac", "aac", "ogg", "wav", "aiff", "alac"],
             session: SessionSupport::None,
             examples: &[
@@ -591,7 +635,10 @@ mod tests {
     }
 
     fn page(release: &Value) -> String {
-        let escaped = release.to_string().replace('&', "&amp;").replace('"', "&quot;");
+        let escaped = release
+            .to_string()
+            .replace('&', "&amp;")
+            .replace('"', "&quot;");
         format!(
             r#"<html><head><meta property="og:description" content="from FTL"><meta property="og:image" content="https://f4.bcbits.com/img/a1270682128_16.jpg"></head><body><script data-tralbum="{escaped}"></script></body></html>"#
         )
@@ -624,11 +671,15 @@ mod tests {
         );
         assert_eq!(
             link("https://benprunty.bandcamp.com/music"),
-            Some(Link::User { artist: "benprunty".into() })
+            Some(Link::User {
+                artist: "benprunty".into()
+            })
         );
         assert_eq!(
             link("https://benprunty.bandcamp.com/"),
-            Some(Link::User { artist: "benprunty".into() })
+            Some(Link::User {
+                artist: "benprunty".into()
+            })
         );
         assert_eq!(link("https://benprunty.bandcamp.com/merch"), None);
         assert_eq!(
@@ -655,9 +706,19 @@ mod tests {
                            "file": {"mp3-128": "https://t4.bcbits.com/stream/9b90/mp3-128/2650410135?p=0&ts=1"}, "streaming": 1}]
         });
         let mut fixture = Fixture::new(PLATFORM, None);
-        fixture.exchanges.push(get("https://benprunty.bandcamp.com/track/lanius-battle", 200, "text/html", page(&release)));
+        fixture.exchanges.push(get(
+            "https://benprunty.bandcamp.com/track/lanius-battle",
+            200,
+            "text/html",
+            page(&release),
+        ));
         let unreleased = json!({"artist": "X", "current": {"title": "Soon"}, "trackinfo": [{"title": "Soon", "title_link": "/track/soon", "file": null, "streaming": 0, "unreleased_track": true}]});
-        fixture.exchanges.push(get("https://x.bandcamp.com/track/soon", 200, "text/html", page(&unreleased)));
+        fixture.exchanges.push(get(
+            "https://x.bandcamp.com/track/soon",
+            200,
+            "text/html",
+            page(&unreleased),
+        ));
         let resolver = BandcampResolver::new(Http::replay(fixture));
         let url = Url::parse("https://benprunty.bandcamp.com/track/lanius-battle").unwrap();
         assert!(resolver.matches(&url));
@@ -666,7 +727,10 @@ mod tests {
         assert_eq!(resolved.title.as_deref(), Some("Lanius (Battle)"));
         assert_eq!(resolved.uploader.as_deref(), Some("Ben Prunty"));
         assert_eq!(resolved.duration, Some(Duration::from_secs_f64(260.877)));
-        assert_eq!(resolved.uploaded_at.map(|t| t.as_second()), Some(1396483200));
+        assert_eq!(
+            resolved.uploaded_at.map(|t| t.as_second()),
+            Some(1396483200)
+        );
         assert_eq!(
             resolved.thumbnail.as_ref().unwrap().as_str(),
             "https://f4.bcbits.com/img/a1270682128_10.jpg"
@@ -699,24 +763,43 @@ mod tests {
             ]
         });
         let mut fixture = Fixture::new(PLATFORM, None);
-        fixture.exchanges.push(get("https://benprunty.bandcamp.com/album/ftl-advanced-edition-soundtrack", 200, "text/html", page(&release)));
-        fixture.exchanges.push(get("https://benprunty.bandcamp.com/album/nothing", 404, "text/html", "<html>gone</html>".into()));
+        fixture.exchanges.push(get(
+            "https://benprunty.bandcamp.com/album/ftl-advanced-edition-soundtrack",
+            200,
+            "text/html",
+            page(&release),
+        ));
+        fixture.exchanges.push(get(
+            "https://benprunty.bandcamp.com/album/nothing",
+            404,
+            "text/html",
+            "<html>gone</html>".into(),
+        ));
         let resolver = BandcampResolver::new(Http::replay(fixture));
         let Resolution::Playlist(album) = resolver
-            .resolve(&Url::parse("https://benprunty.bandcamp.com/album/ftl-advanced-edition-soundtrack").unwrap())
+            .resolve(
+                &Url::parse("https://benprunty.bandcamp.com/album/ftl-advanced-edition-soundtrack")
+                    .unwrap(),
+            )
             .await
             .unwrap()
         else {
             panic!("a playlist");
         };
-        assert_eq!(album.title.as_deref(), Some("Ben Prunty - FTL: Advanced Edition Soundtrack"));
+        assert_eq!(
+            album.title.as_deref(),
+            Some("Ben Prunty - FTL: Advanced Edition Soundtrack")
+        );
         assert_eq!(album.id.as_deref(), Some("1745633271"));
         assert_eq!(album.entries.len(), 2);
         assert_eq!(
             album.entries[1].url.as_str(),
             "https://benprunty.bandcamp.com/track/lanius-explore"
         );
-        assert_eq!(album.entries[0].duration, Some(Duration::from_secs_f64(260.877)));
+        assert_eq!(
+            album.entries[0].duration,
+            Some(Duration::from_secs_f64(260.877))
+        );
         assert!(matches!(
             resolver
                 .resolve(&Url::parse("https://benprunty.bandcamp.com/album/nothing").unwrap())
@@ -738,19 +821,34 @@ mod tests {
             .unwrap();
         assert_eq!(track.title.as_deref(), Some("Lanius (Battle)"));
         assert_eq!(track.uploader.as_deref(), Some("Ben Prunty"));
-        assert_eq!(track.variants.len(), 9, "the stream and eight free downloads");
+        assert_eq!(
+            track.variants.len(),
+            9,
+            "the stream and eight free downloads"
+        );
         assert!(track.variants.iter().all(|v| v.audio_only));
         assert_eq!(track.variants[0].format_id.as_deref(), Some("mp3-128"));
-        let flac = track.variants.iter().find(|v| v.format_id.as_deref() == Some("flac")).unwrap();
+        let flac = track
+            .variants
+            .iter()
+            .find(|v| v.format_id.as_deref() == Some("flac"))
+            .unwrap();
         assert_eq!(flac.container, Some(Container::Other("flac".into())));
         assert_eq!(flac.label.as_deref(), Some("FLAC"));
         assert!(flac.url.path().starts_with("/download/track"));
-        let mp3_320 = track.variants.iter().find(|v| v.format_id.as_deref() == Some("mp3-320")).unwrap();
+        let mp3_320 = track
+            .variants
+            .iter()
+            .find(|v| v.format_id.as_deref() == Some("mp3-320"))
+            .unwrap();
         assert_eq!(mp3_320.bitrate, Some(320_000));
         assert_eq!(mp3_320.audio, Some(AudioCodec::Mp3));
 
         let Resolution::Playlist(album) = resolver
-            .resolve(&Url::parse("https://benprunty.bandcamp.com/album/ftl-advanced-edition-soundtrack").unwrap())
+            .resolve(
+                &Url::parse("https://benprunty.bandcamp.com/album/ftl-advanced-edition-soundtrack")
+                    .unwrap(),
+            )
             .await
             .unwrap()
         else {
@@ -766,8 +864,15 @@ mod tests {
         else {
             panic!("a discography is a playlist");
         };
-        assert_eq!(discography.title.as_deref(), Some("Discography of Ben Prunty"));
-        assert!(discography.entries.len() >= 20, "{}", discography.entries.len());
+        assert_eq!(
+            discography.title.as_deref(),
+            Some("Discography of Ben Prunty")
+        );
+        assert!(
+            discography.entries.len() >= 20,
+            "{}",
+            discography.entries.len()
+        );
         assert!(discography.entries.iter().all(|e| e.url.path().starts_with("/album/") || e.url.path().starts_with("/track/")));
 
         let show = resolver
@@ -787,7 +892,9 @@ mod tests {
 
         assert!(matches!(
             resolver
-                .resolve(&Url::parse("https://benprunty.bandcamp.com/album/no-such-album-here").unwrap())
+                .resolve(
+                    &Url::parse("https://benprunty.bandcamp.com/album/no-such-album-here").unwrap()
+                )
                 .await
                 .unwrap_err(),
             ResolveError::NotFound(_)
@@ -809,7 +916,11 @@ mod tests {
         );
         let resolver = BandcampResolver::new(Http::replay(Fixture::new(PLATFORM, None)));
         assert_eq!(
-            resolver.embeds_in(&page).iter().map(|u| u.as_str()).collect::<Vec<_>>(),
+            resolver
+                .embeds_in(&page)
+                .iter()
+                .map(|u| u.as_str())
+                .collect::<Vec<_>>(),
             vec!["https://blazo.bandcamp.com/album/jazz-format-mixtape-vol-1"]
         );
     }

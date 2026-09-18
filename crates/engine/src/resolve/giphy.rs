@@ -139,7 +139,10 @@ pub fn variants_of(gif: &Value) -> Vec<Variant> {
     if !variants.is_empty() {
         return variants;
     }
-    for (key, image) in [("original", &gif["images"]["original"]), ("hd", &gif["images"]["hd"])] {
+    for (key, image) in [
+        ("original", &gif["images"]["original"]),
+        ("hd", &gif["images"]["hd"]),
+    ] {
         let Some(url) = image["mp4"].as_str().and_then(|u| Url::parse(u).ok()) else {
             continue;
         };
@@ -182,7 +185,12 @@ impl GiphyResolver {
 
     /// The GIF's page, whose data names every rendition; the media file itself when the
     /// page has none, as an embed of a removed GIF still serves.
-    async fn page_media(&self, id: &str, clip: bool, origin: &Url) -> Result<Resolved, ResolveError> {
+    async fn page_media(
+        &self,
+        id: &str,
+        clip: bool,
+        origin: &Url,
+    ) -> Result<Resolved, ResolveError> {
         let page_url = Url::parse(&format!(
             "{SITE}{}/{id}",
             if clip { "clips" } else { "gifs" }
@@ -257,7 +265,11 @@ impl GiphyResolver {
             let page = Page::parse(&html, &fetched.url);
             (
                 page.title()
-                    .map(|t| t.trim_end_matches(" - Find & Share on GIPHY").trim().to_string())
+                    .map(|t| {
+                        t.trim_end_matches(" - Find & Share on GIPHY")
+                            .trim()
+                            .to_string()
+                    })
                     .and_then(|t| clean_title(&t)),
                 page.meta("og:image").and_then(|u| Url::parse(&u).ok()),
             )
@@ -306,7 +318,14 @@ impl Resolver for GiphyResolver {
             id: PLATFORM,
             name: "GIPHY",
             hosts: &["giphy.com", "media.giphy.com", "i.giphy.com", "gph.is"],
-            features: &["gifs", "stickers", "clips", "embeds", "media links", "short links"],
+            features: &[
+                "gifs",
+                "stickers",
+                "clips",
+                "embeds",
+                "media links",
+                "short links",
+            ],
             formats: &["mp4", "mov", "gif"],
             session: SessionSupport::None,
             examples: &[
@@ -346,7 +365,13 @@ mod tests {
         Exchange, Fixture, RecordedBody, RecordedRequest, RecordedResponse,
     };
 
-    fn get(url: &str, status: u16, content_type: &str, body: &str, headers: &[(&str, &str)]) -> Exchange {
+    fn get(
+        url: &str,
+        status: u16,
+        content_type: &str,
+        body: &str,
+        headers: &[(&str, &str)],
+    ) -> Exchange {
         let mut all = vec![("content-type".to_string(), content_type.to_string())];
         all.extend(headers.iter().map(|(k, v)| (k.to_string(), v.to_string())));
         Exchange {
@@ -384,13 +409,34 @@ mod tests {
             link("https://giphy.com/gifs/kiss-valentines-day-looney-tunes-5GdhgaBpA3oCA"),
             Some(Link::Gif("5GdhgaBpA3oCA".into()))
         );
-        assert_eq!(link("https://giphy.com/gifs/l0ExbnGIX9sMFS7PG"), Some(Link::Gif("l0ExbnGIX9sMFS7PG".into())));
-        assert_eq!(link("https://giphy.com/clips/NovaSound-nova-sound-LG5EtlRwv46uESZNRl"), Some(Link::Clip("LG5EtlRwv46uESZNRl".into())));
-        assert_eq!(link("https://giphy.com/embed/l0ExbnGIX9sMFS7PG"), Some(Link::Gif("l0ExbnGIX9sMFS7PG".into())));
-        assert_eq!(link("https://media.giphy.com/media/l0ExbnGIX9sMFS7PG/giphy.mp4"), Some(Link::Gif("l0ExbnGIX9sMFS7PG".into())));
-        assert_eq!(link("https://media4.giphy.com/media/v1.Y2lkPTc5/l0ExbnGIX9sMFS7PG/giphy.gif"), Some(Link::Gif("l0ExbnGIX9sMFS7PG".into())));
-        assert_eq!(link("https://i.giphy.com/l0ExbnGIX9sMFS7PG.mp4"), Some(Link::Gif("l0ExbnGIX9sMFS7PG".into())));
-        assert!(matches!(link("https://gph.is/2k5cNmO"), Some(Link::Short(_))));
+        assert_eq!(
+            link("https://giphy.com/gifs/l0ExbnGIX9sMFS7PG"),
+            Some(Link::Gif("l0ExbnGIX9sMFS7PG".into()))
+        );
+        assert_eq!(
+            link("https://giphy.com/clips/NovaSound-nova-sound-LG5EtlRwv46uESZNRl"),
+            Some(Link::Clip("LG5EtlRwv46uESZNRl".into()))
+        );
+        assert_eq!(
+            link("https://giphy.com/embed/l0ExbnGIX9sMFS7PG"),
+            Some(Link::Gif("l0ExbnGIX9sMFS7PG".into()))
+        );
+        assert_eq!(
+            link("https://media.giphy.com/media/l0ExbnGIX9sMFS7PG/giphy.mp4"),
+            Some(Link::Gif("l0ExbnGIX9sMFS7PG".into()))
+        );
+        assert_eq!(
+            link("https://media4.giphy.com/media/v1.Y2lkPTc5/l0ExbnGIX9sMFS7PG/giphy.gif"),
+            Some(Link::Gif("l0ExbnGIX9sMFS7PG".into()))
+        );
+        assert_eq!(
+            link("https://i.giphy.com/l0ExbnGIX9sMFS7PG.mp4"),
+            Some(Link::Gif("l0ExbnGIX9sMFS7PG".into()))
+        );
+        assert!(matches!(
+            link("https://gph.is/2k5cNmO"),
+            Some(Link::Short(_))
+        ));
         assert_eq!(link("https://giphy.com/explore/cats"), None);
         assert_eq!(link("https://giphy.com/"), None);
     }
@@ -398,15 +444,27 @@ mod tests {
     #[tokio::test]
     async fn gifs_resolve_to_their_mp4_renditions() {
         let mut fixture = Fixture::new("giphy", None);
-        fixture.exchanges.push(get("https://giphy.com/gifs/l0ExbnGIX9sMFS7PG", 200, "text/html", &page_with(GIF), &[]));
+        fixture.exchanges.push(get(
+            "https://giphy.com/gifs/l0ExbnGIX9sMFS7PG",
+            200,
+            "text/html",
+            &page_with(GIF),
+            &[],
+        ));
         let resolver = GiphyResolver::new(Http::replay(fixture));
         let url = Url::parse("https://media.giphy.com/media/l0ExbnGIX9sMFS7PG/giphy.mp4").unwrap();
         let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
         assert_eq!(resolved.title.as_deref(), Some("Salutes Jack Black GIF"));
-        assert_eq!(resolved.uploaded_at.unwrap().to_string(), "2017-01-25T23:39:02Z");
+        assert_eq!(
+            resolved.uploaded_at.unwrap().to_string(),
+            "2017-01-25T23:39:02Z"
+        );
         assert_eq!(resolved.variants.len(), 1);
         let original = &resolved.variants[0];
-        assert_eq!(original.url.as_str(), "https://media4.giphy.com/media/v1.T/l0ExbnGIX9sMFS7PG/giphy.mp4");
+        assert_eq!(
+            original.url.as_str(),
+            "https://media4.giphy.com/media/v1.T/l0ExbnGIX9sMFS7PG/giphy.mp4"
+        );
         assert_eq!(original.size, Some(150315));
         assert_eq!((original.width, original.height), (Some(480), Some(264)));
         assert!(original.audio.is_none());
@@ -415,7 +473,13 @@ mod tests {
     #[tokio::test]
     async fn clips_carry_sound_in_several_sizes() {
         let mut fixture = Fixture::new("giphy", None);
-        fixture.exchanges.push(get("https://giphy.com/clips/GHuZnOveABj2uSWgd0", 200, "text/html", &page_with(CLIP), &[]));
+        fixture.exchanges.push(get(
+            "https://giphy.com/clips/GHuZnOveABj2uSWgd0",
+            200,
+            "text/html",
+            &page_with(CLIP),
+            &[],
+        ));
         let resolver = GiphyResolver::new(Http::replay(fixture));
         let resolved = resolver
             .resolve(&Url::parse("https://giphy.com/clips/some-slug-GHuZnOveABj2uSWgd0").unwrap())
@@ -427,10 +491,18 @@ mod tests {
         assert_eq!(resolved.uploader.as_deref(), Some("Amanda Bonaiuto"));
         assert_eq!(resolved.duration, Some(Duration::from_secs_f64(3.1)));
         assert_eq!(resolved.variants.len(), 4);
-        let hd = resolved.variants.iter().find(|v| v.height == Some(720)).unwrap();
+        let hd = resolved
+            .variants
+            .iter()
+            .find(|v| v.height == Some(720))
+            .unwrap();
         assert_eq!(hd.audio, Some(AudioCodec::Aac));
         assert_eq!(hd.container, Some(Container::Mp4));
-        let source = resolved.variants.iter().find(|v| v.format_id.as_deref() == Some("source")).unwrap();
+        let source = resolved
+            .variants
+            .iter()
+            .find(|v| v.format_id.as_deref() == Some("source"))
+            .unwrap();
         assert_eq!(source.container, Some(Container::Mov));
         assert_eq!(source.height, Some(1080));
     }
@@ -438,11 +510,41 @@ mod tests {
     #[tokio::test]
     async fn a_page_without_data_falls_back_to_the_media_file_and_short_links_unwrap() {
         let mut fixture = Fixture::new("giphy", None);
-        fixture.exchanges.push(get("https://giphy.com/gifs/abcdefgh1234", 200, "text/html", "<html><head><title>Cat GIF - Find &amp; Share on GIPHY</title></head></html>", &[]));
-        fixture.exchanges.push(get("https://media.giphy.com/media/abcdefgh1234/giphy.mp4", 206, "video/mp4", "", &[("content-range", "bytes 0-0/4242")]));
-        fixture.exchanges.push(get("https://gph.is/2k5cNmO", 301, "text/html", "", &[("location", "https://giphy.com/gifs/l0ExbnGIX9sMFS7PG")]));
-        fixture.exchanges.push(get("https://giphy.com/gifs/l0ExbnGIX9sMFS7PG", 200, "text/html", "", &[]));
-        fixture.exchanges.push(get("https://giphy.com/gifs/gone12345678", 404, "text/html", "", &[]));
+        fixture.exchanges.push(get(
+            "https://giphy.com/gifs/abcdefgh1234",
+            200,
+            "text/html",
+            "<html><head><title>Cat GIF - Find &amp; Share on GIPHY</title></head></html>",
+            &[],
+        ));
+        fixture.exchanges.push(get(
+            "https://media.giphy.com/media/abcdefgh1234/giphy.mp4",
+            206,
+            "video/mp4",
+            "",
+            &[("content-range", "bytes 0-0/4242")],
+        ));
+        fixture.exchanges.push(get(
+            "https://gph.is/2k5cNmO",
+            301,
+            "text/html",
+            "",
+            &[("location", "https://giphy.com/gifs/l0ExbnGIX9sMFS7PG")],
+        ));
+        fixture.exchanges.push(get(
+            "https://giphy.com/gifs/l0ExbnGIX9sMFS7PG",
+            200,
+            "text/html",
+            "",
+            &[],
+        ));
+        fixture.exchanges.push(get(
+            "https://giphy.com/gifs/gone12345678",
+            404,
+            "text/html",
+            "",
+            &[],
+        ));
         let resolver = GiphyResolver::new(Http::replay(fixture));
         let resolved = resolver
             .resolve(&Url::parse("https://giphy.com/gifs/abcdefgh1234").unwrap())
@@ -456,9 +558,15 @@ mod tests {
             .resolve(&Url::parse("https://gph.is/2k5cNmO").unwrap())
             .await
             .unwrap_err();
-        assert!(matches!(&error, ResolveError::Redirect(u) if u.as_str() == "https://giphy.com/gifs/l0ExbnGIX9sMFS7PG"), "{error}");
+        assert!(
+            matches!(&error, ResolveError::Redirect(u) if u.as_str() == "https://giphy.com/gifs/l0ExbnGIX9sMFS7PG"),
+            "{error}"
+        );
         assert!(matches!(
-            resolver.resolve(&Url::parse("https://giphy.com/gifs/gone12345678").unwrap()).await.unwrap_err(),
+            resolver
+                .resolve(&Url::parse("https://giphy.com/gifs/gone12345678").unwrap())
+                .await
+                .unwrap_err(),
             ResolveError::NotFound(_)
         ));
     }

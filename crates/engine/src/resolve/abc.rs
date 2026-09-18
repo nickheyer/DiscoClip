@@ -78,12 +78,14 @@ pub fn parse_link(url: &Url) -> Option<Link> {
     let host = url.host_str()?.to_ascii_lowercase();
     let path = url.path();
     match host.as_str() {
-        "abc.net.au" | "www.abc.net.au" => RE_PAGE
-            .captures(path)
-            .map(|caps| Link::Page { id: caps[1].to_string() }),
+        "abc.net.au" | "www.abc.net.au" => RE_PAGE.captures(path).map(|caps| Link::Page {
+            id: caps[1].to_string(),
+        }),
         "iview.abc.net.au" | "www.iview.abc.net.au" => {
             if let Some(caps) = RE_IVIEW_VIDEO.captures(path) {
-                return Some(Link::IviewVideo { id: caps[1].to_string() });
+                return Some(Link::IviewVideo {
+                    id: caps[1].to_string(),
+                });
             }
             RE_IVIEW_SHOW.captures(path).map(|caps| Link::IviewShow {
                 slug: caps[1].to_string(),
@@ -111,7 +113,8 @@ pub fn find_renditions(data: &Value) -> Option<(Vec<Value>, Value)> {
                         _ => Vec::new(),
                     };
                     if !files.is_empty() {
-                        let document = if map.contains_key("title") || map.contains_key("duration") {
+                        let document = if map.contains_key("title") || map.contains_key("duration")
+                        {
                             value
                         } else {
                             owner
@@ -160,10 +163,17 @@ fn rendition_variant(file: &Value) -> Option<Variant> {
         variant.label = kbps.map(|k| format!("{k}k"));
     } else {
         variant.container = Some(Container::Mp4);
-        variant.video = Some(match file["codec"].as_str().unwrap_or("").to_ascii_uppercase().as_str() {
-            "HEVC" | "H265" => VideoCodec::H265,
-            _ => VideoCodec::H264,
-        });
+        variant.video = Some(
+            match file["codec"]
+                .as_str()
+                .unwrap_or("")
+                .to_ascii_uppercase()
+                .as_str()
+            {
+                "HEVC" | "H265" => VideoCodec::H265,
+                _ => VideoCodec::H264,
+            },
+        );
         variant.audio = Some(AudioCodec::Aac);
         variant.label = variant.height.map(|h| format!("{h}p"));
     }
@@ -258,7 +268,11 @@ fn iview_thumbnail(entry: &Value) -> Option<Url> {
     let images = entry["images"].as_array()?;
     images
         .iter()
-        .filter(|image| image["aspectRatio"].as_str().is_none_or(|ratio| ratio == "16:9"))
+        .filter(|image| {
+            image["aspectRatio"]
+                .as_str()
+                .is_none_or(|ratio| ratio == "16:9")
+        })
         .max_by_key(|image| util::uint(&image["width"]).unwrap_or(0))
         .or(images.first())
         .and_then(|image| util::url_of(&image["url"], None))
@@ -339,7 +353,11 @@ impl AbcResolver {
                             let entries: Vec<PlaylistEntry> = links
                                 .iter()
                                 .filter_map(|link| util::url_of(&link["url"], Some(url)))
-                                .map(|link| PlaylistEntry { url: link, title: None, duration: None })
+                                .map(|link| PlaylistEntry {
+                                    url: link,
+                                    title: None,
+                                    duration: None,
+                                })
                                 .collect();
                             return youtube_result(url, entries, page.title());
                         }
@@ -347,7 +365,11 @@ impl AbcResolver {
                         None if !youtube.is_empty() => {
                             let entries = youtube
                                 .into_iter()
-                                .map(|link| PlaylistEntry { url: link, title: None, duration: None })
+                                .map(|link| PlaylistEntry {
+                                    url: link,
+                                    title: None,
+                                    duration: None,
+                                })
                                 .collect();
                             return youtube_result(url, entries, page.title());
                         }
@@ -365,7 +387,8 @@ impl AbcResolver {
         if variants.is_empty() {
             return Err(ResolveError::NotFound(url.clone()));
         }
-        variants.sort_by_key(|v| std::cmp::Reverse((v.height.unwrap_or(0), v.bitrate.unwrap_or(0))));
+        variants
+            .sort_by_key(|v| std::cmp::Reverse((v.height.unwrap_or(0), v.bitrate.unwrap_or(0))));
         let mut resolved = Resolved::new(PLATFORM);
         resolved.id = Some(id.to_string());
         resolved.title = document["title"]
@@ -377,10 +400,14 @@ impl AbcResolver {
             .as_str()
             .and_then(clean_title)
             .or_else(|| page.meta("og:description").and_then(|d| clean_title(&d)));
-        resolved.thumbnail = page.meta("og:image").and_then(|t| util::join_url(Some(url), &t));
+        resolved.thumbnail = page
+            .meta("og:image")
+            .and_then(|t| util::join_url(Some(url), &t));
         resolved.duration = util::seconds(&document["duration"]);
-        resolved.uploaded_at = util::time(&document["dates"]["published"])
-            .or_else(|| page.meta("article:published_time").and_then(|t| util::parse_timestamp(&t)));
+        resolved.uploaded_at = util::time(&document["dates"]["published"]).or_else(|| {
+            page.meta("article:published_time")
+                .and_then(|t| util::parse_timestamp(&t))
+        });
         resolved.uploader = Some("ABC".to_string());
         resolved.webpage_url = Some(url.clone());
         resolved.variants = variants;
@@ -476,7 +503,8 @@ impl AbcResolver {
         resolved.id = Some(id.to_string());
         resolved.title = title;
         resolved.description = entry["description"].as_str().and_then(clean_title);
-        resolved.thumbnail = iview_thumbnail(&entry).or_else(|| util::url_of(&program["thumbnail"], None));
+        resolved.thumbnail =
+            iview_thumbnail(&entry).or_else(|| util::url_of(&program["thumbnail"], None));
         resolved.duration = util::seconds(&entry["duration"])
             .or_else(|| util::seconds(&program["eventDuration"]))
             .or(resolved.duration);
@@ -614,14 +642,14 @@ mod tests {
 
     fn news_page() -> String {
         let data = json!({"props": {"pageProps": {"document": {"loaders": {"articledetail": {"headlinePrepared": {
-            "featureMediaPrepared": {"heroContent": {"descriptor": {"props": {"document": {
-                "id": "107148312", "title": "Social housing tower", "synopsis": "The WA government will build it.",
-                "duration": 59, "dates": {"published": "2026-09-13T02:00:00+00:00"},
-                "media": {"video": {"renditions": {"files": [
-                    {"DeliveryType": "DOWNLOAD", "MIMEType": "video/mp4", "bitRate": 15000, "codec": "AVC", "height": 1080, "name": "SocialRentalApp_1309.mp4", "size": 19856818, "url": "https://mediacore-live-production.akamaized.net/video/02/oe/Z/ud.mp4", "width": 1920},
-                    {"DeliveryType": "DOWNLOAD", "MIMEType": "video/mp4", "bitRate": 1500, "codec": "AVC", "name": "small_720.mp4", "url": "https://mediacore-live-production.akamaized.net/video/02/oe/Z/ud_720.mp4"}
-                ]}}}
-            }}}}}}}}}}}});
+        "featureMediaPrepared": {"heroContent": {"descriptor": {"props": {"document": {
+            "id": "107148312", "title": "Social housing tower", "synopsis": "The WA government will build it.",
+            "duration": 59, "dates": {"published": "2026-09-13T02:00:00+00:00"},
+            "media": {"video": {"renditions": {"files": [
+                {"DeliveryType": "DOWNLOAD", "MIMEType": "video/mp4", "bitRate": 15000, "codec": "AVC", "height": 1080, "name": "SocialRentalApp_1309.mp4", "size": 19856818, "url": "https://mediacore-live-production.akamaized.net/video/02/oe/Z/ud.mp4", "width": 1920},
+                {"DeliveryType": "DOWNLOAD", "MIMEType": "video/mp4", "bitRate": 1500, "codec": "AVC", "name": "small_720.mp4", "url": "https://mediacore-live-production.akamaized.net/video/02/oe/Z/ud_720.mp4"}
+            ]}}}
+        }}}}}}}}}}}});
         format!(
             r#"<html><head><meta property="og:title" content="WA government to build new rental apartment"><meta property="og:description" content="Desc"><meta property="og:image" content="https://live-production.wcms.abc-cdn.net.au/c33bb5?width=862"></head><body><script id="__NEXT_DATA__" type="application/json">{data}</script></body></html>"#
         )
@@ -630,32 +658,58 @@ mod tests {
     #[test]
     fn links_are_read() {
         let link = |s: &str| parse_link(&Url::parse(s).unwrap());
-        assert_eq!(link(NEWS), Some(Link::Page { id: "107148268".into() }));
+        assert_eq!(
+            link(NEWS),
+            Some(Link::Page {
+                id: "107148268".into()
+            })
+        );
         assert_eq!(
             link("https://www.abc.net.au/btn/classroom/wwi-centenary/10527914"),
-            Some(Link::Page { id: "10527914".into() })
+            Some(Link::Page {
+                id: "10527914".into()
+            })
         );
         assert_eq!(
-            link("https://www.abc.net.au/listen/programs/the-followers-madness-of-two/presents-followers-madness-of-two/105697646"),
-            Some(Link::Page { id: "105697646".into() })
+            link(
+                "https://www.abc.net.au/listen/programs/the-followers-madness-of-two/presents-followers-madness-of-two/105697646"
+            ),
+            Some(Link::Page {
+                id: "105697646".into()
+            })
         );
-        assert_eq!(link("http://www.abc.net.au/news/2015-10-19/6866214"), Some(Link::Page { id: "6866214".into() }));
+        assert_eq!(
+            link("http://www.abc.net.au/news/2015-10-19/6866214"),
+            Some(Link::Page {
+                id: "6866214".into()
+            })
+        );
         assert_eq!(link("https://www.abc.net.au/news/"), None);
         assert_eq!(
             link("https://iview.abc.net.au/show/utopia/series/1/video/CO1211V001S00"),
-            Some(Link::IviewVideo { id: "CO1211V001S00".into() })
+            Some(Link::IviewVideo {
+                id: "CO1211V001S00".into()
+            })
         );
         assert_eq!(
             link("https://iview.abc.net.au/video/NC2203H039S00"),
-            Some(Link::IviewVideo { id: "NC2203H039S00".into() })
+            Some(Link::IviewVideo {
+                id: "NC2203H039S00".into()
+            })
         );
         assert_eq!(
             link("https://iview.abc.net.au/show/utopia"),
-            Some(Link::IviewShow { slug: "utopia".into(), series: None })
+            Some(Link::IviewShow {
+                slug: "utopia".into(),
+                series: None
+            })
         );
         assert_eq!(
             link("https://iview.abc.net.au/show/utopia/series/2"),
-            Some(Link::IviewShow { slug: "utopia".into(), series: Some(2) })
+            Some(Link::IviewShow {
+                slug: "utopia".into(),
+                series: Some(2)
+            })
         );
         assert_eq!(link("https://iview.abc.net.au/channel/abc1"), None);
         assert_eq!(link("https://example.com/news/2015-10-19/6866214"), None);
@@ -664,7 +718,9 @@ mod tests {
     #[test]
     fn token_requests_are_signed_as_the_apps_do() {
         let path = sign_path("CO1211V001S00", 1700000000);
-        assert!(path.starts_with("/auth/hls/sign?ts=1700000000&hn=CO1211V001S00&d=android-tablet&sig="));
+        assert!(
+            path.starts_with("/auth/hls/sign?ts=1700000000&hn=CO1211V001S00&d=android-tablet&sig=")
+        );
         let sig = path.rsplit("sig=").next().unwrap();
         assert_eq!(sig.len(), 64);
         assert_eq!(
@@ -679,16 +735,24 @@ mod tests {
     #[tokio::test]
     async fn news_pages_resolve_to_their_renditions() {
         let mut fixture = Fixture::new(PLATFORM, None);
-        fixture.exchanges.push(get(NEWS, 200, "text/html", news_page()));
+        fixture
+            .exchanges
+            .push(get(NEWS, 200, "text/html", news_page()));
         let resolver = AbcResolver::new(Http::replay(fixture));
         let url = Url::parse(NEWS).unwrap();
         assert!(resolver.matches(&url));
         let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
         assert_eq!(resolved.id.as_deref(), Some("107148268"));
         assert_eq!(resolved.title.as_deref(), Some("Social housing tower"));
-        assert_eq!(resolved.description.as_deref(), Some("The WA government will build it."));
+        assert_eq!(
+            resolved.description.as_deref(),
+            Some("The WA government will build it.")
+        );
         assert_eq!(resolved.duration, Some(Duration::from_secs(59)));
-        assert_eq!(resolved.uploaded_at.map(|t| t.as_second()), Some(1789264800));
+        assert_eq!(
+            resolved.uploaded_at.map(|t| t.as_second()),
+            Some(1789264800)
+        );
         assert_eq!(resolved.variants.len(), 2);
         let best = &resolved.variants[0];
         assert_eq!(best.height, Some(1080));
@@ -697,7 +761,11 @@ mod tests {
         assert_eq!(best.size, Some(19856818));
         assert_eq!(best.container, Some(Container::Mp4));
         assert_eq!(best.video, Some(VideoCodec::H264));
-        assert_eq!(resolved.variants[1].height, Some(720), "the height in the file name");
+        assert_eq!(
+            resolved.variants[1].height,
+            Some(720),
+            "the height in the file name"
+        );
     }
 
     #[tokio::test]
@@ -809,7 +877,10 @@ mod tests {
             show.entries[0].url.as_str(),
             "https://iview.abc.net.au/show/utopia/series/1/video/CO1211V001S00"
         );
-        assert_eq!(show.entries[1].title.as_deref(), Some("Episode 2 Arts And Minds"));
+        assert_eq!(
+            show.entries[1].title.as_deref(),
+            Some("Episode 2 Arts And Minds")
+        );
         assert_eq!(show.entries[1].duration, Some(Duration::from_secs(1584)));
         let Resolution::Playlist(series) = resolver
             .resolve(&Url::parse("https://iview.abc.net.au/show/utopia/series/2").unwrap())
@@ -905,15 +976,24 @@ mod tests {
         ));
         let resolver = AbcResolver::new(Http::replay(fixture));
         let resolve = |id: &str| {
-            let url = Url::parse(&format!("https://iview.abc.net.au/show/utopia/series/1/video/{id}")).unwrap();
+            let url = Url::parse(&format!(
+                "https://iview.abc.net.au/show/utopia/series/1/video/{id}"
+            ))
+            .unwrap();
             let resolver = &resolver;
             async move { resolver.resolve(&url).await }
         };
         let resolved = resolve("CO1211V001S00").await.unwrap().media().unwrap();
-        assert_eq!(resolved.title.as_deref(), Some("S1 Episode 1 Wood For The Trees"));
+        assert_eq!(
+            resolved.title.as_deref(),
+            Some("S1 Episode 1 Wood For The Trees")
+        );
         assert_eq!(resolved.uploader.as_deref(), Some("ABC TV"));
         assert_eq!(resolved.duration, Some(Duration::from_secs(1584)));
-        assert_eq!(resolved.uploaded_at.map(|t| t.as_second()), Some(1739865600));
+        assert_eq!(
+            resolved.uploaded_at.map(|t| t.as_second()),
+            Some(1739865600)
+        );
         assert_eq!(
             resolved.thumbnail.as_ref().unwrap().as_str(),
             "https://cdn.iview.abc.net.au/thumbs/i/big.jpg"
@@ -971,13 +1051,16 @@ mod tests {
             "https://www.abc.net.au/news/2015-08-18/expired/6704575",
             200,
             "text/html",
-            r#"<html><div class="expired-video"><span>This video has expired.</span></div></html>"#.into(),
+            r#"<html><div class="expired-video"><span>This video has expired.</span></div></html>"#
+                .into(),
         ));
         let resolver = AbcResolver::new(Http::replay(fixture));
         let page = |s: &str| Url::parse(s).unwrap();
 
         let legacy = resolver
-            .resolve(&page("https://www.abc.net.au/news/2015-08-18/legacy/6704570"))
+            .resolve(&page(
+                "https://www.abc.net.au/news/2015-08-18/legacy/6704570",
+            ))
             .await
             .unwrap()
             .media()
@@ -989,7 +1072,9 @@ mod tests {
         assert_eq!(legacy.variants[0].bitrate, Some(1_500_000));
 
         let inline = resolver
-            .resolve(&page("https://www.abc.net.au/news/2015-08-18/inline/6704571"))
+            .resolve(&page(
+                "https://www.abc.net.au/news/2015-08-18/inline/6704571",
+            ))
             .await
             .unwrap()
             .media()
@@ -998,7 +1083,9 @@ mod tests {
         assert_eq!(inline.variants[0].height, Some(576));
 
         let audio = resolver
-            .resolve(&page("https://www.abc.net.au/listen/programs/legacy/audio/6704572"))
+            .resolve(&page(
+                "https://www.abc.net.au/listen/programs/legacy/audio/6704572",
+            ))
             .await
             .unwrap()
             .media()
@@ -1012,7 +1099,9 @@ mod tests {
         );
 
         let Resolution::Playlist(two) = resolver
-            .resolve(&page("https://www.abc.net.au/news/2015-08-18/two-videos/6704573"))
+            .resolve(&page(
+                "https://www.abc.net.au/news/2015-08-18/two-videos/6704573",
+            ))
             .await
             .unwrap()
         else {
@@ -1020,7 +1109,10 @@ mod tests {
         };
         assert_eq!(two.id.as_deref(), Some("6704573"));
         assert_eq!(
-            two.entries.iter().map(|e| e.url.as_str()).collect::<Vec<_>>(),
+            two.entries
+                .iter()
+                .map(|e| e.url.as_str())
+                .collect::<Vec<_>>(),
             vec![
                 "https://www.youtube.com/watch?v=aaaaaaaaaaa",
                 "https://www.youtube.com/watch?v=bbbbbbbbbbb"

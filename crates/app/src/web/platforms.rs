@@ -457,8 +457,9 @@ mod tests {
         assert!(fixtured["last_run_at"].is_null());
         assert!(fixtured["last_pass_at"].is_null());
         assert_eq!(fixtured["passed"], 0);
+        assert_eq!(fixtured["login_required"], 0);
         let fixtures = fixtured["fixtures"].as_array().unwrap();
-        assert_eq!(fixtures.len(), 3);
+        assert_eq!(fixtures.len(), 4);
         assert!(fixtures.iter().all(|f| f["status"] == "never"));
         let nothing = platforms.iter().find(|p| p["id"] == "nothing").unwrap();
         assert_eq!(nothing["fixtures"], json!([]));
@@ -512,6 +513,7 @@ mod tests {
         .await;
         assert_eq!(done["passed"], 2);
         assert_eq!(done["failed"], 1);
+        assert_eq!(done["login_required"], 1);
         assert!(done["last_pass_at"].is_null(), "{done}");
         assert!(!done["last_fail_at"].is_null());
         let by_url = |body: &Json, path: &str| {
@@ -537,8 +539,31 @@ mod tests {
         let slow = by_url(&done, "/slow");
         assert_eq!(slow["status"], "pass");
         assert!(slow["duration_ms"].as_u64().unwrap() >= 300);
+        // A link that wants a login is told apart from a broken one.
+        let login = by_url(&done, "/login");
+        assert_eq!(login["status"], "login_required");
+        assert!(
+            login["error"]
+                .as_str()
+                .unwrap()
+                .contains("needs a logged-in fixtured session"),
+            "{login}"
+        );
+        assert!(login["last_pass_at"].is_null());
 
-        // The failing link recovers, every fixture passes, and the platform's pass date is set.
+        // With a session stored, the failing link recovers, every fixture passes, and the
+        // platform's pass date is set.
+        let (status, body) = admin
+            .send(
+                Method::PUT,
+                "/api/platforms/fixtured/cookies",
+                Some(json!({
+                    "format": "netscape",
+                    "text": "# Netscape HTTP Cookie File\n.fixture.test\tTRUE\t/\tTRUE\t2147483647\tsid\tsecret-value\n"
+                })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
         let (status, body) = admin.post("/api/platforms/check", Json::Null).await;
         assert_eq!(status, StatusCode::ACCEPTED, "{body}");
         assert_eq!(body["platforms"], json!(["fixtured"]));
@@ -547,12 +572,14 @@ mod tests {
             client.cookie = admin.cookie.clone();
             async move {
                 let (_, body) = client.get("/api/platforms/fixtured").await;
-                (body["running"] == false && body["passed"] == 3).then_some(body)
+                (body["running"] == false && body["passed"] == 4).then_some(body)
             }
         })
         .await;
         assert_eq!(done["failed"], 0);
+        assert_eq!(done["login_required"], 0);
         assert_eq!(done["last_pass_at"], done["last_run_at"]);
+        assert_eq!(by_url(&done, "/login")["status"], "pass");
         assert!(done["last_fail_at"].as_str().unwrap() < done["last_pass_at"].as_str().unwrap());
         let bad = by_url(&done, "/bad");
         assert_eq!(bad["status"], "pass");

@@ -738,10 +738,7 @@ impl ArdResolver {
                         Ok(expanded) => {
                             for mut variant in expanded.variants {
                                 variant.language = Some(language.clone());
-                                variant.format_id = Some(match &variant.label {
-                                    Some(rendition) => format!("hls-{kind}-{rendition}"),
-                                    None => format!("hls-{kind}"),
-                                });
+                                variant.format_id = Some(format!("hls-{kind}"));
                                 variant.live |= live;
                                 variants.push(variant);
                             }

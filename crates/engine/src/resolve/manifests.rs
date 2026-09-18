@@ -21,7 +21,8 @@ pub async fn expand_all(
     for variant in variants {
         match variant.kind {
             VariantKind::Hls => {
-                match hls::expand(http, &variant.url, platform, BROWSER_UA, &variant.headers).await {
+                match hls::expand(http, &variant.url, platform, BROWSER_UA, &variant.headers).await
+                {
                     Ok(expanded) if !expanded.variants.is_empty() => {
                         for mut stream in expanded.variants {
                             if stream.duration.is_none() {
@@ -46,7 +47,8 @@ pub async fn expand_all(
                 }
             }
             VariantKind::Dash => {
-                match dash::expand(http, &variant.url, platform, BROWSER_UA, &variant.headers).await {
+                match dash::expand(http, &variant.url, platform, BROWSER_UA, &variant.headers).await
+                {
                     Ok(expanded) if !expanded.variants.is_empty() => {
                         for mut stream in expanded.variants {
                             if stream.duration.is_none() {
@@ -75,4 +77,3 @@ pub async fn expand_all(
     }
     out
 }
-

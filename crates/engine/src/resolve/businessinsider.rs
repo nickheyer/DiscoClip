@@ -14,8 +14,8 @@ use url::Url;
 
 use super::page::Page;
 use super::{
-    MAX_PAGE, Platform, Resolution, ResolveError, Resolver, SessionSupport, clean_title,
-    fetch_ok, jwplayer, navigation_headers, util,
+    MAX_PAGE, Platform, Resolution, ResolveError, Resolver, SessionSupport, clean_title, fetch_ok,
+    jwplayer, navigation_headers, util,
 };
 use crate::http::{BROWSER_UA, Http};
 
@@ -160,9 +160,7 @@ impl Resolver for BusinessinsiderResolver {
         if meta.description.is_some() {
             resolved.description = meta.description;
         }
-        resolved.uploader = meta
-            .author
-            .or_else(|| Some("Business Insider".to_string()));
+        resolved.uploader = meta.author.or_else(|| Some("Business Insider".to_string()));
         resolved.uploaded_at = meta.published_at.or(resolved.uploaded_at);
         if resolved.thumbnail.is_none() {
             resolved.thumbnail = meta.image;
@@ -174,12 +172,11 @@ impl Resolver for BusinessinsiderResolver {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::VariantKind;
+    use super::*;
     use crate::http::{Exchange, Fixture, RecordedBody, RecordedRequest, RecordedResponse};
 
-    const RADIATION: &str =
-        "https://www.businessinsider.com/how-much-radiation-youre-exposed-to-in-everyday-life-2016-6";
+    const RADIATION: &str = "https://www.businessinsider.com/how-much-radiation-youre-exposed-to-in-everyday-life-2016-6";
     const POACHING: &str = "https://www.businessinsider.com/how-wildlife-poaching-works-according-to-an-undercover-investigator-2026-8";
 
     fn get(url: &str, status: u16, content_type: &str, body: String) -> Exchange {
@@ -213,7 +210,9 @@ mod tests {
         );
         assert_eq!(
             id(POACHING),
-            Some("how-wildlife-poaching-works-according-to-an-undercover-investigator-2026-8".into())
+            Some(
+                "how-wildlife-poaching-works-according-to-an-undercover-investigator-2026-8".into()
+            )
         );
         assert_eq!(
             id("http://www.businessinsider.com/excel-index-match-vlookup-video-how-to-2015-2?IR=T"),
@@ -239,7 +238,10 @@ mod tests {
             Some("cjGDb0X9")
         );
         assert_eq!(
-            jwplayer_id(r#"{"meta":{"_id":"5824c655aee45882a647ea6d","jwplayer":{"assetID":"Md8g7uqw"}}}"#).as_deref(),
+            jwplayer_id(
+                r#"{"meta":{"_id":"5824c655aee45882a647ea6d","jwplayer":{"assetID":"Md8g7uqw"}}}"#
+            )
+            .as_deref(),
             Some("Md8g7uqw")
         );
         assert_eq!(
@@ -247,7 +249,10 @@ mod tests {
             Some("Yptt4ycg")
         );
         assert_eq!(
-            jwplayer_id(r#"<script src="https://cdn.jwplayer.com/players/Xm3xYlth-mxPVKKUe.js"></script>"#).as_deref(),
+            jwplayer_id(
+                r#"<script src="https://cdn.jwplayer.com/players/Xm3xYlth-mxPVKKUe.js"></script>"#
+            )
+            .as_deref(),
             Some("Xm3xYlth")
         );
         assert_eq!(
@@ -255,7 +260,8 @@ mod tests {
             Some("5zJwd4FK")
         );
         assert_eq!(
-            jwplayer_id(r#"jwplayer("player").setup({ id: "5zJwd4FK", autostart: false })"#).as_deref(),
+            jwplayer_id(r#"jwplayer("player").setup({ id: "5zJwd4FK", autostart: false })"#)
+                .as_deref(),
             Some("5zJwd4FK")
         );
         assert_eq!(
@@ -279,13 +285,28 @@ mod tests {
             assert!(resolved.uploaded_at.is_some(), "{link}");
             assert!(resolved.duration.is_some(), "{link}");
             assert!(resolved.webpage_url.is_some(), "{link}");
-            assert!(resolved.variants.iter().any(|v| v.kind == VariantKind::File), "{link}");
-            assert!(resolved.variants.iter().any(|v| v.kind == VariantKind::Hls), "{link}");
             assert!(
-                resolved.variants.iter().all(|v| v.kind != VariantKind::Hls || v.height.is_some() || v.audio_only),
+                resolved
+                    .variants
+                    .iter()
+                    .any(|v| v.kind == VariantKind::File),
+                "{link}"
+            );
+            assert!(
+                resolved.variants.iter().any(|v| v.kind == VariantKind::Hls),
+                "{link}"
+            );
+            assert!(
+                resolved
+                    .variants
+                    .iter()
+                    .all(|v| v.kind != VariantKind::Hls || v.height.is_some() || v.audio_only),
                 "{link}: every HLS video stream names its size"
             );
-            assert!(resolved.variants.iter().any(|v| v.height == Some(1080)), "{link}");
+            assert!(
+                resolved.variants.iter().any(|v| v.height == Some(1080)),
+                "{link}"
+            );
         }
     }
 

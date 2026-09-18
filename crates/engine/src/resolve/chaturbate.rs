@@ -12,7 +12,7 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved, Resolver,
-    SessionSupport, clean_title, hls, status_error, util, Variant,
+    SessionSupport, Variant, clean_title, hls, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
 
@@ -30,9 +30,15 @@ static RE_LISTING: LazyLock<Regex> =
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Link {
-    Room { tld: String, room: String },
+    Room {
+        tld: String,
+        room: String,
+    },
     /// A listing of rooms online: every one, or one gender.
-    Listing { tld: String, gender: Option<String> },
+    Listing {
+        tld: String,
+        gender: Option<String>,
+    },
 }
 
 pub fn parse_link(url: &Url) -> Option<Link> {
@@ -59,9 +65,26 @@ pub fn parse_link(url: &Url) -> Option<Link> {
     let room = caps[1].to_string();
     if matches!(
         room.as_str(),
-        "login" | "signup" | "tags" | "affiliates" | "contest" | "apps" | "terms" | "privacy"
-            | "dmca" | "security" | "careers" | "billing" | "support" | "discover" | "api"
-            | "accounts" | "auth" | "tipping" | "followed-cams" | "spy-on-cams"
+        "login"
+            | "signup"
+            | "tags"
+            | "affiliates"
+            | "contest"
+            | "apps"
+            | "terms"
+            | "privacy"
+            | "dmca"
+            | "security"
+            | "careers"
+            | "billing"
+            | "support"
+            | "discover"
+            | "api"
+            | "accounts"
+            | "auth"
+            | "tipping"
+            | "followed-cams"
+            | "spy-on-cams"
     ) {
         return None;
     }
@@ -85,7 +108,9 @@ fn status_error_of(status: &str, room: &str, url: &Url) -> ResolveError {
         "private" | "hidden" | "away" | "group" => {
             ResolveError::unavailable(url, format!("{room} is in a {status} show right now"))
         }
-        "password protected" => ResolveError::unavailable(url, format!("{room} is password protected")),
+        "password protected" => {
+            ResolveError::unavailable(url, format!("{room} is password protected"))
+        }
         "public" => ResolveError::unavailable(url, "the stream is withheld for this location"),
         "" => ResolveError::NotFound(url.clone()),
         other => ResolveError::unavailable(url, format!("the room answered with status {other}")),
@@ -123,8 +148,11 @@ pub fn page_playlists(html: &str) -> Vec<Url> {
     let mut found: Vec<String> = Vec::new();
     if let Some(caps) = RE_DOSSIER.captures(html)
         && let Some(raw) = caps.get(1).or_else(|| caps.get(2))
-        && let Some(dossier) = serde_json::from_str::<Value>(&super::page::unescape_json_string(raw.as_str())).ok()
-        && let Some(source) = dossier["hls_source"].as_str().filter(|s| s.starts_with("http"))
+        && let Some(dossier) =
+            serde_json::from_str::<Value>(&super::page::unescape_json_string(raw.as_str())).ok()
+        && let Some(source) = dossier["hls_source"]
+            .as_str()
+            .filter(|s| s.starts_with("http"))
     {
         found.push(source.to_string());
     }
@@ -158,10 +186,14 @@ pub fn page_error(html: &str) -> Option<String> {
     {
         return clean_title(&util::clean_html(reason.as_str()));
     }
-    ["Room is currently offline", "offline_tipping", "tip_offline"]
-        .iter()
-        .any(|marker| html.contains(marker))
-        .then(|| "Room is currently offline".to_string())
+    [
+        "Room is currently offline",
+        "offline_tipping",
+        "tip_offline",
+    ]
+    .iter()
+    .any(|marker| html.contains(marker))
+    .then(|| "Room is currently offline".to_string())
 }
 
 pub struct ChaturbateResolver {
@@ -174,9 +206,15 @@ impl ChaturbateResolver {
     }
 
     /// The stream links a room's page names, read the way a browser would.
-    async fn playlists_from_page(&self, site: &str, room: &str, origin: &Url) -> Result<Vec<Url>, ResolveError> {
+    async fn playlists_from_page(
+        &self,
+        site: &str,
+        room: &str,
+        origin: &Url,
+    ) -> Result<Vec<Url>, ResolveError> {
         let page_url = Url::parse(&format!("{site}{room}/")).expect("valid");
-        let fetched = super::fetch_as_browser(&self.http, &page_url, PLATFORM, &[], MAX_PAGE).await?;
+        let fetched =
+            super::fetch_as_browser(&self.http, &page_url, PLATFORM, &[], MAX_PAGE).await?;
         if let Some(error) = status_error(fetched.status, origin) {
             return Err(error);
         }
@@ -185,13 +223,20 @@ impl ChaturbateResolver {
         if playlists.is_empty() {
             return Err(match page_error(&html) {
                 Some(reason) => ResolveError::unavailable(origin, reason),
-                None => ResolveError::unavailable(origin, format!("the page of {room} names no stream")),
+                None => {
+                    ResolveError::unavailable(origin, format!("the page of {room} names no stream"))
+                }
             });
         }
         Ok(playlists)
     }
 
-    async fn resolve_room(&self, tld: &str, room: &str, url: &Url) -> Result<Resolution, ResolveError> {
+    async fn resolve_room(
+        &self,
+        tld: &str,
+        room: &str,
+        url: &Url,
+    ) -> Result<Resolution, ResolveError> {
         let site = format!("https://chaturbate.{tld}/");
         let api = Url::parse(&format!("{site}get_edge_hls_url_ajax/")).expect("valid");
         let response = self
@@ -220,7 +265,11 @@ impl ChaturbateResolver {
                     return Err(status_error_of(status, room, url));
                 }
                 // Any other status: the room page names the stream itself.
-                tracing::debug!(room, status, "chaturbate API named no stream; reading the room page");
+                tracing::debug!(
+                    room,
+                    status,
+                    "chaturbate API named no stream; reading the room page"
+                );
                 self.playlists_from_page(&site, room, url).await?
             }
         };
@@ -243,7 +292,10 @@ impl ChaturbateResolver {
                             Some(label) => format!("{speed}-{label}"),
                             None => speed.to_string(),
                         });
-                        if !expanded_variants.iter().any(|v: &Variant| v.url == variant.url) {
+                        if !expanded_variants
+                            .iter()
+                            .any(|v: &Variant| v.url == variant.url)
+                        {
                             expanded_variants.push(variant);
                         }
                     }
@@ -268,7 +320,10 @@ impl ChaturbateResolver {
         resolved.title = clean_title(room);
         resolved.uploader = clean_title(room);
         resolved.uploader_url = Url::parse(&format!("{site}{room}/")).ok();
-        resolved.thumbnail = Url::parse(&format!("https://roomimg.stream.highwebmedia.com/ri/{room}.jpg")).ok();
+        resolved.thumbnail = Url::parse(&format!(
+            "https://roomimg.stream.highwebmedia.com/ri/{room}.jpg"
+        ))
+        .ok();
         resolved.webpage_url = Url::parse(&format!("{site}{room}/")).ok();
         resolved.age_limit = Some(18);
         resolved.live = true;
@@ -276,9 +331,17 @@ impl ChaturbateResolver {
         Ok(Resolution::from(resolved))
     }
 
-    async fn resolve_listing(&self, tld: &str, gender: Option<&str>, url: &Url) -> Result<Resolution, ResolveError> {
+    async fn resolve_listing(
+        &self,
+        tld: &str,
+        gender: Option<&str>,
+        url: &Url,
+    ) -> Result<Resolution, ResolveError> {
         let site = format!("https://chaturbate.{tld}/");
-        let mut query = vec![("limit", LISTING_LIMIT.to_string()), ("offset", "0".to_string())];
+        let mut query = vec![
+            ("limit", LISTING_LIMIT.to_string()),
+            ("offset", "0".to_string()),
+        ];
         if let Some(gender) = gender {
             query.push(("genders", gender_code(gender).to_string()));
         }
@@ -330,7 +393,9 @@ impl ChaturbateResolver {
                 Some(gender) => format!("Chaturbate {gender} cams"),
                 None => "Chaturbate cams".to_string(),
             }),
-            total: util::uint(&answer["total_count"]).map(|n| n as usize).or(Some(entries.len())),
+            total: util::uint(&answer["total_count"])
+                .map(|n| n as usize)
+                .or(Some(entries.len())),
             entries,
         }))
     }
@@ -350,7 +415,10 @@ impl Resolver for ChaturbateResolver {
             features: &["live", "listings"],
             formats: &["hls"],
             session: SessionSupport::None,
-            examples: &["https://chaturbate.com/", "https://chaturbate.com/female-cams/"],
+            examples: &[
+                "https://chaturbate.com/",
+                "https://chaturbate.com/female-cams/",
+            ],
         }
     }
 
@@ -361,7 +429,9 @@ impl Resolver for ChaturbateResolver {
     async fn resolve(&self, url: &Url) -> Result<Resolution, ResolveError> {
         match parse_link(url).ok_or_else(|| ResolveError::NotFound(url.clone()))? {
             Link::Room { tld, room } => self.resolve_room(&tld, &room, url).await,
-            Link::Listing { tld, gender } => self.resolve_listing(&tld, gender.as_deref(), url).await,
+            Link::Listing { tld, gender } => {
+                self.resolve_listing(&tld, gender.as_deref(), url).await
+            }
         }
     }
 }
@@ -372,7 +442,13 @@ mod tests {
     use crate::http::{Exchange, Fixture, RecordedBody, RecordedRequest, RecordedResponse};
     use serde_json::json;
 
-    fn exchange(method: &str, url: &str, status: u16, content_type: &str, body: String) -> Exchange {
+    fn exchange(
+        method: &str,
+        url: &str,
+        status: u16,
+        content_type: &str,
+        body: String,
+    ) -> Exchange {
         Exchange {
             request: RecordedRequest {
                 method: method.into(),
@@ -393,16 +469,45 @@ mod tests {
     #[test]
     fn links_are_read() {
         let link = |s: &str| parse_link(&Url::parse(s).unwrap());
-        let room = |tld: &str, room: &str| Some(Link::Room { tld: tld.into(), room: room.into() });
-        assert_eq!(link("https://www.chaturbate.com/siswet19/"), room("com", "siswet19"));
-        assert_eq!(link("https://chaturbate.com/fullvideo/?b=caylin"), room("com", "caylin"));
-        assert_eq!(link("https://en.chaturbate.com/siswet19/"), room("com", "siswet19"));
-        assert_eq!(link("https://chaturbate.eu/siswet19/"), room("eu", "siswet19"));
-        assert_eq!(link("https://chaturbate.global/siswet19"), room("global", "siswet19"));
-        assert_eq!(link("https://chaturbate.com/"), Some(Link::Listing { tld: "com".into(), gender: None }));
+        let room = |tld: &str, room: &str| {
+            Some(Link::Room {
+                tld: tld.into(),
+                room: room.into(),
+            })
+        };
+        assert_eq!(
+            link("https://www.chaturbate.com/siswet19/"),
+            room("com", "siswet19")
+        );
+        assert_eq!(
+            link("https://chaturbate.com/fullvideo/?b=caylin"),
+            room("com", "caylin")
+        );
+        assert_eq!(
+            link("https://en.chaturbate.com/siswet19/"),
+            room("com", "siswet19")
+        );
+        assert_eq!(
+            link("https://chaturbate.eu/siswet19/"),
+            room("eu", "siswet19")
+        );
+        assert_eq!(
+            link("https://chaturbate.global/siswet19"),
+            room("global", "siswet19")
+        );
+        assert_eq!(
+            link("https://chaturbate.com/"),
+            Some(Link::Listing {
+                tld: "com".into(),
+                gender: None
+            })
+        );
         assert_eq!(
             link("https://chaturbate.com/female-cams/"),
-            Some(Link::Listing { tld: "com".into(), gender: Some("female".into()) })
+            Some(Link::Listing {
+                tld: "com".into(),
+                gender: Some("female".into())
+            })
         );
         assert_eq!(link("https://chaturbate.com/login/"), None);
         assert_eq!(link("https://chaturbate.com/tags/anal/"), None);
@@ -438,7 +543,8 @@ mod tests {
             "https://chaturbate.com/get_edge_hls_url_ajax/",
             200,
             "application/json",
-            json!({"success": true, "url": "", "room_status": "offline", "hidden_message": ""}).to_string(),
+            json!({"success": true, "url": "", "room_status": "offline", "hidden_message": ""})
+                .to_string(),
         ));
         fixture.exchanges.push(exchange(
             "POST",
@@ -487,7 +593,8 @@ mod tests {
                 {"username": "sierrasexy6", "room_subject": "Tuesday night #18", "gender": "f"},
                 {"username": "emilychoi", "room_subject": "", "gender": "f"},
                 {"gender": "f"}
-            ], "total_count": 2500}).to_string(),
+            ], "total_count": 2500})
+            .to_string(),
         ));
         let resolver = ChaturbateResolver::new(Http::replay(fixture));
         let Resolution::Playlist(playlist) = resolver
@@ -500,8 +607,14 @@ mod tests {
         assert_eq!(playlist.title.as_deref(), Some("Chaturbate female cams"));
         assert_eq!(playlist.total, Some(2500));
         assert_eq!(playlist.entries.len(), 2);
-        assert_eq!(playlist.entries[0].url.as_str(), "https://chaturbate.com/sierrasexy6/");
-        assert_eq!(playlist.entries[0].title.as_deref(), Some("sierrasexy6: Tuesday night #18"));
+        assert_eq!(
+            playlist.entries[0].url.as_str(),
+            "https://chaturbate.com/sierrasexy6/"
+        );
+        assert_eq!(
+            playlist.entries[0].title.as_deref(),
+            Some("sierrasexy6: Tuesday night #18")
+        );
         assert_eq!(playlist.entries[1].title.as_deref(), Some("emilychoi"));
     }
 }

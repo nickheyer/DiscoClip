@@ -57,7 +57,9 @@ pub fn parse_link(url: &Url) -> Option<PostRef> {
     };
     if url.scheme() == "at" {
         // `at://{actor}/app.bsky.feed.post/{rkey}`
-        let actor = url.host_str().or_else(|| url.authority().split('/').next())?;
+        let actor = url
+            .host_str()
+            .or_else(|| url.authority().split('/').next())?;
         let actor = if actor.is_empty() {
             url.as_str().trim_start_matches("at://").split('/').next()?
         } else {
@@ -195,10 +197,7 @@ fn media_of(post: &Value) -> Vec<Media<'_>> {
 
 /// The author's handle, from the view's `author` or the quoted record's.
 fn handle_of(post: &Value) -> String {
-    post["author"]["handle"]
-        .as_str()
-        .unwrap_or("")
-        .to_string()
+    post["author"]["handle"].as_str().unwrap_or("").to_string()
 }
 
 /// The post's key, from its AT URI.
@@ -228,7 +227,9 @@ impl BlueskyResolver {
         let answer = fetched.json(origin)?;
         if !fetched.status.is_success() {
             let error = answer["error"].as_str().unwrap_or("");
-            let message = answer["message"].as_str().unwrap_or("the API refused the post");
+            let message = answer["message"]
+                .as_str()
+                .unwrap_or("the API refused the post");
             return Err(match (fetched.status.as_u16(), error) {
                 (_, "NotFound") | (404, _) => ResolveError::NotFound(origin.clone()),
                 (429, _) => ResolveError::RateLimited(origin.clone()),
@@ -294,7 +295,12 @@ impl BlueskyResolver {
 
     /// One video of a post as media: the HLS renditions, the original upload from the
     /// author's data server, the caption files, and what the post says.
-    async fn video(&self, video: &PostVideo<'_>, origin: &Url, webpage: Url) -> Result<Resolved, ResolveError> {
+    async fn video(
+        &self,
+        video: &PostVideo<'_>,
+        origin: &Url,
+        webpage: Url,
+    ) -> Result<Resolved, ResolveError> {
         let PostVideo { post, view, record } = video;
         let playlist = view["playlist"]
             .as_str()
@@ -390,7 +396,10 @@ impl BlueskyResolver {
             .into_iter()
             .flatten()
             .any(|label| {
-                matches!(label["val"].as_str(), Some("sexual") | Some("porn") | Some("graphic-media"))
+                matches!(
+                    label["val"].as_str(),
+                    Some("sexual") | Some("porn") | Some("graphic-media")
+                )
             })
             .then_some(18);
         resolved.subtitles = subtitles;
@@ -410,7 +419,14 @@ impl Resolver for BlueskyResolver {
             id: PLATFORM,
             name: "Bluesky",
             hosts: &["bsky.app", "main.bsky.dev"],
-            features: &["posts", "quote posts", "link cards", "at links", "original uploads", "captions"],
+            features: &[
+                "posts",
+                "quote posts",
+                "link cards",
+                "at links",
+                "original uploads",
+                "captions",
+            ],
             formats: &["hls", "mp4"],
             session: SessionSupport::None,
             examples: &["https://bsky.app/profile/bsky.app/post/3mk4lzkrnk22d"],
@@ -428,7 +444,11 @@ impl Resolver for BlueskyResolver {
         let page = |post_handle: &str, rkey: &str, pick: Option<Pick>| {
             let mut page = Url::parse(&format!(
                 "{SITE}profile/{}/post/{rkey}",
-                if post_handle.is_empty() { post_ref.actor.as_str() } else { post_handle }
+                if post_handle.is_empty() {
+                    post_ref.actor.as_str()
+                } else {
+                    post_handle
+                }
             ))
             .expect("valid");
             page.set_fragment(match pick {
@@ -440,14 +460,16 @@ impl Resolver for BlueskyResolver {
         };
         let mut media = media_of(&post);
         if media.is_empty() {
-            return Err(if post["embed"]["$type"]
-                .as_str()
-                .is_some_and(|t| t.contains("images"))
-            {
-                ResolveError::unavailable(url, "the post carries images, not a video")
-            } else {
-                ResolveError::NotFound(url.clone())
-            });
+            return Err(
+                if post["embed"]["$type"]
+                    .as_str()
+                    .is_some_and(|t| t.contains("images"))
+                {
+                    ResolveError::unavailable(url, "the post carries images, not a video")
+                } else {
+                    ResolveError::NotFound(url.clone())
+                },
+            );
         }
         // The post's own media comes first, the quoted post's second.
         let own_is_first = std::ptr::eq(
@@ -469,7 +491,11 @@ impl Resolver for BlueskyResolver {
             Some(index) => match media.swap_remove(index) {
                 Media::External(link) => Err(ResolveError::Redirect(link)),
                 Media::Video(video) => {
-                    let webpage = page(&handle_of(video.post), &rkey_of(video.post).unwrap_or_else(|| post_ref.rkey.clone()), None);
+                    let webpage = page(
+                        &handle_of(video.post),
+                        &rkey_of(video.post).unwrap_or_else(|| post_ref.rkey.clone()),
+                        None,
+                    );
                     Ok(Resolution::from(self.video(&video, url, webpage).await?))
                 }
             },
@@ -487,7 +513,11 @@ impl Resolver for BlueskyResolver {
                             url: page(
                                 &handle,
                                 &post_ref.rkey,
-                                Some(if index == 0 && own_is_first { Pick::Own } else { Pick::Quote }),
+                                Some(if index == 0 && own_is_first {
+                                    Pick::Own
+                                } else {
+                                    Pick::Quote
+                                }),
                             ),
                             title: video.post["record"]["text"]
                                 .as_str()
@@ -571,13 +601,23 @@ mod tests {
             })
         );
         assert_eq!(link("https://bsky.app/profile/bsky.app"), None);
-        assert_eq!(link("https://bsky.app/profile/bsky.app/post/short").unwrap().rkey, "short");
+        assert_eq!(
+            link("https://bsky.app/profile/bsky.app/post/short")
+                .unwrap()
+                .rkey,
+            "short"
+        );
     }
 
     #[tokio::test]
     async fn posts_with_video_resolve_to_their_playlist() {
         let mut fixture = Fixture::new("bluesky", None);
-        fixture.exchanges.push(get(THREAD_API, 200, "application/json", &post_json().to_string()));
+        fixture.exchanges.push(get(
+            THREAD_API,
+            200,
+            "application/json",
+            &post_json().to_string(),
+        ));
         fixture.exchanges.push(get(
             "https://video.bsky.app/watch/did%3Aplc%3Az72i7hdynmk6r22z27h6tvur/bafkreifhuv/playlist.m3u8",
             200,
@@ -605,11 +645,27 @@ mod tests {
             "https://bsky.app/profile/bsky.app"
         );
         assert!(resolved.uploaded_at.is_some());
-        assert_eq!(resolved.duration, Some(std::time::Duration::from_secs_f64(5.5)));
-        assert_eq!(resolved.variants.len(), 3, "two renditions and the original upload");
+        assert_eq!(
+            resolved.duration,
+            Some(std::time::Duration::from_secs_f64(5.5))
+        );
+        assert_eq!(
+            resolved.variants.len(),
+            3,
+            "two renditions and the original upload"
+        );
         assert_eq!(resolved.variants[0].height, Some(800));
-        let original = resolved.variants.iter().find(|v| v.format_id.as_deref() == Some("blob")).unwrap();
-        assert!(original.url.as_str().starts_with("https://bsky.social/xrpc/com.atproto.sync.getBlob?did="));
+        let original = resolved
+            .variants
+            .iter()
+            .find(|v| v.format_id.as_deref() == Some("blob"))
+            .unwrap();
+        assert!(
+            original
+                .url
+                .as_str()
+                .starts_with("https://bsky.social/xrpc/com.atproto.sync.getBlob?did=")
+        );
         assert!(resolved.thumbnail.is_some());
     }
 
@@ -617,8 +673,14 @@ mod tests {
     async fn posts_without_video_and_missing_posts() {
         let mut fixture = Fixture::new("bluesky", None);
         let mut images = post_json();
-        images["thread"]["post"]["embed"] = json!({"$type": "app.bsky.embed.images#view", "images": []});
-        fixture.exchanges.push(get(THREAD_API, 200, "application/json", &images.to_string()));
+        images["thread"]["post"]["embed"] =
+            json!({"$type": "app.bsky.embed.images#view", "images": []});
+        fixture.exchanges.push(get(
+            THREAD_API,
+            200,
+            "application/json",
+            &images.to_string(),
+        ));
         fixture.exchanges.push(get(
             THREAD_API,
             400,
@@ -668,11 +730,15 @@ mod tests {
             })
         );
         assert_eq!(
-            link("https://bsky.app/profile/bsky.app/post/3mk4lzkrnk22d#media=quote").unwrap().pick,
+            link("https://bsky.app/profile/bsky.app/post/3mk4lzkrnk22d#media=quote")
+                .unwrap()
+                .pick,
             Some(Pick::Quote)
         );
         assert_eq!(
-            link("https://bsky.app/profile/bsky.app/post/3mk4lzkrnk22d#media=own").unwrap().pick,
+            link("https://bsky.app/profile/bsky.app/post/3mk4lzkrnk22d#media=own")
+                .unwrap()
+                .pick,
             Some(Pick::Own)
         );
         assert_eq!(link("at://bsky.app/app.bsky.feed.like/3mk4lzkrnk22d"), None);

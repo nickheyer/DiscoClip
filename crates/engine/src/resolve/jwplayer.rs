@@ -204,10 +204,14 @@ fn resolved_of(item: &Value) -> Resolved {
     resolved
 }
 
-
 /// The delivery API's answer for `url`, read as `platform`; its statuses become the
 /// resolver errors they mean for `origin`.
-async fn api_json(http: &Http, platform: &str, url: Url, origin: &Url) -> Result<Value, ResolveError> {
+async fn api_json(
+    http: &Http,
+    platform: &str,
+    url: Url,
+    origin: &Url,
+) -> Result<Value, ResolveError> {
     let fetched = fetch(http, &url, platform, BROWSER_UA, &[], MAX_PAGE).await?;
     match fetched.status.as_u16() {
         200..=299 => fetched.json(origin),
@@ -273,7 +277,6 @@ impl JwplayerResolver {
     pub fn new(http: Http) -> Self {
         Self { http }
     }
-
 }
 
 #[async_trait]
@@ -310,7 +313,9 @@ impl Resolver for JwplayerResolver {
 
     async fn resolve(&self, url: &Url) -> Result<Resolution, ResolveError> {
         match parse_link(url).ok_or_else(|| ResolveError::NotFound(url.clone()))? {
-            Link::Media(id) => Ok(Resolution::from(media(&self.http, PLATFORM, &id, url).await?)),
+            Link::Media(id) => Ok(Resolution::from(
+                media(&self.http, PLATFORM, &id, url).await?,
+            )),
             Link::Playlist(id) => {
                 let api = Url::parse(&format!("{PLAYLIST_API}{id}")).expect("valid");
                 let feed = api_json(&self.http, PLATFORM, api, url).await?;

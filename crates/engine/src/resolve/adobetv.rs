@@ -10,7 +10,8 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Page, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport,
-    SubtitleFormat, SubtitleTrack, Variant, VariantKind, clean_title, fetch, status_error, util, manifests
+    SubtitleFormat, SubtitleTrack, Variant, VariantKind, clean_title, fetch, manifests,
+    status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
 use crate::media::{AudioCodec, Container, VideoCodec};
@@ -74,11 +75,14 @@ fn source_variant(source: &Value) -> Option<Variant> {
         .map(|h| format!("{h}p"))
         .or_else(|| (!label.is_empty()).then(|| label.to_string()));
     variant.format_id = Some(
-        [source["format"].as_str(), (!label.is_empty()).then_some(label)]
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>()
-            .join("-"),
+        [
+            source["format"].as_str(),
+            (!label.is_empty()).then_some(label),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join("-"),
     );
     Some(variant)
 }
@@ -177,7 +181,11 @@ impl Resolver for AdobetvResolver {
         let mut variants =
             manifests::expand_all(&self.http, PLATFORM, variants, &mut subtitles, duration).await;
         variants.sort_by_key(|v| {
-            std::cmp::Reverse((v.height.unwrap_or(0), v.kind == VariantKind::File, v.bitrate.unwrap_or(0)))
+            std::cmp::Reverse((
+                v.height.unwrap_or(0),
+                v.kind == VariantKind::File,
+                v.bitrate.unwrap_or(0),
+            ))
         });
         let mut resolved = Resolved::new(PLATFORM);
         resolved.id = Some(id.clone());
@@ -233,7 +241,10 @@ mod tests {
             id("https://video.tv.adobe.com/v/3463980/adobe-acrobat"),
             Some("3463980".into())
         );
-        assert_eq!(id("https://video.tv.adobe.com/v/3463980?quality=12"), Some("3463980".into()));
+        assert_eq!(
+            id("https://video.tv.adobe.com/v/3463980?quality=12"),
+            Some("3463980".into())
+        );
         assert_eq!(id("https://video.tv.adobe.com/"), None);
         assert_eq!(id("https://tv.adobe.com/v/2456"), None);
     }
@@ -245,7 +256,11 @@ mod tests {
             r#"<iframe src="https://video.tv.adobe.com/v/3442499/?quality=12&learn=on"></iframe><a href="//video.tv.adobe.com/v/3442499">again</a><iframe src="https://video.tv.adobe.com/v/2456"></iframe>"#,
             &Url::parse("https://business.adobe.com/summit/2025/S335.html").unwrap(),
         );
-        let embeds: Vec<String> = resolver.embeds_in(&page).into_iter().map(|u| u.to_string()).collect();
+        let embeds: Vec<String> = resolver
+            .embeds_in(&page)
+            .into_iter()
+            .map(|u| u.to_string())
+            .collect();
         assert_eq!(
             embeds,
             vec![
@@ -308,7 +323,11 @@ mod tests {
         assert_eq!(best.bitrate, Some(922_000));
         assert_eq!(best.size, Some(12_693_000));
         assert_eq!(best.format_id.as_deref(), Some("mpeg-ts-1080p"));
-        assert_eq!(resolved.variants[1].kind, VariantKind::File, "files sort before playlists of the same size");
+        assert_eq!(
+            resolved.variants[1].kind,
+            VariantKind::File,
+            "files sort before playlists of the same size"
+        );
         assert_eq!(resolved.subtitles.len(), 2);
         assert_eq!(resolved.subtitles[0].language, "en-US");
         assert_eq!(resolved.subtitles[1].language, "deu");

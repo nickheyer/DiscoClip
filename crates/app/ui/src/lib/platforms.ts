@@ -14,23 +14,29 @@ export const SESSION_LABELS: Record<SessionSupport, { label: string; hint: strin
 export const FIXTURE_STATUS_LABELS: Record<FixtureStatus, string> = {
 	pass: 'Passing',
 	fail: 'Failing',
+	login_required: 'Needs login',
 	never: 'Not run'
 };
 
-export type CoverageState = 'running' | 'passing' | 'failing' | 'never' | 'none';
+export type CoverageState = 'running' | 'passing' | 'failing' | 'login' | 'never' | 'none';
 
-/** Where a platform stands: running, every fixture passing, some failing, never run, or none to run. */
+/**
+ * Where a platform stands: running, every fixture passing, some failing, some resolving
+ * only with a login its jar lacks, never run, or none to run.
+ */
 export function coverageState(platform: PlatformCoverage): CoverageState {
 	if (platform.fixtures.length === 0) return 'none';
 	if (platform.running) return 'running';
 	if (platform.last_run_at === null) return 'never';
-	return platform.failed === 0 ? 'passing' : 'failing';
+	if (platform.failed > 0) return 'failing';
+	return platform.login_required > 0 ? 'login' : 'passing';
 }
 
 export const COVERAGE_LABELS: Record<CoverageState, string> = {
 	running: 'Running',
 	passing: 'All passing',
 	failing: 'Failing',
+	login: 'Needs login',
 	never: 'Never run',
 	none: 'No fixtures'
 };
@@ -41,6 +47,8 @@ export function coverageTone(state: CoverageState): 'neutral' | 'ok' | 'warn' | 
 			return 'ok';
 		case 'failing':
 			return 'danger';
+		case 'login':
+			return 'warn';
 		case 'running':
 			return 'info';
 		default:
@@ -48,8 +56,17 @@ export function coverageTone(state: CoverageState): 'neutral' | 'ok' | 'warn' | 
 	}
 }
 
-export function fixtureTone(status: FixtureStatus): 'neutral' | 'ok' | 'danger' {
-	return status === 'pass' ? 'ok' : status === 'fail' ? 'danger' : 'neutral';
+export function fixtureTone(status: FixtureStatus): 'neutral' | 'ok' | 'warn' | 'danger' {
+	switch (status) {
+		case 'pass':
+			return 'ok';
+		case 'fail':
+			return 'danger';
+		case 'login_required':
+			return 'warn';
+		default:
+			return 'neutral';
+	}
 }
 
 /** What a platform's session amounts to, from its cookies and what it last said. */

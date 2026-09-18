@@ -18,8 +18,9 @@ use crate::media::{AudioCodec, Container};
 pub const PLATFORM: &str = "dw";
 
 /// `/{lang}/{slug}/{av|video|audio|e}-{id}`, with any further path.
-static RE_PATH: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^/(?:[^/]+/)+(?:av|video|audio|e)-(\d+)(?:-\d+)?(?:/.*)?$").unwrap());
+static RE_PATH: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^/(?:[^/]+/)+(?:av|video|audio|e)-(\d+)(?:-\d+)?(?:/.*)?$").unwrap()
+});
 /// `/{lang}/{slug}/a-{id}`: an article, whose own videos and audios its data lists.
 static RE_ARTICLE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^/(?:[^/]+/)+a-(\d+)(?:/.*)?$").unwrap());
@@ -53,7 +54,9 @@ pub fn article_id(url: &Url) -> Option<String> {
     if host != "dw.com" && host != "www.dw.com" && host != "m.dw.com" {
         return None;
     }
-    RE_ARTICLE.captures(url.path()).map(|caps| caps[1].to_string())
+    RE_ARTICLE
+        .captures(url.path())
+        .map(|caps| caps[1].to_string())
 }
 
 /// The videos and audios an article's data lists as its own: their ids, names and
@@ -82,8 +85,14 @@ pub fn article_media(html: &str) -> Vec<(String, Option<String>, Option<String>)
                 };
                 found.push((
                     id,
-                    item["name"].as_str().or(item["title"].as_str()).and_then(clean_title),
-                    item["namedUrl"].as_str().or(item["permaLinkUrl"].as_str()).map(String::from),
+                    item["name"]
+                        .as_str()
+                        .or(item["title"].as_str())
+                        .and_then(clean_title),
+                    item["namedUrl"]
+                        .as_str()
+                        .or(item["permaLinkUrl"].as_str())
+                        .map(String::from),
                 ));
             }
         }
@@ -103,7 +112,15 @@ impl DwResolver {
     /// An article: its one video or audio is that media; several are a playlist of
     /// their pages.
     async fn resolve_article(&self, article: &str, url: &Url) -> Result<Resolution, ResolveError> {
-        let fetched = fetch(&self.http, url, PLATFORM, BROWSER_UA, &super::navigation_headers(), MAX_PAGE).await?;
+        let fetched = fetch(
+            &self.http,
+            url,
+            PLATFORM,
+            BROWSER_UA,
+            &super::navigation_headers(),
+            MAX_PAGE,
+        )
+        .await?;
         if let Some(error) = status_error(fetched.status, url) {
             return Err(error);
         }
@@ -124,8 +141,13 @@ impl DwResolver {
             })
             .collect();
         match entries.len() {
-            0 => Err(ResolveError::unavailable(url, "the article carries no video or audio of its own")),
-            1 => Err(ResolveError::Redirect(entries.into_iter().next().expect("one").url)),
+            0 => Err(ResolveError::unavailable(
+                url,
+                "the article carries no video or audio of its own",
+            )),
+            1 => Err(ResolveError::Redirect(
+                entries.into_iter().next().expect("one").url,
+            )),
             count => Ok(Resolution::Playlist(super::Playlist {
                 resolver: PLATFORM.into(),
                 id: Some(format!("a-{article}")),
@@ -134,7 +156,7 @@ impl DwResolver {
                     .and_then(|t| clean_title(&t)),
                 entries,
                 total: Some(count),
-            }))
+            })),
         }
     }
 }
@@ -186,10 +208,12 @@ impl Resolver for DwResolver {
         let html = fetched.text();
         let (ld_media, title, description, thumbnail, uploaded_at, ld_duration) = {
             let page = Page::parse(&html, &fetched.url);
-            let ld = page
-                .ld_json()
-                .into_iter()
-                .find(|ld| matches!(ld["@type"].as_str(), Some("VideoObject") | Some("AudioObject")));
+            let ld = page.ld_json().into_iter().find(|ld| {
+                matches!(
+                    ld["@type"].as_str(),
+                    Some("VideoObject") | Some("AudioObject")
+                )
+            });
             let ld_media = ld
                 .as_ref()
                 .and_then(|ld| ld["contentUrl"].as_str().or(ld["embedUrl"].as_str()))
@@ -207,7 +231,10 @@ impl Resolver for DwResolver {
                     .or_else(|| page.meta("og:description").and_then(|d| clean_title(&d))),
                 ld.as_ref()
                     .and_then(|ld| util::url_of(&ld["thumbnailUrl"], None))
-                    .or_else(|| page.meta("og:image").and_then(|t| util::join_url(Some(&fetched.url), &t))),
+                    .or_else(|| {
+                        page.meta("og:image")
+                            .and_then(|t| util::join_url(Some(&fetched.url), &t))
+                    }),
                 ld.as_ref().and_then(|ld| util::time(&ld["uploadDate"])),
                 ld.as_ref()
                     .and_then(|ld| ld["duration"].as_str())
@@ -236,7 +263,13 @@ impl Resolver for DwResolver {
                 Err(error) => failure = Some(error),
             }
         }
-        for file in [audio_source, ld_media.filter(|m| !m.path().ends_with(".m3u8"))].into_iter().flatten() {
+        for file in [
+            audio_source,
+            ld_media.filter(|m| !m.path().ends_with(".m3u8")),
+        ]
+        .into_iter()
+        .flatten()
+        {
             if resolved.variants.iter().any(|v| v.url == file) {
                 continue;
             }
@@ -245,7 +278,11 @@ impl Resolver for DwResolver {
             variant.audio_only = matches!(extension.as_str(), "mp3" | "m4a" | "aac" | "ogg");
             if variant.audio_only {
                 variant.container = Some(Container::Other(extension.clone()));
-                variant.audio = Some(if extension == "mp3" { AudioCodec::Mp3 } else { AudioCodec::Aac });
+                variant.audio = Some(if extension == "mp3" {
+                    AudioCodec::Mp3
+                } else {
+                    AudioCodec::Aac
+                });
             } else {
                 variant.container = Container::from_extension(&extension);
             }
@@ -298,10 +335,22 @@ mod tests {
     #[test]
     fn links_are_read() {
         let id = |s: &str| media_id(&Url::parse(s).unwrap());
-        assert_eq!(id("http://www.dw.com/en/intelligent-light/av-19112290"), Some("19112290".into()));
-        assert_eq!(id("https://www.dw.com/en/intelligent-light/video-19112290"), Some("19112290".into()));
-        assert_eq!(id("http://www.dw.com/en/documentaries-welcome-to-the-90s-2016-05-21/e-19220158-9798"), Some("19220158".into()));
-        assert_eq!(id("https://www.dw.com/de/nachrichten/audio-12345"), Some("12345".into()));
+        assert_eq!(
+            id("http://www.dw.com/en/intelligent-light/av-19112290"),
+            Some("19112290".into())
+        );
+        assert_eq!(
+            id("https://www.dw.com/en/intelligent-light/video-19112290"),
+            Some("19112290".into())
+        );
+        assert_eq!(
+            id("http://www.dw.com/en/documentaries-welcome-to-the-90s-2016-05-21/e-19220158-9798"),
+            Some("19220158".into())
+        );
+        assert_eq!(
+            id("https://www.dw.com/de/nachrichten/audio-12345"),
+            Some("12345".into())
+        );
         assert_eq!(id("http://www.dw.com/en/no-hope/a-19111009"), None);
         assert_eq!(id("https://example.com/en/x/av-1"), None);
     }
@@ -313,7 +362,12 @@ mod tests {
             r#"<body><script>window.__APP_STATE__={"x":{"hlsVideoSrc":"https:\/\/hlsvod.dw.com\/i\/Events\/mp4\/tt\/licht_,sd,hd,.mp4.csmil\/master.m3u8","durationIso8601":"PT3M14S"}};</script></body></html>"#
         );
         let mut fixture = Fixture::new(PLATFORM, None);
-        fixture.exchanges.push(get("https://www.dw.com/en/intelligent-light/video-19112290", 200, "text/html", page.into()));
+        fixture.exchanges.push(get(
+            "https://www.dw.com/en/intelligent-light/video-19112290",
+            200,
+            "text/html",
+            page.into(),
+        ));
         fixture.exchanges.push(get(
             "https://hlsvod.dw.com/i/Events/mp4/tt/licht_,sd,hd,.mp4.csmil/master.m3u8",
             200,
@@ -338,9 +392,15 @@ mod tests {
         let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
         assert_eq!(resolved.id.as_deref(), Some("19112290"));
         assert_eq!(resolved.title.as_deref(), Some("Intelligent light"));
-        assert_eq!(resolved.description.as_deref(), Some("An intelligent lighting system."));
+        assert_eq!(
+            resolved.description.as_deref(),
+            Some("An intelligent lighting system.")
+        );
         assert_eq!(resolved.duration, Some(Duration::from_secs(194)));
-        assert_eq!(resolved.uploaded_at.map(|t| t.as_second()), Some(1464917222));
+        assert_eq!(
+            resolved.uploaded_at.map(|t| t.as_second()),
+            Some(1464917222)
+        );
         assert_eq!(
             resolved.thumbnail.as_ref().unwrap().as_str(),
             "https://static.dw.com/image/19112288_605.jpg"

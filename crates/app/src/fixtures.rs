@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
-use discoclip_engine::resolve::{Platform, Resolution, SessionSupport};
+use discoclip_engine::resolve::{Platform, Resolution, ResolveError, SessionSupport};
 use discoclip_engine::rusqlite::{OptionalExtension, params};
 use discoclip_engine::store::sqlite::SqliteStore;
 use discoclip_engine::{EngineHandle, StoreError};
@@ -54,6 +54,8 @@ pub type SharedFixtureConfig = Arc<RwLock<FixtureConfig>>;
 pub enum FixtureStatus {
     Pass,
     Fail,
+    /// The link resolves only with a logged-in session the platform's jar lacks.
+    LoginRequired,
     /// The link has not been run.
     Never,
 }
@@ -80,9 +82,11 @@ pub struct PlatformSummary {
     pub last_pass_at: Option<Timestamp>,
     /// When a run last had a failing fixture.
     pub last_fail_at: Option<Timestamp>,
-    /// How the last run went.
+    /// How the last run went: links that resolved, links that failed, and links that
+    /// resolve only with a login the platform's jar lacks, which is neither.
     pub passed: u32,
     pub failed: u32,
+    pub login_required: u32,
 }
 
 /// A platform as the platforms page shows it: what its resolver covers, and what its
@@ -109,6 +113,8 @@ pub struct PlatformCoverage {
 pub struct Outcome {
     pub url: String,
     pub ok: bool,
+    /// The link was turned away for want of a logged-in session, not broken.
+    pub login_required: bool,
     pub error: Option<String>,
     pub title: Option<String>,
     pub duration: Duration,
@@ -120,6 +126,7 @@ pub struct Recorded {
     pub url: String,
     pub run_at: Timestamp,
     pub ok: bool,
+    pub login_required: bool,
     pub error: Option<String>,
     pub title: Option<String>,
     pub duration_ms: u64,
@@ -163,7 +170,8 @@ impl FixtureStore {
         transact(&self.db, |tx| {
             let mut out: BTreeMap<String, Stored> = BTreeMap::new();
             let mut platforms = tx.prepare(
-                "SELECT platform, last_run_at, last_pass_at, last_fail_at, passed, failed
+                "SELECT platform, last_run_at, last_pass_at, last_fail_at, passed, failed,
+                        login_required
                  FROM fixture_platforms",
             )?;
             let rows = platforms.query_map([], |row| {
@@ -174,20 +182,23 @@ impl FixtureStore {
                     row.get::<_, Option<i64>>(3)?,
                     row.get::<_, u32>(4)?,
                     row.get::<_, u32>(5)?,
+                    row.get::<_, u32>(6)?,
                 ))
             })?;
             for row in rows {
-                let (platform, run, pass, fail, passed, failed) = row?;
+                let (platform, run, pass, fail, passed, failed, login_required) = row?;
                 out.entry(platform).or_default().summary = PlatformSummary {
                     last_run_at: Some(timestamp("last_run_at", run)?),
                     last_pass_at: pass.map(|n| timestamp("last_pass_at", n)).transpose()?,
                     last_fail_at: fail.map(|n| timestamp("last_fail_at", n)).transpose()?,
                     passed,
                     failed,
+                    login_required,
                 };
             }
             let mut results = tx.prepare(
-                "SELECT platform, url, run_at, ok, error, title, duration_ms, last_pass_at
+                "SELECT platform, url, run_at, ok, login_required, error, title, duration_ms,
+                        last_pass_at
                  FROM fixture_results ORDER BY platform, url",
             )?;
             let rows = results.query_map([], |row| {
@@ -196,18 +207,30 @@ impl FixtureStore {
                     row.get::<_, String>(1)?,
                     row.get::<_, i64>(2)?,
                     row.get::<_, bool>(3)?,
-                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, bool>(4)?,
                     row.get::<_, Option<String>>(5)?,
-                    row.get::<_, i64>(6)?,
-                    row.get::<_, Option<i64>>(7)?,
+                    row.get::<_, Option<String>>(6)?,
+                    row.get::<_, i64>(7)?,
+                    row.get::<_, Option<i64>>(8)?,
                 ))
             })?;
             for row in rows {
-                let (platform, url, run_at, ok, error, title, duration_ms, last_pass) = row?;
+                let (
+                    platform,
+                    url,
+                    run_at,
+                    ok,
+                    login_required,
+                    error,
+                    title,
+                    duration_ms,
+                    last_pass,
+                ) = row?;
                 out.entry(platform).or_default().results.push(Recorded {
                     url,
                     run_at: timestamp("run_at", run_at)?,
                     ok,
+                    login_required,
                     error,
                     title,
                     duration_ms: duration_ms.max(0) as u64,
@@ -248,19 +271,23 @@ impl FixtureStore {
                 )?;
             }
             let at = nanos(finished_at);
-            let (mut passed, mut failed) = (0u32, 0u32);
+            let (mut passed, mut failed, mut login_required) = (0u32, 0u32, 0u32);
             for outcome in &outcomes {
                 if outcome.ok {
                     passed += 1;
+                } else if outcome.login_required {
+                    login_required += 1;
                 } else {
                     failed += 1;
                 }
                 tx.execute(
                     "INSERT INTO fixture_results
-                        (platform, url, run_at, ok, error, title, duration_ms, last_pass_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                        (platform, url, run_at, ok, login_required, error, title, duration_ms,
+                         last_pass_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
                      ON CONFLICT(platform, url) DO UPDATE SET
-                        run_at = excluded.run_at, ok = excluded.ok, error = excluded.error,
+                        run_at = excluded.run_at, ok = excluded.ok,
+                        login_required = excluded.login_required, error = excluded.error,
                         title = excluded.title, duration_ms = excluded.duration_ms,
                         last_pass_at = COALESCE(excluded.last_pass_at, fixture_results.last_pass_at)",
                     params![
@@ -268,6 +295,7 @@ impl FixtureStore {
                         outcome.url,
                         at,
                         outcome.ok,
+                        outcome.login_required && !outcome.ok,
                         outcome.error,
                         outcome.title,
                         outcome.duration.as_millis().min(i64::MAX as u128) as i64,
@@ -283,7 +311,9 @@ impl FixtureStore {
                 )
                 .optional()?;
             let (previous_pass, previous_fail) = previous.unwrap_or((None, None));
-            let last_pass_at = if failed == 0 && passed > 0 {
+            // A link that wants a login neither passes nor fails: the platform did not pass
+            // in full, and nothing is broken.
+            let last_pass_at = if failed == 0 && login_required == 0 && passed > 0 {
                 Some(at)
             } else {
                 previous_pass
@@ -291,13 +321,22 @@ impl FixtureStore {
             let last_fail_at = if failed > 0 { Some(at) } else { previous_fail };
             tx.execute(
                 "INSERT INTO fixture_platforms
-                    (platform, last_run_at, last_pass_at, last_fail_at, passed, failed)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                    (platform, last_run_at, last_pass_at, last_fail_at, passed, failed,
+                     login_required)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
                  ON CONFLICT(platform) DO UPDATE SET
                     last_run_at = excluded.last_run_at, last_pass_at = excluded.last_pass_at,
                     last_fail_at = excluded.last_fail_at, passed = excluded.passed,
-                    failed = excluded.failed",
-                params![platform, at, last_pass_at, last_fail_at, passed, failed],
+                    failed = excluded.failed, login_required = excluded.login_required",
+                params![
+                    platform,
+                    at,
+                    last_pass_at,
+                    last_fail_at,
+                    passed,
+                    failed,
+                    login_required
+                ],
             )?;
             Ok(PlatformSummary {
                 last_run_at: Some(finished_at),
@@ -309,6 +348,7 @@ impl FixtureStore {
                     .transpose()?,
                 passed,
                 failed,
+                login_required,
             })
         })
         .await
@@ -411,6 +451,8 @@ impl FixtureRunner {
                         url: url.to_string(),
                         status: if result.ok {
                             FixtureStatus::Pass
+                        } else if result.login_required {
+                            FixtureStatus::LoginRequired
                         } else {
                             FixtureStatus::Fail
                         },
@@ -559,6 +601,7 @@ impl FixtureRunner {
                 Err(error) => Outcome {
                     url: example.to_string(),
                     ok: false,
+                    login_required: false,
                     error: Some(format!("not a URL: {error}")),
                     title: None,
                     duration: began.elapsed(),
@@ -567,6 +610,7 @@ impl FixtureRunner {
                     Err(_) => Outcome {
                         url: example.to_string(),
                         ok: false,
+                        login_required: false,
                         error: Some(format!("no answer within {}s", timeout.as_secs())),
                         title: None,
                         duration: began.elapsed(),
@@ -574,6 +618,7 @@ impl FixtureRunner {
                     Ok(Err(error)) => Outcome {
                         url: example.to_string(),
                         ok: false,
+                        login_required: matches!(error, ResolveError::LoginRequired { .. }),
                         error: Some(error.to_string()),
                         title: None,
                         duration: began.elapsed(),
@@ -654,6 +699,7 @@ fn judge(url: &str, resolution: Resolution, duration: Duration) -> Outcome {
     Outcome {
         url: url.to_string(),
         ok,
+        login_required: false,
         error,
         title,
         duration,
@@ -675,10 +721,85 @@ mod tests {
         Outcome {
             url: url.into(),
             ok,
+            login_required: false,
             error: (!ok).then(|| "no video found".to_string()),
             title: ok.then(|| "A clip".to_string()),
             duration: Duration::from_millis(12),
         }
+    }
+
+    fn wants_login(url: &str) -> Outcome {
+        Outcome {
+            url: url.into(),
+            ok: false,
+            login_required: true,
+            error: Some(format!(
+                "{url} needs a logged-in p session: posts are read with the sid cookie"
+            )),
+            title: None,
+            duration: Duration::from_millis(12),
+        }
+    }
+
+    #[tokio::test]
+    async fn links_wanting_a_login_neither_pass_nor_fail() {
+        let store = store().await;
+        let first = Timestamp::from_second(1_700_000_000).unwrap();
+        let summary = store
+            .record(
+                "p",
+                first,
+                vec![outcome("https://p/a", true), wants_login("https://p/post")],
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            (summary.passed, summary.failed, summary.login_required),
+            (1, 0, 1)
+        );
+        assert_eq!(
+            summary.last_pass_at, None,
+            "the platform did not pass in full"
+        );
+        assert_eq!(summary.last_fail_at, None, "nothing is broken");
+        let stored = store.all().await.unwrap();
+        assert_eq!(stored["p"].summary.login_required, 1);
+        let post = stored["p"]
+            .results
+            .iter()
+            .find(|r| r.url == "https://p/post")
+            .unwrap();
+        assert!(!post.ok);
+        assert!(post.login_required);
+        assert!(post.error.as_ref().unwrap().contains("needs a logged-in"));
+        assert_eq!(post.last_pass_at, None);
+
+        // With the session in place the link passes, and the platform with it.
+        let second = Timestamp::from_second(1_700_000_600).unwrap();
+        let summary = store
+            .record(
+                "p",
+                second,
+                vec![
+                    outcome("https://p/a", true),
+                    outcome("https://p/post", true),
+                ],
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            (summary.passed, summary.failed, summary.login_required),
+            (2, 0, 0)
+        );
+        assert_eq!(summary.last_pass_at, Some(second));
+        let stored = store.all().await.unwrap();
+        let post = stored["p"]
+            .results
+            .iter()
+            .find(|r| r.url == "https://p/post")
+            .unwrap();
+        assert!(post.ok && !post.login_required);
+        assert_eq!(post.last_pass_at, Some(second));
     }
 
     #[tokio::test]

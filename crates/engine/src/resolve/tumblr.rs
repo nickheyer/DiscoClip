@@ -31,12 +31,16 @@ const SESSION_COOKIE: &str = "logged_in";
 const PAGE_SIZE: usize = 20;
 const MAX_PAGES: usize = 10;
 
-static RE_BLOG: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[a-z0-9][a-z0-9-]{0,31}$").unwrap());
+static RE_BLOG: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[a-z0-9][a-z0-9-]{0,31}$").unwrap());
 
 /// What a link names.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Link {
-    Post { blog: String, id: String },
+    Post {
+        blog: String,
+        id: String,
+    },
     /// A blog's video posts.
     Blog(String),
 }
@@ -58,14 +62,39 @@ pub fn parse_link(url: &Url) -> Option<Link> {
         .collect();
     if host == "tumblr.com" || host == "www.tumblr.com" {
         return match segments.as_slice() {
-            ["blog", "view", blog, id, ..] | [blog, id, ..] if digits(id) && RE_BLOG.is_match(&blog.to_ascii_lowercase()) => {
+            ["blog", "view", blog, id, ..] | [blog, id, ..]
+                if digits(id) && RE_BLOG.is_match(&blog.to_ascii_lowercase()) =>
+            {
                 Some(Link::Post {
                     blog: blog.to_ascii_lowercase(),
                     id: id.to_string(),
                 })
             }
             ["blog", "view", blog] | [blog] if RE_BLOG.is_match(&blog.to_ascii_lowercase()) => {
-                let reserved = ["dashboard", "explore", "search", "settings", "login", "register", "about", "apps", "policy", "tagged", "likes", "following", "inbox", "communities", "live", "tips", "shop", "help", "jobs", "privacy", "new", "blog"];
+                let reserved = [
+                    "dashboard",
+                    "explore",
+                    "search",
+                    "settings",
+                    "login",
+                    "register",
+                    "about",
+                    "apps",
+                    "policy",
+                    "tagged",
+                    "likes",
+                    "following",
+                    "inbox",
+                    "communities",
+                    "live",
+                    "tips",
+                    "shop",
+                    "help",
+                    "jobs",
+                    "privacy",
+                    "new",
+                    "blog",
+                ];
                 (!reserved.contains(&blog.to_ascii_lowercase().as_str()))
                     .then(|| Link::Blog(blog.to_ascii_lowercase()))
             }
@@ -180,7 +209,10 @@ impl TumblrResolver {
                 }
             }
         }
-        Err(ResolveError::unavailable(origin, "the API refused the request"))
+        Err(ResolveError::unavailable(
+            origin,
+            "the API refused the request",
+        ))
     }
 
     async fn post(&self, blog: &str, id: &str, origin: &Url) -> Result<Resolution, ResolveError> {
@@ -289,7 +321,9 @@ impl TumblrResolver {
             resolver: PLATFORM.into(),
             id: Some(blog.to_string()),
             title: title.map(|t| format!("{t} (videos)")),
-            total: total.filter(|t| *t >= entries.len()).or(Some(entries.len())),
+            total: total
+                .filter(|t| *t >= entries.len())
+                .or(Some(entries.len())),
             entries,
         }))
     }
@@ -337,9 +371,7 @@ fn hosted_variant(block: &Value) -> Option<Variant> {
     let media = &block["media"];
     let media = if media.is_array() { &media[0] } else { media };
     let url = media["url"].as_str().and_then(|u| Url::parse(u).ok())?;
-    if block["provider"]
-        .as_str()
-        .is_some_and(|p| p != "tumblr")
+    if block["provider"].as_str().is_some_and(|p| p != "tumblr")
         && !url.host_str().is_some_and(|h| h.ends_with("tumblr.com"))
     {
         return None;
@@ -483,7 +515,10 @@ mod tests {
             blog: "staff".into(),
             id: "802565427665502208".into(),
         };
-        assert_eq!(link("https://www.tumblr.com/staff/802565427665502208"), Some(post.clone()));
+        assert_eq!(
+            link("https://www.tumblr.com/staff/802565427665502208"),
+            Some(post.clone())
+        );
         assert_eq!(
             link("https://www.tumblr.com/staff/802565427665502208/recap-of-the-recap"),
             Some(post.clone())
@@ -496,8 +531,14 @@ mod tests {
             link("https://www.tumblr.com/blog/view/staff/802565427665502208"),
             Some(post)
         );
-        assert_eq!(link("https://staff.tumblr.com/"), Some(Link::Blog("staff".into())));
-        assert_eq!(link("https://www.tumblr.com/staff"), Some(Link::Blog("staff".into())));
+        assert_eq!(
+            link("https://staff.tumblr.com/"),
+            Some(Link::Blog("staff".into()))
+        );
+        assert_eq!(
+            link("https://www.tumblr.com/staff"),
+            Some(Link::Blog("staff".into()))
+        );
         assert_eq!(link("https://www.tumblr.com/dashboard"), None);
         assert_eq!(link("https://www.tumblr.com/"), None);
         assert_eq!(link("https://assets.tumblr.com/x.js"), None);

@@ -18,10 +18,10 @@ use crate::media::{AudioCodec, Container};
 pub const PLATFORM: &str = "audioboom";
 
 /// `/posts/{id}` or `/boos/{id}`, with anything after the id.
-static RE_PATH: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^/(?:boos|posts)/(\d+)").unwrap());
+static RE_PATH: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^/(?:boos|posts)/(\d+)").unwrap());
 static RE_PLAYER: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"data-react-class="V5DetailPagePlayer"\s*data-react-props=["']([^"']+)["']"#).unwrap()
+    Regex::new(r#"data-react-class="V5DetailPagePlayer"\s*data-react-props=["']([^"']+)["']"#)
+        .unwrap()
 });
 static RE_UPLOADER_LINK: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"<div class="avatar flex-shrink-0">\s*<a href="(http[^"]+)""#).unwrap()
@@ -99,7 +99,10 @@ impl Resolver for AudioboomResolver {
         let clip = player_clip(&html).unwrap_or(Value::Null);
         let page = Page::parse(&html, &page_url);
         let audio = util::url_of(&clip["clipURLPriorToLoading"], None)
-            .or_else(|| page.meta("og:audio").and_then(|a| util::join_url(Some(&page_url), &a)))
+            .or_else(|| {
+                page.meta("og:audio")
+                    .and_then(|a| util::join_url(Some(&page_url), &a))
+            })
             .ok_or_else(|| ResolveError::NotFound(url.clone()))?;
         let mut variant = Variant::file(audio);
         variant.audio_only = true;
@@ -111,8 +114,8 @@ impl Resolver for AudioboomResolver {
         resolved.title = clip["title"]
             .as_str()
             .and_then(clean_title)
-            .or_else(|| page.meta("og:title").and_then(|t| clean_title(&t)))
             .or_else(|| page.meta("og:audio:title").and_then(|t| clean_title(&t)))
+            .or_else(|| page.meta("og:title").and_then(|t| clean_title(&t)))
             .or_else(|| page.meta("audio_title").and_then(|t| clean_title(&t)))
             .or_else(|| page.title());
         resolved.description = clip["description"]
@@ -135,11 +138,16 @@ impl Resolver for AudioboomResolver {
             .as_str()
             .and_then(clean_title)
             .or_else(|| page.meta("og:audio:artist").and_then(|a| clean_title(&a)))
-            .or_else(|| page.meta("twitter:audio:artist_name").and_then(|a| clean_title(&a)))
+            .or_else(|| {
+                page.meta("twitter:audio:artist_name")
+                    .and_then(|a| clean_title(&a))
+            })
             .or_else(|| page.meta("audio_artist").and_then(|a| clean_title(&a)));
         resolved.uploader_url = util::url_of(&clip["author_url"], None)
             .or_else(|| util::search(&RE_UPLOADER_LINK, &html).and_then(|u| Url::parse(&u).ok()));
-        resolved.thumbnail = page.meta("og:image").and_then(|t| util::join_url(Some(&page_url), &t));
+        resolved.thumbnail = page
+            .meta("og:image")
+            .and_then(|t| util::join_url(Some(&page_url), &t));
         resolved.uploaded_at = page
             .meta("article:published_time")
             .and_then(|t| util::parse_timestamp(&t));
@@ -177,9 +185,18 @@ mod tests {
     #[test]
     fn links_are_read() {
         let id = |s: &str| post_id(&Url::parse(s).unwrap());
-        assert_eq!(id("https://audioboom.com/posts/7398103-asim-chaudhry"), Some("7398103".into()));
-        assert_eq!(id("https://audioboom.com/posts/8128496.mp3"), Some("8128496".into()));
-        assert_eq!(id("https://audioboom.com/boos/4279833-3-09-2016?t=0"), Some("4279833".into()));
+        assert_eq!(
+            id("https://audioboom.com/posts/7398103-asim-chaudhry"),
+            Some("7398103".into())
+        );
+        assert_eq!(
+            id("https://audioboom.com/posts/8128496.mp3"),
+            Some("8128496".into())
+        );
+        assert_eq!(
+            id("https://audioboom.com/boos/4279833-3-09-2016?t=0"),
+            Some("4279833".into())
+        );
         assert_eq!(id("https://audioboom.com/channels/5017447"), None);
         assert_eq!(id("https://example.com/posts/7398103"), None);
     }
@@ -222,7 +239,10 @@ mod tests {
             "https://audioboom.com/channels/5017447"
         );
         assert_eq!(resolved.duration, Some(Duration::from_secs_f64(1352.73)));
-        assert_eq!(resolved.uploaded_at.map(|t| t.as_second()), Some(1566396000));
+        assert_eq!(
+            resolved.uploaded_at.map(|t| t.as_second()),
+            Some(1566396000)
+        );
         assert_eq!(resolved.variants.len(), 1);
         assert!(resolved.variants[0].audio_only);
         assert_eq!(

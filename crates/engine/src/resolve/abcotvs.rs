@@ -232,7 +232,8 @@ mod tests {
         }
     }
 
-    const STORY: &str = "http://abc7news.com/entertainment/east-bay-museum-celebrates-vintage-synthesizers/472581/";
+    const STORY: &str =
+        "http://abc7news.com/entertainment/east-bay-museum-celebrates-vintage-synthesizers/472581/";
 
     #[test]
     fn links_are_read() {
@@ -254,7 +255,9 @@ mod tests {
             })
         );
         assert_eq!(
-            link("https://6abc.com/man-75-killed-after-being-struck-by-vehicle-in-chester/5725182/"),
+            link(
+                "https://6abc.com/man-75-killed-after-being-struck-by-vehicle-in-chester/5725182/"
+            ),
             Some(Link {
                 station: "wpvi",
                 id: "5725182".into(),
@@ -312,7 +315,10 @@ mod tests {
             Some("East Bay museum celebrates synthesized music")
         );
         assert_eq!(resolved.duration, Some(Duration::from_secs(8092)));
-        assert_eq!(resolved.uploaded_at.map(|t| t.as_second()), Some(1421118520));
+        assert_eq!(
+            resolved.uploaded_at.map(|t| t.as_second()),
+            Some(1421118520)
+        );
         assert_eq!(resolved.uploader.as_deref(), Some("KGO"));
         assert_eq!(
             resolved.thumbnail.as_ref().unwrap().as_str(),
@@ -354,9 +360,15 @@ mod tests {
             .unwrap()
             .media()
             .unwrap();
-        assert_eq!(resolved.title.as_deref(), Some("Injured climber crawls to safety"));
+        assert_eq!(
+            resolved.title.as_deref(),
+            Some("Injured climber crawls to safety")
+        );
         assert_eq!(resolved.duration, Some(Duration::from_secs(33)));
-        assert_eq!(resolved.uploaded_at.map(|t| t.as_second()), Some(1789483078));
+        assert_eq!(
+            resolved.uploaded_at.map(|t| t.as_second()),
+            Some(1789483078)
+        );
         assert_eq!(resolved.variants.len(), 2);
         assert_eq!(resolved.variants[0].format_id.as_deref(), Some("hq-mp4"));
         assert_eq!(resolved.variants[1].width, Some(640));

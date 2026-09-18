@@ -29,6 +29,14 @@ max_entries = 50               # the most entries one link expands into
 [engine.live]
 max_capture_secs = 10800       # how long a live stream is recorded before it is cut
 
+# Files served over plain HTTP. A host that serves byte ranges is asked for the file in
+# chunks over several connections at once; a transfer that breaks is picked up from the
+# byte it stopped at.
+[engine.download]
+connections = 4                # connections fetching one file at the same time
+chunk_bytes = 8388608          # bytes each ranged request asks for; at least 65536
+resume_attempts = 5            # times a broken transfer is picked up before the download fails
+
 [engine.retention]
 jobs_days = 90                 # finished jobs older than this are removed; 0 keeps them
 failed_jobs_days = 30          # failed and cancelled jobs older than this are removed; 0 keeps them

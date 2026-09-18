@@ -11,10 +11,10 @@ use url::Url;
 use super::page::{Page, unescape_json_string};
 use super::{
     MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionCheck, SessionSupport,
-    Variant, VariantKind, clean_title, fetch_ok, navigation_headers,
+    Tag, Variant, VariantKind, clean_title, fetch_ok, navigation_headers,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "facebook";
 const ME: &str = "https://www.facebook.com/me/";
@@ -148,6 +148,8 @@ impl Resolver for FacebookResolver {
             hosts: &["facebook.com", "fb.watch", "fb.com"],
             features: &["videos", "reels", "watch links", "short links"],
             formats: &["mp4", "dash"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Basic, Tag::Social, Tag::Video],
             session: SessionSupport::Optional,
             examples: &["https://www.facebook.com/facebook/videos/10153231379946729/"],
         }

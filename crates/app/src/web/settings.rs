@@ -87,6 +87,12 @@ async fn change(
     }
     let current = state.settings.load().await?;
     let next = state.settings.preview(change).await?;
+    if next.web.public_url.is_none() && state.frontends.cache().any_posting_links() {
+        return Err(ApiError::Conflict(
+            "web.public_url cannot be cleared while a front end posts links; turn its links off first"
+                .into(),
+        ));
+    }
     state.live.check(&current, &next).await?;
     if let Err(error) = state.live.apply(&next).await {
         restore(state, &current).await;

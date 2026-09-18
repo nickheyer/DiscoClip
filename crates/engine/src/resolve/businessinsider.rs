@@ -14,10 +14,11 @@ use url::Url;
 
 use super::page::Page;
 use super::{
-    MAX_PAGE, Platform, Resolution, ResolveError, Resolver, SessionSupport, clean_title, fetch_ok,
-    jwplayer, navigation_headers, util,
+    MAX_PAGE, Platform, Resolution, ResolveError, Resolver, SessionSupport, Tag, clean_title,
+    fetch_ok, jwplayer, navigation_headers, util,
 };
 use crate::http::{BROWSER_UA, Http};
+use crate::media::MediaKind;
 
 pub const PLATFORM: &str = "businessinsider";
 
@@ -127,6 +128,8 @@ impl Resolver for BusinessinsiderResolver {
             hosts: &["businessinsider.com", "businessinsider.nl"],
             features: &["videos"],
             formats: &["mp4", "hls"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::News],
             session: SessionSupport::None,
             examples: &[
                 "https://www.businessinsider.com/how-much-radiation-youre-exposed-to-in-everyday-life-2016-6",

@@ -67,6 +67,17 @@ linked their Discord account edits that guild's rules. A guild's page lists the 
 the bot sees, marks the watched ones and starts a rule from any of them; a rule's channels,
 roles and members are picked by name through the bot, with members found by searching.
 
+What the app shows of a guild, its channels, roles and the members it names, comes from
+what the bot's gateway connection has told it: Discord sends every guild with its channels
+and roles when the bot connects and every change after, and the bot keeps a directory of
+it, with the members it has seen speak. The app reads that directory, so listing channels
+never waits on Discord's REST API and its rate limits, and the publisher reads a guild's
+upload limit from it too. Searching members by name is the one lookup Discord's gateway
+cannot answer; it and a lookup of a member the bot has not seen go to the REST API with a
+bound of a few seconds, after which the app answers 503 with a hint to try again rather
+than holding the browser. A stopped bot's directory stays as it last was until the bot
+runs again.
+
 The `/clip` and `/status` slash commands are registered per application from its page:
 globally, in chosen guilds, or not at all. Each bot is started, stopped and restarted from
 the app; a stopped bot stays stopped until started again, and every bot's state streams
@@ -75,15 +86,103 @@ live to the app.
 Scripts use API tokens minted from the account page, sent as `Authorization: Bearer dc_...`;
 each token is limited to the permissions it was given and can be revoked at any time.
 
+## Profiles
+
+A profile is a named set of choices about what the server does with links, and the first
+choice is which platforms are on. Every platform the engine has is a toggle in a profile:
+a profile names the platforms it turns on or off and says what happens to the rest, left
+as the wider scope has them, all on, or all off. The built-in `Default` profile turns
+every platform on and cannot be removed.
+
+Presets turn platforms on by kind. Every platform carries tags for what it is, `basic` for
+the mainstream platforms most links point at, `nsfw`, `news`, `social`, `video`, `music`,
+`podcasts`, `live`, `files`, `images` and `players`, and each tag makes a preset of the
+platforms carrying it, with `sfw` as every platform not tagged `nsfw`. A profile chooses
+any number of presets and they add up: every platform in any chosen preset is on and every
+other platform is off, in place of the profile's default for unnamed platforms; the
+platforms the profile names one by one win over the presets either way. The platforms page
+shows each platform's tags and filters by them.
+
+Profiles are put in force at scopes: the whole server, a guild, a channel in a guild, or
+a user in a guild. The scopes apply from the widest to the narrowest, each profile
+changing only what it names, so a guild can turn a platform off for everyone while one
+channel or one member has it back on. The whole server always has a profile in force;
+guilds, channels and users have one only when assigned, and inherit otherwise. Admins
+edit profiles and choose the server's from the profiles page; operators, and anyone who
+manages a guild on Discord, assign profiles to the guild, its channels and its members
+from the guild's page, where the platforms in force for any channel or member can be
+checked.
+
+A link only turned-off platforms would take is left alone by the bots, `/clip` says the
+platform is turned off, and the web app refuses it; a link some other platform takes is
+resolved with the turned-off resolvers left out, so turning the generic `web` platform
+off stops the server scraping pages nobody wrote a resolver for. Every job carries the
+platforms that were off where its link was seen, a retry takes the profiles as they
+stand then, and playlist entries inherit their parent's. Profile changes and assignments
+are written to the audit log.
+
+## Front ends
+
+A front end is a public site the server hosts at `/f/<slug>`: a browser over the media
+the server has made, with a player for each piece and, when the front end allows it, a
+download. Any number can be set up from the front ends page, by admins. Each one shows the
+jobs its scope names, seen in any of its guilds or channels or every job when it names
+none, and only those of the platforms its profile turns on; finished jobs with an output
+are listed newest first, searched by title, link or submitter, and narrowed by kind of
+media or platform. Recorded streams are listed like any other media.
+
+Who gets in is the front end's access. An open front end takes everyone. Otherwise a
+viewer gets in by whichever ways are set up: a shared secret, asked for as a PIN, a
+password or a token, stored hashed and never shown again; an account of the front end's
+own, with a username and a password admins create; or a login through any of the server's
+login providers, GitHub, Google, an OpenID Connect issuer or Discord, where a Discord login
+can be required to be a member of every guild in the front end's scope, or one of a list
+of users. Viewers hold a session cookie of the front end's own, for thirty days; admins
+see and end the sessions. Wrong secrets and passwords count against the address like
+wrong admin passwords.
+
+A front end can also be where Discord is sent instead of an upload. With its links turned
+on, the bot posts the front end's page for a job instead of the file whenever the upload
+would be too large for the destination, or would be a video reduced under the front end's
+quality floor, a height and a bitrate measured against the source as well so a small
+source is not held to a bar it never met. The engine then makes the output for the page
+under the front end's own byte bound, quality first, and the job records that a link was
+posted and why. The page carries Open Graph and Twitter card metadata, `og:video` with a
+direct link to the file for a video, `og:audio` for audio, `og:image` for a picture, so
+Discord plays the media inline from the plain link. The file link the page hands out is
+signed and stays good for as long as the front end says, thirty days by default, so
+unfurlers need no session; anyone holding the link sees that one piece for that long,
+which is the point of posting it. Posting links needs `web.public_url`, since the bot
+has no request to read a host from; a front end's links cannot be turned on without it,
+and it cannot be cleared while any front end posts links. When several front ends could
+take a job, the one whose scope fits closest wins: a listed channel over a listed guild
+over everything, then by slug.
+
 ## Platforms
 
 The platforms page lists every resolver: the hosts it takes links from, the kinds of links
-it handles, the formats the media arrives in, and whether a logged-in session is needed.
-Each platform names public fixture links; running them resolves every link without
-downloading anything and records what came of it, so the page shows which platforms work
-right now, which link fails and why, and when each platform last passed in full. The
-fixtures run on their own at `fixtures.interval_secs`, daily by default, and from the page
-by anyone who manages jobs; `fixtures.timeout_secs` bounds one link.
+it handles, the formats the media arrives in, what its links resolve to, and whether a
+logged-in session is needed. Each platform names public fixture links; running them
+resolves every link without downloading anything and records what came of it, so the page
+shows which platforms work right now, what each link resolved to (a video, audio, an
+image or a file with so many variants, or a playlist of so many entries), which link fails
+and why, and when each platform last passed in full. The fixtures run on their own at
+`fixtures.interval_secs`, daily by default, and from the page by anyone who manages jobs;
+`fixtures.timeout_secs` bounds one link.
+
+Every link resolves to media of one of four kinds, and each platform declares exactly the
+kinds its links can resolve to. A video is picked by picture, codec and bitrate as always.
+Audio alone, a track, a podcast episode or a sound bite, is picked by codec and bitrate
+and published as it is when it arrives as AAC in M4A, MP3 or Ogg under the destination's
+limit, and otherwise re-encoded to AAC with the bitrate stepped down until it fits. An
+image is published as it is when it is a JPEG, PNG, WebP or GIF under the limit, and
+otherwise scaled down, and lowered in quality where the format has any, until it fits;
+an image is never shrunk for its pixel size alone. Any other file, a document, an archive,
+a binary, is published as it is when it fits and refused when it does not, since nothing
+can make it smaller. What ffprobe finds a downloaded file to be outranks what the
+resolver called it: a job's page shows both when they differ. The jobs page previews the
+output in a video player, an audio player or as a picture by its kind, and a file is
+downloaded.
 
 YouTube links of every shape are taken: videos, shorts, live streams, premieres once they
 start, playlists, channels and clips, with the portion a clip or a `t=` timestamp names.
@@ -150,35 +249,45 @@ page the site serves visitors. Snapchat Spotlight snaps and public stories come 
 data the web pages render, a story of several snaps as a playlist. Loom recordings,
 embeds and password-protected recordings come through the share page's API, with the
 stream's CloudFront credentials kept as cookies so every segment is let through.
-Telegram posts in public channels come through the embed the site renders, an album of
-several videos as a playlist.
+Telegram posts in public channels come through the embed the site renders, videos and
+photos alike, an album of several as a playlist; a post whose only content is a document
+or audio file the embed names but does not serve says so.
 
-Discord attachment links on the CDN and the media proxy resolve as the files they are,
-and a link to a message is read through whichever running bot can see its channel: the
-message's video attachments, several of them as a playlist, or the embed of a video hosted
-elsewhere handed to that host's resolver; a signed attachment link that has expired says
-so. 9GAG animated posts come through the API the site's pages call, in every codec the
+Discord attachment links on the CDN and the media proxy resolve as whatever the file is,
+a video, an audio file, an image or any other file, by the served type first and the
+file name second, and a link to a message is read through whichever running bot can see
+its channel: the message's attachments of every kind, several of them as a playlist, or
+the embed of a video hosted elsewhere handed to that host's resolver; a signed attachment
+link that has expired says so. 9GAG animated posts come through the API the site's pages call, in every codec the
 site keeps, with a post hosting a YouTube video handed to YouTube. iFunny videos come from
 the page the site renders. Newgrounds movies come from the video sources the site hands
 its player, by height, completing NG Guard's proof of work and retaining its clearance
-cookie when requested. Internet Archive items come through the metadata API: each video with
-its derivatives as variants, an item holding several videos as a playlist, and a link to
-one file resolving that file. Wikimedia Commons and Wikipedia file pages come through the
-MediaWiki API's video info, the original upload with every transcode, and a direct link to
-an upload resolves the same way. Coub loops come through the API the player reads, as the
+cookie when requested. Internet Archive items come through the metadata API: each recording with
+its derivatives as variants, audio-only recordings as audio, the item's original images
+and documents (PDF, EPUB, DjVu, text and comic archives) as files, an item holding several
+as a playlist, and a link to one file resolving that file whatever it is. Wikimedia Commons
+and Wikipedia file pages come through the MediaWiki API's file info: a video as the
+original upload with every transcode, audio with its audio transcodes, and images and
+documents (PDF, DjVu, SVG, TIFF among them) as the original with its size and picture
+dimensions; a direct link to an upload resolves the same way. Coub loops come through the API the player reads, as the
 shareable MP4 with sound when the site rendered one and otherwise the silent loop paired
 with its audio track. GIPHY GIFs, stickers and clips come from the page's data, the clips
 with their sound in several sizes, with `gph.is` links unwrapped and direct media links
 taken by their id; Tenor GIFs come from the store the view page renders, `tenor.com/….gif`
-links unwrapped and direct media links probed. Catbox files are probed for their length,
-and an album's video files become a playlist. Google Drive files come with the original
-upload from the download endpoint and the player's streams from its video info, folders
-as playlists from the embeddable folder view. Dropbox shared files resolve through their
-download link, with the file's name and length. OneDrive shared files and folders come
-through the share API the web app calls with the anonymous token it asks for first, a
-folder's videos as a playlist. MEGA files and folders come through the API with the key
-the link carries: the file's name decrypted from its attributes, a folder's nodes with
-their keys, and the file's bytes decrypted with AES-128 in counter mode as they download.
+links unwrapped and direct media links probed. Catbox files of any kind are probed
+for their length and told apart by the served type and the file name, and an album's files
+become a playlist. Google Drive files of any kind come with the
+original upload from the download endpoint and, for videos, the player's streams from its
+video info, folders as playlists of every file from the embeddable folder view; a link
+that opens a native Docs, Sheets or Slides document is refused as not being a file.
+Dropbox shared files of any kind resolve through their download link, with the file's
+name and length. OneDrive shared files and folders come through the share API the web app
+calls with the anonymous token it asks for first, each file's kind read from the item's
+facets, a folder's files as a playlist. MEGA files and folders come through the API with
+the key the link carries: the file's name decrypted from its attributes and its kind read
+from it, a folder's nodes with their keys, and the file's bytes decrypted with AES-128 in
+counter mode as they download. Box shared files of any kind come through the site's API,
+videos with their HLS and DASH representations.
 
 Embedded players resolve through the APIs and manifests their players read. JW Player
 provides its media renditions, captions and playlists through the delivery API.
@@ -212,6 +321,42 @@ the cookies cleared at any time. Cookies are stored encrypted under `secret.key`
 with every request the platform's resolver makes, and never shown again; the audit log
 records imports and clearings by count only. Each resolver also carries the consent and
 age-gate cookies its platform wants, sent whenever the stored session has no say.
+
+## Downloads
+
+A file served over plain HTTP is asked for as byte ranges from the first request, so the
+answer says whether the host serves ranges and how long the file is. When it does, the
+rest of the file is fetched in chunks of `engine.download.chunk_bytes` over
+`engine.download.connections` connections at once, each chunk written into its place; a
+host that answers with the whole file is streamed as one. A transfer that breaks, by a
+dropped connection or a body that ends early, is picked up from the byte it stopped at,
+up to `engine.download.resume_attempts` times per file with the HTTP retry policy's
+pauses between, and a host that will not serve the rest is streamed again from the start.
+Every ranged request carries `If-Range` with the file's ETag or modification date, so a
+file that changes while it is fetched comes back whole and is fetched again from its
+first byte rather than stitched together from two versions. A file the host stores
+encrypted is decrypted as it arrives, chunk by chunk from each chunk's own offset. A file
+longer than `engine.limits.max_source_bytes` is refused as soon as its length is known.
+
+HLS is fetched segment by segment from the media playlist, or from the stream a master
+playlist offers that fits the height limit best, with the stream's default audio
+rendition beside it. A playlist without an end is live: it is reloaded as the stream goes
+on, at its target duration, and the capture takes what the playlist still offers when the
+link is seen, then every segment as it appears, until the stream ends and the recording
+is complete, or `engine.live.max_capture_secs` of media are in hand and the capture is
+cut; a segment that passes out of a live window before it can be fetched is skipped and
+noted, and a live playlist that stops answering three times over ends the capture with
+what was captured. Event playlists, which keep their history, are followed the same way.
+Where the playlist marks a discontinuity, or changes its initialization section, the
+stream is written as another part, and the parts are joined with their timestamps run on
+from one to the next. Segments under AES-128 are decrypted whole; segments under
+SAMPLE-AES are decrypted inside their elementary streams, H.264 slices and AAC, AC-3 and
+E-AC-3 frames in a transport stream and `cbcs` samples in fragmented MP4, with
+SAMPLE-AES-CTR's `cenc` samples likewise, and the transport stream is packetized again so
+ffmpeg reads it as plain; a key under FairPlay, Widevine or PlayReady is reported as DRM.
+Subtitle renditions are followed along with the media, live ones included, and their cues
+are shifted by each segment's timestamp map onto the recording's own clock; the job's log
+says what happened to a live capture and where a stream was joined from parts.
 
 Every request a resolver makes goes through one HTTP client: per-platform and per-host
 proxies, per-host rate limits and retries from the `http` settings, redirects followed
@@ -248,7 +393,7 @@ variables seed them at startup. A value changed in the web app is kept even when
 still names the old one.
 
 Every setting takes effect the moment it is saved: the log filter, the engine's workers,
-limits, archive, playlist, live capture and retention rules, its cache directory, the
+limits, archive, playlist, live capture, download and retention rules, its cache directory, the
 HTTP client's user agent, timeouts, retries, per-host rate limits and proxies, local
 publishing, the fixture schedule, the listener address and TLS files (the app listens
 again on the new ones), the trusted proxies, the public URL and the login providers. A change the running server
@@ -264,15 +409,19 @@ or with an API token, with its address; or provisioning, at startup), when, what
 to, and what changed. Settings entries carry the value before and after and whatever was
 stored around or beneath the key and removed by the write; application entries the fields
 that changed, the command scope before and after, and how a registration went; rule
-entries the rule before and after. Secrets never appear: a bot token or client secret is
+entries the rule before and after; profile entries the profile before and after, and an
+assignment the scope and the profile it replaced. Secrets never appear: a bot token or client secret is
 logged as replaced, set or removed, and settings values at keys named like secrets are
 redacted.
 
 The actions are `settings.set`, `settings.reset`, `settings.import`,
 `settings.provision`, `application.create`, `application.update`, `application.delete`,
 `application.commands.set`, `application.commands.register`, `bot.start`, `bot.stop`,
-`bot.restart`, `rule.create`, `rule.update`, `rule.delete`, `session.import` and
-`session.clear`. Admins read the log at `GET /api/audit`, newest first, narrowed by
-`actor` (an account id), `action`, `target_kind` (`setting`, `application`, `rule` or
-`platform`) with `target_id`, and `since` and `until`; `limit` sets the page size and `before` takes the `next` of the previous page. An
+`bot.restart`, `rule.create`, `rule.update`, `rule.delete`, `session.import`, `session.clear`,
+`profile.create`, `profile.update`, `profile.delete`, `profile.assign`,
+`profile.unassign`, `frontend.create`, `frontend.update`, `frontend.delete`,
+`frontend.secret.set`, `frontend.secret.clear`, `frontend.user.create`,
+`frontend.user.password`, `frontend.user.delete` and `frontend.sessions.revoke`. Admins read the log at `GET /api/audit`, newest first, narrowed by
+`actor` (an account id), `action`, `target_kind` (`setting`, `application`, `rule`,
+`platform`, `profile` or `frontend`) with `target_id`, and `since` and `until`; `limit` sets the page size and `before` takes the `next` of the previous page. An
 API token needs the `view_audit_log` scope to read it.

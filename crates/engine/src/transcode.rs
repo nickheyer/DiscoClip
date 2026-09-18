@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 use crate::event::ProgressSender;
-use crate::media::{AudioCodec, Container, LocalFile, MediaInfo, VideoCodec};
+use crate::media::{AudioCodec, Container, LocalFile, MediaInfo, MediaKind, VideoCodec};
 use crate::resolve::ClipRange;
 
 #[async_trait]
@@ -19,8 +19,80 @@ pub trait Transcoder: Send + Sync {
     ) -> Result<LocalFile, TranscodeError>;
 }
 
+/// What the output has to be, by the kind of media it is.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Target {
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Target {
+    Video(VideoTarget),
+    Audio(AudioTarget),
+    Image(ImageTarget),
+    /// Any other file: published as it is when it fits, never converted.
+    File {
+        max_bytes: u64,
+    },
+}
+
+impl Target {
+    pub fn kind(&self) -> MediaKind {
+        match self {
+            Target::Video(_) => MediaKind::Video,
+            Target::Audio(_) => MediaKind::Audio,
+            Target::Image(_) => MediaKind::Image,
+            Target::File { .. } => MediaKind::File,
+        }
+    }
+
+    pub fn max_bytes(&self) -> u64 {
+        match self {
+            Target::Video(t) => t.max_bytes,
+            Target::Audio(t) => t.max_bytes,
+            Target::Image(t) => t.max_bytes,
+            Target::File { max_bytes } => *max_bytes,
+        }
+    }
+
+    /// The portion of the input kept, for media with a timeline.
+    pub fn clip(&self) -> Option<ClipRange> {
+        match self {
+            Target::Video(t) => t.clip,
+            Target::Audio(t) => t.clip,
+            Target::Image(_) | Target::File { .. } => None,
+        }
+    }
+
+    /// The extension the output file gets.
+    pub fn extension(&self) -> Option<&str> {
+        match self {
+            Target::Video(t) => Some(t.container.extension()),
+            Target::Audio(t) => Some(t.container.extension()),
+            Target::Image(t) => Some(t.container.extension()),
+            Target::File { .. } => None,
+        }
+    }
+}
+
+/// Sound alone: encoded into `container` with `codec` under `max_bytes`, the bitrate
+/// stepped down until it fits.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AudioTarget {
+    pub container: Container,
+    pub codec: AudioCodec,
+    pub max_bytes: u64,
+    /// The portion of the input to keep.
+    #[serde(default)]
+    pub clip: Option<ClipRange>,
+}
+
+/// A still image: re-encoded into `container` under `max_bytes`, the picture scaled down
+/// and the quality lowered until it fits.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ImageTarget {
+    pub container: Container,
+    pub max_bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VideoTarget {
     pub container: Container,
     pub video: VideoCodec,
     pub audio: Option<AudioCodec>,
@@ -34,7 +106,7 @@ pub struct Target {
     pub burn_subtitles: Option<PathBuf>,
 }
 
-impl Target {
+impl VideoTarget {
     pub fn new(
         container: Container,
         video: VideoCodec,
@@ -55,14 +127,19 @@ impl Target {
 
     /// How much of `duration` the output covers once the clip is applied.
     pub fn output_duration(&self, duration: Duration) -> Duration {
-        match self.clip {
-            Some(clip) => {
-                let start = clip.start.min(duration);
-                let end = clip.end.map_or(duration, |e| e.min(duration));
-                end.saturating_sub(start)
-            }
-            None => duration,
+        clipped_duration(self.clip, duration)
+    }
+}
+
+/// How much of `duration` remains once `clip` is applied.
+pub fn clipped_duration(clip: Option<ClipRange>, duration: Duration) -> Duration {
+    match clip {
+        Some(clip) => {
+            let start = clip.start.min(duration);
+            let end = clip.end.map_or(duration, |e| e.min(duration));
+            end.saturating_sub(start)
         }
+        None => duration,
     }
 }
 
@@ -72,6 +149,10 @@ pub enum TranscodeError {
     Probe(String),
     #[error("input has no video stream")]
     NoVideo,
+    #[error("input has no audio stream")]
+    NoAudio,
+    #[error("input is not a still image")]
+    NoPicture,
     #[error("input duration is unknown")]
     NoDuration,
     #[error("unsupported target: {container:?} with {video:?}")]
@@ -79,8 +160,25 @@ pub enum TranscodeError {
         container: Container,
         video: VideoCodec,
     },
+    #[error("unsupported audio target: {container:?} with {codec:?}")]
+    UnsupportedAudioTarget {
+        container: Container,
+        codec: AudioCodec,
+    },
+    #[error("unsupported image target: {container:?}")]
+    UnsupportedImageTarget { container: Container },
     #[error("cannot fit {duration_secs}s of video under {max_bytes} bytes")]
     BudgetUnreachable { max_bytes: u64, duration_secs: u64 },
+    #[error("cannot fit {duration_secs}s of audio under {max_bytes} bytes")]
+    AudioBudgetUnreachable { max_bytes: u64, duration_secs: u64 },
+    #[error("cannot fit the picture under {max_bytes} bytes")]
+    ImageBudgetUnreachable { max_bytes: u64 },
+    #[error("file is {size} bytes and cannot be made smaller; destination allows {max_bytes}")]
+    CannotShrink { size: u64, max_bytes: u64 },
+    #[error("destination does not take {0} files")]
+    NotAccepted(MediaKind),
+    #[error("a file that is not media is published as it is, never converted")]
+    NotMedia,
     #[error("{0}")]
     Process(String),
     #[error(transparent)]
@@ -131,7 +229,7 @@ struct Encoders {
     faststart: bool,
 }
 
-fn encoders_for(target: &Target) -> Result<Encoders, TranscodeError> {
+fn encoders_for(target: &VideoTarget) -> Result<Encoders, TranscodeError> {
     let unsupported = || TranscodeError::UnsupportedTarget {
         container: target.container.clone(),
         video: target.video.clone(),
@@ -278,7 +376,7 @@ fn clip_args(clip: Option<ClipRange>) -> Vec<OsString> {
     args
 }
 
-fn remux_mode(info: &MediaInfo, size: u64, target: &Target) -> Option<bool> {
+fn remux_mode(info: &MediaInfo, size: u64, target: &VideoTarget) -> Option<bool> {
     let video = info.video.as_ref()?;
     if target.clip.is_some() || target.burn_subtitles.is_some() {
         return None;
@@ -376,7 +474,7 @@ impl FfmpegTranscoder {
         log_prefix: &Path,
         progress: &ProgressSender,
         duration: Duration,
-        target: &Target,
+        target: &VideoTarget,
     ) -> Result<LocalFile, TranscodeError> {
         let total = duration.as_micros() as u64;
         let filter = video_filter(video, step, target.burn_subtitles.as_deref());
@@ -484,23 +582,256 @@ impl FfmpegTranscoder {
     }
 }
 
-#[async_trait]
-impl Transcoder for FfmpegTranscoder {
-    async fn probe(&self, path: &Path) -> Result<MediaInfo, TranscodeError> {
-        Ok(self.ffmpeg.probe(path).await?)
-    }
+/// The bitrates audio alone is tried at, highest first.
+const AUDIO_ONLY_BPS: [u64; 8] = [
+    192_000, 160_000, 128_000, 96_000, 64_000, 48_000, 32_000, 24_000,
+];
+/// The long edges an image is scaled down to, in turn, when it is over budget.
+const IMAGE_EDGES: [u32; 10] = [4096, 3072, 2048, 1600, 1280, 1024, 800, 640, 480, 320];
+/// JPEG `-q:v` levels, best first; WebP quality falls with them.
+const JPEG_QUALITIES: [u32; 5] = [2, 4, 7, 12, 20];
 
-    async fn transcode(
+fn audio_encoder(target: &AudioTarget) -> Result<&'static str, TranscodeError> {
+    Ok(match (&target.container, &target.codec) {
+        (Container::M4a | Container::Mp4, AudioCodec::Aac) => "aac",
+        (Container::Mp3, AudioCodec::Mp3) => "libmp3lame",
+        (Container::Ogg | Container::Opus | Container::Webm, AudioCodec::Opus) => "libopus",
+        (Container::Ogg, AudioCodec::Vorbis) => "libvorbis",
+        (Container::Flac, AudioCodec::Flac) => "flac",
+        _ => {
+            return Err(TranscodeError::UnsupportedAudioTarget {
+                container: target.container.clone(),
+                codec: target.codec.clone(),
+            });
+        }
+    })
+}
+
+/// The ffmpeg muxer named for an audio container, where the extension alone is not enough.
+fn audio_muxer(container: &Container) -> Option<&'static str> {
+    match container {
+        Container::M4a => Some("ipod"),
+        Container::Opus | Container::Ogg => Some("ogg"),
+        _ => None,
+    }
+}
+
+struct ImageEncoder {
+    codec: &'static str,
+    /// Whether a quality option is taken, and which.
+    quality: Option<&'static str>,
+    pix_fmt: Option<&'static str>,
+}
+
+fn image_encoder(target: &ImageTarget) -> Result<ImageEncoder, TranscodeError> {
+    Ok(match &target.container {
+        Container::Jpeg => ImageEncoder {
+            codec: "mjpeg",
+            quality: Some("-q:v"),
+            pix_fmt: Some("yuvj420p"),
+        },
+        Container::Png => ImageEncoder {
+            codec: "png",
+            quality: None,
+            pix_fmt: None,
+        },
+        Container::Webp => ImageEncoder {
+            codec: "libwebp",
+            quality: Some("-quality"),
+            pix_fmt: None,
+        },
+        other => {
+            return Err(TranscodeError::UnsupportedImageTarget {
+                container: other.clone(),
+            });
+        }
+    })
+}
+
+/// The picture sizes an image is tried at: its own, then each smaller long edge.
+fn image_steps(width: u32, height: u32) -> Vec<(u32, u32)> {
+    let long = width.max(height).max(1);
+    let mut steps = vec![(width.max(1), height.max(1))];
+    for edge in IMAGE_EDGES {
+        if edge >= long {
+            continue;
+        }
+        let scale = edge as f64 / long as f64;
+        let w = ((width as f64 * scale).round() as u32).max(1);
+        let h = ((height as f64 * scale).round() as u32).max(1);
+        steps.push((w, h));
+    }
+    steps
+}
+
+impl FfmpegTranscoder {
+    async fn transcode_audio(
         &self,
         input: &LocalFile,
-        target: &Target,
+        info: &MediaInfo,
+        target: &AudioTarget,
         dest_dir: &Path,
-        progress: ProgressSender,
+        progress: &ProgressSender,
     ) -> Result<LocalFile, TranscodeError> {
-        let info = match &input.info {
-            Some(info) => info.clone(),
-            None => self.ffmpeg.probe(&input.path).await?,
+        if info.audio.is_none() {
+            return Err(TranscodeError::NoAudio);
+        }
+        let duration = clipped_duration(
+            target.clip,
+            info.duration.ok_or(TranscodeError::NoDuration)?,
+        );
+        if duration.is_zero() {
+            return Err(TranscodeError::NoDuration);
+        }
+        let encoder = audio_encoder(target)?;
+        tokio::fs::create_dir_all(dest_dir).await?;
+        let output = dest_dir.join(format!("output.{}", target.container.extension()));
+        let secs = duration.as_secs_f64().max(0.1);
+        let unreachable = || TranscodeError::AudioBudgetUnreachable {
+            max_bytes: target.max_bytes,
+            duration_secs: duration.as_secs(),
         };
+        let mut budget_bps = target.max_bytes as f64 * 8.0 * SIZE_MARGIN / secs;
+        let total = duration.as_micros() as u64;
+        for attempt in 1..=ATTEMPTS {
+            let bps = AUDIO_ONLY_BPS
+                .iter()
+                .copied()
+                .find(|b| (*b as f64) <= budget_bps)
+                .ok_or_else(unreachable)?;
+            tracing::info!(attempt, bps, encoder, "encoding audio");
+            let mut args: Vec<OsString> = vec!["-loglevel".into(), "warning".into()];
+            args.extend(clip_args(target.clip));
+            args.extend([
+                "-i".into(),
+                input.path.as_os_str().to_owned(),
+                "-map".into(),
+                "0:a:0".into(),
+                "-vn".into(),
+                "-sn".into(),
+                "-dn".into(),
+                "-c:a".into(),
+                encoder.into(),
+                "-ac".into(),
+                "2".into(),
+                "-ar".into(),
+                "48000".into(),
+            ]);
+            if encoder != "flac" {
+                args.extend(["-b:a".into(), bps.to_string().into()]);
+            }
+            if let Some(muxer) = audio_muxer(&target.container) {
+                args.extend(["-f".into(), muxer.into()]);
+            }
+            if target.container == Container::M4a {
+                args.extend(["-movflags".into(), "+faststart".into()]);
+            }
+            args.push(output.as_os_str().to_owned());
+            let reporter = progress.clone();
+            self.ffmpeg
+                .run(args, move |t| {
+                    reporter.send_replace(Progress {
+                        done: (t.as_micros() as u64).min(total),
+                        total: Some(total),
+                    });
+                })
+                .await?;
+            let mut file = LocalFile::from_path(output.clone()).await?;
+            if file.size <= target.max_bytes {
+                file.info = Some(self.ffmpeg.probe(&output).await?);
+                return Ok(file);
+            }
+            let ratio = target.max_bytes as f64 * SIZE_MARGIN / file.size as f64;
+            budget_bps = (bps as f64 * ratio.min(0.97)).min(bps as f64 - 1.0);
+            tracing::info!(
+                size = file.size,
+                ratio,
+                "audio over budget, lowering bitrate"
+            );
+        }
+        Err(unreachable())
+    }
+
+    async fn transcode_image(
+        &self,
+        input: &LocalFile,
+        info: &MediaInfo,
+        target: &ImageTarget,
+        dest_dir: &Path,
+        progress: &ProgressSender,
+    ) -> Result<LocalFile, TranscodeError> {
+        let picture = info.video.as_ref().ok_or(TranscodeError::NoPicture)?;
+        let encoder = image_encoder(target)?;
+        tokio::fs::create_dir_all(dest_dir).await?;
+        let output = dest_dir.join(format!("output.{}", target.container.extension()));
+        let steps = image_steps(picture.width, picture.height);
+        let qualities: &[u32] = match encoder.quality {
+            Some(_) => &JPEG_QUALITIES,
+            None => &[0],
+        };
+        let attempts = steps.len() * qualities.len();
+        let mut done = 0u64;
+        // Quality falls before the picture shrinks, so the largest picture that fits wins.
+        for (w, h) in steps {
+            for &q in qualities {
+                done += 1;
+                progress.send_replace(Progress {
+                    done,
+                    total: Some(attempts as u64),
+                });
+                let mut args: Vec<OsString> = vec![
+                    "-loglevel".into(),
+                    "warning".into(),
+                    "-i".into(),
+                    input.path.as_os_str().to_owned(),
+                    "-map".into(),
+                    "0:v:0".into(),
+                    "-frames:v".into(),
+                    "1".into(),
+                    "-an".into(),
+                    "-sn".into(),
+                    "-dn".into(),
+                    "-vf".into(),
+                    format!("scale={w}:{h}:flags=lanczos").into(),
+                    "-c:v".into(),
+                    encoder.codec.into(),
+                ];
+                if let Some(pix_fmt) = encoder.pix_fmt {
+                    args.extend(["-pix_fmt".into(), pix_fmt.into()]);
+                }
+                match encoder.quality {
+                    Some("-quality") => {
+                        // libwebp takes 0..100, best last; map the JPEG scale onto it.
+                        let quality = 100u32.saturating_sub(q * 4);
+                        args.extend(["-quality".into(), quality.to_string().into()]);
+                    }
+                    Some(option) => args.extend([option.into(), q.to_string().into()]),
+                    None => {}
+                }
+                args.push(output.as_os_str().to_owned());
+                self.ffmpeg.run(args, |_| {}).await?;
+                let mut file = LocalFile::from_path(output.clone()).await?;
+                if file.size <= target.max_bytes {
+                    file.info = Some(self.ffmpeg.probe(&output).await?);
+                    return Ok(file);
+                }
+                tracing::info!(size = file.size, w, h, q, "image over budget, shrinking");
+            }
+        }
+        let _ = tokio::fs::remove_file(&output).await;
+        Err(TranscodeError::ImageBudgetUnreachable {
+            max_bytes: target.max_bytes,
+        })
+    }
+
+    async fn transcode_video(
+        &self,
+        input: &LocalFile,
+        info: &MediaInfo,
+        target: &VideoTarget,
+        dest_dir: &Path,
+        progress: &ProgressSender,
+    ) -> Result<LocalFile, TranscodeError> {
         let video = info.video.clone().ok_or(TranscodeError::NoVideo)?;
         let duration = target.output_duration(info.duration.ok_or(TranscodeError::NoDuration)?);
         if duration.is_zero() {
@@ -510,14 +841,14 @@ impl Transcoder for FfmpegTranscoder {
         tokio::fs::create_dir_all(dest_dir).await?;
         let output = dest_dir.join(format!("output.{}", target.container.extension()));
 
-        if let Some(copy_audio) = remux_mode(&info, input.size, target) {
+        if let Some(copy_audio) = remux_mode(info, input.size, target) {
             let plan = RemuxPlan {
                 wants_audio: target.audio.is_some(),
                 copy_audio,
                 audio_encoder: encoders.audio,
                 faststart: encoders.faststart,
             };
-            match self.remux(input, &info, &plan, &output, &progress).await {
+            match self.remux(input, info, &plan, &output, progress).await {
                 Ok(file) if file.size <= target.max_bytes => return Ok(file),
                 Ok(file) => {
                     tracing::info!(size = file.size, "remux exceeds budget, encoding instead");
@@ -561,7 +892,7 @@ impl Transcoder for FfmpegTranscoder {
                     &step,
                     &output,
                     &log_prefix,
-                    &progress,
+                    progress,
                     duration,
                     target,
                 )
@@ -581,13 +912,48 @@ impl Transcoder for FfmpegTranscoder {
     }
 }
 
+#[async_trait]
+impl Transcoder for FfmpegTranscoder {
+    async fn probe(&self, path: &Path) -> Result<MediaInfo, TranscodeError> {
+        Ok(self.ffmpeg.probe(path).await?)
+    }
+
+    async fn transcode(
+        &self,
+        input: &LocalFile,
+        target: &Target,
+        dest_dir: &Path,
+        progress: ProgressSender,
+    ) -> Result<LocalFile, TranscodeError> {
+        let info = match &input.info {
+            Some(info) => info.clone(),
+            None => self.ffmpeg.probe(&input.path).await?,
+        };
+        match target {
+            Target::Video(target) => {
+                self.transcode_video(input, &info, target, dest_dir, &progress)
+                    .await
+            }
+            Target::Audio(target) => {
+                self.transcode_audio(input, &info, target, dest_dir, &progress)
+                    .await
+            }
+            Target::Image(target) => {
+                self.transcode_image(input, &info, target, dest_dir, &progress)
+                    .await
+            }
+            Target::File { .. } => Err(TranscodeError::NotMedia),
+        }
+    }
+}
+
 #[cfg(test)]
 mod target_tests {
     use super::*;
 
     #[test]
     fn clips_bound_the_output_duration_and_seek_args() {
-        let mut target = Target::new(Container::Mp4, VideoCodec::H264, None, 1000, 1080);
+        let mut target = VideoTarget::new(Container::Mp4, VideoCodec::H264, None, 1000, 1080);
         let full = Duration::from_secs(100);
         assert_eq!(target.output_duration(full), full);
         target.clip = Some(ClipRange {
@@ -614,6 +980,55 @@ mod target_tests {
             vec![OsString::from("-ss"), "90.000".into()]
         );
         assert!(clip_args(None).is_empty());
+    }
+
+    #[test]
+    fn image_steps_start_at_the_picture_and_shrink_by_long_edge() {
+        let steps = image_steps(3000, 1500);
+        assert_eq!(steps[0], (3000, 1500));
+        assert_eq!(steps[1], (2048, 1024));
+        assert_eq!(*steps.last().unwrap(), (320, 160));
+        assert!(steps.windows(2).all(|w| w[0].0 > w[1].0));
+        assert_eq!(image_steps(100, 50), vec![(100, 50)]);
+    }
+
+    #[test]
+    fn audio_and_image_encoders_follow_the_container() {
+        let m4a = AudioTarget {
+            container: Container::M4a,
+            codec: AudioCodec::Aac,
+            max_bytes: 1,
+            clip: None,
+        };
+        assert_eq!(audio_encoder(&m4a).unwrap(), "aac");
+        let mp3 = AudioTarget {
+            container: Container::Mp3,
+            codec: AudioCodec::Mp3,
+            ..m4a.clone()
+        };
+        assert_eq!(audio_encoder(&mp3).unwrap(), "libmp3lame");
+        let wrong = AudioTarget {
+            container: Container::Mp3,
+            codec: AudioCodec::Aac,
+            ..m4a
+        };
+        assert!(matches!(
+            audio_encoder(&wrong),
+            Err(TranscodeError::UnsupportedAudioTarget { .. })
+        ));
+        let jpeg = ImageTarget {
+            container: Container::Jpeg,
+            max_bytes: 1,
+        };
+        assert_eq!(image_encoder(&jpeg).unwrap().codec, "mjpeg");
+        let avif = ImageTarget {
+            container: Container::Avif,
+            max_bytes: 1,
+        };
+        assert!(matches!(
+            image_encoder(&avif),
+            Err(TranscodeError::UnsupportedImageTarget { .. })
+        ));
     }
 
     #[test]

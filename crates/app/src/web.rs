@@ -30,9 +30,11 @@ use crate::bots::BotManager;
 use crate::cookies::CookieStore;
 use crate::discord::{BotGuildStore, GuildStore};
 use crate::fixtures::FixtureRunner;
+use crate::frontends::FrontendStore;
 use crate::live::Live;
 use crate::local::SharedLocalConfig;
 use crate::oauth::{OAuthService, OAuthStore, PendingStates, Provider, Registry};
+use crate::profiles::ProfileStore;
 use crate::ratelimit::RateLimiter;
 use crate::rules::RuleStore;
 use crate::secrets::Keyring;
@@ -51,12 +53,15 @@ pub mod channels;
 pub mod discord;
 pub mod error;
 pub mod events;
+pub mod front;
+pub mod frontends;
 pub mod health;
 pub mod jobs;
 pub mod logs;
 pub mod metrics;
 pub mod oauth;
 pub mod platforms;
+pub mod profiles;
 pub mod proxy;
 pub mod rules;
 pub mod settings;
@@ -131,6 +136,10 @@ pub struct AppState {
     pub bots: Arc<BotManager>,
     pub bot_guilds: BotGuildStore,
     pub rules: RuleStore,
+    /// Which platforms are on where: profiles and where they are in force.
+    pub profiles: ProfileStore,
+    /// The public sites the server hosts over its media.
+    pub frontends: FrontendStore,
     pub discord: DiscordEndpoints,
     pub audit: AuditStore,
     /// `web.trusted_proxies`: whose forwarding headers are believed, as it stands.
@@ -191,6 +200,10 @@ pub struct Services {
     /// Runs the applications' bots.
     pub bots: Arc<BotManager>,
     pub rules: RuleStore,
+    pub profiles: ProfileStore,
+    pub frontends: FrontendStore,
+    /// `web.public_url` as the composition shares it with the stores that build links.
+    pub public_url: Arc<RwLock<Option<Url>>>,
     pub discord: DiscordEndpoints,
     pub engine: EngineHandle,
     pub fixtures: Arc<FixtureRunner>,
@@ -233,6 +246,9 @@ impl WebApp {
             keyring,
             bots,
             rules,
+            profiles,
+            frontends,
+            public_url,
             discord,
             engine,
             fixtures,
@@ -251,7 +267,7 @@ impl WebApp {
             states: PendingStates::default(),
             signup: AtomicBool::new(settings.auth.oauth_signup),
         });
-        let public_url = Arc::new(RwLock::new(settings.web.public_url.clone()));
+        *public_url.write().unwrap_or_else(|e| e.into_inner()) = settings.web.public_url.clone();
         let proxies = Arc::new(RwLock::new(Proxies::new(
             settings.web.trusted_proxies.clone(),
         )));
@@ -280,6 +296,8 @@ impl WebApp {
             bots,
             bot_guilds: BotGuildStore::new(store.clone()),
             rules,
+            profiles,
+            frontends,
             discord,
             audit: AuditStore::new(store.clone()),
             db: store,
@@ -317,6 +335,10 @@ impl WebApp {
     pub fn router(&self) -> Router {
         Router::new()
             .nest("/api", api(self.state.clone()))
+            .route(
+                "/f/{slug}/j/{id}",
+                get(front::page).with_state(self.state.clone()),
+            )
             .fallback(assets::serve)
             .layer(from_fn_with_state(self.state.clone(), proxy::resolve))
             .layer(TraceLayer::new_for_http())
@@ -589,6 +611,56 @@ fn api(state: AppState) -> Router {
         .route("/discord/guilds", get(discord::list_guilds))
         .route("/discord/guilds/refresh", post(discord::refresh_guilds))
         .route("/audit", get(audit::list))
+        .route("/frontends", get(frontends::list).post(frontends::create))
+        .route(
+            "/frontends/{id}",
+            get(frontends::get)
+                .put(frontends::update)
+                .delete(frontends::delete),
+        )
+        .route("/frontends/{id}/secret", put(frontends::set_secret))
+        .route(
+            "/frontends/{id}/users",
+            get(frontends::users).post(frontends::create_user),
+        )
+        .route(
+            "/frontends/{id}/users/{user}",
+            delete(frontends::delete_user),
+        )
+        .route(
+            "/frontends/{id}/users/{user}/password",
+            put(frontends::set_user_password),
+        )
+        .route(
+            "/frontends/{id}/sessions",
+            get(frontends::sessions).delete(frontends::revoke_sessions),
+        )
+        .route(
+            "/frontends/{id}/sessions/{session}",
+            delete(frontends::revoke_session),
+        )
+        .route("/f/{slug}", get(front::get))
+        .route("/f/{slug}/login", post(front::login))
+        .route("/f/{slug}/logout", post(front::logout))
+        .route("/f/{slug}/auth/{provider}/start", get(front::start))
+        .route("/f/{slug}/jobs", get(front::list))
+        .route("/f/{slug}/jobs/{id}", get(front::get_job))
+        .route("/f/{slug}/jobs/{id}/media", get(front::media))
+        .route("/f/{slug}/jobs/{id}/download", get(front::download))
+        .route("/profiles", get(profiles::list).post(profiles::create))
+        .route("/profiles/presets", get(profiles::presets))
+        .route("/profiles/assignments", get(profiles::assignments))
+        .route(
+            "/profiles/assignments/{scope}",
+            put(profiles::assign).delete(profiles::unassign),
+        )
+        .route("/profiles/effective", get(profiles::effective))
+        .route(
+            "/profiles/{id}",
+            get(profiles::get)
+                .put(profiles::update)
+                .delete(profiles::delete),
+        )
         .route("/platforms", get(platforms::list))
         .route("/platforms/check", post(platforms::check_all))
         .route("/platforms/{id}", get(platforms::get))

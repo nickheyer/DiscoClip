@@ -12,11 +12,11 @@ use url::Url;
 
 use super::{
     ClipRange, MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved,
-    Resolver, SessionSupport, SubtitleFormat, SubtitleTrack, Variant, VariantKind, clean_title,
-    fetch, hls, path_extension, status_error, timestamp_hint, util,
+    Resolver, SessionSupport, SubtitleFormat, SubtitleTrack, Tag, Variant, VariantKind,
+    clean_title, fetch, hls, path_extension, status_error, timestamp_hint, util,
 };
 use crate::http::{BROWSER_UA, Cookie, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "dailymotion";
 const METADATA: &str = "https://www.dailymotion.com/player/metadata/video/";
@@ -659,6 +659,8 @@ impl Resolver for DailymotionResolver {
                 "password-protected",
             ],
             formats: &["hls", "mp4"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Basic, Tag::Video, Tag::Live],
             session: SessionSupport::None,
             examples: &[
                 "https://www.dailymotion.com/video/x5kesuj",
@@ -890,7 +892,10 @@ mod tests {
             ),
         ] {
             let page = super::super::page::Page::parse(html, &base);
-            assert_eq!(resolver.embeds_in(&page), vec![Url::parse(expected).unwrap()]);
+            assert_eq!(
+                resolver.embeds_in(&page),
+                vec![Url::parse(expected).unwrap()]
+            );
         }
         let page = super::super::page::Page::parse(
             r#"<script src="https://example.com/player/xf7zn.js" data-video="x26ezrb"></script>"#,

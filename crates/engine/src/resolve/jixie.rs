@@ -13,11 +13,11 @@ use serde_json::Value;
 use url::Url;
 
 use super::{
-    MAX_PAGE, Page, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport,
+    MAX_PAGE, Page, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag,
     Variant, clean_title, fetch, hls, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "jixie";
 
@@ -293,6 +293,8 @@ impl Resolver for JixieResolver {
             ],
             features: &["videos"],
             formats: &["mp4", "hls"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Players],
             session: SessionSupport::None,
             examples: &[
                 "https://video.kompas.com/watch/1924197/chitra-subyakto-bajumu-yang-itu-itu-saja-menyelamatkanmu-dan-bumi-beginu-5-tahun",

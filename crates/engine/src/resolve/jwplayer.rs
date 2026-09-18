@@ -14,11 +14,11 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved, Resolver,
-    SessionSupport, SubtitleFormat, SubtitleTrack, Variant, VariantKind, clean_title, essence,
+    SessionSupport, SubtitleFormat, SubtitleTrack, Tag, Variant, VariantKind, clean_title, essence,
     fetch, is_dash_type, is_hls_type, manifests,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "jwplayer";
 const MEDIA_API: &str = "https://cdn.jwplayer.com/v2/media/";
@@ -299,6 +299,8 @@ impl Resolver for JwplayerResolver {
                 "captions",
             ],
             formats: &["mp4", "webm", "hls"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Players],
             session: SessionSupport::None,
             examples: &[
                 "https://cdn.jwplayer.com/v2/media/nPripu9l",

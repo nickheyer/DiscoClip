@@ -8,9 +8,10 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionCheck, SessionSupport,
-    clean_title, hls,
+    Tag, clean_title, hls,
 };
 use crate::http::{BROWSER_UA, Http};
+use crate::media::MediaKind;
 
 pub const PLATFORM: &str = "kick";
 
@@ -138,6 +139,8 @@ impl Resolver for KickResolver {
             hosts: &["kick.com"],
             features: &["live", "recordings", "clips"],
             formats: &["hls"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Basic, Tag::Live],
             session: SessionSupport::Optional,
             examples: &["https://kick.com/xqc/clips/clip_01H811MXG4FBR62FXPE1AXABDH"],
         }

@@ -48,6 +48,33 @@ static CONTENT_SECURITY_POLICY: LazyLock<HeaderValue> = LazyLock::new(|| {
     .expect("a CSP is a valid header value")
 });
 
+/// The app's page with `head` inserted at the start of its `<head>`, for pages that carry
+/// their own metadata, such as a front end's media page and what link unfurlers read
+/// from it. Served fresh every time, since the head differs by page.
+pub fn page_with_head(head: &str) -> Response {
+    let shell = String::from_utf8_lossy(PAGE.bytes);
+    let html = match shell.find("<head>") {
+        Some(at) => {
+            let split = at + "<head>".len();
+            format!("{}{head}{}", &shell[..split], &shell[split..])
+        }
+        None => format!("{head}{shell}"),
+    };
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, PAGE.content_type)
+        .header(header::CACHE_CONTROL, REVALIDATE)
+        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+        .header(
+            header::CONTENT_SECURITY_POLICY,
+            CONTENT_SECURITY_POLICY.clone(),
+        )
+        .header(header::REFERRER_POLICY, "same-origin")
+        .header(header::X_FRAME_OPTIONS, "DENY")
+        .body(Body::from(html))
+        .expect("a response with valid headers")
+}
+
 const IMMUTABLE: &str = "public, max-age=31536000, immutable";
 const REVALIDATE: &str = "no-cache";
 

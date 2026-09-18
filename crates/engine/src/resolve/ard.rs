@@ -13,11 +13,11 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved, Resolver,
-    SessionCheck, SessionSupport, SubtitleFormat, SubtitleTrack, Variant, VariantKind, clean_title,
-    fetch, fetch_ok, geo, hls, path_extension, status_error, util,
+    SessionCheck, SessionSupport, SubtitleFormat, SubtitleTrack, Tag, Variant, VariantKind,
+    clean_title, fetch, fetch_ok, geo, hls, path_extension, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "ard";
 /// The SSO endpoint that turns the `ams` cookie into the id token the API wants for
@@ -1001,7 +1001,7 @@ impl ArdResolver {
                 "the episode offers no audio",
             ));
         }
-        let mut resolved = Resolved::new(PLATFORM);
+        let mut resolved = Resolved::of(PLATFORM, MediaKind::Audio);
         resolved.id = Some(urn.to_string());
         resolved.title = item["title"].as_str().and_then(clean_title);
         resolved.description = item["description"].as_str().and_then(clean_title);
@@ -1073,6 +1073,8 @@ impl Resolver for ArdResolver {
                 "playlists",
             ],
             formats: &["hls", "mp4", "mp3"],
+            media: &[MediaKind::Video, MediaKind::Audio],
+            tags: &[Tag::News, Tag::Video, Tag::Podcasts],
             session: SessionSupport::Optional,
             examples: &[
                 "https://www.ardmediathek.de/video/tatort/nachtschatten/mdr/Y3JpZDovL21kci5kZS9zZW5kdW5nLzI4MTA2MC8yMDI2MDEwMTIwMTUvdGF0b3J0LW1kci1pbS1lcnN0ZW4tMTE4",
@@ -1471,6 +1473,7 @@ mod tests {
         );
         // Two HLS renditions and the progressive main file come before the sign-language file.
         assert_eq!(resolved.variants.len(), 4);
+        assert_eq!(resolved.media, MediaKind::Video);
         assert_eq!(resolved.variants[0].kind, VariantKind::Hls);
         assert_eq!(resolved.variants[0].height, Some(720));
         assert_eq!(resolved.variants[0].language.as_deref(), Some("deu"));
@@ -1858,7 +1861,8 @@ mod tests {
         assert_eq!(best.format_id.as_deref(), Some("Download"));
         assert_eq!(best.bitrate, Some(128_000));
         assert_eq!(best.audio, Some(AudioCodec::Mp3));
-        assert_eq!(best.container, Some(Container::Other("mp3".into())));
+        assert_eq!(best.container, Some(Container::Mp3));
+        assert_eq!(resolved.media, MediaKind::Audio);
         assert_eq!(resolved.variants[1].audio, Some(AudioCodec::Mp3));
 
         let mut fixture = Fixture::new(PLATFORM, None);

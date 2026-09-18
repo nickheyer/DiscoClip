@@ -10,11 +10,11 @@ use regex::Regex;
 use url::Url;
 
 use super::{
-    Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Variant, VariantKind,
-    check_status, clean_title,
+    Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag, Variant,
+    VariantKind, check_status, clean_title,
 };
 use crate::http::{APP_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 const MAX_JSON: usize = 2 * 1024 * 1024;
 const HOSTS: [&str; 10] = [
@@ -75,6 +75,8 @@ impl Resolver for TwitterResolver {
             ],
             features: &["videos", "gifs"],
             formats: &["mp4", "hls"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Basic, Tag::Social],
             session: SessionSupport::None,
             examples: &["https://x.com/SpaceX/status/1732824684683784516"],
         }

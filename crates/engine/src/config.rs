@@ -13,6 +13,7 @@ pub struct EngineConfig {
     pub archive: Option<ArchiveConfig>,
     pub playlists: PlaylistConfig,
     pub live: LiveConfig,
+    pub download: DownloadConfig,
     pub retention: RetentionConfig,
 }
 
@@ -25,6 +26,7 @@ impl Default for EngineConfig {
             archive: None,
             playlists: PlaylistConfig::default(),
             live: LiveConfig::default(),
+            download: DownloadConfig::default(),
             retention: RetentionConfig::default(),
         }
     }
@@ -77,6 +79,31 @@ impl Default for LiveConfig {
     fn default() -> Self {
         Self {
             max_capture_secs: 3 * 60 * 60,
+        }
+    }
+}
+
+/// How files served over plain HTTP are fetched: in ranged chunks over several
+/// connections when the host serves byte ranges, and picked up from where a broken
+/// transfer stopped.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DownloadConfig {
+    /// Connections fetching one file at the same time, when the host serves byte ranges.
+    pub connections: usize,
+    /// Bytes each ranged request asks for.
+    pub chunk_bytes: u64,
+    /// How many times a transfer that breaks is picked up from where it stopped before
+    /// the download fails; `0` fails at the first break.
+    pub resume_attempts: u32,
+}
+
+impl Default for DownloadConfig {
+    fn default() -> Self {
+        Self {
+            connections: 4,
+            chunk_bytes: 8 * 1024 * 1024,
+            resume_attempts: 5,
         }
     }
 }

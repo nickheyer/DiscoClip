@@ -10,11 +10,11 @@ use serde_json::Value;
 use url::Url;
 
 use super::{
-    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Variant,
+    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag, Variant,
     clean_title, fetch, hls, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "abcotvs";
 const API: &str = "https://api.abcotvs.com/v2/content";
@@ -124,6 +124,8 @@ impl Resolver for AbcotvsResolver {
             ],
             features: &["videos", "articles"],
             formats: &["hls", "mp4"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::News],
             session: SessionSupport::None,
             examples: &[
                 "https://abc7news.com/post/11k-worth-equipment-stolen-richmond-little-leagues-storage-container/19831881/",

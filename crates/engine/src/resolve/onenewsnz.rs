@@ -8,9 +8,10 @@ use url::Url;
 use super::page::json_after;
 use super::{
     MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolver,
-    SessionSupport, brightcove, clean_title, fetch_ok, navigation_headers,
+    SessionSupport, Tag, brightcove, clean_title, fetch_ok, navigation_headers,
 };
 use crate::http::{BROWSER_UA, Http};
+use crate::media::MediaKind;
 
 pub const PLATFORM: &str = "1news";
 /// The Brightcove account and player 1News articles embed.
@@ -128,6 +129,8 @@ impl Resolver for OneNewsNzResolver {
             hosts: &["1news.co.nz", "onenews.co.nz"],
             features: &["article videos"],
             formats: &["hls", "dash", "mp4"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::News],
             session: SessionSupport::None,
             examples: &[
                 "https://www.1news.co.nz/2022/09/29/cows-painted-green-on-parliament-lawn-in-climate-protest/",

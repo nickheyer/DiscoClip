@@ -1,10 +1,10 @@
-//! Publishes finished videos to the local file system for jobs submitted from the web app.
+//! Publishes finished media to the local file system for jobs submitted from the web app.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
-use discoclip_engine::job::{Job, Origin, SourceId};
+use discoclip_engine::job::{Job, SourceId};
 use discoclip_engine::media::{LocalFile, safe_stem};
 use discoclip_engine::publish::{Constraints, PublishError, Published, Publisher};
 use jiff::Timestamp;
@@ -43,14 +43,14 @@ impl LocalPublisher {
 
     /// `<dir>/<short job id>-<title slug>.<ext>`
     fn destination(dir: &Path, job: &Job, file: &Path) -> PathBuf {
-        let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("mp4");
+        let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("bin");
         let title = job
             .artifacts
             .resolved
             .as_ref()
             .and_then(|r| r.title.as_deref());
         let id = job.id.to_string();
-        let stem = format!("{}-{}", &id[..8], safe_stem(title, "video"));
+        let stem = format!("{}-{}", &id[..8], safe_stem(title, job.media().as_str()));
         dir.join(format!("{stem}.{ext}"))
     }
 }
@@ -61,7 +61,7 @@ impl Publisher for LocalPublisher {
         &self.source
     }
 
-    async fn constraints(&self, _origin: &Origin) -> Result<Constraints, PublishError> {
+    async fn constraints(&self, _job: &Job) -> Result<Constraints, PublishError> {
         Ok(Constraints::universal(self.config().max_bytes))
     }
 

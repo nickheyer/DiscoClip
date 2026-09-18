@@ -13,11 +13,12 @@ use url::Url;
 use super::page::{between, leading_json};
 use super::{
     ClipRange, MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionCheck,
-    SessionSupport, Variant, VariantKind, clean_title, fetch, parse_time_stamp, timestamp_hint,
+    SessionSupport, Tag, Variant, VariantKind, clean_title, fetch, parse_time_stamp,
+    timestamp_hint,
 };
 use crate::http::cookies::parse_http_date;
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "weibo";
 const SITE: &str = "https://weibo.com/";
@@ -607,6 +608,8 @@ impl Resolver for WeiboResolver {
             hosts: &["weibo.com", "weibo.cn", "t.cn"],
             features: &["posts", "reposts", "weibo tv", "short links"],
             formats: &["mp4"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Social, Tag::Video],
             session: SessionSupport::Optional,
             examples: &[
                 "https://weibo.com/7827771738/N4xlMvjhI",

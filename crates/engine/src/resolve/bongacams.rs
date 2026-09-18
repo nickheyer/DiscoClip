@@ -13,10 +13,11 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Page, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved,
-    Resolver, SessionSupport, clean_title, fetch_as_browser, hls, navigation_headers, status_error,
-    util,
+    Resolver, SessionSupport, Tag, clean_title, fetch_as_browser, hls, navigation_headers,
+    status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
+use crate::media::MediaKind;
 
 pub const PLATFORM: &str = "bongacams";
 
@@ -249,6 +250,8 @@ impl Resolver for BongacamsResolver {
             hosts: &["bongacams.com", "bongacams.net"],
             features: &["live", "listings"],
             formats: &["hls"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Nsfw, Tag::Live],
             session: SessionSupport::None,
             examples: &["https://bongacams.com/", "https://bongacams.com/female"],
         }

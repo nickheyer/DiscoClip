@@ -49,6 +49,8 @@ impl DiscordOrigin {
             source: SourceId::new(SOURCE_ID),
             reference: self.reference(),
             url: self.jump_url(),
+            guild: self.guild.map(|g| g.get().to_string()),
+            channel: Some(self.channel.get().to_string()),
         }
     }
 
@@ -96,6 +98,8 @@ mod tests {
             source: SourceId::new(SOURCE_ID),
             reference: "1:2:3:4".into(),
             url: None,
+            guild: None,
+            channel: None,
         };
         assert!(DiscordOrigin::parse(&bad).is_none());
     }

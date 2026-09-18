@@ -10,11 +10,11 @@ use serde_json::Value;
 use url::Url;
 
 use super::{
-    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Variant,
+    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag, Variant,
     clean_title, fetch, navigation_headers, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "acfun";
 const SITE: &str = "https://www.acfun.cn/";
@@ -271,6 +271,8 @@ impl Resolver for AcfunResolver {
             hosts: &["acfun.cn"],
             features: &["videos", "bangumi"],
             formats: &["hls"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Video],
             session: SessionSupport::None,
             examples: &["https://www.acfun.cn/v/ac35457073"],
         }

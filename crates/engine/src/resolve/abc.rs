@@ -12,11 +12,11 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Page, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved,
-    Resolver, SessionSupport, SubtitleFormat, SubtitleTrack, Variant, clean_title, fetch, hls,
+    Resolver, SessionSupport, SubtitleFormat, SubtitleTrack, Tag, Variant, clean_title, fetch, hls,
     navigation_headers, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "abc";
 const IVIEW_SITE: &str = "https://iview.abc.net.au";
@@ -158,7 +158,7 @@ fn rendition_variant(file: &Value) -> Option<Variant> {
     variant.size = util::uint(&file["size"]).or_else(|| util::uint(&file["fileSize"]));
     variant.audio_only = audio_only;
     if audio_only {
-        variant.container = Some(Container::Other("mp3".to_string()));
+        variant.container = Some(Container::Mp3);
         variant.audio = Some(AudioCodec::Mp3);
         variant.label = kbps.map(|k| format!("{k}k"));
     } else {
@@ -389,7 +389,13 @@ impl AbcResolver {
         }
         variants
             .sort_by_key(|v| std::cmp::Reverse((v.height.unwrap_or(0), v.bitrate.unwrap_or(0))));
-        let mut resolved = Resolved::new(PLATFORM);
+        // The page's renditions say what it carries: audio files alone make it audio.
+        let media = if variants.iter().all(|v| v.audio_only) {
+            MediaKind::Audio
+        } else {
+            MediaKind::Video
+        };
+        let mut resolved = Resolved::of(PLATFORM, media);
         resolved.id = Some(id.to_string());
         resolved.title = document["title"]
             .as_str()
@@ -589,6 +595,8 @@ impl Resolver for AbcResolver {
             hosts: &["abc.net.au", "iview.abc.net.au"],
             features: &["videos", "audio", "shows", "series", "live"],
             formats: &["mp4", "mp3", "hls"],
+            media: &[MediaKind::Video, MediaKind::Audio],
+            tags: &[Tag::News, Tag::Video],
             session: SessionSupport::Optional,
             examples: &[
                 "https://www.abc.net.au/news/2026-09-13/wa-government-to-build-new-rental-apartment-in-cbd/107148268",
@@ -760,6 +768,7 @@ mod tests {
         assert_eq!(best.bitrate, Some(15_000_000));
         assert_eq!(best.size, Some(19856818));
         assert_eq!(best.container, Some(Container::Mp4));
+        assert_eq!(resolved.media, MediaKind::Video);
         assert_eq!(best.video, Some(VideoCodec::H264));
         assert_eq!(
             resolved.variants[1].height,
@@ -791,7 +800,8 @@ mod tests {
         assert_eq!(resolved.variants.len(), 1);
         let audio = &resolved.variants[0];
         assert!(audio.audio_only);
-        assert_eq!(audio.container, Some(Container::Other("mp3".into())));
+        assert_eq!(audio.container, Some(Container::Mp3));
+        assert_eq!(resolved.media, MediaKind::Audio);
         assert_eq!(audio.bitrate, Some(192_000));
         assert_eq!(audio.size, Some(4989272));
     }
@@ -1068,6 +1078,7 @@ mod tests {
         assert_eq!(legacy.id.as_deref(), Some("6704570"));
         assert_eq!(legacy.title.as_deref(), Some("Legacy story - ABC News"));
         assert_eq!(legacy.variants.len(), 2);
+        assert_eq!(legacy.media, MediaKind::Video);
         assert_eq!(legacy.variants[0].height, Some(720));
         assert_eq!(legacy.variants[0].bitrate, Some(1_500_000));
 
@@ -1093,6 +1104,7 @@ mod tests {
         assert_eq!(audio.duration, Some(Duration::from_secs(1234)));
         assert_eq!(audio.variants.len(), 1);
         assert!(audio.variants[0].audio_only);
+        assert_eq!(audio.media, MediaKind::Audio);
         assert_eq!(
             audio.variants[0].url.as_str(),
             "https://abcmedia.akamaized.net/rn/podcast/2015/08/z.mp3"

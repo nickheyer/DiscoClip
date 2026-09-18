@@ -67,9 +67,14 @@ pub async fn start(
     MaybeAuth(identity): MaybeAuth,
     Client(client): Client,
 ) -> Result<Redirect, ApiError> {
-    let user = match query.intent {
+    let user = match &query.intent {
         Intent::Login => None,
         Intent::Link => Some(identity.ok_or(ApiError::Unauthorized)?.user.id),
+        Intent::Frontend(_) => {
+            return Err(ApiError::BadRequest(
+                "front end logins start from the front end's own route".into(),
+            ));
+        }
     };
     let redirect_uri = callback_url(&state, &client, &provider)?;
     let location = state
@@ -87,10 +92,11 @@ pub struct CallbackQuery {
     pub error: Option<String>,
 }
 
-fn failed(intent: Intent, reason: &str) -> Redirect {
+fn failed(intent: &Intent, reason: &str) -> Redirect {
     let page = match intent {
-        Intent::Login => "/login",
-        Intent::Link => "/account",
+        Intent::Login => "/login".to_string(),
+        Intent::Link => "/account".to_string(),
+        Intent::Frontend(slug) => format!("/f/{slug}/login"),
     };
     Redirect::to(&format!("{page}?error={reason}"))
 }
@@ -115,7 +121,7 @@ pub async fn callback(
             provider,
             "login flow came back with an unknown or spent state"
         );
-        return Ok((jar, failed(Intent::Login, "state")));
+        return Ok((jar, failed(&Intent::Login, "state")));
     };
     if let Some(error) = &query.error {
         tracing::info!(provider, error, "provider refused the login flow");
@@ -124,10 +130,10 @@ pub async fn callback(
         } else {
             "provider"
         };
-        return Ok((jar, failed(pending.intent, reason)));
+        return Ok((jar, failed(&pending.intent, reason)));
     }
     let Some(code) = query.code.as_deref() else {
-        return Ok((jar, failed(pending.intent, "state")));
+        return Ok((jar, failed(&pending.intent, "state")));
     };
     let (provider, remote, tokens) = match state.oauth.complete(&pending, code).await {
         Ok(done) => done,
@@ -137,13 +143,19 @@ pub async fn callback(
                 OAuthError::Malformed { .. } => "identity",
                 _ => "exchange",
             };
-            return Ok((jar, failed(pending.intent, reason)));
+            return Ok((jar, failed(&pending.intent, reason)));
         }
     };
-    match pending.intent {
+    match &pending.intent {
+        Intent::Frontend(slug) => {
+            front_login(
+                &state, slug, &provider, &remote, &tokens, jar, &headers, &client,
+            )
+            .await
+        }
         Intent::Link => {
             let Some(current) = current.filter(|c| Some(c.user.id) == pending.user) else {
-                return Ok((jar, failed(Intent::Link, "session")));
+                return Ok((jar, failed(&Intent::Link, "session")));
             };
             match state
                 .oauth
@@ -162,10 +174,10 @@ pub async fn callback(
                     Ok((jar, Redirect::to("/account")))
                 }
                 Err(OAuthError::AlreadyLinked(_)) => {
-                    Ok((jar, failed(Intent::Link, "already_linked")))
+                    Ok((jar, failed(&Intent::Link, "already_linked")))
                 }
                 Err(OAuthError::ProviderLinked(_)) => {
-                    Ok((jar, failed(Intent::Link, "provider_linked")))
+                    Ok((jar, failed(&Intent::Link, "provider_linked")))
                 }
                 Err(error) => Err(error.into()),
             }
@@ -184,7 +196,7 @@ pub async fn callback(
                         .update(linked.id, Some(&remote), Some(&tokens))
                         .await?;
                     let Some(user) = state.users.get(linked.user_id).await? else {
-                        return Ok((jar, failed(Intent::Login, "unknown_identity")));
+                        return Ok((jar, failed(&Intent::Login, "unknown_identity")));
                     };
                     user
                 }
@@ -208,7 +220,7 @@ pub async fn callback(
                         subject = remote.subject,
                         "login refused: identity linked to no account"
                     );
-                    return Ok((jar, failed(Intent::Login, "unknown_identity")));
+                    return Ok((jar, failed(&Intent::Login, "unknown_identity")));
                 }
             };
             tracing::info!(username = user.username, provider = provider.id, %ip, "logged in");
@@ -217,6 +229,90 @@ pub async fn callback(
             Ok((jar, Redirect::to("/")))
         }
     }
+}
+
+/// Lets a provider login into a front end: the provider must be one the front end names,
+/// and a Discord login must be a listed user, or a member of every guild in the front
+/// end's scope, when the front end asks for that.
+#[allow(clippy::too_many_arguments)]
+async fn front_login(
+    state: &AppState,
+    slug: &str,
+    provider: &crate::oauth::Provider,
+    remote: &crate::oauth::RemoteIdentity,
+    tokens: &crate::oauth::TokenSet,
+    jar: CookieJar,
+    headers: &HeaderMap,
+    client: &ClientInfo,
+) -> Result<(CookieJar, Redirect), ApiError> {
+    let intent = Intent::Frontend(slug.to_string());
+    let Some(frontend) = state.frontends.cache().get(slug) else {
+        return Ok((jar, failed(&intent, "frontend")));
+    };
+    let access = &frontend.input.access;
+    if !access.providers.contains(&provider.id) {
+        return Ok((jar, failed(&intent, "provider")));
+    }
+    if provider.id == "discord" {
+        if !access.discord_users.is_empty() && !access.discord_users.contains(&remote.subject) {
+            tracing::info!(
+                frontend = slug,
+                subject = remote.subject,
+                "front end login refused: not a listed user"
+            );
+            return Ok((jar, failed(&intent, "not_listed")));
+        }
+        if access.discord_members {
+            let guilds_url = match provider.discord_guilds_url(&state.oauth.http).await {
+                Ok(Some(url)) => url,
+                Ok(None) => return Ok((jar, failed(&intent, "provider"))),
+                Err(error) => {
+                    tracing::warn!(frontend = slug, %error, "guilds not fetched for a front end login");
+                    return Ok((jar, failed(&intent, "guilds")));
+                }
+            };
+            let guilds = match crate::discord::fetch_guilds(
+                &state.oauth.http,
+                &guilds_url,
+                &tokens.access_token,
+            )
+            .await
+            {
+                Ok(guilds) => guilds,
+                Err(error) => {
+                    tracing::warn!(frontend = slug, %error, "guilds not fetched for a front end login");
+                    return Ok((jar, failed(&intent, "guilds")));
+                }
+            };
+            let member_of_all = frontend
+                .input
+                .scope
+                .guilds
+                .iter()
+                .all(|wanted| guilds.iter().any(|g| &g.id == wanted));
+            if !member_of_all {
+                tracing::info!(
+                    frontend = slug,
+                    subject = remote.subject,
+                    "front end login refused: not a member"
+                );
+                return Ok((jar, failed(&intent, "not_member")));
+            }
+        }
+    }
+    let display = remote
+        .display_name
+        .clone()
+        .or_else(|| remote.username.clone())
+        .unwrap_or_else(|| remote.subject.clone());
+    let viewer = crate::frontends::Viewer {
+        frontend_id: frontend.id,
+        subject: format!("provider:{}:{}", provider.id, remote.subject),
+        display,
+    };
+    let jar = super::front::admit(state, &frontend, &viewer, jar, headers, client).await?;
+    tracing::info!(frontend = slug, provider = provider.id, subject = viewer.subject, ip = %client.ip, "front end login");
+    Ok((jar, Redirect::to(&format!("/f/{slug}"))))
 }
 
 /// Stores the guilds a fresh Discord grant can see. A login or link that succeeded is not

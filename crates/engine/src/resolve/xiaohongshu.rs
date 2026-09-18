@@ -18,10 +18,10 @@ use url::Url;
 use super::page::leading_json;
 use super::{
     ClipRange, MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionCheck,
-    SessionSupport, Variant, VariantKind, clean_title, timestamp_hint,
+    SessionSupport, Tag, Variant, VariantKind, clean_title, timestamp_hint,
 };
 use crate::http::{BROWSER_UA, Http, RequestBuilder};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "xiaohongshu";
 const SITE: &str = "https://www.xiaohongshu.com/";
@@ -516,6 +516,8 @@ impl Resolver for XiaohongshuResolver {
             hosts: &["xiaohongshu.com", "xhslink.com"],
             features: &["video notes", "share links"],
             formats: &["mp4"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Social, Tag::Video],
             session: SessionSupport::Optional,
             examples: &[
                 "https://www.xiaohongshu.com/discovery/item/6a8212d4000000001102138d?xsec_source=app_share&xsec_token=CBuZUrHoqFVTefcIPvLwx9AVA4vQ2aaSRfsQF8dEcBmYE%3D",

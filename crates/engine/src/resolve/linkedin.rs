@@ -14,10 +14,10 @@ use super::page::{Page, ld_objects_of_type};
 use super::web::parse_iso_duration;
 use super::{
     ClipRange, MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionCheck,
-    SessionSupport, Variant, VariantKind, clean_title, timestamp_hint,
+    SessionSupport, Tag, Variant, VariantKind, clean_title, timestamp_hint,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "linkedin";
 const SITE: &str = "https://www.linkedin.com/";
@@ -137,6 +137,8 @@ impl Resolver for LinkedinResolver {
             hosts: &["linkedin.com"],
             features: &["posts", "feed updates", "embeds"],
             formats: &["mp4"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Social],
             session: SessionSupport::Optional,
             examples: &[
                 "https://www.linkedin.com/posts/the-mathworks_2_what-is-mathworks-cloud-center-activity-7151241570371948544-4Gu7",

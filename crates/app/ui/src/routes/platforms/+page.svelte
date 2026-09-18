@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { invalidate } from '$app/navigation';
 	import type { PageData } from './$types';
-	import { messageOf, platforms } from '$lib/api';
-	import type { PlatformCoverage } from '$lib/api';
+	import { MEDIA_KINDS, MEDIA_LABELS, PLATFORM_TAGS, messageOf, platforms } from '$lib/api';
+	import type { MediaKind, PlatformCoverage, PlatformTag } from '$lib/api';
 	import type { CookieFormat } from '$lib/api';
 	import Alert from '$lib/components/Alert.svelte';
 	import Badge from '$lib/components/Badge.svelte';
@@ -17,9 +17,12 @@
 	import {
 		COVERAGE_LABELS,
 		FIXTURE_STATUS_LABELS,
+		MEDIA_HINTS,
 		SESSION_LABELS,
+		TAG_LABELS,
 		coverageState,
 		coverageTone,
+		describeFound,
 		fixtureTone,
 		sessionSummary
 	} from '$lib/platforms';
@@ -110,13 +113,18 @@
 		}
 	}
 	let query = $state('');
+	let kind = $state<MediaKind | ''>('');
+	let tag = $state<PlatformTag | ''>('');
 	let open = $state<Record<string, boolean>>({});
 	let starting = $state<string | null>(null);
 	let startingAll = $state(false);
 
 	const list = $derived.by(() => {
 		const needle = query.trim().toLowerCase();
-		const all = [...data.platforms].sort((a, b) => a.name.localeCompare(b.name));
+		const all = [...data.platforms]
+			.sort((a, b) => a.name.localeCompare(b.name))
+			.filter((p) => !kind || p.media.includes(kind))
+			.filter((p) => !tag || p.tags.includes(tag));
 		if (!needle) return all;
 		return all.filter(
 			(p) =>
@@ -124,9 +132,16 @@
 				p.id.includes(needle) ||
 				p.hosts.some((h) => h.includes(needle)) ||
 				p.features.some((f) => f.includes(needle)) ||
-				p.formats.some((f) => f.includes(needle))
+				p.formats.some((f) => f.includes(needle)) ||
+				p.media.some((m) => m.includes(needle)) ||
+				p.tags.some((t) => t.includes(needle) || TAG_LABELS[t].label.toLowerCase().includes(needle))
 		);
 	});
+	const byKind = $derived(
+		Object.fromEntries(
+			MEDIA_KINDS.map((k) => [k, data.platforms.filter((p) => p.media.includes(k)).length])
+		) as Record<MediaKind, number>
+	);
 	const withFixtures = $derived(data.platforms.filter((p) => p.fixtures.length > 0));
 	const passing = $derived(withFixtures.filter((p) => coverageState(p) === 'passing').length);
 	const failing = $derived(withFixtures.filter((p) => coverageState(p) === 'failing').length);
@@ -232,13 +247,29 @@
 				<span class="stat-label">{formats.length === 1 ? 'format' : 'formats'}</span>
 			</div>
 			<div class="stat wide">
+				<span class="stat-value small-value kinds">
+					{#each MEDIA_KINDS as k (k)}<span title={MEDIA_HINTS[k]}>{byKind[k]} {MEDIA_LABELS[k].toLowerCase()}</span>{/each}
+				</span>
+				<span class="stat-label">platforms resolving each kind of media</span>
+			</div>
+			<div class="stat wide">
 				<span class="stat-value small-value">{#if lastRun}<Time value={lastRun} />{:else}never{/if}</span>
 				<span class="stat-label">{running ? 'fixtures running now' : 'last fixture run'}</span>
 			</div>
 		</div>
 
 		<div class="row-between">
-			<input class="input search" type="search" placeholder="Filter by name, host, feature or format" bind:value={query} aria-label="Filter platforms" />
+			<div class="row">
+				<input class="input search" type="search" placeholder="Filter by name, host, feature, format, media or tag" bind:value={query} aria-label="Filter platforms" />
+				<select class="select" bind:value={kind} aria-label="Filter by media kind">
+					<option value="">Any media</option>
+					{#each MEDIA_KINDS as k (k)}<option value={k}>{MEDIA_LABELS[k]}</option>{/each}
+				</select>
+				<select class="select" bind:value={tag} aria-label="Filter by tag">
+					<option value="">Any tag</option>
+					{#each PLATFORM_TAGS as t (t)}<option value={t}>{TAG_LABELS[t].label}</option>{/each}
+				</select>
+			</div>
 			<span class="faint small">{pluralize(list.length, 'platform')} shown</span>
 		</div>
 
@@ -252,6 +283,8 @@
 							<th></th>
 							<th>Platform</th>
 							<th>Hosts</th>
+							<th>Media</th>
+							<th>Tags</th>
 							<th>Formats</th>
 							<th>Session</th>
 							<th>Fixtures</th>
@@ -291,6 +324,18 @@
 								</td>
 								<td>
 									<div class="chips">
+										{#each platform.media as m (m)}<span class="chip media" title={MEDIA_HINTS[m]}>{MEDIA_LABELS[m]}</span>{/each}
+										{#if platform.media.length === 0}<span class="faint" title="Its links only lead on to other platforms' resolvers.">—</span>{/if}
+									</div>
+								</td>
+								<td>
+									<div class="chips">
+										{#each platform.tags as t (t)}<span class="chip media" title={TAG_LABELS[t].hint}>{TAG_LABELS[t].label}</span>{/each}
+										{#if platform.tags.length === 0}<span class="faint">—</span>{/if}
+									</div>
+								</td>
+								<td>
+									<div class="chips">
 										{#each platform.formats as format (format)}<span class="chip">{format}</span>{/each}
 										{#if platform.formats.length === 0}<span class="faint">—</span>{/if}
 									</div>
@@ -324,11 +369,23 @@
 							{#if expanded}
 								<tr class="detail" id={`platform-${platform.id}`}>
 									<td></td>
-									<td colspan="8">
+									<td colspan="10">
 										<div class="detail-body">
 											<dl class="kv">
 												<dt>Hosts</dt>
 												<dd><div class="chips">{#each platform.hosts as host (host)}<span class="chip">{host}</span>{/each}</div></dd>
+												<dt>Media</dt>
+												<dd>
+													{#if platform.media.length}
+														<div class="chips">{#each platform.media as m (m)}<span class="chip media" title={MEDIA_HINTS[m]}>{MEDIA_LABELS[m]}</span>{/each}</div>
+													{:else}<span class="faint">Only hands links on to other platforms' resolvers.</span>{/if}
+												</dd>
+												<dt>Tags</dt>
+												<dd>
+													{#if platform.tags.length}
+														<div class="chips">{#each platform.tags as t (t)}<span class="chip media" title={TAG_LABELS[t].hint}>{TAG_LABELS[t].label}</span>{/each}</div>
+													{:else}<span class="faint">—</span>{/if}
+												</dd>
 												<dt>Features</dt>
 												<dd>
 													{#if platform.features.length}
@@ -395,8 +452,9 @@
 																		<span class="error-text truncate-2" title={fixture.error}>{fixture.error}</span>
 																	{:else if fixture.status === 'login_required' && fixture.error}
 																		<span class="muted truncate-2" title={fixture.error}>{fixture.error}</span>
-																	{:else if fixture.title}
-																		<span class="truncate-2" title={fixture.title}>{fixture.title}</span>
+																	{:else if fixture.title || fixture.found}
+																		{#if fixture.found}<span class="chip media">{describeFound(fixture.found)}</span>{/if}
+																		{#if fixture.title}<span class="truncate-2" title={fixture.title}>{fixture.title}</span>{/if}
 																	{:else}
 																		<span class="faint">—</span>
 																	{/if}
@@ -511,6 +569,23 @@
 
 	.search {
 		max-width: 380px;
+	}
+
+	.kinds {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px 12px;
+	}
+
+	.chip.media {
+		text-transform: none;
+	}
+
+	td.found {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		align-items: flex-start;
 	}
 
 	.toggle {

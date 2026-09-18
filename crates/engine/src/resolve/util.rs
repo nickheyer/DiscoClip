@@ -375,7 +375,7 @@ fn unit_duration(s: &str) -> Option<f64> {
         let (factor, after) = unit_found?;
         total += number * factor;
         matched = true;
-        rest = after.trim_start_matches(|c: char| c == '.' || c == ',');
+        rest = after.trim_start_matches(['.', ',']);
     }
     matched.then_some(total)
 }
@@ -1265,12 +1265,11 @@ pub fn attribute(tag: &str, name: &str) -> Option<String> {
         .map(|(_, v)| v)
 }
 
+/// An attribute of an HTML tag: its name and value.
+pub type Attribute = (String, String);
+
 /// Every `<tag …>` start tag in `html` whose attributes satisfy `accept`, as raw tag text.
-pub fn tags_where(
-    html: &str,
-    tag: &str,
-    accept: &dyn Fn(&[(String, String)]) -> bool,
-) -> Vec<String> {
+pub fn tags_where(html: &str, tag: &str, accept: &dyn Fn(&[Attribute]) -> bool) -> Vec<String> {
     let re = Regex::new(&format!(r"(?is)<{}(?:\s[^>]*)?>", regex::escape(tag))).expect("valid");
     re.find_iter(html)
         .map(|m| m.as_str().to_string())
@@ -1551,6 +1550,307 @@ pub fn encode_query(pairs: &[(&str, &str)]) -> String {
     url::form_urlencoded::Serializer::new(String::new())
         .extend_pairs(pairs)
         .finish()
+}
+
+/// A podcast link with its tracking prefixes removed: `dts.podtrac.com/redirect.mp3/…`,
+/// `chtbl.com/track/…/…`, `pdst.fm/e/…` and `www.podtrac.com/pts/redirect.mp3/…` wrap
+/// the real link, sometimes several deep.
+pub fn clean_podcast_url(url: Url) -> Url {
+    static RE_WRAPPERS: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+        Regex::new(r"^https?://(?:dts\.podtrac\.com/redirect\.[a-z0-9]+/|chtbl\.com/track/[^/]+/|pdst\.fm/e/|www\.podtrac\.com/pts/redirect\.[a-z0-9]+/)(?:https?://)?")
+            .unwrap()
+    });
+    let mut stripped = url.to_string();
+    loop {
+        let next = RE_WRAPPERS.replace(&stripped, "https://").into_owned();
+        if next == stripped {
+            break;
+        }
+        stripped = next;
+    }
+    Url::parse(&stripped).unwrap_or(url)
+}
+
+/// ISO 639-2 three-letter language codes and their ISO 639-1 two-letter forms.
+const ISO639_CODES: &[(&str, &str)] = &[
+    ("aa", "aar"),
+    ("ab", "abk"),
+    ("ae", "ave"),
+    ("af", "afr"),
+    ("ak", "aka"),
+    ("am", "amh"),
+    ("an", "arg"),
+    ("ar", "ara"),
+    ("as", "asm"),
+    ("av", "ava"),
+    ("ay", "aym"),
+    ("az", "aze"),
+    ("ba", "bak"),
+    ("be", "bel"),
+    ("bg", "bul"),
+    ("bh", "bih"),
+    ("bi", "bis"),
+    ("bm", "bam"),
+    ("bn", "ben"),
+    ("bo", "bod"),
+    ("br", "bre"),
+    ("bs", "bos"),
+    ("ca", "cat"),
+    ("ce", "che"),
+    ("ch", "cha"),
+    ("co", "cos"),
+    ("cr", "cre"),
+    ("cs", "ces"),
+    ("cu", "chu"),
+    ("cv", "chv"),
+    ("cy", "cym"),
+    ("da", "dan"),
+    ("de", "deu"),
+    ("dv", "div"),
+    ("dz", "dzo"),
+    ("ee", "ewe"),
+    ("el", "ell"),
+    ("en", "eng"),
+    ("eo", "epo"),
+    ("es", "spa"),
+    ("et", "est"),
+    ("eu", "eus"),
+    ("fa", "fas"),
+    ("ff", "ful"),
+    ("fi", "fin"),
+    ("fj", "fij"),
+    ("fo", "fao"),
+    ("fr", "fra"),
+    ("fy", "fry"),
+    ("ga", "gle"),
+    ("gd", "gla"),
+    ("gl", "glg"),
+    ("gn", "grn"),
+    ("gu", "guj"),
+    ("gv", "glv"),
+    ("ha", "hau"),
+    ("he", "heb"),
+    ("hi", "hin"),
+    ("ho", "hmo"),
+    ("hr", "hrv"),
+    ("ht", "hat"),
+    ("hu", "hun"),
+    ("hy", "hye"),
+    ("hz", "her"),
+    ("ia", "ina"),
+    ("id", "ind"),
+    ("ie", "ile"),
+    ("ig", "ibo"),
+    ("ii", "iii"),
+    ("ik", "ipk"),
+    ("in", "ind"),
+    ("io", "ido"),
+    ("is", "isl"),
+    ("it", "ita"),
+    ("iu", "iku"),
+    ("iw", "heb"),
+    ("ja", "jpn"),
+    ("ji", "yid"),
+    ("jv", "jav"),
+    ("ka", "kat"),
+    ("kg", "kon"),
+    ("ki", "kik"),
+    ("kj", "kua"),
+    ("kk", "kaz"),
+    ("kl", "kal"),
+    ("km", "khm"),
+    ("kn", "kan"),
+    ("ko", "kor"),
+    ("kr", "kau"),
+    ("ks", "kas"),
+    ("ku", "kur"),
+    ("kv", "kom"),
+    ("kw", "cor"),
+    ("ky", "kir"),
+    ("la", "lat"),
+    ("lb", "ltz"),
+    ("lg", "lug"),
+    ("li", "lim"),
+    ("ln", "lin"),
+    ("lo", "lao"),
+    ("lt", "lit"),
+    ("lu", "lub"),
+    ("lv", "lav"),
+    ("mg", "mlg"),
+    ("mh", "mah"),
+    ("mi", "mri"),
+    ("mk", "mkd"),
+    ("ml", "mal"),
+    ("mn", "mon"),
+    ("mr", "mar"),
+    ("ms", "msa"),
+    ("mt", "mlt"),
+    ("my", "mya"),
+    ("na", "nau"),
+    ("nb", "nob"),
+    ("nd", "nde"),
+    ("ne", "nep"),
+    ("ng", "ndo"),
+    ("nl", "nld"),
+    ("nn", "nno"),
+    ("no", "nor"),
+    ("nr", "nbl"),
+    ("nv", "nav"),
+    ("ny", "nya"),
+    ("oc", "oci"),
+    ("oj", "oji"),
+    ("om", "orm"),
+    ("or", "ori"),
+    ("os", "oss"),
+    ("pa", "pan"),
+    ("pe", "per"),
+    ("pi", "pli"),
+    ("pl", "pol"),
+    ("ps", "pus"),
+    ("pt", "por"),
+    ("qu", "que"),
+    ("rm", "roh"),
+    ("rn", "run"),
+    ("ro", "ron"),
+    ("ru", "rus"),
+    ("rw", "kin"),
+    ("sa", "san"),
+    ("sc", "srd"),
+    ("sd", "snd"),
+    ("se", "sme"),
+    ("sg", "sag"),
+    ("si", "sin"),
+    ("sk", "slk"),
+    ("sl", "slv"),
+    ("sm", "smo"),
+    ("sn", "sna"),
+    ("so", "som"),
+    ("sq", "sqi"),
+    ("sr", "srp"),
+    ("ss", "ssw"),
+    ("st", "sot"),
+    ("su", "sun"),
+    ("sv", "swe"),
+    ("sw", "swa"),
+    ("ta", "tam"),
+    ("te", "tel"),
+    ("tg", "tgk"),
+    ("th", "tha"),
+    ("ti", "tir"),
+    ("tk", "tuk"),
+    ("tl", "tgl"),
+    ("tn", "tsn"),
+    ("to", "ton"),
+    ("tr", "tur"),
+    ("ts", "tso"),
+    ("tt", "tat"),
+    ("tw", "twi"),
+    ("ty", "tah"),
+    ("ug", "uig"),
+    ("uk", "ukr"),
+    ("ur", "urd"),
+    ("uz", "uzb"),
+    ("ve", "ven"),
+    ("vi", "vie"),
+    ("vo", "vol"),
+    ("wa", "wln"),
+    ("wo", "wol"),
+    ("xh", "xho"),
+    ("yi", "yid"),
+    ("yo", "yor"),
+    ("za", "zha"),
+    ("zh", "zho"),
+    ("zu", "zul"),
+];
+
+/// The two-letter ISO 639-1 code of a language named by its three-letter ISO 639-2
+/// code, or the code itself when it is already two letters; `None` for anything else.
+pub fn iso639_short(code: &str) -> Option<&'static str> {
+    let code = code.trim().to_ascii_lowercase();
+    if code.len() == 2 && code.chars().all(|c| c.is_ascii_alphabetic()) {
+        return ISO639_CODES
+            .iter()
+            .find(|(_, short)| *short == code)
+            .map(|(_, short)| *short);
+    }
+    ISO639_CODES
+        .iter()
+        .find(|(long, _)| *long == code)
+        .map(|(_, short)| *short)
+}
+
+/// English names of languages and their ISO 639-1 codes, for players that label
+/// subtitle tracks by name.
+const LANGUAGE_NAMES: &[(&str, &str)] = &[
+    ("afrikaans", "af"),
+    ("arabic", "ar"),
+    ("basque", "eu"),
+    ("bengali", "bn"),
+    ("bulgarian", "bg"),
+    ("catalan", "ca"),
+    ("chinese", "zh"),
+    ("croatian", "hr"),
+    ("czech", "cs"),
+    ("danish", "da"),
+    ("dutch", "nl"),
+    ("english", "en"),
+    ("esperanto", "eo"),
+    ("estonian", "et"),
+    ("filipino", "tl"),
+    ("finnish", "fi"),
+    ("french", "fr"),
+    ("galician", "gl"),
+    ("german", "de"),
+    ("greek", "el"),
+    ("hebrew", "he"),
+    ("hindi", "hi"),
+    ("hungarian", "hu"),
+    ("icelandic", "is"),
+    ("indonesian", "id"),
+    ("irish", "ga"),
+    ("italian", "it"),
+    ("japanese", "ja"),
+    ("korean", "ko"),
+    ("latin", "la"),
+    ("latvian", "lv"),
+    ("lithuanian", "lt"),
+    ("malay", "ms"),
+    ("norwegian", "no"),
+    ("persian", "fa"),
+    ("polish", "pl"),
+    ("portuguese", "pt"),
+    ("romanian", "ro"),
+    ("russian", "ru"),
+    ("serbian", "sr"),
+    ("slovak", "sk"),
+    ("slovenian", "sl"),
+    ("spanish", "es"),
+    ("swahili", "sw"),
+    ("swedish", "sv"),
+    ("tagalog", "tl"),
+    ("tamil", "ta"),
+    ("thai", "th"),
+    ("turkish", "tr"),
+    ("ukrainian", "uk"),
+    ("urdu", "ur"),
+    ("vietnamese", "vi"),
+    ("welsh", "cy"),
+];
+
+/// The ISO 639-1 code a subtitle label names: a two- or three-letter code as it is
+/// (`en`, `eng`, `en-US`), or the English name of the language (`English`, `Spanish
+/// (Latin America)`).
+pub fn language_code(label: &str) -> Option<String> {
+    let label = label.trim();
+    let head = label.split(['-', '_', ' ', '(']).next().unwrap_or(label);
+    if let Some(code) = iso639_short(head) {
+        return Some(code.to_string());
+    }
+    let lower = label.to_ascii_lowercase();
+    LANGUAGE_NAMES
+        .iter()
+        .find(|(name, _)| lower.starts_with(name))
+        .map(|(_, code)| code.to_string())
 }
 
 #[cfg(test)]
@@ -1905,308 +2205,4 @@ mod tests {
         );
         assert_eq!(encode_query(&[("a", "1"), ("b", "x y")]), "a=1&b=x+y");
     }
-}
-
-/// A podcast link with its tracking prefixes removed: `dts.podtrac.com/redirect.mp3/…`,
-/// `chtbl.com/track/…/…`, `pdst.fm/e/…` and `www.podtrac.com/pts/redirect.mp3/…` wrap
-/// the real link, sometimes several deep.
-pub fn clean_podcast_url(url: Url) -> Url {
-    static RE_WRAPPERS: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-        Regex::new(r"^https?://(?:dts\.podtrac\.com/redirect\.[a-z0-9]+/|chtbl\.com/track/[^/]+/|pdst\.fm/e/|www\.podtrac\.com/pts/redirect\.[a-z0-9]+/)(?:https?://)?")
-            .unwrap()
-    });
-    let mut stripped = url.to_string();
-    loop {
-        let next = RE_WRAPPERS.replace(&stripped, "https://").into_owned();
-        if next == stripped {
-            break;
-        }
-        stripped = next;
-    }
-    Url::parse(&stripped).unwrap_or(url)
-}
-
-/// ISO 639-2 three-letter language codes and their ISO 639-1 two-letter forms.
-const ISO639_CODES: &[(&str, &str)] = &[
-    ("aa", "aar"),
-    ("ab", "abk"),
-    ("ae", "ave"),
-    ("af", "afr"),
-    ("ak", "aka"),
-    ("am", "amh"),
-    ("an", "arg"),
-    ("ar", "ara"),
-    ("as", "asm"),
-    ("av", "ava"),
-    ("ay", "aym"),
-    ("az", "aze"),
-    ("ba", "bak"),
-    ("be", "bel"),
-    ("bg", "bul"),
-    ("bh", "bih"),
-    ("bi", "bis"),
-    ("bm", "bam"),
-    ("bn", "ben"),
-    ("bo", "bod"),
-    ("br", "bre"),
-    ("bs", "bos"),
-    ("ca", "cat"),
-    ("ce", "che"),
-    ("ch", "cha"),
-    ("co", "cos"),
-    ("cr", "cre"),
-    ("cs", "ces"),
-    ("cu", "chu"),
-    ("cv", "chv"),
-    ("cy", "cym"),
-    ("da", "dan"),
-    ("de", "deu"),
-    ("dv", "div"),
-    ("dz", "dzo"),
-    ("ee", "ewe"),
-    ("el", "ell"),
-    ("en", "eng"),
-    ("eo", "epo"),
-    ("es", "spa"),
-    ("et", "est"),
-    ("eu", "eus"),
-    ("fa", "fas"),
-    ("ff", "ful"),
-    ("fi", "fin"),
-    ("fj", "fij"),
-    ("fo", "fao"),
-    ("fr", "fra"),
-    ("fy", "fry"),
-    ("ga", "gle"),
-    ("gd", "gla"),
-    ("gl", "glg"),
-    ("gn", "grn"),
-    ("gu", "guj"),
-    ("gv", "glv"),
-    ("ha", "hau"),
-    ("he", "heb"),
-    ("hi", "hin"),
-    ("ho", "hmo"),
-    ("hr", "hrv"),
-    ("ht", "hat"),
-    ("hu", "hun"),
-    ("hy", "hye"),
-    ("hz", "her"),
-    ("ia", "ina"),
-    ("id", "ind"),
-    ("ie", "ile"),
-    ("ig", "ibo"),
-    ("ii", "iii"),
-    ("ik", "ipk"),
-    ("in", "ind"),
-    ("io", "ido"),
-    ("is", "isl"),
-    ("it", "ita"),
-    ("iu", "iku"),
-    ("iw", "heb"),
-    ("ja", "jpn"),
-    ("ji", "yid"),
-    ("jv", "jav"),
-    ("ka", "kat"),
-    ("kg", "kon"),
-    ("ki", "kik"),
-    ("kj", "kua"),
-    ("kk", "kaz"),
-    ("kl", "kal"),
-    ("km", "khm"),
-    ("kn", "kan"),
-    ("ko", "kor"),
-    ("kr", "kau"),
-    ("ks", "kas"),
-    ("ku", "kur"),
-    ("kv", "kom"),
-    ("kw", "cor"),
-    ("ky", "kir"),
-    ("la", "lat"),
-    ("lb", "ltz"),
-    ("lg", "lug"),
-    ("li", "lim"),
-    ("ln", "lin"),
-    ("lo", "lao"),
-    ("lt", "lit"),
-    ("lu", "lub"),
-    ("lv", "lav"),
-    ("mg", "mlg"),
-    ("mh", "mah"),
-    ("mi", "mri"),
-    ("mk", "mkd"),
-    ("ml", "mal"),
-    ("mn", "mon"),
-    ("mr", "mar"),
-    ("ms", "msa"),
-    ("mt", "mlt"),
-    ("my", "mya"),
-    ("na", "nau"),
-    ("nb", "nob"),
-    ("nd", "nde"),
-    ("ne", "nep"),
-    ("ng", "ndo"),
-    ("nl", "nld"),
-    ("nn", "nno"),
-    ("no", "nor"),
-    ("nr", "nbl"),
-    ("nv", "nav"),
-    ("ny", "nya"),
-    ("oc", "oci"),
-    ("oj", "oji"),
-    ("om", "orm"),
-    ("or", "ori"),
-    ("os", "oss"),
-    ("pa", "pan"),
-    ("pe", "per"),
-    ("pi", "pli"),
-    ("pl", "pol"),
-    ("ps", "pus"),
-    ("pt", "por"),
-    ("qu", "que"),
-    ("rm", "roh"),
-    ("rn", "run"),
-    ("ro", "ron"),
-    ("ru", "rus"),
-    ("rw", "kin"),
-    ("sa", "san"),
-    ("sc", "srd"),
-    ("sd", "snd"),
-    ("se", "sme"),
-    ("sg", "sag"),
-    ("si", "sin"),
-    ("sk", "slk"),
-    ("sl", "slv"),
-    ("sm", "smo"),
-    ("sn", "sna"),
-    ("so", "som"),
-    ("sq", "sqi"),
-    ("sr", "srp"),
-    ("ss", "ssw"),
-    ("st", "sot"),
-    ("su", "sun"),
-    ("sv", "swe"),
-    ("sw", "swa"),
-    ("ta", "tam"),
-    ("te", "tel"),
-    ("tg", "tgk"),
-    ("th", "tha"),
-    ("ti", "tir"),
-    ("tk", "tuk"),
-    ("tl", "tgl"),
-    ("tn", "tsn"),
-    ("to", "ton"),
-    ("tr", "tur"),
-    ("ts", "tso"),
-    ("tt", "tat"),
-    ("tw", "twi"),
-    ("ty", "tah"),
-    ("ug", "uig"),
-    ("uk", "ukr"),
-    ("ur", "urd"),
-    ("uz", "uzb"),
-    ("ve", "ven"),
-    ("vi", "vie"),
-    ("vo", "vol"),
-    ("wa", "wln"),
-    ("wo", "wol"),
-    ("xh", "xho"),
-    ("yi", "yid"),
-    ("yo", "yor"),
-    ("za", "zha"),
-    ("zh", "zho"),
-    ("zu", "zul"),
-];
-
-/// The two-letter ISO 639-1 code of a language named by its three-letter ISO 639-2
-/// code, or the code itself when it is already two letters; `None` for anything else.
-pub fn iso639_short(code: &str) -> Option<&'static str> {
-    let code = code.trim().to_ascii_lowercase();
-    if code.len() == 2 && code.chars().all(|c| c.is_ascii_alphabetic()) {
-        return ISO639_CODES
-            .iter()
-            .find(|(_, short)| *short == code)
-            .map(|(_, short)| *short);
-    }
-    ISO639_CODES
-        .iter()
-        .find(|(long, _)| *long == code)
-        .map(|(_, short)| *short)
-}
-
-/// English names of languages and their ISO 639-1 codes, for players that label
-/// subtitle tracks by name.
-const LANGUAGE_NAMES: &[(&str, &str)] = &[
-    ("afrikaans", "af"),
-    ("arabic", "ar"),
-    ("basque", "eu"),
-    ("bengali", "bn"),
-    ("bulgarian", "bg"),
-    ("catalan", "ca"),
-    ("chinese", "zh"),
-    ("croatian", "hr"),
-    ("czech", "cs"),
-    ("danish", "da"),
-    ("dutch", "nl"),
-    ("english", "en"),
-    ("esperanto", "eo"),
-    ("estonian", "et"),
-    ("filipino", "tl"),
-    ("finnish", "fi"),
-    ("french", "fr"),
-    ("galician", "gl"),
-    ("german", "de"),
-    ("greek", "el"),
-    ("hebrew", "he"),
-    ("hindi", "hi"),
-    ("hungarian", "hu"),
-    ("icelandic", "is"),
-    ("indonesian", "id"),
-    ("irish", "ga"),
-    ("italian", "it"),
-    ("japanese", "ja"),
-    ("korean", "ko"),
-    ("latin", "la"),
-    ("latvian", "lv"),
-    ("lithuanian", "lt"),
-    ("malay", "ms"),
-    ("norwegian", "no"),
-    ("persian", "fa"),
-    ("polish", "pl"),
-    ("portuguese", "pt"),
-    ("romanian", "ro"),
-    ("russian", "ru"),
-    ("serbian", "sr"),
-    ("slovak", "sk"),
-    ("slovenian", "sl"),
-    ("spanish", "es"),
-    ("swahili", "sw"),
-    ("swedish", "sv"),
-    ("tagalog", "tl"),
-    ("tamil", "ta"),
-    ("thai", "th"),
-    ("turkish", "tr"),
-    ("ukrainian", "uk"),
-    ("urdu", "ur"),
-    ("vietnamese", "vi"),
-    ("welsh", "cy"),
-];
-
-/// The ISO 639-1 code a subtitle label names: a two- or three-letter code as it is
-/// (`en`, `eng`, `en-US`), or the English name of the language (`English`, `Spanish
-/// (Latin America)`).
-pub fn language_code(label: &str) -> Option<String> {
-    let label = label.trim();
-    let head = label
-        .split(|c: char| c == '-' || c == '_' || c == ' ' || c == '(')
-        .next()
-        .unwrap_or(label);
-    if let Some(code) = iso639_short(head) {
-        return Some(code.to_string());
-    }
-    let lower = label.to_ascii_lowercase();
-    LANGUAGE_NAMES
-        .iter()
-        .find(|(name, _)| lower.starts_with(name))
-        .map(|(_, code)| code.to_string())
 }

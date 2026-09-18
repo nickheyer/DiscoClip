@@ -17,11 +17,11 @@ use super::page::{Page, balanced_end, ld_objects_of_type};
 use super::web::parse_iso_duration;
 use super::{
     ClipRange, MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved,
-    Resolver, SessionCheck, SessionSupport, SubtitleFormat, SubtitleTrack, Variant, VariantKind,
-    clean_title, fetch, parse_time_stamp, timestamp_hint,
+    Resolver, SessionCheck, SessionSupport, SubtitleFormat, SubtitleTrack, Tag, Variant,
+    VariantKind, clean_title, fetch, parse_time_stamp, timestamp_hint,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "rumble";
 const SITE: &str = "https://rumble.com/";
@@ -567,6 +567,8 @@ impl Resolver for RumbleResolver {
                 "user pages",
             ],
             formats: &["mp4", "webm", "hls"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Video, Tag::Live],
             session: SessionSupport::Optional,
             examples: &[
                 "https://rumble.com/v6rrcbh-channel-update-vid.html",

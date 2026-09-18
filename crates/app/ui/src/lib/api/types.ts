@@ -33,7 +33,7 @@ export type ActorKind = 'user' | 'provisioning';
 
 export type Via = 'session' | 'token';
 
-export type TargetKind = 'setting' | 'application' | 'rule' | 'platform';
+export type TargetKind = 'setting' | 'application' | 'rule' | 'platform' | 'profile' | 'frontend';
 
 export type Action =
 	| 'settings.set'
@@ -52,7 +52,21 @@ export type Action =
 	| 'rule.update'
 	| 'rule.delete'
 	| 'session.import'
-	| 'session.clear';
+	| 'session.clear'
+	| 'profile.create'
+	| 'profile.update'
+	| 'profile.delete'
+	| 'profile.assign'
+	| 'profile.unassign'
+	| 'frontend.create'
+	| 'frontend.update'
+	| 'frontend.delete'
+	| 'frontend.secret.set'
+	| 'frontend.secret.clear'
+	| 'frontend.user.create'
+	| 'frontend.user.password'
+	| 'frontend.user.delete'
+	| 'frontend.sessions.revoke';
 
 export const ROLES: Role[] = ['admin', 'operator', 'viewer'];
 
@@ -440,6 +454,100 @@ export interface GuildMember {
 	bot: boolean;
 }
 
+// Profiles
+
+/** What a profile says about the platforms it does not name. */
+export type PlatformDefault = 'inherit' | 'enabled' | 'disabled';
+
+export const PLATFORM_DEFAULTS: PlatformDefault[] = ['inherit', 'enabled', 'disabled'];
+
+/** What kind of place a platform is; a profile can turn platforms on by kind. */
+export type PlatformTag =
+	| 'basic'
+	| 'nsfw'
+	| 'news'
+	| 'social'
+	| 'video'
+	| 'music'
+	| 'podcasts'
+	| 'live'
+	| 'files'
+	| 'images'
+	| 'players';
+
+export const PLATFORM_TAGS: PlatformTag[] = [
+	'basic',
+	'nsfw',
+	'news',
+	'social',
+	'video',
+	'music',
+	'podcasts',
+	'live',
+	'files',
+	'images',
+	'players'
+];
+
+/** A preset: a named set of platforms, from the tags the platforms carry. */
+export interface Preset {
+	id: string;
+	label: string;
+	description: string;
+	/** The platforms in it, by resolver id. */
+	platforms: string[];
+}
+
+/**
+ * Which platforms a profile turns on and off, by resolver id. With `presets` chosen they
+ * are the whitelist: every platform in any chosen preset is on and every other off, and
+ * `default` is ignored. Overrides win either way.
+ */
+export interface PlatformToggles {
+	default: PlatformDefault;
+	presets: string[];
+	overrides: Record<string, boolean>;
+}
+
+export interface ProfileInput {
+	name: string;
+	description: string;
+	platforms: PlatformToggles;
+}
+
+export interface Profile extends ProfileInput {
+	id: string;
+	/** Ships with the server and cannot be removed. */
+	builtin: boolean;
+	created_at: string;
+	updated_at: string;
+}
+
+/** Where a profile applies. */
+export type Scope =
+	| { kind: 'global' }
+	| { kind: 'guild'; guild_id: string }
+	| { kind: 'channel'; guild_id: string; channel_id: string }
+	| { kind: 'user'; guild_id: string; user_id: string };
+
+export interface Assignment {
+	scope: Scope;
+	profile_id: string;
+	updated_at: string;
+}
+
+/** What the profiles in force at a place add up to. */
+export interface EffectiveProfile {
+	platforms: Record<string, boolean>;
+	/** The assignments applied to get there, widest first. */
+	applied: Assignment[];
+}
+
+export interface EffectiveView extends EffectiveProfile {
+	/** The resolver ids turned off, as the engine is told. */
+	disabled: string[];
+}
+
 export interface Rule {
 	id: string;
 	application_id: string;
@@ -490,6 +598,153 @@ export interface Target {
 	id: string;
 	name: string | null;
 }
+
+// Front ends
+
+/** Which jobs a front end shows; both empty means every job. */
+export interface ContentScope {
+	guilds: string[];
+	channels: string[];
+}
+
+export type SecretKind = 'pin' | 'password' | 'token';
+
+export const SECRET_KINDS: SecretKind[] = ['pin', 'password', 'token'];
+
+export interface FrontAccessInput {
+	open: boolean;
+	secret_kind: SecretKind | null;
+	accounts: boolean;
+	providers: string[];
+	discord_members: boolean;
+	discord_users: string[];
+}
+
+export interface LinkPolicy {
+	enabled: boolean;
+	min_height: number;
+	min_bitrate: number;
+	max_bytes: number;
+	signed_link_days: number;
+}
+
+export interface FrontendInput {
+	name: string;
+	slug: string;
+	description: string;
+	enabled: boolean;
+	profile_id: string;
+	scope: ContentScope;
+	access: FrontAccessInput;
+	downloads: boolean;
+	links: LinkPolicy;
+}
+
+export interface Frontend extends FrontendInput {
+	id: string;
+	has_secret: boolean;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface FrontendUser {
+	id: string;
+	frontend_id: string;
+	username: string;
+	created_at: string;
+}
+
+export interface ViewerSession {
+	id: string;
+	frontend_id: string;
+	subject: string;
+	display: string;
+	created_at: string;
+	last_seen_at: string;
+	expires_at: string;
+	ip: string | null;
+	user_agent: string | null;
+}
+
+export interface Viewer {
+	frontend_id: string;
+	subject: string;
+	display: string;
+}
+
+export interface FrontProvider {
+	id: string;
+	name: string;
+}
+
+export interface FrontAccess {
+	open: boolean;
+	secret: SecretKind | null;
+	accounts: boolean;
+	providers: FrontProvider[];
+	discord_members: boolean;
+}
+
+/** A front end as its visitors see it. */
+export interface FrontInfo {
+	slug: string;
+	name: string;
+	description: string;
+	downloads: boolean;
+	access: FrontAccess;
+	platforms: string[];
+	viewer: Viewer | null;
+}
+
+export interface FrontLogin {
+	secret?: string;
+	username?: string;
+	password?: string;
+}
+
+export interface FrontJob {
+	id: string;
+	title: string | null;
+	media: MediaKind;
+	resolver: string;
+	uploader: string | null;
+	webpage_url: string | null;
+	thumbnail: string | null;
+	duration_secs: number | null;
+	live: boolean;
+	size: number;
+	width: number | null;
+	height: number | null;
+	content_type: string;
+	published_at: string;
+	media_url: string;
+	download_url: string | null;
+}
+
+export interface FrontPage {
+	jobs: FrontJob[];
+	next: string | null;
+}
+
+export interface FrontJobQuery {
+	q?: string;
+	media?: MediaKind;
+	resolver?: string;
+	before?: string;
+	limit?: number;
+}
+
+/** Why a provider login into a front end came back to its login page. */
+export type FrontCallbackError =
+	| 'state'
+	| 'denied'
+	| 'provider'
+	| 'exchange'
+	| 'identity'
+	| 'frontend'
+	| 'not_listed'
+	| 'not_member'
+	| 'guilds';
 
 // Jobs
 
@@ -559,6 +814,8 @@ export interface JobSummary {
 	retry_of: string | null;
 	title: string | null;
 	resolver: string | null;
+	/** What the media is: what the probe found, else what the resolver said, else video. */
+	media: MediaKind;
 	uploader: string | null;
 	webpage_url: string | null;
 	thumbnail: string | null;
@@ -636,6 +893,18 @@ export type JobEvent = { job: string; at: string; job_summary: JobSummary | null
 
 export type VariantKind = 'file' | 'hls' | 'dash' | 'ism' | 'rtmp' | 'rtsp' | 'whep' | 'browser';
 
+/** What a piece of media is: a moving picture, sound alone, a still, or any other file. */
+export type MediaKind = 'video' | 'audio' | 'image' | 'file';
+
+export const MEDIA_KINDS: MediaKind[] = ['video', 'audio', 'image', 'file'];
+
+export const MEDIA_LABELS: Record<MediaKind, string> = {
+	video: 'Video',
+	audio: 'Audio',
+	image: 'Image',
+	file: 'File'
+};
+
 export type Codec = string | { other: string };
 
 /** How a file's bytes are decrypted as they download, when the host stores them encrypted. */
@@ -677,6 +946,8 @@ export interface SubtitleTrack {
 
 export interface Resolved {
 	resolver: string;
+	/** What the link is; decides which variant is picked and how it is shrunk and shown. */
+	media: MediaKind;
 	id: string | null;
 	title: string | null;
 	description: string | null;
@@ -710,6 +981,8 @@ export interface AudioTrack {
 
 export interface MediaInfo {
 	container: Codec;
+	/** What the probe found the file to be; a still has its picture in `video` with no fps. */
+	kind: MediaKind;
 	duration: DurationWire | null;
 	video: VideoTrack | null;
 	audio: AudioTrack | null;
@@ -746,10 +1019,17 @@ export interface StageTiming {
 	ended_at: string | null;
 }
 
+/** How the output reached the destination: the file itself, or a link to its page. */
+export type Delivery = 'upload' | 'link';
+
 export interface Artifacts {
 	resolved: Resolved | null;
 	source: LocalFile | null;
 	output: LocalFile | null;
+	/** Whether the output was handed over or linked to. */
+	delivery: Delivery;
+	/** Why a front end's page was posted instead of the file, when it was. */
+	link_reason: string | null;
 	published: Published | null;
 	archived: ArchiveEntry | null;
 	subtitles: LocalSubtitle[];
@@ -790,6 +1070,11 @@ export type SessionSupport = 'none' | 'optional' | 'required';
 
 export type FixtureStatus = 'pass' | 'fail' | 'login_required' | 'never';
 
+/** What a fixture link resolved to: media of a kind with playable variants, or a playlist. */
+export type Found =
+	| { kind: 'media'; media: MediaKind; variants: number }
+	| { kind: 'playlist'; entries: number };
+
 export interface FixtureResult {
 	url: string;
 	status: FixtureStatus;
@@ -797,6 +1082,7 @@ export interface FixtureResult {
 	last_pass_at: string | null;
 	error: string | null;
 	title: string | null;
+	found: Found | null;
 	duration_ms: number | null;
 }
 
@@ -814,6 +1100,10 @@ export interface PlatformCoverage {
 	hosts: string[];
 	features: string[];
 	formats: string[];
+	/** What its links resolve to: videos, audio, images or other files. */
+	media: MediaKind[];
+	/** What kind of place it is: the presets it belongs to. */
+	tags: PlatformTag[];
 	session: SessionSupport;
 	cookies: number;
 	fixtures: FixtureResult[];

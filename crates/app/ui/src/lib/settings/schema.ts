@@ -217,6 +217,36 @@ export const SECTIONS: SectionSpec[] = [
 				]
 			},
 			{
+				key: 'engine.download',
+				title: 'Downloads',
+				description:
+					'How files served over plain HTTP are fetched. A host that serves byte ranges is asked for the file in chunks over several connections at once; a transfer that breaks is picked up from the byte it stopped at.',
+				icon: 'download',
+				fields: [
+					{
+						name: 'connections',
+						label: 'Connections per file',
+						kind: 'integer',
+						hint: 'How many connections fetch one file at the same time, when the host serves byte ranges.',
+						min: 1
+					},
+					{
+						name: 'chunk_bytes',
+						label: 'Chunk size',
+						kind: 'bytes',
+						hint: 'How much each ranged request asks for; at least 64 KiB.',
+						min: 65536
+					},
+					{
+						name: 'resume_attempts',
+						label: 'Resumes',
+						kind: 'integer',
+						hint: 'How many times a transfer that breaks is picked up from where it stopped before the download fails; zero fails at the first break.',
+						min: 0
+					}
+				]
+			},
+			{
 				key: 'engine.retention',
 				title: 'Retention',
 				description: 'How long finished jobs and their cached files are kept.',

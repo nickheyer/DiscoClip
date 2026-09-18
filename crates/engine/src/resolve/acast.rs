@@ -11,10 +11,10 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved, Resolver,
-    SessionSupport, Variant, clean_title, fetch, status_error, util,
+    SessionSupport, Tag, Variant, clean_title, fetch, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container};
+use crate::media::{AudioCodec, Container, MediaKind};
 
 pub const PLATFORM: &str = "acast";
 const API: &str = "https://feeder.acast.com/api/v1/shows/";
@@ -60,9 +60,9 @@ pub fn parse_link(url: &Url) -> Option<Link> {
 /// The audio container the feed's content type names.
 fn container_of(content_type: Option<&str>) -> Container {
     match content_type.unwrap_or("").to_ascii_lowercase().as_str() {
-        "audio/mp4" | "audio/x-m4a" | "audio/aac" => Container::Other("m4a".into()),
-        "audio/ogg" => Container::Other("ogg".into()),
-        _ => Container::Other("mp3".into()),
+        "audio/mp4" | "audio/x-m4a" | "audio/aac" => Container::M4a,
+        "audio/ogg" => Container::Ogg,
+        _ => Container::Mp3,
     }
 }
 
@@ -130,7 +130,7 @@ impl AcastResolver {
         variant.audio = Some(codec_of(content_type));
         variant.size = util::uint(&entry["contentLength"]);
         variant.format_id = Some("audio".to_string());
-        let mut resolved = Resolved::new(PLATFORM);
+        let mut resolved = Resolved::of(PLATFORM, MediaKind::Audio);
         resolved.id = util::text(&entry["id"]).or_else(|| Some(episode.to_string()));
         resolved.title = entry["title"].as_str().and_then(clean_title);
         resolved.description = entry["description"]
@@ -197,6 +197,8 @@ impl Resolver for AcastResolver {
             ],
             features: &["audio", "podcasts", "shows"],
             formats: &["mp3", "m4a"],
+            media: &[MediaKind::Audio],
+            tags: &[Tag::Podcasts],
             session: SessionSupport::None,
             examples: &[
                 "https://shows.acast.com/sparpodcast/episodes/1-mordet-pa-sargonia-dankha-forsvinnandet",
@@ -337,6 +339,8 @@ mod tests {
         assert_eq!(resolved.variants.len(), 1);
         let audio = &resolved.variants[0];
         assert!(audio.audio_only);
+        assert_eq!(resolved.media, MediaKind::Audio);
+        assert_eq!(audio.container, Some(Container::Mp3));
         assert_eq!(audio.size, Some(45210226));
         assert_eq!(audio.audio, Some(AudioCodec::Mp3));
         assert_eq!(

@@ -19,6 +19,8 @@ use uuid::Uuid;
 
 use crate::client::{Bot, BotError, GuildEvent};
 use crate::config::{DiscordConfig, DiscordEndpoints};
+use crate::directory::Directories;
+use crate::profile::ProfileSource;
 use crate::watch::RuleSource;
 
 const BACKOFF_MIN: Duration = Duration::from_secs(5);
@@ -167,6 +169,9 @@ pub struct BotRuntime {
     pub endpoints: DiscordEndpoints,
     pub guild_events: mpsc::Sender<GuildEvent>,
     pub rules: Arc<dyn RuleSource>,
+    pub profiles: Arc<dyn ProfileSource>,
+    /// Where the bot keeps what it learns about its guilds, for the app to read.
+    pub directories: Directories,
 }
 
 /// Keeps the bot supervised until `shutdown` is cancelled, starting it at once when
@@ -237,15 +242,7 @@ async fn run(
 
         status.set(BotState::Starting);
         let run_token = shutdown.child_token();
-        let bot = Bot::new(
-            runtime.application,
-            runtime.config.clone(),
-            runtime.http.clone(),
-            runtime.engine.clone(),
-            runtime.endpoints.clone(),
-            runtime.guild_events.clone(),
-            runtime.rules.clone(),
-        );
+        let bot = Bot::new(&runtime);
         let reporter = status.clone();
         let mut running =
             Box::pin(bot.run(run_token.clone(), move |user| reporter.connected(user)));

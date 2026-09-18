@@ -1,6 +1,6 @@
 // Every endpoint in API.md, as a function.
 
-import { del, get, patch, post, put, text } from './client';
+import { del, get, patch, post, publicRequest, put, text } from './client';
 import type {
 	AccountSessionView,
 	AccountTokenView,
@@ -8,57 +8,72 @@ import type {
 	ApplicationCreateRequest,
 	ApplicationUpdateRequest,
 	ApplicationView,
+	Artifact,
+	Assignment,
 	AuditQuery,
 	BotGuild,
+	BulkRequest,
+	BulkResponse,
 	CheckStarted,
 	CommandScope,
-	CookiesImport,
-	Health,
-	LogPage,
-	LogQuery,
-	Metrics,
 	CommandsView,
+	CookiesImport,
+	EffectiveView,
+	FrontInfo,
+	FrontJob,
+	FrontJobQuery,
+	FrontLogin,
+	FrontPage,
+	Frontend,
+	FrontendInput,
+	FrontendUser,
 	Guild,
 	GuildChannel,
 	GuildMember,
 	GuildRole,
+	Health,
 	Identity,
 	InstallLink,
-	Artifact,
-	BulkRequest,
-	BulkResponse,
 	Intent,
 	Job,
 	JobPage,
 	JobQuery,
 	JobStats,
 	JobSummary,
+	LogPage,
+	LogQuery,
 	LoginRequest,
-	SubmitRequest,
-	Submitted,
+	Metrics,
 	Minted,
 	Page,
 	PasswordRequest,
 	PlatformCoverage,
-	SessionOutcome,
+	Preset,
+	Profile,
+	ProfileInput,
 	ProviderInfo,
 	Revoked,
 	RoleView,
 	Rule,
 	RuleInput,
+	Scope,
+	SessionOutcome,
 	SessionView,
+	SettingValue,
 	SettingsChange,
 	SettingsFormat,
 	SettingsImportRequest,
 	SettingsView,
-	SettingValue,
 	SetupRequest,
 	SetupStatus,
+	SubmitRequest,
+	Submitted,
 	TokenCreateRequest,
 	Unlinked,
 	User,
 	UserCreateRequest,
 	UserUpdateRequest,
+	ViewerSession,
 	WhoAmI
 } from './types';
 
@@ -168,6 +183,81 @@ export const rules = {
 	get: (rule: string) => get<Rule>(`/discord/rules/${id(rule)}`),
 	update: (rule: string, body: RuleInput) => put<Rule>(`/discord/rules/${id(rule)}`, body),
 	remove: (rule: string) => del<void>(`/discord/rules/${id(rule)}`)
+};
+
+/** The one string a scope is addressed by in the API. */
+export function scopeKey(scope: Scope): string {
+	switch (scope.kind) {
+		case 'global':
+			return 'global';
+		case 'guild':
+			return `guild:${scope.guild_id}`;
+		case 'channel':
+			return `channel:${scope.guild_id}:${scope.channel_id}`;
+		case 'user':
+			return `user:${scope.guild_id}:${scope.user_id}`;
+	}
+}
+
+export const profiles = {
+	list: () => get<Profile[]>('/profiles'),
+	/** The presets a profile can choose, each with the platforms in it. */
+	presets: () => get<Preset[]>('/profiles/presets'),
+	get: (profile: string) => get<Profile>(`/profiles/${id(profile)}`),
+	create: (body: ProfileInput) => post<Profile>('/profiles', body),
+	update: (profile: string, body: ProfileInput) => put<Profile>(`/profiles/${id(profile)}`, body),
+	remove: (profile: string) => del<void>(`/profiles/${id(profile)}`),
+	/** The whole server's assignment and, with a guild, that guild's; every guild's without. */
+	assignments: (guild?: string) =>
+		get<Assignment[]>('/profiles/assignments', guild ? { guild } : {}),
+	assign: (scope: Scope, profile: string) =>
+		put<Assignment>(`/profiles/assignments/${id(scopeKey(scope))}`, { profile_id: profile }),
+	unassign: (scope: Scope) => del<void>(`/profiles/assignments/${id(scopeKey(scope))}`),
+	effective: (guild?: string, channel?: string, user?: string) => {
+		const query: Record<string, string> = {};
+		if (guild) query.guild = guild;
+		if (channel) query.channel = channel;
+		if (user) query.user = user;
+		return get<EffectiveView>('/profiles/effective', query);
+	}
+};
+
+export const frontends = {
+	list: () => get<Frontend[]>('/frontends'),
+	get: (frontend: string) => get<Frontend>(`/frontends/${id(frontend)}`),
+	create: (body: FrontendInput) => post<Frontend>('/frontends', body),
+	update: (frontend: string, body: FrontendInput) =>
+		put<Frontend>(`/frontends/${id(frontend)}`, body),
+	remove: (frontend: string) => del<void>(`/frontends/${id(frontend)}`),
+	/** Stores the shared secret; `null` removes it. */
+	setSecret: (frontend: string, secret: string | null) =>
+		put<Frontend>(`/frontends/${id(frontend)}/secret`, { secret }),
+	users: (frontend: string) => get<FrontendUser[]>(`/frontends/${id(frontend)}/users`),
+	createUser: (frontend: string, username: string, password: string) =>
+		post<FrontendUser>(`/frontends/${id(frontend)}/users`, { username, password }),
+	setUserPassword: (frontend: string, user: string, password: string) =>
+		put<FrontendUser>(`/frontends/${id(frontend)}/users/${id(user)}/password`, { password }),
+	removeUser: (frontend: string, user: string) =>
+		del<void>(`/frontends/${id(frontend)}/users/${id(user)}`),
+	sessions: (frontend: string) => get<ViewerSession[]>(`/frontends/${id(frontend)}/sessions`),
+	revokeSessions: (frontend: string) => del<void>(`/frontends/${id(frontend)}/sessions`),
+	revokeSession: (frontend: string, session: string) =>
+		del<void>(`/frontends/${id(frontend)}/sessions/${id(session)}`)
+};
+
+/** A front end as its visitors reach it: no admin session, no admin CSRF token. */
+export const front = {
+	info: (slug: string) => publicRequest<FrontInfo>('GET', `/f/${id(slug)}`),
+	login: (slug: string, body: FrontLogin) =>
+		publicRequest<FrontInfo>('POST', `/f/${id(slug)}/login`, { body }),
+	logout: (slug: string) => publicRequest<void>('POST', `/f/${id(slug)}/logout`),
+	/** The browser is sent here with a full page load; the server answers with a redirect. */
+	startUrl: (slug: string, provider: string) => `/api/f/${id(slug)}/auth/${id(provider)}/start`,
+	jobs: (slug: string, query: FrontJobQuery = {}) =>
+		publicRequest<FrontPage>('GET', `/f/${id(slug)}/jobs`, { query: { ...query } }),
+	job: (slug: string, job: string) => publicRequest<FrontJob>('GET', `/f/${id(slug)}/jobs/${id(job)}`),
+	/** Where the media page lives, for sharing. */
+	pagePath: (slug: string, job: string) => `/f/${id(slug)}/j/${id(job)}`
 };
 
 export const guilds = {

@@ -9,11 +9,11 @@ use url::Url;
 
 use super::page::{Page, leading_json};
 use super::{
-    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Variant,
+    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag, Variant,
     VariantKind, clean_title, fetch, navigation_headers,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "ifunny";
 
@@ -114,6 +114,8 @@ impl Resolver for IfunnyResolver {
             hosts: &["ifunny.co"],
             features: &["videos", "gif posts"],
             formats: &["mp4"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Social, Tag::Images],
             session: SessionSupport::None,
             examples: &["https://ifunny.co/video/veclHKeeD"],
         }

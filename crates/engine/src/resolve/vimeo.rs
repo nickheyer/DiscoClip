@@ -16,11 +16,11 @@ use url::Url;
 use super::page::leading_json;
 use super::{
     ClipRange, MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved,
-    Resolver, SessionCheck, SessionSupport, SubtitleFormat, SubtitleTrack, Variant, VariantKind,
-    clean_title, fetch, hls, path_extension, timestamp_hint,
+    Resolver, SessionCheck, SessionSupport, SubtitleFormat, SubtitleTrack, Tag, Variant,
+    VariantKind, clean_title, fetch, hls, path_extension, timestamp_hint,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "vimeo";
 const SITE: &str = "https://vimeo.com/";
@@ -926,6 +926,8 @@ impl Resolver for VimeoResolver {
                 "drm reported",
             ],
             formats: &["hls", "mp4"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Basic, Tag::Video, Tag::Live],
             session: SessionSupport::Optional,
             examples: &[
                 "https://vimeo.com/22439234",

@@ -1,6 +1,13 @@
 <script lang="ts">
 	import type { Entry } from '$lib/api';
-	import { ACTION_LABELS, TARGET_KIND_LABELS, actionTone, targetHref } from '$lib/audit';
+	import {
+		ACTION_LABELS,
+		TARGET_KIND_LABELS,
+		actionTone,
+		auditScope,
+		auditUsername,
+		targetHref
+	} from '$lib/audit';
 	import Badge from './Badge.svelte';
 	import DetailsView from './DetailsView.svelte';
 	import Icon from './Icon.svelte';
@@ -12,6 +19,14 @@
 	const href = $derived(targetHref(entry.target));
 	const targetLabel = $derived(entry.target.name ?? entry.target.id);
 	const hasDetails = $derived(Object.keys(entry.details ?? {}).length > 0);
+	const scope = $derived(
+		entry.action === 'profile.assign' || entry.action === 'profile.unassign'
+			? auditScope(entry.details)
+			: null
+	);
+	const account = $derived(
+		entry.action.startsWith('frontend.user.') ? auditUsername(entry.details) : null
+	);
 </script>
 
 <article class={['entry', compact && 'compact']}>
@@ -35,6 +50,8 @@
 			{:else}
 				<code>{targetLabel}</code>
 			{/if}
+			{#if scope}<span class="faint small">{entry.action === 'profile.assign' ? 'for' : 'from'} {scope}</span>{/if}
+			{#if account}<span class="faint small">account <code>{account}</code></span>{/if}
 		</span>
 		<span class="when faint small"><Time value={entry.at} /></span>
 		{#if hasDetails}

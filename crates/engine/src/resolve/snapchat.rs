@@ -15,10 +15,10 @@ use url::Url;
 use super::page::Page;
 use super::{
     ClipRange, MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved,
-    Resolver, SessionSupport, Variant, VariantKind, clean_title, fetch, timestamp_hint,
+    Resolver, SessionSupport, Tag, Variant, VariantKind, clean_title, fetch, timestamp_hint,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "snapchat";
 const SITE: &str = "https://www.snapchat.com/";
@@ -366,6 +366,8 @@ impl Resolver for SnapchatResolver {
             hosts: &["snapchat.com"],
             features: &["spotlight", "public stories", "short links"],
             formats: &["mp4"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Social, Tag::Video],
             session: SessionSupport::None,
             examples: &[
                 "https://www.snapchat.com/spotlight/W7_EDlXWTBiXAEEniNoMPwAAYb2lpY3VwYWFlAZ6JW-cbAZ6JW-bhAAAAAQ",

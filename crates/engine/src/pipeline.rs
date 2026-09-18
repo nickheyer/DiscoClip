@@ -11,16 +11,21 @@ use tokio_util::sync::CancellationToken;
 
 use crate::archive::Archiver;
 use crate::config::EngineConfig;
-use crate::download::{DownloadContext, Downloaded, Downloader, subtitles};
+use crate::download::{DownloadContext, Downloaded, Downloader, SubtitleChoice, subtitles};
 use crate::error::StageError;
 use crate::event::{EngineEvent, EventKind, Progress, ProgressSender};
 use crate::http::Http;
-use crate::job::{Job, JobId, JobStatus, LogEntry, Request, SourceId, Stage, SubtitleMode};
+use crate::job::{
+    Delivery, Job, JobId, JobStatus, LogEntry, Request, SourceId, Stage, SubtitleMode,
+};
+use crate::media::{LocalFile, MediaInfo, MediaKind};
 use crate::plan::{self, Plan};
-use crate::publish::Publisher;
+use crate::publish::{self, Constraints, Publisher, QualityFloor};
 use crate::resolve::{Resolution, Resolved, ResolverRegistry};
 use crate::store::{JobStore, StoreError};
-use crate::transcode::{Target, Transcoder};
+use crate::transcode::{
+    AudioTarget, ImageTarget, Target, TranscodeError, Transcoder, VideoTarget, clipped_duration,
+};
 
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
 
@@ -260,6 +265,7 @@ async fn expand_playlist(
         request.options = job.request.options.clone();
         request.parent = Some(job.id);
         request.submitted_by = job.request.submitted_by.clone();
+        request.disabled_platforms = job.request.disabled_platforms.clone();
         let child = Job::new(request);
         ctx.store
             .insert(&child)
@@ -334,13 +340,14 @@ async fn execute(ctx: &Context, job: &mut Job, job_dir: &Path) -> Result<(), Int
         .map_err(|e| failed(stage)(e.into()))?;
     let resolution = ctx
         .resolvers
-        .resolve(&url)
+        .resolve_without(&url, &job.request.disabled_platforms)
         .await
         .map_err(|e| failed(stage)(e.into()))?;
     let resolved = match resolution {
         Resolution::Media(resolved) => *resolved,
         Resolution::Playlist(playlist) => return expand_playlist(ctx, job, playlist).await,
     };
+    let media = resolved.media;
     let clip = job.request.options.clip.or(resolved.clip);
     if let (Some(limit), Some(duration)) = (
         limits.max_duration_secs,
@@ -348,7 +355,7 @@ async fn execute(ctx: &Context, job: &mut Job, job_dir: &Path) -> Result<(), Int
     ) && duration.as_secs() > limit
     {
         return Err(failed(stage)(StageError::Rejected(format!(
-            "video is {}s long, limit is {limit}s",
+            "{media} is {}s long, limit is {limit}s",
             duration.as_secs()
         ))));
     }
@@ -357,13 +364,13 @@ async fn execute(ctx: &Context, job: &mut Job, job_dir: &Path) -> Result<(), Int
             "live streams are not accepted here".into(),
         )));
     }
-    let variant = plan::select_variant(&resolved.variants, &limits, &resolved.resolver)
+    let variant = plan::select_variant(&resolved.variants, &limits, &resolved.resolver, media)
         .map_err(|e| failed(stage)(e.into()))?;
     ctx.note(
         job,
         Some(stage),
         format!(
-            "{} resolved {} variant(s); selected {} {}",
+            "{} resolved {media} with {} variant(s); selected {} {}",
             resolved.resolver,
             resolved.variants.len(),
             variant.kind.as_str(),
@@ -404,6 +411,16 @@ async fn execute(ctx: &Context, job: &mut Job, job_dir: &Path) -> Result<(), Int
         ),
         clip,
         platform: resolved.resolver.clone(),
+        download: config.download.clone(),
+        subtitles: (job.request.options.subtitles != SubtitleMode::Skip).then(|| {
+            SubtitleChoice {
+                tracks: subtitles::pick(
+                    &resolved.subtitles,
+                    job.request.options.subtitle_language.as_deref(),
+                ),
+                language: job.request.options.subtitle_language.clone(),
+            }
+        }),
     };
     let (progress, forwarder) = ctx.progress(job.id, stage);
     let downloaded = downloader
@@ -413,19 +430,34 @@ async fn execute(ctx: &Context, job: &mut Job, job_dir: &Path) -> Result<(), Int
     let Downloaded {
         file: mut source,
         subtitles: mut local_subtitles,
+        notes,
     } = downloaded.map_err(|e| failed(stage)(e.into()))?;
+    for note in notes {
+        ctx.note(job, Some(stage), note)
+            .await
+            .map_err(|e| failed(stage)(e.into()))?;
+    }
     if source.size > limits.max_source_bytes {
         return Err(failed(stage)(StageError::Rejected(format!(
             "source is {} bytes, limit is {}",
             source.size, limits.max_source_bytes
         ))));
     }
-    if job.request.options.subtitles != SubtitleMode::Skip && !resolved.subtitles.is_empty() {
-        let wanted = pick_subtitles(
-            &resolved.subtitles,
-            job.request.options.subtitle_language.as_deref(),
-        );
-        match subtitles::fetch_all(&ctx.http, &resolved.resolver, &wanted, job_dir).await {
+    // The tracks the downloader did not fetch along with the media.
+    let remaining: Vec<_> = context
+        .subtitles
+        .as_ref()
+        .map(|choice| {
+            choice
+                .tracks
+                .iter()
+                .filter(|t| !local_subtitles.iter().any(|s| s.url.as_ref() == Some(&t.url)))
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
+    if !remaining.is_empty() {
+        match subtitles::fetch_all(&ctx.http, &resolved.resolver, &remaining, job_dir).await {
             Ok(fetched) => local_subtitles.extend(fetched),
             Err(error) => {
                 ctx.note(job, Some(stage), format!("subtitles not fetched: {error}"))
@@ -464,113 +496,109 @@ async fn execute(ctx: &Context, job: &mut Job, job_dir: &Path) -> Result<(), Int
         )))
     })?;
     let constraints = publisher
-        .constraints(&origin)
+        .constraints(job)
         .await
         .map_err(|e| failed(stage)(e.into()))?;
-    let info = ctx
-        .transcoder
-        .probe(&source.path)
+    // A file that is not media is never probed; anything else is, and what the probe
+    // finds the file to be outranks what the resolver said it was.
+    let info: Option<MediaInfo> = match media {
+        MediaKind::File => None,
+        _ => Some(
+            ctx.transcoder
+                .probe(&source.path)
+                .await
+                .map_err(|e| failed(stage)(e.into()))?,
+        ),
+    };
+    let kind = info.as_ref().map_or(media, |i| i.kind);
+    if kind != media {
+        ctx.note(
+            job,
+            Some(stage),
+            format!(
+                "{} called this {media}; the file is {kind}",
+                resolved.resolver
+            ),
+        )
         .await
         .map_err(|e| failed(stage)(e.into()))?;
+    }
     if let (Some(limit), Some(duration)) = (
         limits.max_duration_secs,
-        effective_duration(info.duration, clip),
+        effective_duration(info.as_ref().and_then(|i| i.duration), clip),
     ) && duration.as_secs() > limit
     {
         return Err(failed(stage)(StageError::Rejected(format!(
-            "video is {}s long, limit is {limit}s",
+            "{kind} is {}s long, limit is {limit}s",
             duration.as_secs()
         ))));
     }
-    source.info = Some(info.clone());
+    source.info = info.clone();
     job.artifacts.source = Some(source.clone());
-    let max_height = limits
-        .max_height
-        .min(constraints.max_height.unwrap_or(u32::MAX));
     let burn = match job.request.options.subtitles {
         SubtitleMode::Burn => local_subtitles.first().map(|s| s.path.clone()),
         _ => None,
     };
-    let mut target = Target::new(
-        constraints.preferred_container(),
-        constraints.preferred_video(),
-        info.audio.as_ref().map(|_| constraints.preferred_audio()),
-        constraints.max_bytes,
-        max_height,
-    );
-    target.clip = clip;
-    target.burn_subtitles = burn;
-    let plan = plan::plan(
+    let produced = produce(
+        ctx,
+        job,
+        job_dir,
         &source,
-        &info,
+        info.as_ref(),
+        kind,
         &constraints,
-        &crate::config::Limits {
-            max_height,
-            ..limits.clone()
-        },
-        target,
+        &limits,
+        clip,
+        burn.clone(),
     )
-    .map_err(|e| failed(stage)(e.into()))?;
-    let output = match plan {
-        Plan::Passthrough => {
+    .await;
+    // A destination with a link to fall back on gets one when the upload cannot be
+    // made, or would be too reduced; the output is then made for the page instead.
+    let output = match produced {
+        Ok(Produced::Upload(output)) => output,
+        Ok(Produced::Link { output, reason }) => {
+            let link = constraints
+                .for_link()
+                .expect("a link is produced only with a fallback");
+            job.artifacts.delivery = Delivery::Link;
+            job.artifacts.link_reason = Some(reason.clone());
             ctx.note(
                 job,
                 Some(stage),
-                format!(
-                    "source already satisfies {}; publishing as is",
-                    describe_constraints(&constraints)
-                ),
+                format!("{reason}; a link to the page will be posted instead of the file"),
             )
             .await
             .map_err(|e| failed(stage)(e.into()))?;
-            source.clone()
-        }
-        Plan::Transcode(target) => {
-            ctx.note(
-                job,
-                Some(stage),
-                format!(
-                    "source is {} {}; converting to {:?}/{:?} under {} bytes{}{}",
-                    describe_info(&info),
-                    source.size,
-                    target.container,
-                    target.video,
-                    target.max_bytes,
-                    target
-                        .clip
-                        .map(|c| format!(
-                            ", keeping {:.1}s to {}",
-                            c.start.as_secs_f64(),
-                            c.end.map_or("the end".to_string(), |e| format!(
-                                "{:.1}s",
-                                e.as_secs_f64()
-                            ))
-                        ))
-                        .unwrap_or_default(),
-                    if target.burn_subtitles.is_some() {
-                        ", burning subtitles in"
-                    } else {
-                        ""
+            match output {
+                Some(output) => output,
+                None => match produce(
+                    ctx,
+                    job,
+                    job_dir,
+                    &source,
+                    info.as_ref(),
+                    kind,
+                    &link,
+                    &limits,
+                    clip,
+                    burn,
+                )
+                .await
+                .map_err(|e| failed(stage)(e))?
+                {
+                    Produced::Upload(output)
+                    | Produced::Link {
+                        output: Some(output),
+                        ..
+                    } => output,
+                    Produced::Link { output: None, .. } => {
+                        unreachable!("a destination without a fallback never asks for a link")
                     }
-                ),
-            )
-            .await
-            .map_err(|e| failed(stage)(e.into()))?;
-            let (progress, forwarder) = ctx.progress(job.id, stage);
-            let output = ctx
-                .transcoder
-                .transcode(&source, &target, job_dir, progress)
-                .await;
-            let _ = forwarder.await;
-            output.map_err(|e| failed(stage)(e.into()))?
+                },
+            }
         }
+        Err(error) => return Err(failed(stage)(error)),
     };
-    if output.size > constraints.max_bytes {
-        return Err(failed(stage)(StageError::Rejected(format!(
-            "output is {} bytes, destination allows {}",
-            output.size, constraints.max_bytes
-        ))));
-    }
     job.artifacts.output = Some(output.clone());
     ctx.note(
         job,
@@ -624,41 +652,244 @@ async fn execute(ctx: &Context, job: &mut Job, job_dir: &Path) -> Result<(), Int
     Ok(())
 }
 
-/// The subtitle tracks worth fetching: the preferred language's, else every language's
-/// best track (human made over automatic).
-fn pick_subtitles(
-    tracks: &[crate::resolve::SubtitleTrack],
-    preferred: Option<&str>,
-) -> Vec<crate::resolve::SubtitleTrack> {
-    let mut by_language: Vec<crate::resolve::SubtitleTrack> = Vec::new();
-    for track in tracks {
-        match by_language
-            .iter_mut()
-            .find(|t| t.language.eq_ignore_ascii_case(&track.language))
+/// What the transcode stage made of the source for one destination.
+enum Produced {
+    /// A file the destination takes as an upload.
+    Upload(LocalFile),
+    /// The destination gets a link instead: with the output already made for the page
+    /// when the upload was tried and came out too reduced, or with none yet when the
+    /// upload was never worth trying.
+    Link {
+        output: Option<LocalFile>,
+        reason: String,
+    },
+}
+
+/// Bits per second of a whole file over its playing time.
+fn bitrate_of(file: &LocalFile, duration: Option<Duration>) -> Option<u64> {
+    let secs = duration?.as_secs_f64();
+    (secs > 0.0).then(|| (file.size as f64 * 8.0 / secs) as u64)
+}
+
+/// The floor as it applies to this source: a source already below a bound is not reduced
+/// by an output at the source's own level.
+fn floor_for(floor: &QualityFloor, source: &LocalFile, info: &MediaInfo) -> QualityFloor {
+    let source_height = info.video.as_ref().map_or(u32::MAX, |v| v.height);
+    let source_bitrate = bitrate_of(source, info.duration).unwrap_or(u64::MAX);
+    QualityFloor {
+        min_height: floor.min_height.min(source_height),
+        min_bitrate: floor.min_bitrate.min(source_bitrate),
+    }
+}
+
+/// Whether `output` falls under `floor`.
+fn below_floor(output: &LocalFile, floor: &QualityFloor) -> Option<String> {
+    let info = output.info.as_ref()?;
+    let height = info.video.as_ref().map_or(0, |v| v.height);
+    if height < floor.min_height {
+        return Some(format!(
+            "the upload would be {height}p, under the {}p floor",
+            floor.min_height
+        ));
+    }
+    if let Some(bitrate) = bitrate_of(output, info.duration)
+        && bitrate < floor.min_bitrate
+    {
+        return Some(format!(
+            "the upload would be {} kb/s, under the {} kb/s floor",
+            bitrate / 1000,
+            floor.min_bitrate / 1000
+        ));
+    }
+    None
+}
+
+/// Makes the output for `constraints`: the source as it is when it fits, else a
+/// transcode. With a fallback in the constraints, a video that cannot fit or would come
+/// out under the quality floor, and a file too large to upload, become a link instead.
+#[allow(clippy::too_many_arguments)]
+async fn produce(
+    ctx: &Context,
+    job: &mut Job,
+    job_dir: &Path,
+    source: &LocalFile,
+    info: Option<&MediaInfo>,
+    kind: MediaKind,
+    constraints: &Constraints,
+    limits: &crate::config::Limits,
+    clip: Option<crate::resolve::ClipRange>,
+    burn: Option<PathBuf>,
+) -> Result<Produced, StageError> {
+    let stage = Stage::Transcode;
+    let max_height = limits
+        .max_height
+        .min(constraints.max_height.unwrap_or(u32::MAX));
+    let target = match kind {
+        MediaKind::Video => {
+            let mut target = VideoTarget::new(
+                constraints.preferred_container(),
+                constraints.preferred_video(),
+                info.and_then(|i| i.audio.as_ref())
+                    .map(|_| constraints.preferred_audio()),
+                constraints.max_bytes,
+                max_height,
+            );
+            target.clip = clip;
+            target.burn_subtitles = burn;
+            Target::Video(target)
+        }
+        MediaKind::Audio => {
+            let container = match info.map(|i| &i.container) {
+                Some(container) if constraints.accepts_audio_file(container, None) => {
+                    container.clone()
+                }
+                _ => constraints.preferred_audio_container(),
+            };
+            Target::Audio(AudioTarget {
+                codec: publish::audio_codec_for(&container),
+                container,
+                max_bytes: constraints.max_bytes,
+                clip,
+            })
+        }
+        MediaKind::Image => {
+            let container = match info.map(|i| &i.container) {
+                Some(container) if constraints.accepts_image(container) => container.clone(),
+                _ => constraints.preferred_image_container(),
+            };
+            Target::Image(ImageTarget {
+                container,
+                max_bytes: constraints.max_bytes,
+            })
+        }
+        MediaKind::File => Target::File {
+            max_bytes: constraints.max_bytes,
+        },
+    };
+    let plan = match plan::plan(
+        source,
+        info,
+        constraints,
+        &crate::config::Limits {
+            max_height,
+            ..limits.clone()
+        },
+        target,
+    ) {
+        Ok(plan) => plan,
+        Err(TranscodeError::CannotShrink { size, max_bytes })
+            if constraints
+                .fallback
+                .as_ref()
+                .is_some_and(|f| size <= f.max_bytes) =>
         {
-            Some(existing) => {
-                if existing.auto && !track.auto {
-                    *existing = track.clone();
+            return Ok(Produced::Link {
+                output: Some(source.clone()),
+                reason: format!(
+                    "the file is {size} bytes, over the {max_bytes} the destination takes"
+                ),
+            });
+        }
+        Err(error) => return Err(error.into()),
+    };
+    // A video whose byte budget cannot hold the floor is not worth encoding for upload.
+    let floor = match (&constraints.fallback, info) {
+        (Some(fallback), Some(info)) if kind == MediaKind::Video => {
+            let floor = floor_for(&fallback.floor, source, info);
+            let secs = clipped_duration(clip, info.duration.unwrap_or_default()).as_secs_f64();
+            if matches!(plan, Plan::Transcode(_)) && secs > 0.0 {
+                let budget = (constraints.max_bytes as f64 * 8.0 * 0.95 / secs) as u64;
+                if budget < floor.min_bitrate {
+                    return Ok(Produced::Link {
+                        output: None,
+                        reason: format!(
+                            "{} bytes hold only {} kb/s of {:.0}s, under the {} kb/s floor",
+                            constraints.max_bytes,
+                            budget / 1000,
+                            secs,
+                            floor.min_bitrate / 1000
+                        ),
+                    });
                 }
             }
-            None => by_language.push(track.clone()),
+            Some(floor)
         }
-    }
-    if let Some(preferred) = preferred {
-        let preferred = preferred.to_ascii_lowercase();
-        let chosen: Vec<_> = by_language
-            .iter()
-            .filter(|t| {
-                let language = t.language.to_ascii_lowercase();
-                language == preferred || language.starts_with(&format!("{preferred}-"))
-            })
-            .cloned()
-            .collect();
-        if !chosen.is_empty() {
-            return chosen;
+        _ => None,
+    };
+    let output = match plan {
+        Plan::Passthrough => {
+            ctx.note(
+                job,
+                Some(stage),
+                format!(
+                    "source already satisfies {}; publishing as is",
+                    describe_constraints(constraints, kind)
+                ),
+            )
+            .await?;
+            source.clone()
         }
+        Plan::Transcode(target) => {
+            ctx.note(
+                job,
+                Some(stage),
+                format!(
+                    "source is {} {}; converting to {}{}",
+                    info.map(describe_info).unwrap_or_else(|| kind.to_string()),
+                    source.size,
+                    describe_target(&target),
+                    target
+                        .clip()
+                        .map(|c| format!(
+                            ", keeping {:.1}s to {}",
+                            c.start.as_secs_f64(),
+                            c.end.map_or("the end".to_string(), |e| format!(
+                                "{:.1}s",
+                                e.as_secs_f64()
+                            ))
+                        ))
+                        .unwrap_or_default(),
+                ),
+            )
+            .await?;
+            let (progress, forwarder) = ctx.progress(job.id, stage);
+            let output = ctx
+                .transcoder
+                .transcode(source, &target, job_dir, progress)
+                .await;
+            let _ = forwarder.await;
+            match output {
+                Ok(output) => output,
+                Err(TranscodeError::BudgetUnreachable {
+                    max_bytes,
+                    duration_secs,
+                }) if constraints.fallback.is_some() => {
+                    return Ok(Produced::Link {
+                        output: None,
+                        reason: format!(
+                            "{duration_secs}s of video cannot be fit under {max_bytes} bytes"
+                        ),
+                    });
+                }
+                Err(error) => return Err(error.into()),
+            }
+        }
+    };
+    if output.size > constraints.max_bytes {
+        return Err(StageError::Rejected(format!(
+            "output is {} bytes, destination allows {}",
+            output.size, constraints.max_bytes
+        )));
     }
-    by_language
+    if let Some(floor) = floor
+        && let Some(reason) = below_floor(&output, &floor)
+    {
+        return Ok(Produced::Link {
+            output: None,
+            reason,
+        });
+    }
+    Ok(Produced::Upload(output))
 }
 
 fn describe_variant(v: &crate::resolve::Variant) -> String {
@@ -688,7 +919,7 @@ fn describe_variant(v: &crate::resolve::Variant) -> String {
 }
 
 fn describe_info(info: &crate::media::MediaInfo) -> String {
-    let mut s = format!("{:?}", info.container);
+    let mut s = format!("{} {:?}", info.kind, info.container);
     if let Some(v) = &info.video {
         s.push_str(&format!(" {:?} {}x{}", v.codec, v.width, v.height));
     }
@@ -701,13 +932,46 @@ fn describe_info(info: &crate::media::MediaInfo) -> String {
     s
 }
 
-fn describe_constraints(c: &crate::publish::Constraints) -> String {
-    format!(
-        "{:?}/{:?} under {} bytes",
-        c.preferred_container(),
-        c.preferred_video(),
-        c.max_bytes
-    )
+fn describe_constraints(c: &Constraints, kind: MediaKind) -> String {
+    match kind {
+        MediaKind::Video => format!(
+            "{:?}/{:?} under {} bytes",
+            c.preferred_container(),
+            c.preferred_video(),
+            c.max_bytes
+        ),
+        MediaKind::Audio => format!(
+            "audio in {:?} under {} bytes",
+            c.audio_containers, c.max_bytes
+        ),
+        MediaKind::Image => format!(
+            "images in {:?} under {} bytes",
+            c.image_containers, c.max_bytes
+        ),
+        MediaKind::File => format!("files under {} bytes", c.max_bytes),
+    }
+}
+
+fn describe_target(target: &Target) -> String {
+    match target {
+        Target::Video(t) => format!(
+            "{:?}/{:?} under {} bytes{}",
+            t.container,
+            t.video,
+            t.max_bytes,
+            if t.burn_subtitles.is_some() {
+                ", burning subtitles in"
+            } else {
+                ""
+            }
+        ),
+        Target::Audio(t) => format!(
+            "{:?}/{:?} under {} bytes",
+            t.container, t.codec, t.max_bytes
+        ),
+        Target::Image(t) => format!("{:?} under {} bytes", t.container, t.max_bytes),
+        Target::File { max_bytes } => format!("a file under {max_bytes} bytes"),
+    }
 }
 
 #[cfg(test)]
@@ -735,11 +999,11 @@ mod tests {
             track("de", false),
             track("en-GB", false),
         ];
-        let picked = pick_subtitles(&tracks, Some("EN"));
+        let picked = subtitles::pick(&tracks, Some("EN"));
         assert_eq!(picked.len(), 2);
         assert!(picked.iter().all(|t| !t.auto));
         assert_eq!(picked[0].language, "en");
-        let all = pick_subtitles(&tracks, Some("fr"));
+        let all = subtitles::pick(&tracks, Some("fr"));
         assert_eq!(all.len(), 3);
         assert!(
             all.iter()

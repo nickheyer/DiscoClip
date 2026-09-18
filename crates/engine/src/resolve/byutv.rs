@@ -13,10 +13,11 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Page, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved,
-    Resolver, SessionSupport, Variant, clean_title, fetch, hls, navigation_headers, status_error,
-    util,
+    Resolver, SessionSupport, Tag, Variant, clean_title, fetch, hls, navigation_headers,
+    status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
+use crate::media::MediaKind;
 
 pub const PLATFORM: &str = "byutv";
 const SITE: &str = "https://www.byutv.org";
@@ -422,6 +423,8 @@ impl Resolver for ByutvResolver {
             hosts: &["byutv.org"],
             features: &["videos", "recordings", "shows"],
             formats: &["hls", "dash"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Video],
             session: SessionSupport::None,
             examples: &[
                 "https://www.byutv.org/0160476a-bfd0-425d-82f9-5757bde3bf37/studio-c-season-9-episode-2",

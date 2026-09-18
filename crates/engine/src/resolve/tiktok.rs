@@ -12,10 +12,10 @@ use url::Url;
 use super::page::Page;
 use super::{
     MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionCheck, SessionSupport,
-    SubtitleFormat, SubtitleTrack, Variant, VariantKind, clean_title, fetch_ok,
+    SubtitleFormat, SubtitleTrack, Tag, Variant, VariantKind, clean_title, fetch_ok,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "tiktok";
 const REFERER: &str = "https://www.tiktok.com/";
@@ -186,6 +186,8 @@ impl Resolver for TiktokResolver {
             hosts: &["tiktok.com", "vm.tiktok.com", "vt.tiktok.com"],
             features: &["videos", "short links", "embeds", "subtitles"],
             formats: &["mp4"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Basic, Tag::Social, Tag::Video],
             session: SessionSupport::Optional,
             examples: &["https://www.tiktok.com/@tiktok/video/7106594312292453675"],
         }

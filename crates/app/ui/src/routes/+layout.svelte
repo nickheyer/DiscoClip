@@ -45,6 +45,8 @@
 			items: [
 				{ href: '/applications', label: 'Applications', icon: 'bot', permission: 'manage_applications' },
 				{ href: '/rules', label: 'Watch rules', icon: 'rules', permission: 'manage_watch_rules' },
+				{ href: '/profiles', label: 'Profiles', icon: 'sparkles' },
+				{ href: '/frontends', label: 'Front ends', icon: 'monitor', permission: 'manage_settings' },
 				{ href: '/guilds', label: 'My guilds', icon: 'server' }
 			]
 		},
@@ -75,7 +77,8 @@
 
 	const me = $derived(session.me);
 	const pathname = $derived(page.url.pathname);
-	const bare = $derived(!me || pathname === '/login' || pathname === '/setup');
+	const front = $derived(pathname.startsWith('/f/'));
+	const bare = $derived(front || !me || pathname === '/login' || pathname === '/setup');
 	const groups = $derived(
 		NAV.map((group) => ({
 			...group,
@@ -122,7 +125,7 @@
 	});
 
 	$effect(() => {
-		if (me) {
+		if (me && !front) {
 			bots.start();
 			jobs.start();
 		} else {

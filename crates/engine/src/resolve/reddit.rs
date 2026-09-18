@@ -25,9 +25,10 @@ use url::Url;
 use super::page::Page;
 use super::{
     MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionCheck, SessionSupport,
-    Variant, VariantKind, clean_title, essence, hls,
+    Tag, Variant, VariantKind, clean_title, essence, hls,
 };
 use crate::http::{BROWSER_UA, Cookie, Http};
+use crate::media::MediaKind;
 
 const MAX_JSON: usize = 8 * 1024 * 1024;
 const PLATFORM: &str = "reddit";
@@ -608,6 +609,8 @@ impl Resolver for RedditResolver {
             hosts: &["reddit.com", "redd.it", "v.redd.it"],
             features: &["videos", "crossposts", "share links", "linked media"],
             formats: &["hls", "dash"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Basic, Tag::Social, Tag::Video],
             session: SessionSupport::Optional,
             examples: &[
                 "https://www.reddit.com/r/videos/comments/6rrwyj/that_small_heart_attack/",

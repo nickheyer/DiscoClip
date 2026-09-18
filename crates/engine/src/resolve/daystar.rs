@@ -11,9 +11,10 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Page, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport,
-    SubtitleFormat, SubtitleTrack, clean_title, fetch_ok, hls, navigation_headers, util,
+    SubtitleFormat, SubtitleTrack, Tag, clean_title, fetch_ok, hls, navigation_headers, util,
 };
 use crate::http::{BROWSER_UA, Http};
+use crate::media::MediaKind;
 
 pub const PLATFORM: &str = "daystar";
 
@@ -82,6 +83,8 @@ impl Resolver for DaystarResolver {
             hosts: &["player.daystar.tv"],
             features: &["clips"],
             formats: &["hls"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Video],
             session: SessionSupport::None,
             examples: &["https://player.daystar.tv/0MTO2ITM"],
         }

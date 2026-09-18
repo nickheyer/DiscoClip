@@ -106,6 +106,18 @@ impl Settings {
                 "must be at least 1".into(),
             ));
         }
+        if self.engine.download.connections == 0 {
+            return Err(invalid(
+                "engine.download.connections",
+                "must be at least 1".into(),
+            ));
+        }
+        if self.engine.download.chunk_bytes < 64 * 1024 {
+            return Err(invalid(
+                "engine.download.chunk_bytes",
+                "must be at least 65536".into(),
+            ));
+        }
         if self.engine.retention.sweep_interval_secs == 0 {
             return Err(invalid(
                 "engine.retention.sweep_interval_secs",

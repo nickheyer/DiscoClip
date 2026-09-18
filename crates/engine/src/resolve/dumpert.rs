@@ -9,11 +9,11 @@ use regex::Regex;
 use url::Url;
 
 use super::{
-    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Variant,
+    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag, Variant,
     clean_title, fetch_as_browser, hls, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "dumpert";
 const API: &str = "https://api-live.dumpert.nl/mobile_api/json/info/";
@@ -85,6 +85,8 @@ impl Resolver for DumpertResolver {
             hosts: &["dumpert.nl"],
             features: &["videos"],
             formats: &["mp4", "hls"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Video],
             session: SessionSupport::None,
             examples: &[
                 "https://www.dumpert.nl/item/100031688_b317a185",

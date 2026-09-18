@@ -9,11 +9,11 @@ use regex::Regex;
 use url::Url;
 
 use super::{
-    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Variant,
+    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag, Variant,
     brightcove, clean_title, fetch, hls, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "aljazeera";
 const DEFAULT_ACCOUNT: &str = "911432371001";
@@ -108,6 +108,8 @@ impl Resolver for AljazeeraResolver {
             hosts: &["aljazeera.com", "aljazeera.net"],
             features: &["videos", "programmes", "articles"],
             formats: &["mp4", "hls"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::News],
             session: SessionSupport::None,
             examples: &[
                 "https://www.aljazeera.com/video/inside-story/2026/9/10/will-foreign-workers-leave-south-africa",
@@ -303,8 +305,8 @@ mod tests {
         assert_eq!(programme.post_type, "episode");
         let feature = link("https://www.aljazeera.com/features/2026/9/1/x").unwrap();
         assert_eq!(feature.post_type, "post");
-        assert_eq!(link("https://www.aljazeera.com/videos/").is_none(), true);
-        assert_eq!(link("https://example.com/news/2026/9/15/x").is_none(), true);
+        assert!(link("https://www.aljazeera.com/videos/").is_none());
+        assert!(link("https://example.com/news/2026/9/15/x").is_none());
     }
 
     /// The player script and Playback API answer of a Brightcove video with one MP4

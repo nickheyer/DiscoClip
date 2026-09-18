@@ -2,7 +2,7 @@
 	import { goto, invalidate } from '$app/navigation';
 	import { SvelteSet } from 'svelte/reactivity';
 	import type { PageData } from './$types';
-	import { STATUS_KINDS, jobs as api, messageOf } from '$lib/api';
+	import { MEDIA_LABELS, STATUS_KINDS, jobs as api, messageOf } from '$lib/api';
 	import type { BulkAction, JobSummary, StatusKind, SubmitRequest, SubtitleMode } from '$lib/api';
 	import Alert from '$lib/components/Alert.svelte';
 	import Badge from '$lib/components/Badge.svelte';
@@ -432,7 +432,10 @@
 								<span>{sourceLabel(job)}</span>
 								{#if submitter(job)}<span class="faint small block">{submitter(job)}</span>{/if}
 							</td>
-							<td>{job.resolver ?? '—'}</td>
+							<td>
+								<span>{job.resolver ?? '—'}</span>
+								{#if job.resolver && job.media !== 'video'}<span class="faint small block">{MEDIA_LABELS[job.media]}</span>{/if}
+							</td>
 							<td class="nowrap">
 								{#if job.duration_secs != null}{formatClock(job.duration_secs)}{/if}
 								{#if job.live}<Badge tone="danger" size="sm">live</Badge>{/if}

@@ -9,11 +9,11 @@ use serde_json::Value;
 use url::Url;
 
 use super::{
-    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Variant,
+    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag, Variant,
     clean_title, fetch, hls, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "aparat";
 const SITE: &str = "https://www.aparat.com/";
@@ -65,6 +65,8 @@ impl Resolver for AparatResolver {
             hosts: &["aparat.com"],
             features: &["videos"],
             formats: &["hls", "mp4"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Video],
             session: SessionSupport::None,
             examples: &["https://www.aparat.com/v/wP8On"],
         }

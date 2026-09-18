@@ -10,10 +10,11 @@ use serde_json::Value;
 use url::Url;
 
 use super::{
-    MAX_PAGE, Page, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport,
+    MAX_PAGE, Page, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag,
     clean_title, fetch_as_browser, hls, navigation_headers, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
+use crate::media::MediaKind;
 
 pub const PLATFORM: &str = "bloomberg";
 const EMBED_API: &str = "https://www.bloomberg.com/multimedia/api/embed?id=";
@@ -88,6 +89,8 @@ impl Resolver for BloombergResolver {
             hosts: &["bloomberg.com"],
             features: &["videos", "articles"],
             formats: &["hls"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::News],
             session: SessionSupport::None,
             examples: &[
                 "https://www.bloomberg.com/news/videos/2021-09-14/apple-unveils-the-new-iphone-13-stock-doesn-t-move-much-video",

@@ -1,6 +1,7 @@
 //! OneDrive shared files and folders, through the share API the web app calls with the
-//! anonymous token it asks for first: a file's download link with its video facet, and a
-//! folder's videos as a playlist, each entry naming its item within the share.
+//! anonymous token it asks for first: a file of any kind by its download link, with its
+//! video, audio or image facet when the item carries one, and a folder's files as a
+//! playlist, each entry naming its item within the share.
 
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
@@ -14,10 +15,10 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved, Resolver,
-    SessionSupport, Variant, VariantKind, clean_title, essence, fetch,
+    SessionSupport, Tag, Variant, VariantKind, clean_title, essence, fetch,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "onedrive";
 const TOKEN_API: &str = "https://api-badgerp.svc.ms/v1.0/token";
@@ -67,14 +68,41 @@ pub fn share_id(share: &Url) -> String {
     format!("u!{}", URL_SAFE_NO_PAD.encode(share.as_str()))
 }
 
-fn is_video(item: &Value) -> bool {
-    item["video"].is_object()
-        || essence(item["file"]["mimeType"].as_str()).starts_with("video/")
-        || item["name"]
-            .as_str()
-            .and_then(|n| n.rsplit('.').next())
-            .and_then(Container::from_extension)
-            .is_some()
+/// The format a drive item is in: what its type names, else what its name does.
+fn container_of(item: &Value) -> Option<Container> {
+    let mime = essence(item["file"]["mimeType"].as_str());
+    Container::from_mime(&mime).or_else(|| item["name"].as_str().and_then(Container::from_name))
+}
+
+/// What a drive item is: what its facet says, then what its type says, then what its
+/// name's extension does.
+pub fn kind_of(item: &Value) -> MediaKind {
+    if item["video"].is_object() {
+        return MediaKind::Video;
+    }
+    if item["audio"].is_object() {
+        return MediaKind::Audio;
+    }
+    if item["image"].is_object() || item["photo"].is_object() {
+        return MediaKind::Image;
+    }
+    let mime = essence(item["file"]["mimeType"].as_str());
+    match MediaKind::from_mime(&mime) {
+        MediaKind::File => container_of(item).map_or(MediaKind::File, |c| c.kind()),
+        kind => kind,
+    }
+}
+
+/// The codec an audio file's format implies.
+fn audio_codec_of(container: Option<&Container>) -> Option<AudioCodec> {
+    match container {
+        Some(Container::Mp3) => Some(AudioCodec::Mp3),
+        Some(Container::M4a) => Some(AudioCodec::Aac),
+        Some(Container::Ogg) => Some(AudioCodec::Vorbis),
+        Some(Container::Opus) => Some(AudioCodec::Opus),
+        Some(Container::Flac) => Some(AudioCodec::Flac),
+        _ => None,
+    }
 }
 
 /// A file variant for a drive item with a download link.
@@ -82,30 +110,44 @@ pub fn variant_of(item: &Value) -> Option<Variant> {
     let url = item["@content.downloadUrl"]
         .as_str()
         .and_then(|u| Url::parse(u).ok())?;
-    let mime = essence(item["file"]["mimeType"].as_str());
     let mut v = Variant::new(url, VariantKind::File);
-    v.container = Container::from_mime(&mime).or_else(|| {
-        item["name"]
-            .as_str()
-            .and_then(|n| n.rsplit('.').next())
-            .and_then(Container::from_extension)
-    });
-    let video = &item["video"];
-    v.width = video["width"].as_u64().map(|w| w as u32);
-    v.height = video["height"].as_u64().map(|h| h as u32);
-    v.fps = video["frameRate"].as_f64().filter(|f| *f > 0.0);
-    v.bitrate = video["bitRate"].as_u64().filter(|b| *b > 0);
+    v.container = container_of(item);
     v.size = item["size"].as_u64();
-    v.duration = video["duration"]
-        .as_u64()
-        .filter(|d| *d > 0)
-        .map(Duration::from_millis);
-    if video["fourCC"]
-        .as_str()
-        .is_some_and(|c| c.eq_ignore_ascii_case("H264"))
-    {
-        v.video = Some(VideoCodec::H264);
-        v.audio = Some(AudioCodec::Aac);
+    match kind_of(item) {
+        MediaKind::Video => {
+            let video = &item["video"];
+            v.width = video["width"].as_u64().map(|w| w as u32);
+            v.height = video["height"].as_u64().map(|h| h as u32);
+            v.fps = video["frameRate"].as_f64().filter(|f| *f > 0.0);
+            v.bitrate = video["bitRate"].as_u64().filter(|b| *b > 0);
+            v.duration = video["duration"]
+                .as_u64()
+                .filter(|d| *d > 0)
+                .map(Duration::from_millis);
+            if video["fourCC"]
+                .as_str()
+                .is_some_and(|c| c.eq_ignore_ascii_case("H264"))
+            {
+                v.video = Some(VideoCodec::H264);
+                v.audio = Some(AudioCodec::Aac);
+            }
+        }
+        MediaKind::Audio => {
+            let audio = &item["audio"];
+            v.audio_only = true;
+            v.audio = audio_codec_of(v.container.as_ref());
+            v.bitrate = audio["bitrate"].as_u64().filter(|b| *b > 0);
+            v.duration = audio["duration"]
+                .as_u64()
+                .filter(|d| *d > 0)
+                .map(Duration::from_millis);
+        }
+        MediaKind::Image => {
+            let image = &item["image"];
+            v.width = image["width"].as_u64().map(|w| w as u32);
+            v.height = image["height"].as_u64().map(|h| h as u32);
+        }
+        MediaKind::File => {}
     }
     v.format_id = Some("original".into());
     Some(v)
@@ -115,13 +157,22 @@ fn resolved_of(item: &Value, share: &Url) -> Result<Resolved, ResolveError> {
     let variant = variant_of(item)
         .ok_or_else(|| ResolveError::unavailable(share, "the item carries no download link"))?;
     let name = item["name"].as_str().unwrap_or_default();
-    let mut resolved = Resolved::new(PLATFORM);
+    let mut resolved = Resolved::of(PLATFORM, kind_of(item));
     resolved.id = item["id"].as_str().map(String::from);
     resolved.title = clean_title(name.rsplit_once('.').map_or(name, |(s, _)| s));
     resolved.description = item["description"].as_str().and_then(clean_title);
     resolved.uploader = item["createdBy"]["user"]["displayName"]
         .as_str()
         .and_then(clean_title);
+    resolved.thumbnail = item["thumbnails"]
+        .as_array()
+        .and_then(|sets| sets.first())
+        .and_then(|set| {
+            set["large"]["url"]
+                .as_str()
+                .or(set["medium"]["url"].as_str())
+        })
+        .and_then(|u| Url::parse(u).ok());
     resolved.uploaded_at = item["lastModifiedDateTime"]
         .as_str()
         .or(item["createdDateTime"].as_str())
@@ -258,8 +309,25 @@ impl Resolver for OnedriveResolver {
             id: PLATFORM,
             name: "OneDrive",
             hosts: &["1drv.ms", "onedrive.live.com", "photos.onedrive.com"],
-            features: &["shared files", "shared folders", "short links"],
-            formats: &["mp4", "mov", "webm", "mkv"],
+            features: &[
+                "shared files",
+                "shared folders",
+                "short links",
+                "audio",
+                "images",
+                "documents",
+            ],
+            formats: &[
+                "mp4", "mov", "webm", "mkv", "mp3", "m4a", "flac", "wav", "jpg", "png", "heic",
+                "pdf", "any file",
+            ],
+            media: &[
+                MediaKind::Video,
+                MediaKind::Audio,
+                MediaKind::Image,
+                MediaKind::File,
+            ],
+            tags: &[Tag::Files],
             session: SessionSupport::None,
             examples: &[
                 "https://1drv.ms/v/c/49e18460ed20d89c/IQA0-4CgNI50R5PRqh3dLEGoAXDFVRoySH969JO0uU1c3mQ?e=35jiOO",
@@ -289,7 +357,7 @@ impl Resolver for OnedriveResolver {
             let children = self.children(&link.share, url).await?;
             let entries: Vec<PlaylistEntry> = children
                 .iter()
-                .filter(|c| c["file"].is_object() && is_video(c))
+                .filter(|c| c["file"].is_object())
                 .filter_map(|c| {
                     let id = c["id"].as_str()?;
                     let mut entry = link.share.clone();
@@ -300,13 +368,14 @@ impl Resolver for OnedriveResolver {
                         title: clean_title(name.rsplit_once('.').map_or(name, |(s, _)| s)),
                         duration: c["video"]["duration"]
                             .as_u64()
+                            .or(c["audio"]["duration"].as_u64())
                             .filter(|d| *d > 0)
                             .map(Duration::from_millis),
                     })
                 })
                 .collect();
             if entries.is_empty() {
-                return Err(ResolveError::unavailable(url, "the folder holds no videos"));
+                return Err(ResolveError::unavailable(url, "the folder holds no files"));
             }
             return Ok(Resolution::Playlist(Playlist {
                 resolver: PLATFORM.into(),
@@ -316,14 +385,8 @@ impl Resolver for OnedriveResolver {
                 entries,
             }));
         }
-        if !is_video(&item) {
-            return Err(ResolveError::unavailable(
-                url,
-                format!(
-                    "{} is not a video",
-                    item["name"].as_str().unwrap_or("the file")
-                ),
-            ));
+        if !item["file"].is_object() {
+            return Err(ResolveError::unavailable(url, "the link names no file"));
         }
         Ok(Resolution::from(resolved_of(&item, &link.share)?))
     }
@@ -417,11 +480,84 @@ mod tests {
         assert_eq!(v.container, Some(Container::Mp4));
     }
 
+    const PHOTO: &str = r#"{"@content.downloadUrl":"https://my.microsoftpersonalcontent.com/personal/49e18460ed20d89c/_layouts/15/download.aspx?UniqueId=photo1&tempauth=t","id":"49E18460ED20D89C!photo1","name":"Sunset over the bay.HEIC","size":2048000,"file":{"fileExtension":".heic","mimeType":"image/heic"},"image":{"height":3024,"width":4032},"photo":{"takenDateTime":"2025-06-01T19:12:00Z"},"thumbnails":[{"large":{"url":"https://thumbs.example/large.jpg","width":800,"height":600}}],"createdDateTime":"2025-06-02T09:00:00Z","createdBy":{"user":{"displayName":"Armin Osaj"}}}"#;
+    const SONG: &str = r#"{"@content.downloadUrl":"https://my.microsoftpersonalcontent.com/personal/49e18460ed20d89c/_layouts/15/download.aspx?UniqueId=song1&tempauth=t","id":"49E18460ED20D89C!song1","name":"Demo take 3.mp3","size":4800000,"file":{"fileExtension":".mp3","mimeType":"audio/mpeg"},"audio":{"album":"Demos","bitrate":192000,"duration":200000,"title":"Demo take 3"},"createdDateTime":"2025-06-02T09:00:00Z"}"#;
+    const PAPER: &str = r#"{"@content.downloadUrl":"https://my.microsoftpersonalcontent.com/personal/49e18460ed20d89c/_layouts/15/download.aspx?UniqueId=paper1&tempauth=t","id":"49E18460ED20D89C!paper1","name":"Thesis final.pdf","size":900000,"file":{"fileExtension":".pdf","mimeType":"application/pdf"},"createdDateTime":"2025-06-02T09:00:00Z"}"#;
+
     #[tokio::test]
-    async fn folders_list_their_videos_and_entries_resolve_within_the_share() {
+    async fn images_audio_and_documents_resolve_as_what_they_are() {
+        let mut fixture = Fixture::new("onedrive", None);
+        fixture
+            .exchanges
+            .push(exchange("POST", TOKEN_API, 200, TOKEN));
+        let photo = "https://1drv.ms/i/c/49e18460ed20d89c/photo1";
+        let song = "https://1drv.ms/u/c/49e18460ed20d89c/song1";
+        let paper = "https://1drv.ms/b/c/49e18460ed20d89c/paper1";
+        fixture
+            .exchanges
+            .push(exchange("GET", &api(photo, "driveitem"), 200, PHOTO));
+        fixture
+            .exchanges
+            .push(exchange("GET", &api(song, "driveitem"), 200, SONG));
+        fixture
+            .exchanges
+            .push(exchange("GET", &api(paper, "driveitem"), 200, PAPER));
+        let resolver = OnedriveResolver::new(Http::replay(fixture));
+
+        let image = resolver
+            .resolve(&Url::parse(photo).unwrap())
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
+        assert_eq!(image.media, MediaKind::Image);
+        assert_eq!(image.title.as_deref(), Some("Sunset over the bay"));
+        assert_eq!(image.duration, None);
+        assert_eq!(
+            image.thumbnail.as_ref().map(|t| t.as_str()),
+            Some("https://thumbs.example/large.jpg")
+        );
+        let v = &image.variants[0];
+        assert_eq!(v.container, Some(Container::Other("heic".into())));
+        assert_eq!((v.width, v.height), (Some(4032), Some(3024)));
+        assert_eq!(v.size, Some(2048000));
+        assert!(!v.audio_only && v.video.is_none());
+
+        let audio = resolver
+            .resolve(&Url::parse(song).unwrap())
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
+        assert_eq!(audio.media, MediaKind::Audio);
+        assert_eq!(audio.title.as_deref(), Some("Demo take 3"));
+        assert_eq!(audio.duration, Some(Duration::from_millis(200000)));
+        let v = &audio.variants[0];
+        assert!(v.audio_only);
+        assert_eq!(v.container, Some(Container::Mp3));
+        assert_eq!(v.audio, Some(AudioCodec::Mp3));
+        assert_eq!(v.bitrate, Some(192000));
+        assert_eq!(v.size, Some(4800000));
+
+        let file = resolver
+            .resolve(&Url::parse(paper).unwrap())
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
+        assert_eq!(file.media, MediaKind::File);
+        assert_eq!(file.title.as_deref(), Some("Thesis final"));
+        let v = &file.variants[0];
+        assert_eq!(v.container, Some(Container::Other("pdf".into())));
+        assert_eq!(v.size, Some(900000));
+        assert!(v.audio.is_none() && v.video.is_none() && v.width.is_none());
+    }
+
+    #[tokio::test]
+    async fn folders_list_their_files_and_entries_resolve_within_the_share() {
         let folder = r#"{"id":"F1","name":"Clips","folder":{"childCount":3},"size":10}"#;
         let children = format!(
-            r#"{{"value":[{VIDEO},{{"id":"N1","name":"notes.txt","size":3,"file":{{"mimeType":"text/plain"}}}},{{"id":"SUB","name":"more","folder":{{"childCount":0}}}}]}}"#
+            r#"{{"value":[{VIDEO},{{"id":"N1","name":"notes.txt","size":3,"file":{{"mimeType":"text/plain"}},"@content.downloadUrl":"https://my.microsoftpersonalcontent.com/dl/notes"}},{{"id":"SUB","name":"more","folder":{{"childCount":0}}}}]}}"#
         );
         let mut fixture = Fixture::new("onedrive", None);
         fixture
@@ -458,14 +594,16 @@ mod tests {
             other => panic!("expected a playlist, got {other:?}"),
         };
         assert_eq!(playlist.title.as_deref(), Some("Clips"));
-        assert_eq!(playlist.entries.len(), 1);
+        assert_eq!(playlist.entries.len(), 2);
         let entry = &playlist.entries[0];
         assert_eq!(
             entry.url.fragment(),
             Some("item=49E18460ED20D89C!sa080fb348e34477493d1aa1ddd2c41a8")
         );
         assert_eq!(entry.title.as_deref(), Some("Screenbox playback bug"));
+        assert_eq!(playlist.entries[1].title.as_deref(), Some("notes"));
         let resolved = resolver.resolve(&entry.url).await.unwrap().media().unwrap();
+        assert_eq!(resolved.media, MediaKind::Video);
         assert_eq!(resolved.variants[0].size, Some(132636591));
         assert!(matches!(
             resolver

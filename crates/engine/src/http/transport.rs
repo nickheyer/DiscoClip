@@ -595,6 +595,256 @@ impl Drop for RecordingTransport {
     }
 }
 
+/// A host for tests: answers by URL from a table, in bodies of a thousand bytes at a time,
+/// serving byte ranges, breaking transfers where scripted, and changing an answer from one
+/// request to the next.
+#[cfg(test)]
+pub mod site {
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
+
+    use async_trait::async_trait;
+    use bytes::Bytes;
+    use http::{HeaderMap, HeaderValue, StatusCode};
+
+    use super::{Transport, TransportRequest, TransportResponse};
+    use crate::http::HttpError;
+
+    /// One answer: what the host says for a URL until the next answer in its series.
+    #[derive(Debug, Clone)]
+    pub struct Reply {
+        pub status: u16,
+        pub content_type: String,
+        pub body: Vec<u8>,
+        pub etag: Option<String>,
+    }
+
+    impl Reply {
+        pub fn new(content_type: &str, body: impl Into<Vec<u8>>) -> Self {
+            Self {
+                status: 200,
+                content_type: content_type.to_string(),
+                body: body.into(),
+                etag: None,
+            }
+        }
+
+        pub fn status(mut self, status: u16) -> Self {
+            self.status = status;
+            self
+        }
+
+        pub fn etag(mut self, etag: &str) -> Self {
+            self.etag = Some(etag.to_string());
+            self
+        }
+    }
+
+    /// A request as the host saw it.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct Seen {
+        pub url: String,
+        pub range: Option<String>,
+        pub if_range: Option<String>,
+    }
+
+    #[derive(Default)]
+    pub struct Site {
+        /// Each URL's answers in order; the last one repeats.
+        replies: Mutex<HashMap<String, Vec<Reply>>>,
+        hits: Mutex<HashMap<String, usize>>,
+        /// Whether ranged requests are honoured.
+        ranges: bool,
+        /// By URL and the byte a request starts at, how many bytes arrive before the
+        /// connection drops; each entry once.
+        breaks: Mutex<Vec<(String, u64, usize)>>,
+        seen: Mutex<Vec<Seen>>,
+    }
+
+    impl Site {
+        pub fn new() -> Arc<Self> {
+            Arc::new(Self {
+                ranges: true,
+                ..Self::default()
+            })
+        }
+
+        /// A host that answers every request with the whole file.
+        pub fn without_ranges() -> Arc<Self> {
+            Arc::new(Self::default())
+        }
+
+        pub fn put(&self, url: &str, reply: Reply) {
+            self.replies
+                .lock()
+                .unwrap()
+                .insert(url.to_string(), vec![reply]);
+        }
+
+        /// Answers `url` with each reply in turn, repeating the last.
+        pub fn put_series(&self, url: &str, replies: Vec<Reply>) {
+            assert!(!replies.is_empty());
+            self.replies
+                .lock()
+                .unwrap()
+                .insert(url.to_string(), replies);
+        }
+
+        pub fn put_text(&self, url: &str, content_type: &str, text: &str) {
+            self.put(url, Reply::new(content_type, text.as_bytes().to_vec()));
+        }
+
+        pub fn put_bytes(&self, url: &str, content_type: &str, bytes: &[u8]) {
+            self.put(url, Reply::new(content_type, bytes.to_vec()));
+        }
+
+        pub fn remove(&self, url: &str) {
+            self.replies.lock().unwrap().remove(url);
+        }
+
+        pub fn break_at(&self, url: &str, start: u64, after: usize) {
+            self.breaks
+                .lock()
+                .unwrap()
+                .push((url.to_string(), start, after));
+        }
+
+        pub fn hits(&self, url: &str) -> usize {
+            self.hits.lock().unwrap().get(url).copied().unwrap_or(0)
+        }
+
+        pub fn seen(&self) -> Vec<Seen> {
+            self.seen.lock().unwrap().clone()
+        }
+
+        /// The Range headers of every request for `url`, in order.
+        pub fn ranges_seen(&self, url: &str) -> Vec<String> {
+            self.seen()
+                .into_iter()
+                .filter(|s| s.url == url)
+                .filter_map(|s| s.range)
+                .collect()
+        }
+
+        fn reply_for(&self, url: &str) -> Option<Reply> {
+            let mut hits = self.hits.lock().unwrap();
+            let hit = hits.entry(url.to_string()).or_insert(0);
+            let replies = self.replies.lock().unwrap();
+            let series = replies.get(url)?;
+            let reply = series[(*hit).min(series.len() - 1)].clone();
+            *hit += 1;
+            Some(reply)
+        }
+    }
+
+    fn header(headers: &HeaderMap, name: &str) -> Option<String> {
+        headers
+            .get(name)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned)
+    }
+
+    #[async_trait]
+    impl Transport for Site {
+        async fn send(&self, request: TransportRequest) -> Result<TransportResponse, HttpError> {
+            let url = request.url.to_string();
+            let range = header(&request.headers, "range");
+            let if_range = header(&request.headers, "if-range");
+            self.seen.lock().unwrap().push(Seen {
+                url: url.clone(),
+                range: range.clone(),
+                if_range: if_range.clone(),
+            });
+            let Some(reply) = self.reply_for(&url) else {
+                let mut headers = HeaderMap::new();
+                headers.insert("content-length", HeaderValue::from_static("0"));
+                return Ok(TransportResponse {
+                    status: StatusCode::NOT_FOUND,
+                    url: request.url,
+                    headers,
+                    body: Box::pin(futures::stream::empty()),
+                });
+            };
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                "content-type",
+                HeaderValue::from_str(&reply.content_type).unwrap(),
+            );
+            if let Some(etag) = &reply.etag {
+                headers.insert("etag", HeaderValue::from_str(etag).unwrap());
+            }
+            let asked = range
+                .as_deref()
+                .and_then(|r| r.strip_prefix("bytes="))
+                .and_then(|r| r.split_once('-'))
+                .map(|(start, end)| (start.parse::<u64>().unwrap(), end.parse::<u64>().ok()));
+            let valid = match (&if_range, &reply.etag) {
+                (Some(asked), Some(etag)) => asked == etag,
+                (Some(_), None) => false,
+                (None, _) => true,
+            };
+            let body = reply.body;
+            let (status, start, slice): (u16, u64, Vec<u8>) = match asked {
+                Some((start, end)) if self.ranges && valid && reply.status == 200 => {
+                    let len = body.len() as u64;
+                    if start >= len {
+                        headers.insert(
+                            "content-range",
+                            HeaderValue::from_str(&format!("bytes */{len}")).unwrap(),
+                        );
+                        (416, start, Vec::new())
+                    } else {
+                        let end = end.unwrap_or(len - 1).min(len - 1);
+                        headers.insert(
+                            "content-range",
+                            HeaderValue::from_str(&format!("bytes {start}-{end}/{len}")).unwrap(),
+                        );
+                        (206, start, body[start as usize..=end as usize].to_vec())
+                    }
+                }
+                _ => (reply.status, 0, body),
+            };
+            headers.insert(
+                "content-length",
+                HeaderValue::from_str(&slice.len().to_string()).unwrap(),
+            );
+            let cut = {
+                let mut breaks = self.breaks.lock().unwrap();
+                breaks
+                    .iter()
+                    .position(|(u, at, _)| *u == url && *at == start)
+                    .map(|index| breaks.remove(index).2)
+            };
+            let mut items: Vec<Result<Bytes, HttpError>> = Vec::new();
+            let mut sent = 0usize;
+            for piece in slice.chunks(1000) {
+                if let Some(cut) = cut
+                    && sent + piece.len() > cut
+                {
+                    items.push(Ok(Bytes::copy_from_slice(&piece[..cut - sent])));
+                    items.push(Err(HttpError::Transport {
+                        url: url.clone(),
+                        message: "connection reset".into(),
+                    }));
+                    break;
+                }
+                items.push(Ok(Bytes::copy_from_slice(piece)));
+                sent += piece.len();
+            }
+            Ok(TransportResponse {
+                status: StatusCode::from_u16(status).unwrap(),
+                url: request.url,
+                headers,
+                body: Box::pin(futures::stream::iter(items)),
+            })
+        }
+
+        fn name(&self) -> &'static str {
+            "site"
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

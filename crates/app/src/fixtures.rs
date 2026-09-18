@@ -7,7 +7,8 @@ use std::collections::{BTreeMap, HashSet};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
-use discoclip_engine::resolve::{Platform, Resolution, ResolveError, SessionSupport};
+use discoclip_engine::media::MediaKind;
+use discoclip_engine::resolve::{Platform, Resolution, ResolveError, SessionSupport, Tag};
 use discoclip_engine::rusqlite::{OptionalExtension, params};
 use discoclip_engine::store::sqlite::SqliteStore;
 use discoclip_engine::{EngineHandle, StoreError};
@@ -60,6 +61,41 @@ pub enum FixtureStatus {
     Never,
 }
 
+/// What a link resolved to: media of a kind with so many playable variants, or a
+/// playlist of so many entries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Found {
+    Media { media: MediaKind, variants: u32 },
+    Playlist { entries: u32 },
+}
+
+impl Found {
+    /// The two columns the result is stored in: a kind name and a count.
+    fn columns(self) -> (&'static str, u32) {
+        match self {
+            Found::Media { media, variants } => (media.as_str(), variants),
+            Found::Playlist { entries } => ("playlist", entries),
+        }
+    }
+
+    fn from_columns(kind: Option<String>, count: Option<u32>) -> Result<Option<Found>, StoreError> {
+        let (Some(kind), Some(count)) = (kind, count) else {
+            return Ok(None);
+        };
+        if kind == "playlist" {
+            return Ok(Some(Found::Playlist { entries: count }));
+        }
+        let media = kind
+            .parse::<MediaKind>()
+            .map_err(|e| StoreError::Corrupt(format!("fixture_results.found_kind: {e}")))?;
+        Ok(Some(Found::Media {
+            media,
+            variants: count,
+        }))
+    }
+}
+
 /// One fixture link and what its last run made of it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct FixtureResult {
@@ -71,6 +107,8 @@ pub struct FixtureResult {
     pub error: Option<String>,
     /// The title the link resolved to, when it did.
     pub title: Option<String>,
+    /// What the link resolved to, when it did.
+    pub found: Option<Found>,
     pub duration_ms: Option<u64>,
 }
 
@@ -98,6 +136,10 @@ pub struct PlatformCoverage {
     pub hosts: &'static [&'static str],
     pub features: &'static [&'static str],
     pub formats: &'static [&'static str],
+    /// What its links resolve to: videos, audio, images or other files.
+    pub media: &'static [MediaKind],
+    /// What kind of place it is: the presets it belongs to.
+    pub tags: &'static [Tag],
     pub session: SessionSupport,
     /// How many cookies the platform's jar holds.
     pub cookies: usize,
@@ -117,6 +159,7 @@ pub struct Outcome {
     pub login_required: bool,
     pub error: Option<String>,
     pub title: Option<String>,
+    pub found: Option<Found>,
     pub duration: Duration,
 }
 
@@ -129,6 +172,7 @@ pub struct Recorded {
     pub login_required: bool,
     pub error: Option<String>,
     pub title: Option<String>,
+    pub found: Option<Found>,
     pub duration_ms: u64,
     pub last_pass_at: Option<Timestamp>,
 }
@@ -198,7 +242,7 @@ impl FixtureStore {
             }
             let mut results = tx.prepare(
                 "SELECT platform, url, run_at, ok, login_required, error, title, duration_ms,
-                        last_pass_at
+                        last_pass_at, found_kind, found_count
                  FROM fixture_results ORDER BY platform, url",
             )?;
             let rows = results.query_map([], |row| {
@@ -212,6 +256,8 @@ impl FixtureStore {
                     row.get::<_, Option<String>>(6)?,
                     row.get::<_, i64>(7)?,
                     row.get::<_, Option<i64>>(8)?,
+                    row.get::<_, Option<String>>(9)?,
+                    row.get::<_, Option<u32>>(10)?,
                 ))
             })?;
             for row in rows {
@@ -225,6 +271,8 @@ impl FixtureStore {
                     title,
                     duration_ms,
                     last_pass,
+                    found_kind,
+                    found_count,
                 ) = row?;
                 out.entry(platform).or_default().results.push(Recorded {
                     url,
@@ -233,6 +281,7 @@ impl FixtureStore {
                     login_required,
                     error,
                     title,
+                    found: Found::from_columns(found_kind, found_count)?,
                     duration_ms: duration_ms.max(0) as u64,
                     last_pass_at: last_pass
                         .map(|n| timestamp("last_pass_at", n))
@@ -280,16 +329,24 @@ impl FixtureStore {
                 } else {
                     failed += 1;
                 }
+                let (found_kind, found_count) = match outcome.found {
+                    Some(found) => {
+                        let (kind, count) = found.columns();
+                        (Some(kind), Some(count))
+                    }
+                    None => (None, None),
+                };
                 tx.execute(
                     "INSERT INTO fixture_results
                         (platform, url, run_at, ok, login_required, error, title, duration_ms,
-                         last_pass_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                         last_pass_at, found_kind, found_count)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
                      ON CONFLICT(platform, url) DO UPDATE SET
                         run_at = excluded.run_at, ok = excluded.ok,
                         login_required = excluded.login_required, error = excluded.error,
                         title = excluded.title, duration_ms = excluded.duration_ms,
-                        last_pass_at = COALESCE(excluded.last_pass_at, fixture_results.last_pass_at)",
+                        last_pass_at = COALESCE(excluded.last_pass_at, fixture_results.last_pass_at),
+                        found_kind = excluded.found_kind, found_count = excluded.found_count",
                     params![
                         platform,
                         outcome.url,
@@ -300,6 +357,8 @@ impl FixtureStore {
                         outcome.title,
                         outcome.duration.as_millis().min(i64::MAX as u128) as i64,
                         outcome.ok.then_some(at),
+                        found_kind,
+                        found_count,
                     ],
                 )?;
             }
@@ -460,6 +519,7 @@ impl FixtureRunner {
                         last_pass_at: result.last_pass_at,
                         error: result.error.clone(),
                         title: result.title.clone(),
+                        found: result.found,
                         duration_ms: Some(result.duration_ms),
                     },
                     None => FixtureResult {
@@ -469,6 +529,7 @@ impl FixtureRunner {
                         last_pass_at: None,
                         error: None,
                         title: None,
+                        found: None,
                         duration_ms: None,
                     },
                 }
@@ -480,6 +541,8 @@ impl FixtureRunner {
             hosts: platform.hosts,
             features: platform.features,
             formats: platform.formats,
+            media: platform.media,
+            tags: platform.tags,
             session: platform.session,
             cookies: self.engine.http().jar(platform.id).len(),
             fixtures,
@@ -604,6 +667,7 @@ impl FixtureRunner {
                     login_required: false,
                     error: Some(format!("not a URL: {error}")),
                     title: None,
+                    found: None,
                     duration: began.elapsed(),
                 },
                 Ok(url) => match tokio::time::timeout(timeout, self.engine.resolve(&url)).await {
@@ -613,6 +677,7 @@ impl FixtureRunner {
                         login_required: false,
                         error: Some(format!("no answer within {}s", timeout.as_secs())),
                         title: None,
+                        found: None,
                         duration: began.elapsed(),
                     },
                     Ok(Err(error)) => Outcome {
@@ -621,6 +686,7 @@ impl FixtureRunner {
                         login_required: matches!(error, ResolveError::LoginRequired { .. }),
                         error: Some(error.to_string()),
                         title: None,
+                        found: None,
                         duration: began.elapsed(),
                     },
                     Ok(Ok(resolution)) => judge(example, resolution, began.elapsed()),
@@ -664,23 +730,35 @@ impl FixtureRunner {
     }
 }
 
-/// What a resolution counts as: media with something playable, or a playlist with entries.
+/// What a resolution counts as: media with something playable, or a playlist with
+/// entries; and what it was, for the page to show what the link resolves to.
 fn judge(url: &str, resolution: Resolution, duration: Duration) -> Outcome {
-    let (ok, error, title) = match resolution {
+    let (ok, error, title, found) = match resolution {
         Resolution::Media(resolved) => {
-            if resolved.variants.iter().any(|v| v.is_playable()) {
-                (true, None, resolved.title)
+            let playable = resolved.variants.iter().filter(|v| v.is_playable()).count();
+            if playable > 0 {
+                (
+                    true,
+                    None,
+                    resolved.title,
+                    Some(Found::Media {
+                        media: resolved.media,
+                        variants: playable as u32,
+                    }),
+                )
             } else if let Some(system) = resolved.drm() {
                 (
                     false,
                     Some(format!("every variant is locked with {system} DRM")),
                     resolved.title,
+                    None,
                 )
             } else {
                 (
                     false,
                     Some("resolved without any media variant".to_string()),
                     resolved.title,
+                    None,
                 )
             }
         }
@@ -690,9 +768,16 @@ fn judge(url: &str, resolution: Resolution, duration: Duration) -> Outcome {
                     false,
                     Some("the playlist has no entries".to_string()),
                     playlist.title,
+                    None,
                 )
             } else {
-                (true, None, playlist.title)
+                let entries = playlist.total.unwrap_or(playlist.entries.len()) as u32;
+                (
+                    true,
+                    None,
+                    playlist.title,
+                    Some(Found::Playlist { entries }),
+                )
             }
         }
     };
@@ -702,6 +787,7 @@ fn judge(url: &str, resolution: Resolution, duration: Duration) -> Outcome {
         login_required: false,
         error,
         title,
+        found,
         duration,
     }
 }
@@ -724,6 +810,10 @@ mod tests {
             login_required: false,
             error: (!ok).then(|| "no video found".to_string()),
             title: ok.then(|| "A clip".to_string()),
+            found: ok.then_some(Found::Media {
+                media: MediaKind::Video,
+                variants: 2,
+            }),
             duration: Duration::from_millis(12),
         }
     }
@@ -737,6 +827,7 @@ mod tests {
                 "{url} needs a logged-in p session: posts are read with the sid cookie"
             )),
             title: None,
+            found: None,
             duration: Duration::from_millis(12),
         }
     }

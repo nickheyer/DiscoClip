@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::http::{Cookie, Http, HttpError, Response, StatusCode};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub use page::Page;
 
@@ -272,6 +272,78 @@ pub enum SessionSupport {
     Required,
 }
 
+/// What kind of place a platform is, so profiles can turn platforms on by kind rather
+/// than one by one. A platform carries every tag that fits it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Tag {
+    /// The mainstream platforms most links in a chat point at.
+    Basic,
+    /// Adult content, or a site that carries it as a matter of course.
+    Nsfw,
+    /// News outlets and broadcasters' news programmes.
+    News,
+    /// Social networks and forums: posts by people.
+    Social,
+    /// General video sharing and hosting.
+    Video,
+    /// Music: tracks, albums, mixes.
+    Music,
+    /// Podcasts and spoken audio.
+    Podcasts,
+    /// Live streaming, recordings of streams included.
+    Live,
+    /// File hosts and archives.
+    Files,
+    /// GIF and image hosts.
+    Images,
+    /// Embedded players and delivery services other sites build on.
+    Players,
+}
+
+impl Tag {
+    pub const ALL: [Tag; 11] = [
+        Tag::Basic,
+        Tag::Nsfw,
+        Tag::News,
+        Tag::Social,
+        Tag::Video,
+        Tag::Music,
+        Tag::Podcasts,
+        Tag::Live,
+        Tag::Files,
+        Tag::Images,
+        Tag::Players,
+    ];
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Tag::Basic => "basic",
+            Tag::Nsfw => "nsfw",
+            Tag::News => "news",
+            Tag::Social => "social",
+            Tag::Video => "video",
+            Tag::Music => "music",
+            Tag::Podcasts => "podcasts",
+            Tag::Live => "live",
+            Tag::Files => "files",
+            Tag::Images => "images",
+            Tag::Players => "players",
+        }
+    }
+}
+
+impl std::str::FromStr for Tag {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Tag::ALL
+            .into_iter()
+            .find(|t| t.as_str() == s)
+            .ok_or_else(|| format!("unknown platform tag {s}"))
+    }
+}
+
 /// What a resolver covers, for the coverage page and the smoke tests.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Platform {
@@ -283,6 +355,11 @@ pub struct Platform {
     pub features: &'static [&'static str],
     /// How the media arrives: `mp4`, `webm`, `hls`, `dash`, `ism`, `rtmp`, `whep`...
     pub formats: &'static [&'static str],
+    /// What its links resolve to: videos, audio, images or other files. Every kind the
+    /// resolver ever returns is listed, and nothing it never returns.
+    pub media: &'static [MediaKind],
+    /// What kind of place it is, for profiles that turn platforms on by kind.
+    pub tags: &'static [Tag],
     pub session: SessionSupport,
     /// Public links the scheduled smoke tests resolve.
     pub examples: &'static [&'static str],
@@ -356,6 +433,22 @@ impl ResolverRegistry {
         self.resolvers.iter().any(|r| r.matches(url))
     }
 
+    /// The ids of every resolver that would take `url`, in the order they are offered it.
+    pub fn matching(&self, url: &Url) -> Vec<&'static str> {
+        self.resolvers
+            .iter()
+            .filter(|r| r.matches(url))
+            .map(|r| r.id())
+            .collect()
+    }
+
+    /// Whether some resolver not named in `disabled` takes `url`.
+    pub fn supports_without(&self, url: &Url, disabled: &[String]) -> bool {
+        self.resolvers
+            .iter()
+            .any(|r| r.matches(url) && !disabled.iter().any(|d| d == r.id()))
+    }
+
     pub fn find(&self, url: &Url) -> Option<&dyn Resolver> {
         self.resolvers
             .iter()
@@ -368,10 +461,26 @@ impl ResolverRegistry {
     /// resolver level redirect (a page that only links to media hosted elsewhere) goes
     /// through the registry again.
     pub async fn resolve(&self, url: &Url) -> Result<Resolution, ResolveError> {
+        self.resolve_without(url, &[]).await
+    }
+
+    /// [`resolve`](Self::resolve) with the resolvers named in `disabled` left out, as a
+    /// profile turns platforms off: a link only they would take fails as turned off.
+    pub async fn resolve_without(
+        &self,
+        url: &Url,
+        disabled: &[String],
+    ) -> Result<Resolution, ResolveError> {
         let mut current = url.clone();
         for _ in 0..MAX_REDIRECT_HOPS {
             let mut outcome = Err(ResolveError::Unsupported(current.clone()));
+            let mut turned_off: Option<&'static str> = None;
             for resolver in self.resolvers.iter().filter(|r| r.matches(&current)) {
+                if disabled.iter().any(|d| d == resolver.id()) {
+                    tracing::debug!(resolver = resolver.id(), url = %current, "resolver is turned off here");
+                    turned_off.get_or_insert(resolver.id());
+                    continue;
+                }
                 outcome = resolver.resolve(&current).await;
                 if let Err(ResolveError::Unsupported(declined)) = &outcome
                     && *declined == current
@@ -385,6 +494,12 @@ impl ResolverRegistry {
                 Err(ResolveError::Redirect(next)) if next != current => {
                     tracing::debug!(from = %current, to = %next, "resolver redirect");
                     current = next;
+                }
+                Err(ResolveError::Unsupported(declined)) if turned_off.is_some() => {
+                    return Err(ResolveError::Disabled {
+                        url: declined,
+                        platform: turned_off.expect("a resolver was skipped"),
+                    });
                 }
                 other => return other,
             }
@@ -483,6 +598,10 @@ pub struct SubtitleTrack {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Resolved {
     pub resolver: String,
+    /// What the link is: a video, audio, an image or another file. Decides which variant
+    /// is picked and how the download is shrunk and shown.
+    #[serde(default)]
+    pub media: MediaKind,
     /// The platform's own id for the media.
     #[serde(default)]
     pub id: Option<String>,
@@ -515,6 +634,7 @@ impl Resolved {
     pub fn new(resolver: &str) -> Self {
         Self {
             resolver: resolver.to_string(),
+            media: MediaKind::Video,
             id: None,
             title: None,
             description: None,
@@ -530,6 +650,13 @@ impl Resolved {
             subtitles: Vec::new(),
             variants: Vec::new(),
         }
+    }
+
+    /// The same, for media of `kind`.
+    pub fn of(resolver: &str, kind: MediaKind) -> Self {
+        let mut resolved = Self::new(resolver);
+        resolved.media = kind;
+        resolved
     }
 
     /// The DRM system every playable variant is locked with, if all are.
@@ -760,6 +887,9 @@ pub enum ResolveError {
     RateLimited(Url),
     #[error("{url} needs a headless browser, which is not available: {reason}")]
     BrowserUnavailable { url: Url, reason: String },
+    /// The only resolvers that take the link are turned off by the profile in force.
+    #[error("{platform} links are turned off here: {url}")]
+    Disabled { url: Url, platform: &'static str },
 }
 
 impl ResolveError {
@@ -774,7 +904,7 @@ impl ResolveError {
             | Self::Drm { url, .. }
             | Self::LoginRequired { url, .. }
             | Self::BrowserUnavailable { url, .. } => *url = origin.clone(),
-            Self::Unsupported(_) | Self::Redirect(_) | Self::Http(_) => {}
+            Self::Unsupported(_) | Self::Redirect(_) | Self::Http(_) | Self::Disabled { .. } => {}
         }
         self
     }

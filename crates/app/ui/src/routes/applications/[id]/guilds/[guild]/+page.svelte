@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { invalidate } from '$app/navigation';
 	import type { PageData } from './$types';
-	import { messageOf, rules } from '$lib/api';
-	import type { GuildChannel, Rule, RuleInput } from '$lib/api';
+	import { messageOf, profiles as profilesApi, rules } from '$lib/api';
+	import type { Assignment, EffectiveView, GuildChannel, Rule, RuleInput, Scope } from '$lib/api';
+	import ChannelSelect from '$lib/components/ChannelSelect.svelte';
+	import MemberPicker from '$lib/components/MemberPicker.svelte';
 	import Alert from '$lib/components/Alert.svelte';
 	import Badge from '$lib/components/Badge.svelte';
 	import BotBadge from '$lib/components/BotBadge.svelte';
@@ -19,10 +21,13 @@
 		channelGlyph,
 		channelName,
 		groupChannels,
+		memberLookup,
+		memberSearch,
 		takenChannels,
 		unwatchableReason,
 		watchable
 	} from '$lib/discord';
+	import { describeScope, profileName } from '$lib/profiles';
 	import { pluralize, shortId } from '$lib/format';
 	import { cleanInput, describeFilters, describeLimits, emptyRule, toInput } from '$lib/rules';
 	import { bots } from '$lib/state/bots.svelte';
@@ -145,6 +150,121 @@
 			toggling = null;
 		}
 	}
+
+	// Profiles
+
+	/** The session may put profiles in force here when the server listed the guild's assignments. */
+	const canAssign = $derived(data.assignments !== null);
+	const globalAssignment = $derived(
+		data.assignments?.find((a) => a.scope.kind === 'global') ?? null
+	);
+	const guildAssignment = $derived(
+		data.assignments?.find((a) => a.scope.kind === 'guild') ?? null
+	);
+	const channelAssignments = $derived(
+		(data.assignments ?? []).filter((a): a is Assignment & { scope: { kind: 'channel' } } => a.scope.kind === 'channel')
+	);
+	const userAssignments = $derived(
+		(data.assignments ?? []).filter((a): a is Assignment & { scope: { kind: 'user' } } => a.scope.kind === 'user')
+	);
+	const nameOf = (id: string) => profileName(data.profiles, id);
+
+	let guildChoice = $state('');
+	$effect(() => {
+		guildChoice = guildAssignment?.profile_id ?? '';
+	});
+	let channelChoice = $state('');
+	let channelProfile = $state('');
+	let userChoice = $state<string[]>([]);
+	let userProfile = $state('');
+	let assigning = $state<string | null>(null);
+
+	async function putInForce(scope: Scope, profile: string, what: string) {
+		assigning = scopeLabel(scope);
+		try {
+			await profilesApi.assign(scope, profile);
+			toast.ok(`${nameOf(profile)} is now in force for ${what}.`);
+			await refresh();
+		} catch (cause) {
+			toast.error(`Could not put the profile in force: ${messageOf(cause)}`);
+		} finally {
+			assigning = null;
+		}
+	}
+
+	async function takeOff(scope: Scope, what: string) {
+		assigning = scopeLabel(scope);
+		try {
+			await profilesApi.unassign(scope);
+			toast.ok(`${what} follows the wider scope again.`);
+			await refresh();
+		} catch (cause) {
+			toast.error(`Could not take the profile off: ${messageOf(cause)}`);
+		} finally {
+			assigning = null;
+		}
+	}
+
+	function scopeLabel(scope: Scope): string {
+		switch (scope.kind) {
+			case 'global':
+				return 'global';
+			case 'guild':
+				return `guild:${scope.guild_id}`;
+			case 'channel':
+				return `channel:${scope.guild_id}:${scope.channel_id}`;
+			case 'user':
+				return `user:${scope.guild_id}:${scope.user_id}`;
+		}
+	}
+
+	const guildScope = $derived<Scope>({ kind: 'guild', guild_id: data.guildId });
+
+	async function saveGuildProfile() {
+		if (!guildChoice) return;
+		await putInForce(guildScope, guildChoice, 'this guild');
+	}
+
+	async function addChannelAssignment() {
+		if (!channelChoice || !channelProfile) return;
+		const scope: Scope = { kind: 'channel', guild_id: data.guildId, channel_id: channelChoice };
+		await putInForce(scope, channelProfile, describeScope(scope, channels));
+		channelChoice = '';
+		channelProfile = '';
+	}
+
+	async function addUserAssignments() {
+		if (userChoice.length === 0 || !userProfile) return;
+		for (const user of userChoice) {
+			const scope: Scope = { kind: 'user', guild_id: data.guildId, user_id: user };
+			await putInForce(scope, userProfile, describeScope(scope));
+		}
+		userChoice = [];
+		userProfile = '';
+	}
+
+	// What is in force for a channel, and a member in it
+
+	let checkChannel = $state('');
+	let checkUser = $state<string[]>([]);
+	let checking = $state(false);
+	let checked = $state<EffectiveView | null>(null);
+	let checkError = $state<string | null>(null);
+
+	async function runCheck() {
+		checking = true;
+		checkError = null;
+		try {
+			checked = await profilesApi.effective(data.guildId, checkChannel || undefined, checkUser[0]);
+		} catch (cause) {
+			checked = null;
+			checkError = messageOf(cause);
+		} finally {
+			checking = false;
+		}
+	}
+
+	const checkedOff = $derived(checked ? Object.entries(checked.platforms).filter(([, on]) => !on).map(([id]) => id) : []);
 
 	async function remove(rule: Rule) {
 		const name = channelName(channels, rule.channel_id);
@@ -346,6 +466,132 @@
 			</div>
 		{/if}
 	</section>
+
+	<section class="card">
+		<div class="card-header">
+			<div>
+				<h2>Profiles</h2>
+				<p class="hint">Which platforms are on here. A profile for the guild sits under the server's; a channel's or a member's sits under the guild's, and the narrowest wins. <a href="/profiles">See the profiles.</a></p>
+			</div>
+			{#if canAssign}
+				<span class="faint small">{pluralize(channelAssignments.length, 'channel')} · {pluralize(userAssignments.length, 'member')} with one of their own</span>
+			{/if}
+		</div>
+		<div class="card-body stack">
+			<div class="scope">
+				<div class="scope-text">
+					<span class="strong">This guild</span>
+					{#if guildAssignment}
+						<span class="muted">{nameOf(guildAssignment.profile_id)} is in force, on top of the server's {globalAssignment ? nameOf(globalAssignment.profile_id) : 'profile'}.</span>
+					{:else}
+						<span class="muted">Follows the server's {globalAssignment ? nameOf(globalAssignment.profile_id) : 'profile'}.</span>
+					{/if}
+				</div>
+				{#if canAssign}
+					<div class="row">
+						<select class="select" bind:value={guildChoice} aria-label="Profile for this guild" disabled={assigning !== null}>
+							<option value="" disabled>Choose a profile</option>
+							{#each data.profiles as profile (profile.id)}
+								<option value={profile.id}>{profile.name}</option>
+							{/each}
+						</select>
+						<Button size="sm" variant="primary" loading={assigning === scopeLabel(guildScope)} disabled={!guildChoice || guildChoice === (guildAssignment?.profile_id ?? '')} onclick={saveGuildProfile}>Put in force</Button>
+						{#if guildAssignment}
+							<Button size="sm" variant="ghost" icon="x" disabled={assigning !== null} onclick={() => takeOff(guildScope, 'This guild')}>Take off</Button>
+						{/if}
+					</div>
+				{/if}
+			</div>
+
+			{#if canAssign}
+				<div class="grid-2">
+					<div class="stack-sm">
+						<span class="strong">Channels</span>
+						{#if channelAssignments.length === 0}
+							<span class="faint small">No channel has a profile of its own.</span>
+						{:else}
+							<ul class="plain assignments">
+								{#each channelAssignments as assignment (scopeLabel(assignment.scope))}
+									<li class="row-between">
+										<span class="row"><span>{describeScope(assignment.scope, channels)}</span><span class="faint small">→ {nameOf(assignment.profile_id)}</span></span>
+										<Button size="sm" variant="ghost" icon="x" title="Take the profile off this channel" square disabled={assigning !== null} onclick={() => takeOff(assignment.scope, describeScope(assignment.scope, channels))} />
+									</li>
+								{/each}
+							</ul>
+						{/if}
+						{#if channels}
+							<div class="row">
+								<ChannelSelect id="pf-channel" bind:value={channelChoice} {channels} disabled={assigning !== null} />
+								<select class="select" bind:value={channelProfile} aria-label="Profile for the channel" disabled={assigning !== null}>
+									<option value="" disabled>Choose a profile</option>
+									{#each data.profiles as profile (profile.id)}
+										<option value={profile.id}>{profile.name}</option>
+									{/each}
+								</select>
+								<Button size="sm" icon="plus" disabled={!channelChoice || !channelProfile || assigning !== null} onclick={addChannelAssignment}>Put in force</Button>
+							</div>
+						{:else}
+							<span class="faint small">Channels are picked by name once the bot can list them.</span>
+						{/if}
+					</div>
+					<div class="stack-sm">
+						<span class="strong">Members</span>
+						{#if userAssignments.length === 0}
+							<span class="faint small">No member has a profile of their own.</span>
+						{:else}
+							<ul class="plain assignments">
+								{#each userAssignments as assignment (scopeLabel(assignment.scope))}
+									<li class="row-between">
+										<span class="row"><code>{assignment.scope.user_id}</code><span class="faint small">→ {nameOf(assignment.profile_id)}</span></span>
+										<Button size="sm" variant="ghost" icon="x" title="Take the profile off this member" square disabled={assigning !== null} onclick={() => takeOff(assignment.scope, `Member ${assignment.scope.user_id}`)} />
+									</li>
+								{/each}
+							</ul>
+						{/if}
+						<MemberPicker id="pf-user" bind:values={userChoice} search={memberSearch(data.directory)} lookup={memberLookup(data.directory)} disabled={assigning !== null} />
+						<div class="row">
+							<select class="select" bind:value={userProfile} aria-label="Profile for the members" disabled={assigning !== null}>
+								<option value="" disabled>Choose a profile</option>
+								{#each data.profiles as profile (profile.id)}
+									<option value={profile.id}>{profile.name}</option>
+								{/each}
+							</select>
+							<Button size="sm" icon="plus" disabled={userChoice.length === 0 || !userProfile || assigning !== null} onclick={addUserAssignments}>Put in force</Button>
+						</div>
+					</div>
+				</div>
+
+				<div class="check stack-sm">
+					<span class="strong">What is in force</span>
+					<span class="hint">Pick a channel and, if you like, a member, to see which platforms are off there and which profiles made it so.</span>
+					<div class="row">
+						{#if channels}
+							<ChannelSelect id="pf-check-channel" bind:value={checkChannel} {channels} emptyLabel="Anywhere in the guild" disabled={checking} />
+						{:else}
+							<input class="input" bind:value={checkChannel} placeholder="Channel id" aria-label="Channel id" disabled={checking} />
+						{/if}
+						<Button size="sm" icon="search" loading={checking} onclick={runCheck}>Check</Button>
+					</div>
+					<MemberPicker id="pf-check-user" bind:values={checkUser} search={memberSearch(data.directory)} lookup={memberLookup(data.directory)} disabled={checking} />
+					{#if checkError}
+						<Alert tone="danger" message={checkError} onclose={() => (checkError = null)} />
+					{:else if checked}
+						<div class="stack-sm">
+							<span class="small">
+								{#if checkedOff.length === 0}Every platform is on.{:else}{pluralize(checkedOff.length, 'platform')} off:{/if}
+							</span>
+							{#if checkedOff.length}
+								<div class="chips">{#each checkedOff as id (id)}<span class="chip">{id}</span>{/each}</div>
+							{/if}
+							<span class="faint small">
+								Applied: {checked.applied.map((a) => `${nameOf(a.profile_id)} for ${describeScope(a.scope, channels)}`).join(', then ')}.
+							</span>
+						</div>
+					{/if}
+				</div>
+			{/if}
+		</div>
+	</section>
 </div>
 
 <Dialog
@@ -449,6 +695,41 @@
 
 	tr.off td {
 		color: var(--text-3);
+	}
+
+	.scope {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 12px;
+		flex-wrap: wrap;
+		padding: 12px 14px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		background: var(--surface);
+	}
+
+	.scope-text {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		min-width: 0;
+	}
+
+	.assignments li {
+		padding: 4px 0;
+		border-bottom: 1px solid var(--border);
+	}
+
+	.assignments li:last-child {
+		border-bottom: none;
+	}
+
+	.check {
+		padding: 12px 14px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		background: var(--surface-2);
 	}
 
 	@media (max-width: 640px) {

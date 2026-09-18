@@ -1,7 +1,8 @@
-//! Dropbox shared files: the share page names the transcoded HLS stream the site plays,
-//! and, when the share allows downloads, the original file arrives from the content
-//! host with its name and length. A password-protected share is unlocked with the
-//! `password` the link carries.
+//! Dropbox shared files: the share page names the transcoded HLS stream the site plays
+//! for a video, and, when the share allows downloads, the original file arrives from the
+//! content host with its name and length, whatever kind of file it is: a video, audio,
+//! an image or anything else, told apart by the name the host gives it. A
+//! password-protected share is unlocked with the `password` the link carries.
 
 use async_trait::async_trait;
 use url::Url;
@@ -12,12 +13,12 @@ use base64::Engine as _;
 use regex::Regex;
 
 use super::{
-    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Variant,
+    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag, Variant,
     VariantKind, clean_title, essence, fetch, hls, navigation_headers, probe_file, status_error,
     util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "dropbox";
 
@@ -95,6 +96,56 @@ pub fn download_link(url: &Url) -> Url {
     link
 }
 
+/// What a file is and the format it is in: from the content type the host serves it as
+/// when that names a format, else from the file's name, else from the broad type served.
+/// The content host serves everything as `application/binary`, so the name decides.
+pub fn classify(name: &str, content_type: &str) -> (MediaKind, Option<Container>) {
+    if let Some(container) = Container::from_mime(content_type) {
+        return (container.kind(), Some(container));
+    }
+    if let Some(container) = Container::from_name(name) {
+        return (container.kind(), Some(container));
+    }
+    (MediaKind::from_mime(content_type), None)
+}
+
+/// The codec an audio container implies, for the variant's `audio`.
+fn audio_codec(container: &Container) -> Option<AudioCodec> {
+    Some(match container {
+        Container::Mp3 => AudioCodec::Mp3,
+        Container::M4a => AudioCodec::Aac,
+        Container::Ogg => AudioCodec::Vorbis,
+        Container::Opus => AudioCodec::Opus,
+        Container::Flac => AudioCodec::Flac,
+        Container::Wav => AudioCodec::Other("pcm".into()),
+        _ => return None,
+    })
+}
+
+/// A variant for a file of any kind, marked as the pipeline picks and shrinks it.
+fn file_variant(
+    url: Url,
+    kind: MediaKind,
+    container: Option<Container>,
+    size: Option<u64>,
+) -> Variant {
+    let mut v = Variant::new(url, VariantKind::File);
+    match kind {
+        MediaKind::Audio => {
+            v.audio_only = true;
+            v.audio = container.as_ref().and_then(audio_codec);
+        }
+        MediaKind::Video if container == Some(Container::Mp4) => {
+            v.video = Some(VideoCodec::H264);
+            v.audio = Some(AudioCodec::Aac);
+        }
+        _ => {}
+    }
+    v.container = container;
+    v.size = size;
+    v
+}
+
 fn name_from_path(url: &Url) -> Option<String> {
     let last = url.path_segments()?.rfind(|s| !s.is_empty())?;
     let name = percent_encoding::percent_decode_str(last)
@@ -124,12 +175,30 @@ impl Resolver for DropboxResolver {
             id: PLATFORM,
             name: "Dropbox",
             hosts: &["dropbox.com", "dl.dropboxusercontent.com"],
-            features: &["shared files", "scl links", "content links"],
-            formats: &["mp4", "webm", "mkv", "mov"],
+            features: &[
+                "shared files",
+                "scl links",
+                "content links",
+                "audio",
+                "images",
+                "any file",
+            ],
+            formats: &[
+                "hls", "mp4", "webm", "mkv", "mov", "mp3", "m4a", "flac", "jpg", "png", "pdf",
+            ],
+            media: &[
+                MediaKind::Video,
+                MediaKind::Audio,
+                MediaKind::Image,
+                MediaKind::File,
+            ],
+            tags: &[Tag::Files],
             session: SessionSupport::None,
             examples: &[
                 "https://www.dropbox.com/scl/fi/cttkzvl75vuqwn2o5ctx0/youtube-dl-test-video-BaW_jenozKc.mp4?rlkey=zae0yts5dh5e6hh4jduo25w7v&dl=0",
                 "https://www.dropbox.com/s/nelirfsxnmcfbfh/youtube-dl%20test%20video%20%27%C3%A4%22BaW_jenozKc.mp4?dl=0",
+                "https://www.dropbox.com/s/19wl7p7eubcxx9y/matrix.JPG?dl=0",
+                "https://www.dropbox.com/s/w3cd1kaetwe715u/2022_1Q_conference_eng.pdf?dl=0",
             ],
         }
     }
@@ -227,6 +296,7 @@ impl Resolver for DropboxResolver {
         }
         let mut resolved = Resolved::new(PLATFORM);
         let mut downloads_allowed = false;
+        // The transcode is only ever a video's; anything else is known by its original.
         for part in &parts {
             if part.contains("anonymous:\tanonymous") {
                 downloads_allowed = true;
@@ -253,12 +323,15 @@ impl Resolver for DropboxResolver {
         let name = name_from_path(&link);
         if downloads_allowed || resolved.variants.is_empty() {
             match self.original(&link, url).await {
-                Ok((variant, served_name)) => {
+                Ok((variant, served_name, kind)) => {
                     if resolved.title.is_none() {
                         resolved.title = served_name
                             .as_deref()
                             .map(|n| n.rsplit_once('.').map_or(n, |(s, _)| s))
                             .and_then(clean_title);
+                    }
+                    if resolved.variants.is_empty() {
+                        resolved.media = kind;
                     }
                     resolved.variants.push(variant);
                 }
@@ -289,12 +362,12 @@ impl Resolver for DropboxResolver {
 }
 
 impl DropboxResolver {
-    /// The original file as a download, with its name and length.
+    /// The original file as a download, with its name, its length and what it is.
     async fn original(
         &self,
         link: &Url,
         origin: &Url,
-    ) -> Result<(Variant, Option<String>), ResolveError> {
+    ) -> Result<(Variant, Option<String>, MediaKind), ResolveError> {
         let download = download_link(link);
         let probed = probe_file(&self.http, &download, PLATFORM, BROWSER_UA, &[]).await?;
         match probed.status.as_u16() {
@@ -326,36 +399,17 @@ impl DropboxResolver {
             .clone()
             .or_else(|| name_from_path(&probed.url))
             .or_else(|| name_from_path(link));
-        let container = name
-            .as_deref()
-            .and_then(|n| n.rsplit('.').next())
-            .and_then(Container::from_extension)
-            .or_else(|| Container::from_mime(&content_type));
-        let Some(container) = container else {
-            return Err(ResolveError::unavailable(
-                origin,
-                format!(
-                    "{} is not a video file",
-                    name.as_deref().unwrap_or("the file")
-                ),
-            ));
-        };
-        let mut v = Variant::new(download, VariantKind::File);
-        v.container = Some(container.clone());
-        if container == Container::Mp4 {
-            v.video = Some(VideoCodec::H264);
-            v.audio = Some(AudioCodec::Aac);
-        }
-        v.size = probed.size;
+        let (kind, container) = classify(name.as_deref().unwrap_or(""), &content_type);
+        let mut v = file_variant(download, kind, container, probed.size);
         v.format_id = Some("original".to_string());
         v.label = Some("original".to_string());
-        Ok((v, name))
+        Ok((v, name, kind))
     }
 
     /// A link straight to the content host: the file alone.
     async fn file_only(&self, link: &Url, origin: &Url) -> Result<Resolution, ResolveError> {
-        let (variant, name) = self.original(link, origin).await?;
-        let mut resolved = Resolved::new(PLATFORM);
+        let (variant, name, kind) = self.original(link, origin).await?;
+        let mut resolved = Resolved::of(PLATFORM, kind);
         resolved.id = link
             .path_segments()
             .and_then(|mut s| s.nth(1))
@@ -504,6 +558,7 @@ mod tests {
         assert_eq!(resolved.variants[1].size, Some(1601434));
         assert_eq!(resolved.variants[1].container, Some(Container::Mp4));
         assert_eq!(resolved.variants[1].format_id.as_deref(), Some("original"));
+        assert_eq!(resolved.media, MediaKind::Video);
         assert!(
             resolved
                 .thumbnail
@@ -530,5 +585,138 @@ mod tests {
         let parts = prefetched_parts(&html);
         assert_eq!(parts.len(), 2);
         assert!(parts[0].contains("anonymous:\tanonymous"));
+    }
+
+    /// The image and PDF download exchanges were recorded from the content host on
+    /// 2026-09-18: it serves every file as `application/binary`, with the name in
+    /// `Content-Disposition`. The share pages carry no transcode for them, only the
+    /// downloads-allowed part; the audio share has the same shape.
+    #[tokio::test]
+    async fn images_audio_and_other_files_resolve_through_their_originals() {
+        let allowed = r#"<html><head><meta property="og:title" content="%TITLE%"></head><body><script>registerStreamedPrefetch("a", "EngKYW5vbnltb3VzOglhbm9ueW1vdXMK");</script></body></html>"#;
+        let mut fixture = Fixture::new("dropbox", None);
+        fixture.exchanges.push(page(
+            "https://www.dropbox.com/s/19wl7p7eubcxx9y/matrix.JPG?dl=0",
+            200,
+            &allowed.replace("%TITLE%", "matrix.JPG"),
+        ));
+        fixture.exchanges.push(get(
+            "https://www.dropbox.com/s/19wl7p7eubcxx9y/matrix.JPG?dl=1",
+            206,
+            "application/binary",
+            &[
+                ("content-range", "bytes 0-0/62237"),
+                (
+                    "content-disposition",
+                    "attachment; filename=\"matrix.JPG\"; filename*=UTF-8''matrix.JPG",
+                ),
+            ],
+            "https://uc1234.dl.dropboxusercontent.com/cd/0/get/token/file?dl=1",
+        ));
+        fixture.exchanges.push(page(
+            "https://www.dropbox.com/s/w3cd1kaetwe715u/2022_1Q_conference_eng.pdf?dl=0",
+            200,
+            &allowed.replace("%TITLE%", "2022_1Q_conference_eng.pdf"),
+        ));
+        fixture.exchanges.push(get(
+            "https://www.dropbox.com/s/w3cd1kaetwe715u/2022_1Q_conference_eng.pdf?dl=1",
+            206,
+            "application/binary",
+            &[
+                ("content-range", "bytes 0-0/853270"),
+                (
+                    "content-disposition",
+                    "attachment; filename=\"2022_1Q_conference_eng.pdf\"; filename*=UTF-8''2022_1Q_conference_eng.pdf",
+                ),
+            ],
+            "https://uc5678.dl.dropboxusercontent.com/cd/0/get/token/file?dl=1",
+        ));
+        fixture.exchanges.push(page(
+            "https://www.dropbox.com/s/aud1oshare/episode%2012.mp3?dl=0",
+            200,
+            &allowed.replace("%TITLE%", "episode 12.mp3"),
+        ));
+        fixture.exchanges.push(get(
+            "https://www.dropbox.com/s/aud1oshare/episode%2012.mp3?dl=1",
+            206,
+            "application/binary",
+            &[
+                ("content-range", "bytes 0-0/41234567"),
+                (
+                    "content-disposition",
+                    "attachment; filename=\"episode 12.mp3\"; filename*=UTF-8''episode%2012.mp3",
+                ),
+            ],
+            "https://uc9012.dl.dropboxusercontent.com/cd/0/get/token/file?dl=1",
+        ));
+        let resolver = DropboxResolver::new(Http::replay(fixture));
+        let resolve = |link: &str| {
+            let url = Url::parse(link).unwrap();
+            let resolver = &resolver;
+            async move { resolver.resolve(&url).await.unwrap().media().unwrap() }
+        };
+        let image = resolve("https://www.dropbox.com/s/19wl7p7eubcxx9y/matrix.JPG?dl=0").await;
+        assert_eq!(image.media, MediaKind::Image);
+        assert_eq!(image.title.as_deref(), Some("matrix"));
+        assert_eq!(image.variants.len(), 1);
+        assert_eq!(image.variants[0].container, Some(Container::Jpeg));
+        assert_eq!(image.variants[0].size, Some(62237));
+        assert_eq!(image.variants[0].format_id.as_deref(), Some("original"));
+        let document =
+            resolve("https://www.dropbox.com/s/w3cd1kaetwe715u/2022_1Q_conference_eng.pdf?dl=0")
+                .await;
+        assert_eq!(document.media, MediaKind::File);
+        assert_eq!(document.title.as_deref(), Some("2022_1Q_conference_eng"));
+        assert_eq!(
+            document.variants[0].container,
+            Some(Container::Other("pdf".into()))
+        );
+        assert_eq!(document.variants[0].size, Some(853270));
+        let audio = resolve("https://www.dropbox.com/s/aud1oshare/episode%2012.mp3?dl=0").await;
+        assert_eq!(audio.media, MediaKind::Audio);
+        assert_eq!(audio.title.as_deref(), Some("episode 12"));
+        assert_eq!(audio.variants[0].container, Some(Container::Mp3));
+        assert_eq!(audio.variants[0].audio, Some(AudioCodec::Mp3));
+        assert!(audio.variants[0].audio_only);
+        assert_eq!(audio.variants[0].size, Some(41234567));
+        assert_eq!(classify("", "application/binary"), (MediaKind::File, None));
+        assert_eq!(
+            classify("clip.webm", "application/binary"),
+            (MediaKind::Video, Some(Container::Webm))
+        );
+    }
+
+    /// Every example link resolves live, and the image and the PDF among them come back
+    /// as what they are.
+    #[tokio::test]
+    #[ignore = "requires live Dropbox access"]
+    async fn live_examples_resolve_to_their_kinds() {
+        use std::time::Duration;
+
+        let resolver = DropboxResolver::new(Http::new(crate::http::HttpConfig::default()));
+        let mut kinds = Vec::new();
+        for link in resolver.platform().examples {
+            let url = Url::parse(link).unwrap();
+            let resolved = tokio::time::timeout(Duration::from_secs(60), resolver.resolve(&url))
+                .await
+                .expect("resolution timed out")
+                .unwrap()
+                .media()
+                .unwrap();
+            assert!(!resolved.variants.is_empty(), "{link}: no variants");
+            kinds.push((link.to_string(), resolved.media));
+        }
+        assert!(kinds.contains(&(
+            "https://www.dropbox.com/s/19wl7p7eubcxx9y/matrix.JPG?dl=0".to_string(),
+            MediaKind::Image
+        )));
+        assert!(kinds.contains(&(
+            "https://www.dropbox.com/s/w3cd1kaetwe715u/2022_1Q_conference_eng.pdf?dl=0".to_string(),
+            MediaKind::File
+        )));
+        assert_eq!(
+            kinds.iter().filter(|(_, k)| *k == MediaKind::Video).count(),
+            2
+        );
     }
 }

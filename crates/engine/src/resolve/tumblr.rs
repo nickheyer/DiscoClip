@@ -15,10 +15,10 @@ use url::Url;
 use super::page::{Page, between};
 use super::{
     ClipRange, MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved,
-    Resolver, SessionCheck, SessionSupport, Variant, VariantKind, clean_title, timestamp_hint,
+    Resolver, SessionCheck, SessionSupport, Tag, Variant, VariantKind, clean_title, timestamp_hint,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "tumblr";
 const SITE: &str = "https://www.tumblr.com/";
@@ -416,6 +416,8 @@ impl Resolver for TumblrResolver {
             hosts: &["tumblr.com"],
             features: &["posts", "reblogs", "blogs", "embedded players"],
             formats: &["mp4", "hls"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Social, Tag::Images],
             session: SessionSupport::Optional,
             examples: &[
                 "https://www.tumblr.com/staff/802565427665502208",

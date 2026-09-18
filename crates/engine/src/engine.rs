@@ -62,6 +62,16 @@ impl EngineBuilder {
         self
     }
 
+    /// The ids of the resolvers registered so far.
+    pub fn resolver_ids(&self) -> Vec<&'static str> {
+        self.resolvers.iter().map(|r| r.id()).collect()
+    }
+
+    /// What the resolvers registered so far cover.
+    pub fn platforms(&self) -> Vec<Platform> {
+        self.resolvers.iter().map(|r| r.platform()).collect()
+    }
+
     pub fn downloader(mut self, downloader: impl Downloader + 'static) -> Self {
         self.downloaders.push(Arc::new(downloader));
         self
@@ -373,6 +383,11 @@ impl EngineHandle {
         self.shared.resolvers.find(url).map(|r| r.id())
     }
 
+    /// Every resolver that would take `url`, in the order they are offered it.
+    pub fn resolvers_for(&self, url: &Url) -> Vec<&'static str> {
+        self.shared.resolvers.matching(url)
+    }
+
     /// Resolves `url` without queuing a job: what a fixture run needs, and nothing more.
     pub async fn resolve(&self, url: &Url) -> Result<Resolution, ResolveError> {
         self.shared.resolvers.resolve(url).await
@@ -461,6 +476,23 @@ impl EngineHandle {
         if !self.shared.resolvers.supports(&request.url) {
             return Err(SubmitError::Unsupported(request.url));
         }
+        if !self
+            .shared
+            .resolvers
+            .supports_without(&request.url, &request.disabled_platforms)
+        {
+            let platform = self
+                .shared
+                .resolvers
+                .matching(&request.url)
+                .first()
+                .copied()
+                .expect("a resolver matches");
+            return Err(SubmitError::Disabled {
+                url: request.url,
+                platform,
+            });
+        }
         if !self.shared.sources.contains(&request.origin.source) {
             return Err(SubmitError::UnknownSource(request.origin.source));
         }
@@ -491,8 +523,13 @@ impl EngineHandle {
         Ok(job.id)
     }
 
-    /// Queues a fresh job with the same request as a finished one.
-    pub async fn retry(&self, id: JobId) -> Result<JobId, RetryError> {
+    /// Queues a fresh job with the same request as a finished one, under the platforms
+    /// turned off where the link was seen as they stand now.
+    pub async fn retry(
+        &self,
+        id: JobId,
+        disabled_platforms: Vec<String>,
+    ) -> Result<JobId, RetryError> {
         let job = self
             .shared
             .store
@@ -504,6 +541,7 @@ impl EngineHandle {
         }
         let mut request = job.request.clone();
         request.retry_of = Some(id);
+        request.disabled_platforms = disabled_platforms;
         Ok(self.submit(request).await?)
     }
 
@@ -690,6 +728,8 @@ pub async fn dir_size(path: &Path) -> u64 {
 pub enum SubmitError {
     #[error("no resolver handles {0}")]
     Unsupported(Url),
+    #[error("{platform} links are turned off here: {url}")]
+    Disabled { url: Url, platform: &'static str },
     #[error("no publisher registered for source {0}")]
     UnknownSource(SourceId),
     #[error("engine is not running")]

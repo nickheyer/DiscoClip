@@ -16,10 +16,10 @@ use url::Url;
 use super::page::Page;
 use super::{
     MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport,
-    SubtitleFormat, SubtitleTrack, Variant, VariantKind, clean_title,
+    SubtitleFormat, SubtitleTrack, Tag, Variant, VariantKind, clean_title,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "kaltura";
 const API: &str = "https://cdnapisec.kaltura.com/api_v3/service/multirequest";
@@ -459,6 +459,8 @@ impl Resolver for KalturaResolver {
                 "drm reported",
             ],
             formats: &["mp4", "webm", "flv", "hls"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Players],
             session: SessionSupport::None,
             examples: &[
                 "https://cdnapisec.kaltura.com/p/243342/sp/24334200/playManifest/entryId/1_sf5ovm7u/format/url/protocol/https",

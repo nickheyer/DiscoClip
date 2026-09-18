@@ -154,7 +154,7 @@ pub fn expand_manifest(
                 .attribute("Bitrate")
                 .and_then(|b| b.parse::<u64>().ok());
             let mut v = Variant::new(url.clone(), VariantKind::Ism);
-            v.format_id = Some(match level.attribute("Index").or_else(|| Some("")) {
+            v.format_id = Some(match level.attribute("Index").or(Some("")) {
                 Some(id) if !id.is_empty() => format!("video-{id}"),
                 _ => format!("video-{index}"),
             });

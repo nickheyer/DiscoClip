@@ -918,6 +918,384 @@ Removes a watch rule.
 | Response | `204` |
 | Errors | `401` `403` `404` |
 
+### Profiles
+
+Profiles say which platforms are on. They are put in force at scopes, addressed as
+`global`, `guild:<guild>`, `channel:<guild>:<channel>` or `user:<guild>:<user>`, and
+apply from the widest to the narrowest. See `Profile`, `Scope` and `EffectiveProfile`.
+
+#### GET /api/profiles
+
+Lists every profile.
+
+| Field | Value |
+|---|---|
+| Auth | any account |
+| Path | — |
+| Query | — |
+| Body | — |
+| Response | `200` `Profile[]` |
+| Errors | `401` |
+
+#### POST /api/profiles
+
+Adds a profile.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_settings` |
+| Path | — |
+| Query | — |
+| Body | `ProfileInput` |
+| Response | `201` `Profile` |
+| Errors | `400` `401` `403` `409` |
+
+#### GET /api/profiles/{id}
+
+Returns one profile.
+
+| Field | Value |
+|---|---|
+| Auth | any account |
+| Path | `id` `uuid` |
+| Query | — |
+| Body | — |
+| Response | `200` `Profile` |
+| Errors | `401` `404` |
+
+#### PUT /api/profiles/{id}
+
+Replaces what a profile says.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_settings` |
+| Path | `id` `uuid` |
+| Query | — |
+| Body | `ProfileInput` |
+| Response | `200` `Profile` |
+| Errors | `400` `401` `403` `404` `409` |
+
+#### DELETE /api/profiles/{id}
+
+Removes a profile and takes it off every scope; the built-in profile and the one in force
+for the whole server are refused with `409`.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_settings` |
+| Path | `id` `uuid` |
+| Query | — |
+| Body | — |
+| Response | `204` |
+| Errors | `401` `403` `404` `409` |
+
+#### GET /api/profiles/presets
+
+The presets a profile can choose, each with the platforms in it.
+
+| Field | Value |
+|---|---|
+| Auth | any account |
+| Response | `200` `Preset[]` |
+| Errors | `401` |
+
+#### GET /api/profiles/assignments
+
+The profiles in force: the whole server's and, with `guild`, that guild's scopes; every
+guild's without.
+
+| Field | Value |
+|---|---|
+| Auth | with `guild`: `manage_watch_rules` or session managing `guild`; without: `manage_watch_rules` |
+| Path | — |
+| Query | `guild` `snowflake` optional |
+| Body | — |
+| Response | `200` `Assignment[]` |
+| Errors | `401` `403` |
+
+#### PUT /api/profiles/assignments/{scope}
+
+Puts a profile in force at a scope, replacing whatever was.
+
+| Field | Value |
+|---|---|
+| Auth | `global`: `manage_settings`; a guild's scopes: `manage_watch_rules` or session managing the guild |
+| Path | `scope` `ScopeKey` |
+| Query | — |
+| Body | `{ "profile_id": uuid }` |
+| Response | `200` `Assignment` |
+| Errors | `400` `401` `403` `404` |
+
+#### DELETE /api/profiles/assignments/{scope}
+
+Takes the profile off a scope, so the wider scope's applies there again; `global` is
+refused with `409`.
+
+| Field | Value |
+|---|---|
+| Auth | as `PUT` |
+| Path | `scope` `ScopeKey` |
+| Query | — |
+| Body | — |
+| Response | `204` |
+| Errors | `400` `401` `403` `409` |
+
+#### GET /api/profiles/effective
+
+What the profiles in force add up to for a link seen in `channel` of `guild` from
+`user`; the whole server's alone without a guild.
+
+| Field | Value |
+|---|---|
+| Auth | any account |
+| Path | — |
+| Query | `guild` `snowflake` optional · `channel` `snowflake` optional · `user` `snowflake` optional |
+| Body | — |
+| Response | `200` `EffectiveView` |
+| Errors | `400` `401` |
+
+### Front ends
+
+Front ends are public sites over the server's media, at `/f/<slug>`. Admins manage them
+here; what a front end serves to its visitors is under `/api/f/<slug>` below, without an
+admin session. See `Frontend`, `FrontendInput`, `FrontInfo` and `FrontJob`.
+
+#### GET /api/frontends
+
+| Field | Value |
+|---|---|
+| Auth | `manage_settings` |
+| Response | `200` `Frontend[]` |
+| Errors | `401` `403` |
+
+#### POST /api/frontends
+
+Adds a front end. Turning its links on needs `web.public_url`.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_settings` |
+| Body | `FrontendInput` |
+| Response | `201` `Frontend` |
+| Errors | `400` `401` `403` `409` |
+
+#### GET /api/frontends/{id}
+
+| Field | Value |
+|---|---|
+| Auth | `manage_settings` |
+| Path | `id` `uuid` |
+| Response | `200` `Frontend` |
+| Errors | `401` `403` `404` |
+
+#### PUT /api/frontends/{id}
+
+| Field | Value |
+|---|---|
+| Auth | `manage_settings` |
+| Path | `id` `uuid` |
+| Body | `FrontendInput` |
+| Response | `200` `Frontend` |
+| Errors | `400` `401` `403` `404` `409` |
+
+#### DELETE /api/frontends/{id}
+
+Removes a front end with its accounts and sessions.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_settings` |
+| Path | `id` `uuid` |
+| Response | `204` |
+| Errors | `401` `403` `404` |
+
+#### PUT /api/frontends/{id}/secret
+
+Stores the shared secret, hashed; `null` removes it. It is never read back.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_settings` |
+| Path | `id` `uuid` |
+| Body | `{ "secret": string \| null }` |
+| Response | `200` `Frontend` |
+| Errors | `400` `401` `403` `404` |
+
+#### GET /api/frontends/{id}/users
+
+| Field | Value |
+|---|---|
+| Auth | `manage_settings` |
+| Path | `id` `uuid` |
+| Response | `200` `FrontendUser[]` |
+| Errors | `401` `403` `404` |
+
+#### POST /api/frontends/{id}/users
+
+| Field | Value |
+|---|---|
+| Auth | `manage_settings` |
+| Path | `id` `uuid` |
+| Body | `{ "username": string, "password": string }` |
+| Response | `201` `FrontendUser` |
+| Errors | `400` `401` `403` `404` `409` |
+
+#### PUT /api/frontends/{id}/users/{user}/password
+
+| Field | Value |
+|---|---|
+| Auth | `manage_settings` |
+| Path | `id` `uuid` · `user` `uuid` |
+| Body | `{ "password": string }` |
+| Response | `200` `FrontendUser` |
+| Errors | `400` `401` `403` `404` |
+
+#### DELETE /api/frontends/{id}/users/{user}
+
+Removes an account and its sessions.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_settings` |
+| Path | `id` `uuid` · `user` `uuid` |
+| Response | `204` |
+| Errors | `400` `401` `403` `404` |
+
+#### GET /api/frontends/{id}/sessions
+
+| Field | Value |
+|---|---|
+| Auth | `manage_settings` |
+| Path | `id` `uuid` |
+| Response | `200` `ViewerSession[]` |
+| Errors | `401` `403` `404` |
+
+#### DELETE /api/frontends/{id}/sessions
+
+Ends every viewer session of the front end.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_settings` |
+| Path | `id` `uuid` |
+| Response | `204` |
+| Errors | `401` `403` `404` |
+
+#### DELETE /api/frontends/{id}/sessions/{session}
+
+| Field | Value |
+|---|---|
+| Auth | `manage_settings` |
+| Path | `id` `uuid` · `session` `uuid` |
+| Response | `204` |
+| Errors | `401` `403` `404` |
+
+### Front end visitors
+
+These routes serve a front end's visitors and take no admin session. A viewer's session
+is the cookie `dcf_<slug>`. Routes that list or hand out media answer `401` when the
+front end asks for a login and the visitor has none, and `404` for a slug that is not an
+enabled front end.
+
+#### GET /api/f/{slug}
+
+Who the front end is and how to get in.
+
+| Field | Value |
+|---|---|
+| Auth | none |
+| Path | `slug` |
+| Response | `200` `FrontInfo` |
+| Errors | `404` |
+
+#### POST /api/f/{slug}/login
+
+Logs in with the shared secret, or with one of the front end's accounts, and sets the
+session cookie. Wrong ones count against the address.
+
+| Field | Value |
+|---|---|
+| Auth | none |
+| Path | `slug` |
+| Body | `{ "secret": string }` or `{ "username": string, "password": string }` |
+| Response | `200` `FrontInfo` |
+| Errors | `400` `401` `404` `429` |
+
+#### POST /api/f/{slug}/logout
+
+| Field | Value |
+|---|---|
+| Auth | none |
+| Path | `slug` |
+| Response | `204` |
+| Errors | `404` |
+
+#### GET /api/f/{slug}/auth/{provider}/start
+
+Sends the browser to a login provider the front end names; it comes back to `/f/<slug>`
+logged in, or to `/f/<slug>/login?error=<reason>` with `reason` one of `state`, `denied`,
+`provider`, `exchange`, `identity`, `frontend`, `not_listed`, `not_member`, `guilds`.
+
+| Field | Value |
+|---|---|
+| Auth | none |
+| Path | `slug` · `provider` |
+| Response | `303` to the provider |
+| Errors | `400` `404` `429` |
+
+#### GET /api/f/{slug}/jobs
+
+The media the front end shows, newest first.
+
+| Field | Value |
+|---|---|
+| Auth | viewer, unless open |
+| Path | `slug` |
+| Query | `q` · `media` `MediaKind` · `resolver` · `before` `timestamp` · `limit` (at most 48) |
+| Response | `200` `FrontPage` |
+| Errors | `401` `404` |
+
+#### GET /api/f/{slug}/jobs/{id}
+
+| Field | Value |
+|---|---|
+| Auth | viewer, unless open |
+| Path | `slug` · `id` `uuid` |
+| Response | `200` `FrontJob` |
+| Errors | `401` `404` |
+
+#### GET /api/f/{slug}/jobs/{id}/media
+
+The output itself, inline, with byte ranges. A signed token `t`, as `FrontJob.media_url`
+carries it, opens it without a session until the front end's signed links run out.
+
+| Field | Value |
+|---|---|
+| Auth | viewer, unless open, or a valid `t` |
+| Path | `slug` · `id` `uuid` |
+| Query | `t` optional |
+| Response | `200` or `206` the file |
+| Errors | `401` `404` `416` |
+
+#### GET /api/f/{slug}/jobs/{id}/download
+
+The output as an attachment, when the front end allows downloads.
+
+| Field | Value |
+|---|---|
+| Auth | viewer, unless open |
+| Path | `slug` · `id` `uuid` |
+| Response | `200` or `206` the file |
+| Errors | `401` `403` `404` `416` |
+
+#### GET /f/{slug}/j/{id}
+
+Not under `/api`: the web app's page for one piece of media, with Open Graph and Twitter
+card metadata in its head (`og:video` and a direct, signed media link for a video,
+`og:audio` for audio, `og:image` for a picture) so link unfurlers play it inline. Any
+other `/f/...` path is the web app's shell.
+
 ### Account guilds
 
 #### GET /api/discord/guilds
@@ -1411,6 +1789,66 @@ Rejects a command name the bot does not define.
 | `max_height` | `integer \| null` | no |
 | `enabled` | `bool` | no · default `true` |
 
+#### ProfileInput
+
+| Field | Type | Required |
+|---|---|---|
+| `name` | `string` | yes |
+| `description` | `string` | no |
+| `platforms` | `PlatformToggles` | no |
+
+#### PlatformToggles
+
+| Field | Type | Required |
+|---|---|---|
+| `default` | `PlatformDefault` — ignored while `presets` is non-empty | no, `inherit` |
+| `presets` | `string[]` — preset ids; when any, the whitelist: platforms in any chosen preset are on, all others off | no |
+| `overrides` | `object` of platform id → `bool` — win over presets and the default | no |
+
+#### FrontendInput
+
+| Field | Type | Required |
+|---|---|---|
+| `name` | `string` | yes |
+| `slug` | `string` — lower-case letters, digits and dashes | yes |
+| `description` | `string` | no |
+| `enabled` | `bool` | no, `true` |
+| `profile_id` | `uuid` — the platforms shown | no, the built-in profile |
+| `scope` | `ContentScope` | no, everything |
+| `access` | `Access` | no, closed with no way in |
+| `downloads` | `bool` | no, `true` |
+| `links` | `LinkPolicy` | no, off |
+
+#### ContentScope
+
+| Field | Type | Required |
+|---|---|---|
+| `guilds` | `snowflake[]` | no |
+| `channels` | `snowflake[]` | no |
+
+Empty on both sides means every job; otherwise jobs seen in any listed guild or channel.
+
+#### Access
+
+| Field | Type | Required |
+|---|---|---|
+| `open` | `bool` — everyone gets in | no |
+| `secret_kind` | `"pin" \| "password" \| "token" \| null` — how the shared secret is asked for | no |
+| `accounts` | `bool` — the front end's own accounts may log in | no |
+| `providers` | `string[]` — login provider ids | no |
+| `discord_members` | `bool` — a Discord login must belong to every guild in the scope | no |
+| `discord_users` | `snowflake[]` — a Discord login must be one of these | no |
+
+#### LinkPolicy
+
+| Field | Type | Required |
+|---|---|---|
+| `enabled` | `bool` | no, `false` |
+| `min_height` | `integer` — pixels | no, `720` |
+| `min_bitrate` | `integer` — bits per second | no, `1500000` |
+| `max_bytes` | `integer` — bound of the output made for the page | no, 2 GiB |
+| `signed_link_days` | `integer` | no, `30` |
+
 #### SubmitRequest
 
 | Field | Type | Required |
@@ -1749,6 +2187,132 @@ Rejects a command name the bot does not define.
 | `created_at` | `timestamp` |
 | `updated_at` | `timestamp` |
 
+#### Profile
+
+| Field | Type |
+|---|---|
+| `id` | `uuid` |
+| `...ProfileInput` | `ProfileInput` |
+| `builtin` | `bool` — ships with the server, cannot be removed |
+| `created_at` | `timestamp` |
+| `updated_at` | `timestamp` |
+
+#### Preset
+
+| Field | Type |
+|---|---|
+| `id` | `string` — `basic`, `sfw`, `nsfw`, `news`, `social`, `video`, `music`, `podcasts`, `live`, `files`, `images` or `players` |
+| `label` | `string` |
+| `description` | `string` |
+| `platforms` | `string[]` — resolver ids in it |
+
+#### Scope
+
+| Field | Type | Present for `kind` |
+|---|---|---|
+| `kind` | `"global" \| "guild" \| "channel" \| "user"` | all |
+| `guild_id` | `snowflake` | `guild` `channel` `user` |
+| `channel_id` | `snowflake` | `channel` |
+| `user_id` | `snowflake` | `user` |
+
+A `ScopeKey` in a path is the same scope as one string: `global`, `guild:<guild>`,
+`channel:<guild>:<channel>` or `user:<guild>:<user>`.
+
+#### Assignment
+
+| Field | Type |
+|---|---|
+| `scope` | `Scope` |
+| `profile_id` | `uuid` |
+| `updated_at` | `timestamp` |
+
+#### EffectiveProfile
+
+| Field | Type |
+|---|---|
+| `platforms` | `object` of platform id → `bool` — every platform, on or off |
+| `applied` | `Assignment[]` — the assignments applied, widest first |
+
+#### EffectiveView
+
+| Field | Type |
+|---|---|
+| `...EffectiveProfile` | `EffectiveProfile` |
+| `disabled` | `string[]` — the platform ids turned off |
+
+#### Frontend
+
+| Field | Type |
+|---|---|
+| `id` | `uuid` |
+| `...FrontendInput` | `FrontendInput` |
+| `has_secret` | `bool` |
+| `created_at` | `timestamp` |
+| `updated_at` | `timestamp` |
+
+#### FrontendUser
+
+| Field | Type |
+|---|---|
+| `id` | `uuid` |
+| `frontend_id` | `uuid` |
+| `username` | `string` |
+| `created_at` | `timestamp` |
+
+#### ViewerSession
+
+| Field | Type |
+|---|---|
+| `id` | `uuid` |
+| `frontend_id` | `uuid` |
+| `subject` | `string` — `secret`, `account:<username>` or `provider:<id>:<subject>` |
+| `display` | `string` |
+| `created_at` | `timestamp` |
+| `last_seen_at` | `timestamp` |
+| `expires_at` | `timestamp` |
+| `ip` | `string \| null` |
+| `user_agent` | `string \| null` |
+
+#### FrontInfo
+
+| Field | Type |
+|---|---|
+| `slug` | `string` |
+| `name` | `string` |
+| `description` | `string` |
+| `downloads` | `bool` |
+| `access` | `{ open, secret: "pin" \| "password" \| "token" \| null, accounts, providers: [{ id, name }], discord_members }` |
+| `platforms` | `string[]` — resolver ids shown |
+| `viewer` | `{ frontend_id, subject, display } \| null` |
+
+#### FrontPage
+
+| Field | Type |
+|---|---|
+| `jobs` | `FrontJob[]` |
+| `next` | `timestamp \| null` — the `before` of the next page |
+
+#### FrontJob
+
+| Field | Type |
+|---|---|
+| `id` | `uuid` |
+| `title` | `string \| null` |
+| `media` | `MediaKind` |
+| `resolver` | `string` |
+| `uploader` | `string \| null` |
+| `webpage_url` | `url \| null` |
+| `thumbnail` | `url \| null` |
+| `duration_secs` | `number \| null` |
+| `live` | `bool` — a recorded stream |
+| `size` | `integer` |
+| `width` | `integer \| null` |
+| `height` | `integer \| null` |
+| `content_type` | `string` |
+| `published_at` | `timestamp` |
+| `media_url` | `string` — plays or shows the media, with its signed token |
+| `download_url` | `string \| null` |
+
 #### Guild
 
 | Field | Type |
@@ -1809,6 +2373,7 @@ Rejects a command name the bot does not define.
 | `retry_of` | `uuid \| null` |
 | `title` | `string \| null` |
 | `resolver` | `string \| null` |
+| `media` | `MediaKind` — what the probe found the source to be, else what the resolver said, else `video` |
 | `uploader` | `string \| null` |
 | `webpage_url` | `url \| null` |
 | `thumbnail` | `url \| null` |
@@ -1974,6 +2539,8 @@ Rejects a command name the bot does not define.
 | `resolved` | `Resolved \| null` |
 | `source` | `LocalFile \| null` |
 | `output` | `LocalFile \| null` |
+| `delivery` | `"upload" \| "link"` — whether the output was handed over or a front end's page was posted |
+| `link_reason` | `string \| null` — why a link was posted rather than the file |
 | `published` | `Published \| null` |
 | `archived` | `ArchiveEntry \| null` |
 | `subtitles` | `LocalSubtitle[]` |
@@ -1985,6 +2552,7 @@ Rejects a command name the bot does not define.
 | Field | Type |
 |---|---|
 | `resolver` | `string` |
+| `media` | `MediaKind` — what the link is; decides how it is picked, shrunk and shown |
 | `id` | `string \| null` |
 | `title` | `string \| null` |
 | `description` | `string \| null` |
@@ -2066,6 +2634,7 @@ Rejects a command name the bot does not define.
 | Field | Type |
 |---|---|
 | `container` | `Codec` |
+| `kind` | `MediaKind` — a still image has its picture in `video` with no `fps` |
 | `duration` | `Duration \| null` |
 | `video` | `VideoTrack \| null` |
 | `audio` | `AudioTrack \| null` |
@@ -2149,6 +2718,8 @@ Rejects a command name the bot does not define.
 | `hosts` | `string[]` |
 | `features` | `string[]` |
 | `formats` | `string[]` |
+| `media` | `MediaKind[]` — every kind its links can resolve to |
+| `tags` | `string[]` — what kind of place it is: the preset ids minus `sfw` |
 | `session` | `SessionSupport` |
 | `cookies` | `integer` |
 | `fixtures` | `FixtureResult[]` |
@@ -2186,7 +2757,22 @@ Rejects a command name the bot does not define.
 | `last_pass_at` | `timestamp \| null` |
 | `error` | `string \| null` |
 | `title` | `string \| null` |
+| `found` | `Found \| null` — what the link resolved to, when it did |
 | `duration_ms` | `integer \| null` |
+
+#### Found
+
+| Field | Type | Present for `kind` |
+|---|---|---|
+| `kind` | `"media" \| "playlist"` | all |
+| `media` | `MediaKind` | `media` |
+| `variants` | `integer` — playable variants | `media` |
+| `entries` | `integer` | `playlist` |
+
+#### MediaKind
+
+`"video"`, `"audio"`, `"image"` or `"file"`: a moving picture (animated GIFs count),
+sound alone, a still picture, or any other file.
 
 #### CheckStarted
 
@@ -2412,6 +2998,16 @@ Rejects a command name the bot does not define.
 | `session.import` | `previous_cookies` | `integer` |
 | `session.import` | `format` | `CookieFormat` |
 | `session.clear` | `cookies` | `integer` |
+| `profile.create` `profile.update` `profile.delete` | `profile` | `ProfileInput` |
+| `profile.update` | `previous` | `ProfileInput` |
+| `profile.delete` | `assignments_removed` | `integer` |
+| `profile.assign` `profile.unassign` | `scope` | `Scope` |
+| `profile.assign` | `previous_profile_id` | `uuid \| null` |
+| `frontend.create` `frontend.update` `frontend.delete` | `frontend` | `FrontendInput` |
+| `frontend.update` | `previous` | `FrontendInput` |
+| `frontend.user.create` `frontend.user.password` `frontend.user.delete` | `username` | `string` |
+| `frontend.sessions.revoke` | `sessions` | `integer` |
+| `frontend.sessions.revoke` | `session_id` | `uuid \| null` |
 
 ### Enumerations
 
@@ -2660,6 +3256,14 @@ Rejects a command name the bot does not define.
 | `session` |
 | `token` |
 
+#### PlatformDefault
+
+| Value | Meaning |
+|---|---|
+| `inherit` | Platforms the profile does not name stay as the wider scope has them |
+| `enabled` | Platforms the profile does not name are on |
+| `disabled` | Platforms the profile does not name are off |
+
 #### TargetKind
 
 | Value |
@@ -2668,6 +3272,8 @@ Rejects a command name the bot does not define.
 | `application` |
 | `rule` |
 | `platform` |
+| `profile` |
+| `frontend` |
 
 #### Action
 
@@ -2690,6 +3296,20 @@ Rejects a command name the bot does not define.
 | `rule.delete` |
 | `session.import` |
 | `session.clear` |
+| `profile.create` |
+| `profile.update` |
+| `profile.delete` |
+| `profile.assign` |
+| `profile.unassign` |
+| `frontend.create` |
+| `frontend.update` |
+| `frontend.delete` |
+| `frontend.secret.set` |
+| `frontend.secret.clear` |
+| `frontend.user.create` |
+| `frontend.user.password` |
+| `frontend.user.delete` |
+| `frontend.sessions.revoke` |
 
 #### Install scopes
 

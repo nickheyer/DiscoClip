@@ -31,7 +31,9 @@ pub(super) async fn may_edit(
     ))
 }
 
-/// Confirms through the application's bot that `channel` is a channel of `guild`.
+/// Confirms through the application's bot that `channel` is a channel of `guild`: from
+/// what the gateway told the bot, and only for a channel it has not heard of from
+/// Discord, waiting a bounded time.
 async fn check_channel(
     state: &AppState,
     application: ApplicationId,
@@ -42,18 +44,29 @@ async fn check_channel(
         channel.parse().ok().filter(|id| *id > 0).ok_or_else(|| {
             ApiError::BadRequest(format!("channel {channel:?} is not a Discord id"))
         })?;
-    let http = state
+    let directory = state
         .bots
-        .client(application)
+        .directory(application)
         .ok_or_else(|| ApiError::Conflict("the application's bot is not running".into()))?;
-    let found = http
-        .channel(Id::new(id))
-        .await
-        .map_err(|e| ApiError::BadRequest(format!("the bot cannot see channel {channel}: {e}")))?
-        .model()
-        .await
-        .map_err(|e| ApiError::BadGateway(format!("Discord answered unexpectedly: {e}")))?;
-    if found.guild_id.map(|g| g.to_string()).as_deref() != Some(guild) {
+    let guild_of = match directory.channel(Id::new(id)) {
+        Some(known) => known.guild_id.map(|g| g.to_string()),
+        None => {
+            let http = state
+                .bots
+                .client(application)
+                .ok_or_else(|| ApiError::Conflict("the application's bot is not running".into()))?;
+            let found = super::channels::bounded("the channel lookup", http.channel(Id::new(id)))
+                .await?
+                .map_err(|e| {
+                    ApiError::BadRequest(format!("the bot cannot see channel {channel}: {e}"))
+                })?
+                .model()
+                .await
+                .map_err(|e| ApiError::BadGateway(format!("Discord answered unexpectedly: {e}")))?;
+            found.guild_id.map(|g| g.to_string())
+        }
+    };
+    if guild_of.as_deref() != Some(guild) {
         return Err(ApiError::BadRequest(format!(
             "channel {channel} is not in guild {guild}"
         )));

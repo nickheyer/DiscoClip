@@ -11,11 +11,11 @@ use serde_json::Value;
 use url::Url;
 
 use super::{
-    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Variant,
+    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag, Variant,
     VariantKind, clean_title, fetch, hls,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "17live";
 const SITE: &str = "https://17.live/";
@@ -420,6 +420,8 @@ impl Resolver for SeventeenLiveResolver {
             hosts: &["17.live"],
             features: &["live", "clips", "recordings"],
             formats: &["flv", "mp4", "hls"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Live],
             session: SessionSupport::None,
             examples: &[
                 "https://17.live/profile/r/1789280/clip/1bHQSK8KUieruFXaCH4A4upCzlN",

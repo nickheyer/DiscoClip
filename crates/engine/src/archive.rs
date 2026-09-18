@@ -130,7 +130,7 @@ impl Archiver for FsArchiver {
             .resolved
             .as_ref()
             .and_then(|r| r.title.as_deref());
-        let stem = format!("{}-{}", &id[..8], safe_stem(title, "video"));
+        let stem = format!("{}-{}", &id[..8], safe_stem(title, job.media().as_str()));
 
         let mut files = Vec::new();
         let mut bytes = 0;

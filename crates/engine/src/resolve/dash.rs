@@ -77,7 +77,9 @@ pub fn drm_system(scheme_id_uri: &str, value: Option<&str>) -> Option<String> {
     )
 }
 
-fn protection_of(set: &AdaptationSet, representation: &Representation) -> Option<String> {
+/// The DRM system an adaptation set or representation is locked with, when one is:
+/// a named system over a bare CENC marker.
+pub fn protection_of(set: &AdaptationSet, representation: &Representation) -> Option<String> {
     let protections = set
         .ContentProtection
         .iter()

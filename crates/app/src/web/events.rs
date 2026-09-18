@@ -50,6 +50,8 @@ mod tests {
             source: SourceId::new("discord"),
             reference: "x".into(),
             url: None,
+            guild: None,
+            channel: None,
         };
         let id = app
             .state

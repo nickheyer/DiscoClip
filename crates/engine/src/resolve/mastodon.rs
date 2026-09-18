@@ -15,10 +15,10 @@ use url::Url;
 
 use super::{
     ClipRange, MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved,
-    Resolver, SessionSupport, Variant, VariantKind, clean_title, timestamp_hint,
+    Resolver, SessionSupport, Tag, Variant, VariantKind, clean_title, timestamp_hint,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "mastodon";
 
@@ -292,6 +292,8 @@ impl Resolver for MastodonResolver {
             hosts: &["*"],
             features: &["posts", "boosts", "multiple attachments", "any server"],
             formats: &["mp4", "webm", "hls"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Social],
             session: SessionSupport::None,
             examples: &["https://mastodon.social/@sonic_hedgeblog/117256980960208736"],
         }

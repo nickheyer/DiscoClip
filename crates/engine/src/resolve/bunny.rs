@@ -15,11 +15,11 @@ use url::Url;
 use super::page::Page;
 use super::{
     Keepalive, MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport,
-    SubtitleFormat, SubtitleTrack, Variant, clean_title, essence, fetch, hls, is_hls_type,
+    SubtitleFormat, SubtitleTrack, Tag, Variant, clean_title, essence, fetch, hls, is_hls_type,
     probe_file, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "bunny";
 const PLAYER: &str = "https://iframe.mediadelivery.net/embed/";
@@ -261,6 +261,8 @@ impl Resolver for BunnyResolver {
                 "drm reported",
             ],
             formats: &["hls", "mp4"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Players],
             session: SessionSupport::None,
             examples: &[
                 "https://iframe.mediadelivery.net/embed/136145/32e34c4b-0d72-437c-9abb-05e67657da34",

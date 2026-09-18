@@ -12,7 +12,9 @@ use serde::Deserialize;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::process::Command;
 
-use crate::media::{AudioCodec, AudioTrack, Container, MediaInfo, VideoCodec, VideoTrack};
+use crate::media::{
+    AudioCodec, AudioTrack, Container, MediaInfo, MediaKind, VideoCodec, VideoTrack,
+};
 
 include!(concat!(env!("OUT_DIR"), "/ffmpeg_embed.rs"));
 
@@ -372,11 +374,37 @@ impl ProbeStream {
     }
 
     fn is_moving_picture(&self) -> bool {
+        self.codec_type == "video" && self.disposition.attached_pic == 0 && !self.is_still()
+    }
+
+    /// A still image codec: one picture, not a stream of them.
+    fn is_still(&self) -> bool {
         self.codec_type == "video"
-            && self.disposition.attached_pic == 0
-            && !matches!(
+            && matches!(
                 self.codec(),
-                "png" | "mjpeg" | "bmp" | "tiff" | "webp" | "jpeg2000"
+                "png"
+                    | "mjpeg"
+                    | "bmp"
+                    | "tiff"
+                    | "webp"
+                    | "jpeg2000"
+                    | "jpegxl"
+                    | "jpegls"
+                    | "avif"
+                    | "heif"
+                    | "hevc_still"
+                    | "psd"
+                    | "sgi"
+                    | "ppm"
+                    | "pgm"
+                    | "pbm"
+                    | "pam"
+                    | "targa"
+                    | "pcx"
+                    | "dds"
+                    | "exr"
+                    | "qoi"
+                    | "svg"
             )
     }
 
@@ -394,11 +422,19 @@ impl ProbeStream {
     }
 }
 
+/// A still image counts as a picture of its own size, so a still is reported as `Image`
+/// with the picture in `video` and no frame rate; a file with a moving picture is `Video`,
+/// one with sound alone `Audio`, and anything ffprobe reads but finds neither in is `File`.
 fn media_info(report: &ProbeReport, path: &Path) -> MediaInfo {
-    let video = report
+    let moving = report
         .streams
         .iter()
         .find(|s| s.is_moving_picture())
+        .and_then(video_track);
+    let still = report
+        .streams
+        .iter()
+        .find(|s| s.disposition.attached_pic == 0 && s.is_still())
         .and_then(video_track);
     let audio = report
         .streams
@@ -412,9 +448,24 @@ fn media_info(report: &ProbeReport, path: &Path) -> MediaInfo {
         .and_then(|d| d.parse::<f64>().ok())
         .filter(|d| *d > 0.0)
         .map(Duration::from_secs_f64);
+    let container = container_from_formats(&report.format.format_name, path);
+    let (kind, video) = match (moving, still, &audio) {
+        (Some(video), _, _) => (MediaKind::Video, Some(video)),
+        (None, _, Some(_)) => (MediaKind::Audio, None),
+        (None, Some(mut picture), None) => {
+            picture.fps = None;
+            (MediaKind::Image, Some(picture))
+        }
+        (None, None, None) => (MediaKind::File, None),
+    };
     MediaInfo {
-        container: container_from_formats(&report.format.format_name, path),
-        duration,
+        container,
+        kind,
+        duration: if kind == MediaKind::Image {
+            None
+        } else {
+            duration
+        },
         video,
         audio,
     }
@@ -475,6 +526,8 @@ fn container_from_formats(formats: &str, path: &Path) -> Container {
     if list.contains(&"mp4") {
         if ext == "mov" {
             Container::Mov
+        } else if ext == "m4a" || ext == "m4b" || ext == "aac" {
+            Container::M4a
         } else {
             Container::Mp4
         }
@@ -492,8 +545,30 @@ fn container_from_formats(formats: &str, path: &Path) -> Container {
         Container::Avi
     } else if list.contains(&"gif") {
         Container::Gif
+    } else if list.contains(&"mp3") {
+        Container::Mp3
+    } else if list.contains(&"ogg") {
+        if ext == "opus" {
+            Container::Opus
+        } else {
+            Container::Ogg
+        }
+    } else if list.contains(&"flac") {
+        Container::Flac
+    } else if list.contains(&"wav") {
+        Container::Wav
+    } else if list.contains(&"image2") || list.contains(&"jpeg_pipe") {
+        Container::Jpeg
+    } else if list.contains(&"png_pipe") || list.contains(&"apng") {
+        Container::Png
+    } else if list.contains(&"webp_pipe") {
+        Container::Webp
+    } else if list.contains(&"avif") {
+        Container::Avif
     } else {
-        Container::Other(list.first().copied().unwrap_or("unknown").to_string())
+        Container::from_extension(&ext).unwrap_or_else(|| {
+            Container::Other(list.first().copied().unwrap_or("unknown").to_string())
+        })
     }
 }
 
@@ -514,6 +589,7 @@ fn audio_codec(name: &str) -> AudioCodec {
         "opus" => AudioCodec::Opus,
         "vorbis" => AudioCodec::Vorbis,
         "mp3" | "mp3float" => AudioCodec::Mp3,
+        "flac" => AudioCodec::Flac,
         other => AudioCodec::Other(other.to_string()),
     }
 }
@@ -523,7 +599,7 @@ mod tests {
     use std::path::Path;
 
     use super::{ProbeReport, media_info};
-    use crate::media::{AudioCodec, Container, VideoCodec};
+    use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
     const REPORT: &str = r#"{
       "streams": [
@@ -552,6 +628,54 @@ mod tests {
         let audio = info.audio.unwrap();
         assert_eq!(audio.codec, AudioCodec::Aac);
         assert_eq!((audio.channels, audio.sample_rate), (2, 44_100));
+        assert_eq!(info.kind, MediaKind::Video);
+    }
+
+    #[test]
+    fn stills_audio_and_bare_files_are_told_apart() {
+        let still = r#"{"streams": [
+            {"index": 0, "codec_name": "png", "codec_type": "video", "width": 640, "height": 480,
+             "avg_frame_rate": "25/1", "r_frame_rate": "25/1"}],
+          "format": {"format_name": "png_pipe", "duration": "0.040000"}}"#;
+        let report: ProbeReport = serde_json::from_str(still).unwrap();
+        let info = media_info(&report, Path::new("pic.png"));
+        assert_eq!(info.kind, MediaKind::Image);
+        assert_eq!(info.container, Container::Png);
+        assert_eq!(info.duration, None);
+        let picture = info.video.unwrap();
+        assert_eq!(
+            (picture.width, picture.height, picture.fps),
+            (640, 480, None)
+        );
+        assert!(info.audio.is_none());
+
+        let song = r#"{"streams": [
+            {"index": 0, "codec_name": "mp3", "codec_type": "audio", "sample_rate": "44100", "channels": 2,
+             "bit_rate": "192000"},
+            {"index": 1, "codec_name": "mjpeg", "codec_type": "video", "width": 500, "height": 500,
+             "disposition": {"attached_pic": 1}}],
+          "format": {"format_name": "mp3", "duration": "180.5"}}"#;
+        let report: ProbeReport = serde_json::from_str(song).unwrap();
+        let info = media_info(&report, Path::new("song.mp3"));
+        assert_eq!(info.kind, MediaKind::Audio);
+        assert_eq!(info.container, Container::Mp3);
+        assert!(info.video.is_none());
+        assert_eq!(info.duration.unwrap().as_millis(), 180_500);
+
+        let m4a = REPORT.replace(
+            r#""codec_name": "h264", "codec_type": "video""#,
+            r#""codec_name": "h264", "codec_type": "data""#,
+        );
+        let report: ProbeReport = serde_json::from_str(&m4a).unwrap();
+        let info = media_info(&report, Path::new("talk.m4a"));
+        assert_eq!(info.kind, MediaKind::Audio);
+        assert_eq!(info.container, Container::M4a);
+
+        let bare = r#"{"streams": [], "format": {"format_name": "tty"}}"#;
+        let report: ProbeReport = serde_json::from_str(bare).unwrap();
+        let info = media_info(&report, Path::new("notes.txt"));
+        assert_eq!(info.kind, MediaKind::File);
+        assert_eq!(info.container, Container::Other("tty".into()));
     }
 
     #[test]

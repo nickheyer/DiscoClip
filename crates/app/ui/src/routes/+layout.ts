@@ -9,8 +9,14 @@ import { setupNeeded } from '$lib/state/setup';
 export const ssr = false;
 export const prerender = false;
 
+/** Whether a path belongs to a public front end, which the admin session has no say over. */
+export function isFrontPath(path: string): boolean {
+	return path === '/f' || path.startsWith('/f/');
+}
+
 export const load: LayoutLoad = async ({ url }) => {
 	const path = url.pathname;
+	if (isFrontPath(path)) return { me: null };
 	const needed = await guarded(setupNeeded);
 	if (needed) {
 		if (path !== '/setup') redirect(307, '/setup');

@@ -14,7 +14,7 @@ pub fn definitions() -> Vec<Command> {
     vec![
         CommandBuilder::new(
             CLIP,
-            "Download a video link and post it here",
+            "Download a video, audio, image or file link and post it here",
             CommandType::ChatInput,
         )
         .option(

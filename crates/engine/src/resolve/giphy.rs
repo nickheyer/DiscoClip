@@ -14,11 +14,11 @@ use url::Url;
 
 use super::page::{Page, leading_json};
 use super::{
-    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Variant,
+    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag, Variant,
     VariantKind, clean_title, essence, fetch, navigation_headers, probe_file,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "giphy";
 const SITE: &str = "https://giphy.com/";
@@ -327,6 +327,8 @@ impl Resolver for GiphyResolver {
                 "short links",
             ],
             formats: &["mp4", "mov", "gif"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Basic, Tag::Images],
             session: SessionSupport::None,
             examples: &[
                 "https://giphy.com/gifs/l0ExbnGIX9sMFS7PG",

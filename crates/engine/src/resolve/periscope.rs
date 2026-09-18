@@ -11,11 +11,11 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Page, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved,
-    Resolver, SessionSupport, SubtitleTrack, Variant, VariantKind, clean_title, fetch, fetch_ok,
-    hls, navigation_headers, status_error, util,
+    Resolver, SessionSupport, SubtitleTrack, Tag, Variant, VariantKind, clean_title, fetch,
+    fetch_ok, hls, navigation_headers, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::Container;
+use crate::media::{Container, MediaKind};
 
 pub const PLATFORM: &str = "periscope";
 /// The API the web player calls.
@@ -384,6 +384,8 @@ impl Resolver for PeriscopeResolver {
             hosts: &["periscope.tv", "pscp.tv"],
             features: &["broadcasts", "replays", "live", "user pages", "embeds"],
             formats: &["hls", "rtmp"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Live, Tag::Social],
             session: SessionSupport::None,
             examples: &[
                 "https://www.periscope.tv/LularoeHusbandMike/1mrGmgaXAVqxy",

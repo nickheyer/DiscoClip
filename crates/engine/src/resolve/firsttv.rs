@@ -20,10 +20,11 @@ use url::Url;
 use super::page::{Page, json_after, next_flight_data};
 use super::{
     MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved, Resolver,
-    SessionSupport, Variant, VariantKind, clean_title, fetch, fetch_ok, hls, navigation_headers,
+    SessionSupport, Tag, Variant, VariantKind, clean_title, fetch, fetch_ok, hls,
+    navigation_headers,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "1tv";
 const SITE: &str = "https://www.1tv.ru/";
@@ -641,6 +642,8 @@ impl Resolver for FirstTvResolver {
             hosts: &["1tv.ru", "sport1tv.ru"],
             features: &["shows", "sport", "news", "issues", "embeds", "live"],
             formats: &["hls", "mp4", "dash"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::News, Tag::Video, Tag::Live],
             session: SessionSupport::None,
             examples: &[
                 "https://www.1tv.ru/shows/dobroe-utro/pro-zdorove/vesennyaya-allergiya-dobroe-utro-fragment-vypuska-ot-07042016",

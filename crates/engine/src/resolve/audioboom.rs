@@ -9,11 +9,11 @@ use serde_json::Value;
 use url::Url;
 
 use super::{
-    MAX_PAGE, Page, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport,
+    MAX_PAGE, Page, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag,
     Variant, clean_title, fetch, navigation_headers, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container};
+use crate::media::{AudioCodec, Container, MediaKind};
 
 pub const PLATFORM: &str = "audioboom";
 
@@ -68,6 +68,8 @@ impl Resolver for AudioboomResolver {
             hosts: &["audioboom.com"],
             features: &["audio", "podcasts"],
             formats: &["mp3"],
+            media: &[MediaKind::Audio],
+            tags: &[Tag::Podcasts],
             session: SessionSupport::None,
             examples: &[
                 "https://audioboom.com/posts/7398103-asim-chaudhry",
@@ -106,10 +108,10 @@ impl Resolver for AudioboomResolver {
             .ok_or_else(|| ResolveError::NotFound(url.clone()))?;
         let mut variant = Variant::file(audio);
         variant.audio_only = true;
-        variant.container = Some(Container::Other("mp3".into()));
+        variant.container = Some(Container::Mp3);
         variant.audio = Some(AudioCodec::Mp3);
         variant.format_id = Some("audio".into());
-        let mut resolved = Resolved::new(PLATFORM);
+        let mut resolved = Resolved::of(PLATFORM, MediaKind::Audio);
         resolved.id = Some(id);
         resolved.title = clip["title"]
             .as_str()
@@ -245,6 +247,8 @@ mod tests {
         );
         assert_eq!(resolved.variants.len(), 1);
         assert!(resolved.variants[0].audio_only);
+        assert_eq!(resolved.media, MediaKind::Audio);
+        assert_eq!(resolved.variants[0].container, Some(Container::Mp3));
         assert_eq!(
             resolved.variants[0].url.as_str(),
             "https://audioboom.com/posts/7398103.mp3?modified=1&source=fb"

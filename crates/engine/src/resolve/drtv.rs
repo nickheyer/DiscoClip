@@ -13,10 +13,11 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved, Resolver,
-    SessionSupport, SubtitleFormat, SubtitleTrack, Variant, clean_title, fetch, geo, hls,
+    SessionSupport, SubtitleFormat, SubtitleTrack, Tag, Variant, clean_title, fetch, geo, hls,
     navigation_headers, page, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
+use crate::media::MediaKind;
 
 pub const PLATFORM: &str = "drtv";
 
@@ -668,6 +669,8 @@ impl Resolver for DrtvResolver {
             hosts: &["dr.dk", "dr-massive.com"],
             features: &["videos", "live", "seasons", "series"],
             formats: &["hls"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::News, Tag::Video, Tag::Live],
             session: SessionSupport::None,
             examples: &[
                 "https://www.dr.dk/drtv/se/frank-and-kastaniegaarden_71769",

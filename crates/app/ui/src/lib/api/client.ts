@@ -140,6 +140,44 @@ export async function request<T>(
 	throw error;
 }
 
+/**
+ * A request on a front end's behalf: cookies go along as always, the Origin the CSRF
+ * guard checks is the browser's own, but no admin CSRF token is sent and a 401 is the
+ * front end's to handle, never the admin app's.
+ */
+export async function publicRequest<T>(
+	method: Method,
+	path: string,
+	options: RequestOptions = {}
+): Promise<T> {
+	const headers: Record<string, string> = { Accept: 'application/json' };
+	let body: string | undefined;
+	if (options.body !== undefined) {
+		headers['Content-Type'] = 'application/json';
+		body = JSON.stringify(options.body);
+	}
+	let response: Response;
+	try {
+		response = await fetch(`/api${path}${buildQuery(options.query)}`, {
+			method,
+			headers,
+			body,
+			credentials: 'same-origin',
+			cache: 'no-store'
+		});
+	} catch {
+		throw new ApiError(0, 'the server could not be reached');
+	}
+	const parsed = await parseBody(response);
+	if (response.ok) return parsed as T;
+	const retryAfter = response.headers.get('retry-after');
+	throw new ApiError(
+		response.status,
+		errorMessage(response.status, parsed),
+		retryAfter && /^\d+$/.test(retryAfter) ? Number(retryAfter) : null
+	);
+}
+
 export const get = <T>(path: string, query?: Record<string, QueryValue>, quiet?: number[]) =>
 	request<T>('GET', path, { query, quiet });
 export const post = <T>(path: string, body?: unknown, quiet?: number[]) =>

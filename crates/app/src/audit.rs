@@ -143,10 +143,29 @@ pub enum Action {
     SessionImport,
     /// A platform's cookies removed.
     SessionClear,
+    ProfileCreate,
+    ProfileUpdate,
+    ProfileDelete,
+    /// A profile put in force at a scope.
+    ProfileAssign,
+    /// A profile taken off a scope.
+    ProfileUnassign,
+    FrontendCreate,
+    FrontendUpdate,
+    FrontendDelete,
+    /// A front end's shared secret replaced.
+    FrontendSecretSet,
+    /// A front end's shared secret removed.
+    FrontendSecretClear,
+    FrontendUserCreate,
+    FrontendUserPassword,
+    FrontendUserDelete,
+    /// Viewer sessions of a front end ended.
+    FrontendSessionsRevoke,
 }
 
 impl Action {
-    pub const ALL: [Action; 17] = [
+    pub const ALL: [Action; 31] = [
         Action::SettingsSet,
         Action::SettingsReset,
         Action::SettingsImport,
@@ -164,6 +183,20 @@ impl Action {
         Action::RuleDelete,
         Action::SessionImport,
         Action::SessionClear,
+        Action::ProfileCreate,
+        Action::ProfileUpdate,
+        Action::ProfileDelete,
+        Action::ProfileAssign,
+        Action::ProfileUnassign,
+        Action::FrontendCreate,
+        Action::FrontendUpdate,
+        Action::FrontendDelete,
+        Action::FrontendSecretSet,
+        Action::FrontendSecretClear,
+        Action::FrontendUserCreate,
+        Action::FrontendUserPassword,
+        Action::FrontendUserDelete,
+        Action::FrontendSessionsRevoke,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -185,6 +218,20 @@ impl Action {
             Action::RuleDelete => "rule.delete",
             Action::SessionImport => "session.import",
             Action::SessionClear => "session.clear",
+            Action::ProfileCreate => "profile.create",
+            Action::ProfileUpdate => "profile.update",
+            Action::ProfileDelete => "profile.delete",
+            Action::ProfileAssign => "profile.assign",
+            Action::ProfileUnassign => "profile.unassign",
+            Action::FrontendCreate => "frontend.create",
+            Action::FrontendUpdate => "frontend.update",
+            Action::FrontendDelete => "frontend.delete",
+            Action::FrontendSecretSet => "frontend.secret.set",
+            Action::FrontendSecretClear => "frontend.secret.clear",
+            Action::FrontendUserCreate => "frontend.user.create",
+            Action::FrontendUserPassword => "frontend.user.password",
+            Action::FrontendUserDelete => "frontend.user.delete",
+            Action::FrontendSessionsRevoke => "frontend.sessions.revoke",
         }
     }
 }
@@ -230,6 +277,10 @@ pub enum TargetKind {
     Rule,
     /// A platform's session, by the platform's id.
     Platform,
+    /// A profile, by its id.
+    Profile,
+    /// A front end, by its id.
+    Frontend,
 }
 
 impl TargetKind {
@@ -239,6 +290,8 @@ impl TargetKind {
             TargetKind::Application => "application",
             TargetKind::Rule => "rule",
             TargetKind::Platform => "platform",
+            TargetKind::Profile => "profile",
+            TargetKind::Frontend => "frontend",
         }
     }
 
@@ -248,6 +301,8 @@ impl TargetKind {
             "application" => Some(TargetKind::Application),
             "rule" => Some(TargetKind::Rule),
             "platform" => Some(TargetKind::Platform),
+            "profile" => Some(TargetKind::Profile),
+            "frontend" => Some(TargetKind::Frontend),
             _ => None,
         }
     }
@@ -301,6 +356,22 @@ impl Target {
             kind: TargetKind::Platform,
             id: id.to_string(),
             name: None,
+        }
+    }
+
+    pub fn profile(id: impl std::fmt::Display, name: &str) -> Self {
+        Self {
+            kind: TargetKind::Profile,
+            id: id.to_string(),
+            name: Some(name.to_string()),
+        }
+    }
+
+    pub fn frontend(id: impl std::fmt::Display, slug: &str) -> Self {
+        Self {
+            kind: TargetKind::Frontend,
+            id: id.to_string(),
+            name: Some(slug.to_string()),
         }
     }
 }

@@ -9,11 +9,11 @@ use regex::Regex;
 use url::Url;
 
 use super::{
-    MAX_PAGE, Page, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport,
+    MAX_PAGE, Page, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag,
     Variant, clean_title, fetch, hls, navigation_headers, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container};
+use crate::media::{AudioCodec, Container, MediaKind};
 
 pub const PLATFORM: &str = "dw";
 
@@ -174,6 +174,8 @@ impl Resolver for DwResolver {
             hosts: &["dw.com"],
             features: &["videos", "audio"],
             formats: &["hls", "mp3"],
+            media: &[MediaKind::Video, MediaKind::Audio],
+            tags: &[Tag::News, Tag::Podcasts],
             session: SessionSupport::None,
             examples: &[
                 "https://www.dw.com/en/intelligent-light/video-19112290",
@@ -277,7 +279,10 @@ impl Resolver for DwResolver {
             let mut variant = Variant::file(file);
             variant.audio_only = matches!(extension.as_str(), "mp3" | "m4a" | "aac" | "ogg");
             if variant.audio_only {
-                variant.container = Some(Container::Other(extension.clone()));
+                variant.container = Some(
+                    Container::from_extension(&extension)
+                        .unwrap_or_else(|| Container::Other(extension.clone())),
+                );
                 variant.audio = Some(if extension == "mp3" {
                     AudioCodec::Mp3
                 } else {
@@ -291,6 +296,10 @@ impl Resolver for DwResolver {
         }
         if resolved.variants.is_empty() {
             return Err(failure.unwrap_or_else(|| ResolveError::NotFound(url.clone())));
+        }
+        // An audio page offers its MP3 and nothing to watch; a video page its streams.
+        if resolved.variants.iter().all(|v| v.audio_only) {
+            resolved.media = MediaKind::Audio;
         }
         resolved.id = Some(id);
         resolved.title = title;
@@ -407,6 +416,7 @@ mod tests {
         );
         assert_eq!(resolved.variants.len(), 1);
         assert_eq!(resolved.variants[0].height, Some(720));
+        assert_eq!(resolved.media, MediaKind::Video);
         assert!(matches!(
             resolver
                 .resolve(&Url::parse("https://www.dw.com/en/gone/video-1").unwrap())
@@ -414,5 +424,42 @@ mod tests {
                 .unwrap_err(),
             ResolveError::NotFound(_)
         ));
+    }
+
+    #[tokio::test]
+    async fn audio_pages_resolve_to_their_mp3() {
+        let page = concat!(
+            r#"<html><head><meta property="og:title" content="AfD: Anatomy of a takeover"><script type="application/ld+json">{"@type":"AudioObject","name":"AfD: Anatomy of a takeover","description":"Inside Europe looks at the AfD.","thumbnailUrl":"https://static.dw.com/image/78271080_605.jpg","uploadDate":"2025-09-05T10:00:00Z","duration":"PT55M2S","contentUrl":"https://radiodownloaddw-a.akamaihd.net/Events/dwelle/dira/mp3/eng/A4F84CAC_2.mp3"}</script></head>"#,
+            r#"<body><script>window.__APP_STATE__={"x":{"mp3Src":"https:\/\/radiodownloaddw-a.akamaihd.net\/Events\/dwelle\/dira\/mp3\/eng\/A4F84CAC_2.mp3","durationIso8601":"PT55M2S"}};</script></body></html>"#
+        );
+        let mut fixture = Fixture::new(PLATFORM, None);
+        fixture.exchanges.push(get(
+            "https://www.dw.com/en/afd-anatomy-of-a-takeover/audio-78271082",
+            200,
+            "text/html",
+            page.into(),
+        ));
+        let resolver = DwResolver::new(Http::replay(fixture));
+        let url =
+            Url::parse("https://www.dw.com/en/afd-anatomy-of-a-takeover/audio-78271082").unwrap();
+        assert!(resolver.matches(&url));
+        let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
+        assert_eq!(resolved.media, MediaKind::Audio);
+        assert_eq!(resolved.id.as_deref(), Some("78271082"));
+        assert_eq!(
+            resolved.title.as_deref(),
+            Some("AfD: Anatomy of a takeover")
+        );
+        assert_eq!(resolved.duration, Some(Duration::from_secs(3302)));
+        assert_eq!(resolved.variants.len(), 1);
+        let audio = &resolved.variants[0];
+        assert!(audio.audio_only);
+        assert_eq!(audio.container, Some(Container::Mp3));
+        assert_eq!(audio.audio, Some(AudioCodec::Mp3));
+        assert_eq!(audio.format_id.as_deref(), Some("http-mp3"));
+        assert_eq!(
+            audio.url.as_str(),
+            "https://radiodownloaddw-a.akamaihd.net/Events/dwelle/dira/mp3/eng/A4F84CAC_2.mp3"
+        );
     }
 }

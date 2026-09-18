@@ -1,14 +1,44 @@
 //! A guild as the application's bot sees it: its channels with the rule watching each,
 //! its roles, and its members by name or by id, for choosing what a rule names.
 
+use std::future::IntoFuture;
+use std::sync::Arc;
+use std::time::Duration;
+
 use axum::Json;
 use axum::extract::{Path, Query, State};
+use discoclip_bot::{Directory, MemberInfo};
 use serde::{Deserialize, Serialize};
 use twilight_http::Client;
 use twilight_model::channel::ChannelType;
 use twilight_model::guild::Member;
 use twilight_model::id::Id;
 use twilight_model::id::marker::GuildMarker;
+
+/// How long a request may wait on Discord's REST API before the app answers that Discord
+/// is rate limiting the bot, rather than holding the browser.
+pub(super) const REST_WAIT: Duration = Duration::from_secs(8);
+
+/// Runs a REST call under [`REST_WAIT`]; a call that does not come back in time is
+/// answered with 503 and a retry hint, and the browser is free to try again.
+pub(super) async fn bounded<T, F>(what: &str, call: F) -> Result<T, ApiError>
+where
+    F: IntoFuture<Output = T>,
+{
+    bounded_for(REST_WAIT, what, call).await
+}
+
+async fn bounded_for<T, F>(wait: Duration, what: &str, call: F) -> Result<T, ApiError>
+where
+    F: IntoFuture<Output = T>,
+{
+    tokio::time::timeout(wait, call).await.map_err(|_| {
+        ApiError::Unavailable(format!(
+            "Discord is rate limiting the bot; {what} did not come back within {}s, try again shortly",
+            wait.as_secs()
+        ))
+    })
+}
 
 use super::AppState;
 use super::auth::{Auth, Identity, parse_id};
@@ -95,13 +125,33 @@ impl From<Member> for GuildMember {
     }
 }
 
+impl From<MemberInfo> for GuildMember {
+    fn from(member: MemberInfo) -> Self {
+        GuildMember {
+            id: member.id.to_string(),
+            username: member.username,
+            display_name: member.display_name,
+            nick: member.nick,
+            avatar: member.avatar,
+            bot: member.bot,
+        }
+    }
+}
+
+/// The bot of an application: its REST client and what its gateway has told it.
+pub(super) struct BotView {
+    pub http: Arc<Client>,
+    pub directory: Arc<Directory>,
+    pub guild: Id<GuildMarker>,
+}
+
 /// The bot of `id`, and `guild` as an id, once `identity` may see the guild's rules.
 async fn bot_for(
     state: &AppState,
     identity: &Identity,
     id: &str,
     guild: &str,
-) -> Result<(std::sync::Arc<Client>, Id<GuildMarker>), ApiError> {
+) -> Result<BotView, ApiError> {
     let id: ApplicationId = parse_id(id)?;
     may_edit(state, identity, guild).await?;
     state
@@ -118,7 +168,23 @@ async fn bot_for(
         .bots
         .client(id)
         .ok_or_else(|| ApiError::Conflict("the application's bot is not running".into()))?;
-    Ok((http, guild_id))
+    let directory = state
+        .bots
+        .directory(id)
+        .ok_or_else(|| ApiError::Conflict("the application's bot is not running".into()))?;
+    Ok(BotView {
+        http,
+        directory,
+        guild: guild_id,
+    })
+}
+
+/// 400 when the bot's gateway has not delivered `guild`: the bot is not in it, or has
+/// not finished connecting.
+fn not_in_guild(what: &str, guild: &str) -> ApiError {
+    ApiError::BadRequest(format!(
+        "the bot cannot see {what} of guild {guild}: it is not in the guild, or has not loaded it yet"
+    ))
 }
 
 /// A Discord answer the bot could not get: the guild is out of reach, or Discord failed.
@@ -141,16 +207,13 @@ pub async fn list_channels(
     Auth(identity): Auth,
     Path((id, guild)): Path<(String, String)>,
 ) -> Result<Json<Vec<GuildChannel>>, ApiError> {
-    let (http, guild_id) = bot_for(&state, &identity, &id, &guild).await?;
+    let bot = bot_for(&state, &identity, &id, &guild).await?;
     let application: ApplicationId = parse_id(&id)?;
     let rules = state.rules.list_for_guild(application, &guild).await?;
-    let channels = http
-        .guild_channels(guild_id)
-        .await
-        .map_err(|e| discord_error("the channels", &guild, e))?
-        .models()
-        .await
-        .map_err(|e| ApiError::BadGateway(format!("Discord answered unexpectedly: {e}")))?;
+    let channels = bot
+        .directory
+        .channels(bot.guild)
+        .ok_or_else(|| not_in_guild("the channels", &guild))?;
     let mut listed: Vec<GuildChannel> = channels
         .into_iter()
         .map(|channel| {
@@ -161,10 +224,10 @@ pub async fn list_channels(
                     .find(|rule| rule.input.channel_id == id)
                     .map(|rule| rule.id),
                 id,
-                name: channel.name.unwrap_or_default(),
+                name: channel.name,
                 kind: channel.kind.into(),
                 parent_id: channel.parent_id.map(|p| p.to_string()),
-                position: channel.position.unwrap_or(0),
+                position: channel.position,
             }
         })
         .collect();
@@ -183,20 +246,17 @@ pub async fn list_roles(
     Auth(identity): Auth,
     Path((id, guild)): Path<(String, String)>,
 ) -> Result<Json<Vec<GuildRole>>, ApiError> {
-    let (http, guild_id) = bot_for(&state, &identity, &id, &guild).await?;
-    let roles = http
-        .roles(guild_id)
-        .await
-        .map_err(|e| discord_error("the roles", &guild, e))?
-        .models()
-        .await
-        .map_err(|e| ApiError::BadGateway(format!("Discord answered unexpectedly: {e}")))?;
+    let bot = bot_for(&state, &identity, &id, &guild).await?;
+    let roles = bot
+        .directory
+        .roles(bot.guild)
+        .ok_or_else(|| not_in_guild("the roles", &guild))?;
     let mut listed: Vec<GuildRole> = roles
         .into_iter()
         .map(|role| GuildRole {
             id: role.id.to_string(),
             name: role.name,
-            color: role.colors.primary_color,
+            color: role.color,
             position: role.position,
             managed: role.managed,
         })
@@ -230,15 +290,22 @@ pub async fn search_members(
     if query.limit == 0 || query.limit > 100 {
         return Err(ApiError::BadRequest("limit is 1 to 100".into()));
     }
-    let (http, guild_id) = bot_for(&state, &identity, &id, &guild).await?;
-    let members = http
-        .search_guild_members(guild_id, q)
-        .limit(query.limit)
-        .await
-        .map_err(|e| discord_error("the members", &guild, e))?
-        .models()
-        .await
-        .map_err(|e| ApiError::BadGateway(format!("Discord answered unexpectedly: {e}")))?;
+    let bot = bot_for(&state, &identity, &id, &guild).await?;
+    if !bot.directory.has_guild(bot.guild) {
+        return Err(not_in_guild("the members", &guild));
+    }
+    // Searching by name is the one lookup the gateway cannot answer.
+    let members = bounded("the member search", async {
+        bot.http
+            .search_guild_members(bot.guild, q)
+            .limit(query.limit)
+            .await
+    })
+    .await?
+    .map_err(|e| discord_error("the members", &guild, e))?
+    .models()
+    .await
+    .map_err(|e| ApiError::BadGateway(format!("Discord answered unexpectedly: {e}")))?;
     Ok(Json(members.into_iter().map(GuildMember::from).collect()))
 }
 
@@ -248,24 +315,33 @@ pub async fn get_member(
     Auth(identity): Auth,
     Path((id, guild, user)): Path<(String, String, String)>,
 ) -> Result<Json<GuildMember>, ApiError> {
-    let (http, guild_id) = bot_for(&state, &identity, &id, &guild).await?;
+    let bot = bot_for(&state, &identity, &id, &guild).await?;
     let user_id = user
         .parse::<u64>()
         .ok()
         .and_then(Id::new_checked)
         .ok_or_else(|| ApiError::BadRequest(format!("user {user:?} is not a Discord id")))?;
-    let member = http
-        .guild_member(guild_id, user_id)
-        .await
-        .map_err(|e| match e.kind() {
-            twilight_http::error::ErrorType::Response { status, .. } if status.get() == 404 => {
-                ApiError::NotFound
-            }
-            _ => discord_error("a member", &guild, e),
-        })?
-        .model()
-        .await
-        .map_err(|e| ApiError::BadGateway(format!("Discord answered unexpectedly: {e}")))?;
+    // A member the bot has seen speak is known already; anyone else is asked for.
+    if let Some(member) = bot.directory.member(bot.guild, user_id) {
+        return Ok(Json(member.into()));
+    }
+    if !bot.directory.has_guild(bot.guild) {
+        return Err(not_in_guild("a member", &guild));
+    }
+    let member = bounded(
+        "the member lookup",
+        bot.http.guild_member(bot.guild, user_id),
+    )
+    .await?
+    .map_err(|e| match e.kind() {
+        twilight_http::error::ErrorType::Response { status, .. } if status.get() == 404 => {
+            ApiError::NotFound
+        }
+        _ => discord_error("a member", &guild, e),
+    })?
+    .model()
+    .await
+    .map_err(|e| ApiError::BadGateway(format!("Discord answered unexpectedly: {e}")))?;
     Ok(Json(member.into()))
 }
 
@@ -273,6 +349,30 @@ pub async fn get_member(
 mod tests {
     use axum::http::StatusCode;
     use serde_json::json;
+
+    #[tokio::test]
+    async fn a_lookup_stuck_behind_the_rate_limit_is_given_up_with_503() {
+        let stuck = super::bounded_for(
+            std::time::Duration::from_millis(20),
+            "the lookup",
+            std::future::pending::<()>(),
+        )
+        .await;
+        match stuck {
+            Err(super::ApiError::Unavailable(message)) => {
+                assert!(message.contains("rate limiting"), "{message}");
+            }
+            other => panic!("expected 503, got {other:?}"),
+        }
+        let quick = super::bounded_for(
+            std::time::Duration::from_millis(20),
+            "the lookup",
+            std::future::ready(7),
+        )
+        .await
+        .unwrap();
+        assert_eq!(quick, 7);
+    }
 
     use crate::oauth::Registry;
     use crate::settings::WebConfig;
@@ -333,8 +433,17 @@ mod tests {
             .post(&format!("{base}/rules"), json!({"channel_id": "11"}))
             .await;
 
-        let (status, body) = admin.get(&format!("{base}/channels")).await;
-        assert_eq!(status, StatusCode::OK, "{body}");
+        // The guild's channels arrive over the gateway just after the bot connects.
+        let body = wait_for("the guild to load", || {
+            let mut client = Client::new(&app);
+            client.cookie = admin.cookie.clone();
+            let path = format!("{base}/channels");
+            async move {
+                let (status, body) = client.get(&path).await;
+                (status == StatusCode::OK).then_some(body)
+            }
+        })
+        .await;
         let channels = body.as_array().unwrap();
         assert_eq!(channels.len(), 7);
         let by_id = |cid: &str| channels.iter().find(|c| c["id"] == cid).unwrap().clone();

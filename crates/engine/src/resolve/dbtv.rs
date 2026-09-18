@@ -8,8 +8,9 @@ use async_trait::async_trait;
 use regex::Regex;
 use url::Url;
 
-use super::{Platform, Resolution, ResolveError, Resolver, SessionSupport, jwplayer};
+use super::{Platform, Resolution, ResolveError, Resolver, SessionSupport, Tag, jwplayer};
 use crate::http::Http;
+use crate::media::MediaKind;
 
 pub const PLATFORM: &str = "dbtv";
 
@@ -78,6 +79,8 @@ impl Resolver for DbtvResolver {
             hosts: &["dagbladet.no"],
             features: &["videos", "youtube links"],
             formats: &["hls", "mp4"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::News],
             session: SessionSupport::None,
             examples: &["https://www.dagbladet.no/video/ranet-bank-med-chilipulver/J12GzewM"],
         }

@@ -5,12 +5,15 @@ export {
 	audit,
 	auth,
 	channels,
+	front,
+	frontends,
 	guilds,
 	health,
 	jobs,
 	logs,
 	metrics,
 	platforms,
+	profiles,
 	providers,
 	roles,
 	rules,
@@ -18,3 +21,4 @@ export {
 	tokens,
 	users
 } from './endpoints';
+export { scopeKey } from './endpoints';

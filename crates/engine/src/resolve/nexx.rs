@@ -12,11 +12,11 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Page, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport,
-    SubtitleFormat, SubtitleTrack, Variant, clean_title, dash, fetch, fetch_ok, hls, ism,
+    SubtitleFormat, SubtitleTrack, Tag, Variant, clean_title, dash, fetch, fetch_ok, hls, ism,
     navigation_headers, path_extension, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "nexx";
 
@@ -921,6 +921,8 @@ impl Resolver for NexxResolver {
             hosts: &["nexx.cloud", "nexxcdn.com"],
             features: &["videos", "embeds"],
             formats: &["mp4", "webm", "hls", "dash", "ism"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Players],
             session: SessionSupport::None,
             examples: &[
                 "https://embed.nexx.cloud/741/video/71269984GMIR7QA",

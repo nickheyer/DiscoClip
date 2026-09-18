@@ -10,11 +10,11 @@ use serde_json::Value;
 use url::Url;
 
 use super::{
-    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Variant,
+    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag, Variant,
     VariantKind, clean_title, fetch,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "streamable";
 const API: &str = "https://ajax.streamable.com/videos/";
@@ -134,6 +134,8 @@ impl Resolver for StreamableResolver {
             hosts: &["streamable.com"],
             features: &["videos", "embeds", "share links"],
             formats: &["mp4"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Basic, Tag::Video],
             session: SessionSupport::None,
             examples: &[
                 "https://streamable.com/moo",

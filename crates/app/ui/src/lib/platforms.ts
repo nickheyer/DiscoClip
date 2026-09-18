@@ -1,6 +1,42 @@
 // What the platforms page says about a platform's fixtures and sessions.
 
-import type { FixtureStatus, PlatformCoverage, SessionSupport } from './api/types';
+import type {
+	Found,
+	FixtureStatus,
+	MediaKind,
+	PlatformCoverage,
+	PlatformTag,
+	SessionSupport
+} from './api/types';
+import { MEDIA_LABELS } from './api/types';
+import { pluralize } from './format';
+
+export const TAG_LABELS: Record<PlatformTag, { label: string; hint: string }> = {
+	basic: { label: 'Basic', hint: 'The mainstream platforms most links in a chat point at.' },
+	nsfw: { label: 'Adult', hint: 'Adult content, or a site that carries it as a matter of course.' },
+	news: { label: 'News', hint: "News outlets and broadcasters' news programmes." },
+	social: { label: 'Social', hint: 'Social networks and forums: posts by people.' },
+	video: { label: 'Video', hint: 'General video sharing and hosting.' },
+	music: { label: 'Music', hint: 'Music: tracks, albums, mixes.' },
+	podcasts: { label: 'Podcasts', hint: 'Podcasts and spoken audio.' },
+	live: { label: 'Live', hint: 'Live streaming, recordings of streams included.' },
+	files: { label: 'Files', hint: 'File hosts and archives.' },
+	images: { label: 'Images', hint: 'GIF and image hosts.' },
+	players: { label: 'Players', hint: 'Embedded players and delivery services other sites build on.' }
+};
+
+export const MEDIA_HINTS: Record<MediaKind, string> = {
+	video: 'Moving pictures, with or without sound; animated GIFs count.',
+	audio: 'Sound alone: tracks, podcast episodes, sound bites.',
+	image: 'Still pictures.',
+	file: 'Any other file: documents, archives, binaries.'
+};
+
+/** What a fixture link resolved to, in a few words: "video · 3 variants", "playlist · 20 entries". */
+export function describeFound(found: Found): string {
+	if (found.kind === 'playlist') return `playlist · ${pluralize(found.entries, 'entry', 'entries')}`;
+	return `${MEDIA_LABELS[found.media].toLowerCase()} · ${pluralize(found.variants, 'variant')}`;
+}
 
 export const SESSION_LABELS: Record<SessionSupport, { label: string; hint: string }> = {
 	none: { label: 'No account', hint: 'The platform is read without an account.' },

@@ -9,6 +9,7 @@ use uuid::Uuid;
 
 use crate::config::WatchRule;
 use crate::origin::DiscordOrigin;
+use crate::profile::{PlatformLookup, ProfileSource, turned_off};
 
 /// Where a running bot finds the rule for a channel, as rules are edited while it runs.
 pub trait RuleSource: Send + Sync {
@@ -16,15 +17,27 @@ pub trait RuleSource: Send + Sync {
 }
 
 /// Turns messages in watched channels into engine requests. A channel without a rule is
-/// not watched.
+/// not watched, and a link that only turned-off platforms would take is left alone.
 pub struct Watcher {
     application: Uuid,
     rules: Arc<dyn RuleSource>,
+    profiles: Arc<dyn ProfileSource>,
+    platforms: Arc<dyn PlatformLookup>,
 }
 
 impl Watcher {
-    pub fn new(application: Uuid, rules: Arc<dyn RuleSource>) -> Self {
-        Self { application, rules }
+    pub fn new(
+        application: Uuid,
+        rules: Arc<dyn RuleSource>,
+        profiles: Arc<dyn ProfileSource>,
+        platforms: Arc<dyn PlatformLookup>,
+    ) -> Self {
+        Self {
+            application,
+            rules,
+            profiles,
+            platforms,
+        }
     }
 
     pub fn requests(&self, message: &Message) -> Vec<Request> {
@@ -37,6 +50,11 @@ impl Watcher {
         if !author_allowed(&rule, message) {
             return Vec::new();
         }
+        let disabled = self.profiles.disabled_platforms(
+            message.guild_id,
+            Some(message.channel_id),
+            Some(message.author.id),
+        );
         let origin = DiscordOrigin {
             application: self.application,
             guild: message.guild_id,
@@ -58,11 +76,21 @@ impl Watcher {
                 url.host_str()
                     .is_some_and(|h| host_allowed(&rule.allow_hosts, h))
             })
+            .filter(|url| {
+                match turned_off(&self.platforms.resolvers_for(url), &disabled) {
+                    Some(platform) => {
+                        tracing::debug!(%url, platform, channel = %message.channel_id, "link left alone: platform turned off here");
+                        false
+                    }
+                    None => true,
+                }
+            })
             .map(|url| {
                 let mut request = Request::new(origin.clone(), url);
                 request.destination = destination.clone();
                 request.limits = limits;
                 request.submitted_by = submitted_by.clone();
+                request.disabled_platforms = disabled.clone();
                 request
             })
             .collect()
@@ -118,6 +146,37 @@ mod tests {
         }
     }
 
+    /// Platforms turned off everywhere, whatever the scope.
+    struct Off(Vec<String>);
+
+    impl ProfileSource for Off {
+        fn disabled_platforms(
+            &self,
+            _: Option<Id<twilight_model::id::marker::GuildMarker>>,
+            _: Option<Id<ChannelMarker>>,
+            _: Option<Id<twilight_model::id::marker::UserMarker>>,
+        ) -> Vec<String> {
+            self.0.clone()
+        }
+    }
+
+    /// Every link is taken by the resolver named for its host's first label, then `web`.
+    struct ByHost;
+
+    impl PlatformLookup for ByHost {
+        fn resolvers_for(&self, url: &url::Url) -> Vec<&'static str> {
+            let host = url.host_str().unwrap_or_default();
+            let mut takers: Vec<&'static str> = Vec::new();
+            if host.contains("reddit") {
+                takers.push("reddit");
+            } else if host.contains("youtube") {
+                takers.push("youtube");
+            }
+            takers.push("web");
+            takers
+        }
+    }
+
     fn rule(channel: u64, hosts: &[&str]) -> WatchRule {
         let mut rule = WatchRule::for_channel(Id::new(channel));
         rule.allow_hosts = hosts.iter().map(|h| h.to_string()).collect();
@@ -168,12 +227,35 @@ mod tests {
     }
 
     fn watcher(rules: Vec<WatchRule>) -> Watcher {
+        watcher_with(rules, Vec::new())
+    }
+
+    fn watcher_with(rules: Vec<WatchRule>, off: Vec<&str>) -> Watcher {
         Watcher::new(
             Uuid::from_u128(1),
             Arc::new(Rules(
                 rules.into_iter().map(|r| (r.channel.get(), r)).collect(),
             )),
+            Arc::new(Off(off.into_iter().map(String::from).collect())),
+            Arc::new(ByHost),
         )
+    }
+
+    #[test]
+    fn links_only_turned_off_platforms_take_are_left_alone() {
+        let watcher = watcher_with(vec![rule(1, &[])], vec!["youtube", "web"]);
+        let picked = watcher.requests(&message(
+            1,
+            9,
+            &[],
+            "https://youtube.com/w and https://reddit.com/r and https://other.example/p",
+        ));
+        assert_eq!(picked.len(), 1);
+        assert_eq!(picked[0].url.as_str(), "https://reddit.com/r");
+        assert_eq!(
+            picked[0].disabled_platforms,
+            vec!["youtube".to_string(), "web".to_string()]
+        );
     }
 
     #[test]
@@ -194,6 +276,7 @@ mod tests {
         assert_eq!(picked[0].url.as_str(), "https://old.reddit.com/r/v");
         assert!(picked[0].destination.is_none());
         assert_eq!(picked[0].limits, RequestLimits::default());
+        assert!(picked[0].disabled_platforms.is_empty());
         assert!(
             picked[0]
                 .origin

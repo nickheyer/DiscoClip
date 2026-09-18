@@ -11,11 +11,11 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved, Resolver,
-    SessionSupport, SubtitleFormat, SubtitleTrack, Variant, clean_title, fetch, navigation_headers,
-    status_error, util,
+    SessionSupport, SubtitleFormat, SubtitleTrack, Tag, Variant, clean_title, fetch,
+    navigation_headers, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "ccc";
 const API: &str = "https://media.ccc.de/public/";
@@ -110,7 +110,11 @@ fn recording_variant(recording: &Value) -> Option<Variant> {
         } else {
             "mp3"
         };
-        variant.container = Some(Container::Other(codec.to_string()));
+        variant.container = Some(if codec == "opus" {
+            Container::Opus
+        } else {
+            Container::Mp3
+        });
         variant.audio = Some(if codec == "opus" {
             AudioCodec::Opus
         } else {
@@ -283,8 +287,10 @@ impl Resolver for CccResolver {
             id: PLATFORM,
             name: "media.ccc.de",
             hosts: &["media.ccc.de"],
-            features: &["videos", "audio", "conferences"],
+            features: &["videos", "audio downloads", "conferences"],
             formats: &["mp4", "webm", "mp3", "opus"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Video],
             session: SessionSupport::None,
             examples: &[
                 "https://media.ccc.de/v/39c3-schlechte-karten-it-sicherheit-im-jahr-null-der-epa-fur-alle",
@@ -425,6 +431,8 @@ mod tests {
         let audio = &resolved.variants[2];
         assert!(audio.audio_only);
         assert_eq!(audio.audio, Some(AudioCodec::Mp3));
+        assert_eq!(audio.container, Some(Container::Mp3));
+        assert_eq!(resolved.media, MediaKind::Video);
         assert_eq!(resolved.subtitles.len(), 1);
         assert_eq!(resolved.subtitles[0].language, "eng");
         assert_eq!(resolved.subtitles[0].format, SubtitleFormat::Srt);

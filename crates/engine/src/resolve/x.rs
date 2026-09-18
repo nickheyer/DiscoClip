@@ -11,10 +11,10 @@ use url::Url;
 use super::twitter::{TwitterResolver, status_id};
 use super::{
     MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionCheck, SessionSupport,
-    Variant, VariantKind, clean_title,
+    Tag, Variant, VariantKind, clean_title,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "twitter";
 /// The bearer token the web app itself carries.
@@ -275,6 +275,8 @@ impl Resolver for XResolver {
             ],
             features: &["videos", "gifs", "sensitive media with a session"],
             formats: &["mp4", "hls"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Basic, Tag::Social],
             session: SessionSupport::Optional,
             examples: &["https://x.com/SpaceX/status/1732824684683784516"],
         }

@@ -12,10 +12,10 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved, Resolver,
-    SessionSupport, Variant, check_status, clean_title, fetch_ok, hls, path_extension, util,
+    SessionSupport, Tag, Variant, check_status, clean_title, fetch_ok, hls, path_extension, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "banbye";
 const API: &str = "https://api.banbye.com";
@@ -264,6 +264,8 @@ impl Resolver for BanByeResolver {
             hosts: &["banbye.com"],
             features: &["videos", "channels", "playlists"],
             formats: &["mp4", "hls"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Video],
             session: SessionSupport::None,
             examples: &[
                 "https://banbye.com/watch/v_ytfmvkVYLE8T",

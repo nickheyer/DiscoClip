@@ -14,11 +14,11 @@ use url::Url;
 
 use super::page::Page;
 use super::{
-    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Variant,
+    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag, Variant,
     VariantKind, clean_title, essence, fetch, navigation_headers, probe_file,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "tenor";
 const SITE: &str = "https://tenor.com/";
@@ -299,6 +299,8 @@ impl Resolver for TenorResolver {
             hosts: &["tenor.com", "media.tenor.com", "c.tenor.com"],
             features: &["gifs", "short links", "media links", "localized pages"],
             formats: &["mp4", "webm", "gif"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Basic, Tag::Images],
             session: SessionSupport::None,
             examples: &[
                 "https://tenor.com/view/banana-cat-gif-2736737110227615394",

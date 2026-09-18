@@ -15,11 +15,11 @@ use regex::Regex;
 use url::Url;
 
 use super::{
-    MAX_PAGE, Page, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport,
+    MAX_PAGE, Page, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag,
     Variant, clean_title, fetch, hls, navigation_headers, page, path_extension, status_error, util,
 };
 use crate::http::{BROWSER_UA, EMBED_BOT_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "medialaan";
 
@@ -247,6 +247,8 @@ impl Resolver for MedialaanResolver {
             hosts: HOSTS,
             features: &["videos", "live", "embeds"],
             formats: &["mp4", "hls"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::News, Tag::Video, Tag::Live],
             session: SessionSupport::None,
             examples: &[
                 "https://www.bndestem.nl/video/de-terugkeer-van-ally-de-aap-en-wie-vertrekt-er-nog-bij-nac~p193993",

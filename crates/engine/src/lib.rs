@@ -22,7 +22,9 @@ pub mod transcode;
 pub use reqwest;
 pub use rusqlite;
 
-pub use config::{EngineConfig, Limits, LiveConfig, PlaylistConfig, RetentionConfig};
+pub use config::{
+    DownloadConfig, EngineConfig, Limits, LiveConfig, PlaylistConfig, RetentionConfig,
+};
 pub use engine::{
     CancelError, DeleteError, Engine, EngineBuilder, EngineError, EngineHandle, PlatformSession,
     RetryError, SubmitError, Utilisation,

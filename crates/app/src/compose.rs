@@ -25,9 +25,11 @@ use crate::config;
 use crate::cookies::CookieStore;
 use crate::discord::BotGuildStore;
 use crate::fixtures::{FixtureRunner, FixtureStore};
+use crate::frontends::FrontendStore;
 use crate::local::{LocalPublisher, SharedLocalConfig};
 use crate::migrations;
 use crate::oauth::Registry;
+use crate::profiles::ProfileStore;
 use crate::rules::RuleStore;
 use crate::secrets::{KEY_FILE, Keyring, SecretError};
 use crate::settings::{self, Settings, SettingsStore};
@@ -56,6 +58,10 @@ enum Error {
     Application(#[from] crate::applications::ApplicationError),
     #[error(transparent)]
     Rules(#[from] crate::rules::RuleError),
+    #[error(transparent)]
+    Profiles(#[from] crate::profiles::ProfileError),
+    #[error(transparent)]
+    Frontends(#[from] crate::frontends::FrontendError),
     #[error(transparent)]
     Cookies(#[from] crate::cookies::CookieError),
 }
@@ -204,11 +210,37 @@ async fn serve(startup: Startup) -> Result<ExitCode, Error> {
 
     let endpoints = DiscordEndpoints::default();
     let clients: Clients = Clients::default();
+    let directories = discoclip_bot::Directories::default();
     let (mut builder, ffmpeg) = builder(&settings, store.clone()).await?;
     let local: SharedLocalConfig = Arc::new(std::sync::RwLock::new(settings.local.clone()));
+    // The stores the publishers read are built before the engine, from the resolvers
+    // it will carry.
+    let profiles = ProfileStore::new(
+        store.clone(),
+        builder
+            .platforms()
+            .into_iter()
+            .map(|p| (p.id, p.tags))
+            .collect(),
+    );
+    let loaded = profiles.load().await?;
+    tracing::info!(profiles = loaded, "profiles loaded");
+    let public_url = Arc::new(std::sync::RwLock::new(settings.web.public_url.clone()));
+    let frontends = FrontendStore::new(
+        store.clone(),
+        keyring.clone(),
+        profiles.cache(),
+        public_url.clone(),
+    );
+    let loaded = frontends.load().await?;
+    tracing::info!(frontends = loaded, "front ends loaded");
     builder = builder
         .publisher(LocalPublisher::new(local.clone()))
-        .publisher(DiscordPublisher::new(clients.clone()));
+        .publisher(DiscordPublisher::new(
+            clients.clone(),
+            directories.clone(),
+            Arc::new(frontends.cache()),
+        ));
     let engine = builder.build()?;
     let handle = engine.handle();
     let jars = CookieStore::new(store.clone(), keyring.clone())
@@ -233,9 +265,13 @@ async fn serve(startup: Startup) -> Result<ExitCode, Error> {
     let bots = Arc::new(BotManager::new(
         handle.clone(),
         endpoints.clone(),
-        clients,
-        BotGuildStore::new(store.clone()),
-        rules.cache(),
+        crate::bots::BotServices {
+            clients,
+            directories,
+            guilds: BotGuildStore::new(store.clone()),
+            rules: rules.cache(),
+            profiles: profiles.cache(),
+        },
         shutdown.clone(),
     ));
     let applications = ApplicationStore::new(store.clone(), keyring.clone())
@@ -269,6 +305,9 @@ async fn serve(startup: Startup) -> Result<ExitCode, Error> {
             keyring,
             bots: bots.clone(),
             rules,
+            profiles,
+            frontends,
+            public_url,
             discord: endpoints,
             engine: handle,
             fixtures,

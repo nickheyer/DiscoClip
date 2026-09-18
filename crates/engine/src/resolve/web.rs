@@ -1,7 +1,10 @@
-//! Generic resolver for direct media files, HLS, DASH and Smooth Streaming manifests, and
-//! web pages that advertise their video through standard metadata, `<video>` tags, or an
-//! embedded player the registry knows. A page reached through a redirect to another host,
-//! as short links are, is handed back to the registry so the host's own resolver takes it.
+//! Generic resolver for direct media files (video, audio and images), HLS, DASH and
+//! Smooth Streaming manifests, and web pages that advertise their video through standard
+//! metadata, `<video>` tags, or an embedded player the registry knows. A page reached
+//! through a redirect to another host, as short links are, is handed back to the registry
+//! so the host's own resolver takes it. A link to any other kind of file, a document or
+//! an archive on an arbitrary host, is refused as unsupported: only the hosts with a
+//! resolver of their own serve such files.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -15,11 +18,11 @@ use url::Url;
 use super::page::{Page, ld_objects_of_type};
 use super::{
     ClipRange, MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport,
-    Variant, VariantKind, clean_title, essence, hls, is_dash_type, is_hls_type, is_ism_type,
+    Tag, Variant, VariantKind, clean_title, essence, hls, is_dash_type, is_hls_type, is_ism_type,
     path_extension, status_error, timestamp_hint,
 };
 use crate::http::{BROWSER_UA, EMBED_BOT_UA, Http, WEB_PLATFORM};
-use crate::media::Container;
+use crate::media::{Container, MediaKind};
 
 const MAX_CANDIDATES: usize = 8;
 
@@ -37,7 +40,8 @@ impl WebResolver {
 
 #[derive(Debug, PartialEq)]
 pub enum Kind {
-    File(Option<Container>),
+    /// One media file: a video, audio alone or a still image.
+    File(Option<Container>, MediaKind),
     Hls,
     Dash,
     Ism,
@@ -45,7 +49,9 @@ pub enum Kind {
     Other,
 }
 
-/// What a URL points at, from its content type and path.
+/// What a URL points at, from its content type and path. A file is media when its type is
+/// `video/*`, `audio/*` or `image/*`, or when it is served without a type and its
+/// extension names a format; SVG, which is markup rather than a picture, is not taken.
 pub fn classify(url: &Url, content_type: Option<&str>) -> Kind {
     let ct = essence(content_type);
     let ext = path_extension(url);
@@ -61,11 +67,16 @@ pub fn classify(url: &Url, content_type: Option<&str>) -> Kind {
     {
         return Kind::Ism;
     }
-    if ct.starts_with("video/") || ct.starts_with("audio/") {
-        return Kind::File(
-            Container::from_mime(&ct)
-                .or_else(|| ext.as_deref().and_then(Container::from_extension)),
-        );
+    if ct == "image/svg+xml" {
+        return Kind::Other;
+    }
+    if ct.starts_with("video/") || ct.starts_with("audio/") || ct.starts_with("image/") {
+        let container = Container::from_mime(&ct)
+            .or_else(|| ext.as_deref().and_then(Container::from_extension));
+        let kind = container
+            .as_ref()
+            .map_or_else(|| MediaKind::from_mime(&ct), Container::kind);
+        return Kind::File(container, kind);
     }
     if ct == "text/html" || ct == "application/xhtml+xml" {
         return Kind::Html;
@@ -74,7 +85,8 @@ pub fn classify(url: &Url, content_type: Option<&str>) -> Kind {
         && container != Container::Gif
         && (ct.is_empty() || ct == "application/octet-stream" || ct == "binary/octet-stream")
     {
-        return Kind::File(Some(container));
+        let kind = container.kind();
+        return Kind::File(Some(container), kind);
     }
     if ct.is_empty() {
         return Kind::Html;
@@ -294,7 +306,7 @@ impl WebResolver {
             });
         drop(response);
         match classify(&final_url, content_type.as_deref()) {
-            Kind::File(container) => {
+            Kind::File(container, MediaKind::Video) => {
                 let mut v = Variant::new(final_url, VariantKind::File);
                 v.container = container;
                 v.width = candidate.width;
@@ -302,6 +314,8 @@ impl WebResolver {
                 v.size = size;
                 Some(vec![v])
             }
+            // A page's video metadata that points at a picture or a sound is not its video.
+            Kind::File(_, _) => None,
             Kind::Hls => hls::expand(&self.http, &final_url, WEB_PLATFORM, BROWSER_UA, &[])
                 .await
                 .ok()
@@ -327,12 +341,13 @@ impl WebResolver {
         let content_type = response.content_type().map(str::to_owned);
         let length = response.content_length();
         match classify(&final_url, content_type.as_deref()) {
-            Kind::File(container) => {
+            Kind::File(container, kind) => {
                 drop(response);
                 let mut v = Variant::new(final_url.clone(), VariantKind::File);
                 v.container = container;
+                v.audio_only = kind == MediaKind::Audio;
                 v.size = length;
-                let mut resolved = Resolved::new("web");
+                let mut resolved = Resolved::of("web", kind);
                 resolved.title = file_title(&final_url);
                 resolved.webpage_url = Some(final_url);
                 resolved.variants = vec![v];
@@ -411,7 +426,8 @@ impl WebResolver {
                 resolved.variants = variants;
                 Ok(Some(resolved))
             }
-            Kind::Other => Ok(None),
+            // A file that is neither media nor a page: a document, an archive, a feed.
+            Kind::Other => Err(ResolveError::Unsupported(url.clone())),
         }
     }
 }
@@ -428,7 +444,9 @@ impl Resolver for WebResolver {
             name: "Any web page or media URL",
             hosts: &["*"],
             features: &[
-                "direct files",
+                "direct video files",
+                "direct audio files",
+                "direct image files",
                 "hls",
                 "dash",
                 "smooth streaming",
@@ -437,7 +455,12 @@ impl Resolver for WebResolver {
                 "video tags",
                 "embedded players",
             ],
-            formats: &["mp4", "webm", "mkv", "mov", "hls", "dash", "ism"],
+            formats: &[
+                "mp4", "webm", "mkv", "mov", "hls", "dash", "ism", "mp3", "m4a", "ogg", "flac",
+                "wav", "jpg", "png", "webp", "gif",
+            ],
+            media: &[MediaKind::Video, MediaKind::Audio, MediaKind::Image],
+            tags: &[Tag::Video, Tag::Images, Tag::Music],
             session: SessionSupport::Optional,
             examples: &["https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"],
         }
@@ -510,7 +533,35 @@ mod tests {
         assert_eq!(classify(&url("https://h/v.ism/Manifest"), None), Kind::Ism);
         assert_eq!(
             classify(&url("https://h/v.mp4"), Some("application/octet-stream")),
-            Kind::File(Some(Container::Mp4))
+            Kind::File(Some(Container::Mp4), MediaKind::Video)
+        );
+        assert_eq!(
+            classify(&url("https://h/song"), Some("audio/mpeg")),
+            Kind::File(Some(Container::Mp3), MediaKind::Audio)
+        );
+        assert_eq!(
+            classify(&url("https://h/a.flac"), Some("application/octet-stream")),
+            Kind::File(Some(Container::Flac), MediaKind::Audio)
+        );
+        assert_eq!(
+            classify(&url("https://h/pic"), Some("image/png")),
+            Kind::File(Some(Container::Png), MediaKind::Image)
+        );
+        assert_eq!(
+            classify(&url("https://h/pic.heic"), Some("image/heic")),
+            Kind::File(None, MediaKind::Image)
+        );
+        assert_eq!(
+            classify(&url("https://h/anim.gif"), Some("image/gif")),
+            Kind::File(Some(Container::Gif), MediaKind::Video)
+        );
+        assert_eq!(
+            classify(&url("https://h/logo.svg"), Some("image/svg+xml")),
+            Kind::Other
+        );
+        assert_eq!(
+            classify(&url("https://h/paper.pdf"), Some("application/pdf")),
+            Kind::Other
         );
         assert_eq!(
             classify(&url("https://h/page"), Some("text/html; charset=utf-8")),
@@ -803,5 +854,101 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(error, ResolveError::NotFound(_)));
+    }
+
+    #[tokio::test]
+    async fn direct_audio_and_image_files_are_what_they_are_and_other_files_are_refused() {
+        let mut fixture = Fixture::new("web", None);
+        fixture.exchanges.push(exchange(
+            "https://cdn.test/Track%2001.mp3",
+            "audio/mpeg",
+            "",
+            200,
+            &[("content-length", "3000")],
+        ));
+        fixture.exchanges.push(exchange(
+            "https://cdn.test/photo.jpg",
+            "image/jpeg",
+            "",
+            200,
+            &[("content-length", "800")],
+        ));
+        fixture.exchanges.push(exchange(
+            "https://cdn.test/paper.pdf",
+            "application/pdf",
+            "",
+            200,
+            &[("content-length", "9")],
+        ));
+        let resolver = web(Http::replay(fixture));
+        let track = resolver
+            .resolve(&Url::parse("https://cdn.test/Track%2001.mp3").unwrap())
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
+        assert_eq!(track.media, MediaKind::Audio);
+        assert_eq!(track.title.as_deref(), Some("Track 01"));
+        assert_eq!(track.variants[0].container, Some(Container::Mp3));
+        assert!(track.variants[0].audio_only);
+        assert_eq!(track.variants[0].size, Some(3000));
+        let photo = resolver
+            .resolve(&Url::parse("https://cdn.test/photo.jpg").unwrap())
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
+        assert_eq!(photo.media, MediaKind::Image);
+        assert_eq!(photo.variants[0].container, Some(Container::Jpeg));
+        assert_eq!(photo.variants[0].kind, VariantKind::File);
+        assert_eq!(photo.variants[0].size, Some(800));
+        let error = resolver
+            .resolve(&Url::parse("https://cdn.test/paper.pdf").unwrap())
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&error, ResolveError::Unsupported(u) if u.as_str() == "https://cdn.test/paper.pdf"),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_page_whose_video_metadata_names_a_picture_has_no_video() {
+        let page = r#"<html><head><meta property="og:video" content="https://cdn.test/poster.jpg"></head></html>"#;
+        let mut fixture = Fixture::new("web", None);
+        fixture.exchanges.push(exchange(
+            "https://site.test/watch",
+            "text/html",
+            page,
+            200,
+            &[],
+        ));
+        fixture.exchanges.push(exchange(
+            "https://cdn.test/poster.jpg",
+            "image/jpeg",
+            "",
+            206,
+            &[("content-range", "bytes 0-0/500")],
+        ));
+        fixture.exchanges.push(exchange(
+            "https://site.test/watch",
+            "text/html",
+            page,
+            200,
+            &[],
+        ));
+        fixture.exchanges.push(exchange(
+            "https://cdn.test/poster.jpg",
+            "image/jpeg",
+            "",
+            206,
+            &[("content-range", "bytes 0-0/500")],
+        ));
+        let resolver = web(Http::replay(fixture));
+        let error = resolver
+            .resolve(&Url::parse("https://site.test/watch").unwrap())
+            .await
+            .unwrap_err();
+        assert!(matches!(error, ResolveError::NotFound(_)), "{error}");
     }
 }

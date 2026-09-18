@@ -12,11 +12,11 @@ use url::Url;
 
 use super::{
     ClipRange, MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionCheck,
-    SessionSupport, SubtitleFormat, SubtitleTrack, Variant, VariantKind, clean_title,
+    SessionSupport, SubtitleFormat, SubtitleTrack, Tag, Variant, VariantKind, clean_title,
     timestamp_hint,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "vk";
 const SITE: &str = "https://vk.com/";
@@ -357,6 +357,8 @@ impl Resolver for VkResolver {
             hosts: &["vk.com", "vk.ru", "vkvideo.ru", "vkontakte.ru"],
             features: &["videos", "clips", "embeds", "live", "private share links"],
             formats: &["mp4", "hls", "dash"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Social, Tag::Video, Tag::Live],
             session: SessionSupport::Optional,
             examples: &[
                 "https://vk.com/video-77521_162222515",

@@ -17,11 +17,11 @@ use url::Url;
 
 use super::page::Page;
 use super::{
-    Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Variant, VariantKind,
-    hls, probe_file,
+    Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag, Variant,
+    VariantKind, hls, probe_file,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "cloudflare_stream";
 const DOMAINS: [&str; 3] = [
@@ -196,6 +196,8 @@ impl Resolver for CloudflareStreamResolver {
                 "downloads",
             ],
             formats: &["hls", "dash", "mp4"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Players],
             session: SessionSupport::None,
             examples: &[
                 "https://customer-f33zs165nr7gyfy4.cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957/iframe",

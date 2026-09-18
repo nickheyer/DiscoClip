@@ -11,9 +11,10 @@ use url::Url;
 use super::page::between;
 use super::{
     MAX_PAGE, Page, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolver,
-    SessionSupport, clean_title, fetch_ok, navigation_headers, util,
+    SessionSupport, Tag, clean_title, fetch_ok, navigation_headers, util,
 };
 use crate::http::{BROWSER_UA, Http};
+use crate::media::MediaKind;
 
 pub const PLATFORM: &str = "buzzfeed";
 const NEXT_DATA_START: &str = r#"<script id="__NEXT_DATA__" type="application/json">"#;
@@ -160,6 +161,8 @@ impl Resolver for BuzzfeedResolver {
             hosts: &["buzzfeed.com"],
             features: &["posts", "playlists"],
             formats: &["mp4", "hls"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::News, Tag::Social],
             session: SessionSupport::None,
             examples: &[
                 "http://www.buzzfeed.com/abagg/this-angry-ram-destroys-a-punching-bag-like-a-boss?utm_term=4ldqpia",

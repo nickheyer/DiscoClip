@@ -16,10 +16,10 @@ use url::Url;
 
 use super::{
     ClipRange, MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionCheck,
-    SessionSupport, Variant, VariantKind, clean_title, fetch, timestamp_hint,
+    SessionSupport, Tag, Variant, VariantKind, clean_title, fetch, timestamp_hint,
 };
 use crate::http::{BROWSER_UA, Http, MOBILE_UA};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "douyin";
 const SITE: &str = "https://www.douyin.com/";
@@ -474,6 +474,8 @@ impl Resolver for DouyinResolver {
             hosts: &["douyin.com", "iesdouyin.com", "v.douyin.com"],
             features: &["videos", "notes", "short links", "share pages"],
             formats: &["mp4"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Social, Tag::Video],
             session: SessionSupport::Optional,
             examples: &[
                 "https://www.douyin.com/video/6961737553342991651",

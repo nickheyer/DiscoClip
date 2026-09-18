@@ -12,10 +12,10 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved, Resolver,
-    SessionSupport, Variant, VariantKind, clean_title, fetch,
+    SessionSupport, Tag, Variant, VariantKind, clean_title, fetch,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "imgur";
 const API: &str = "https://api.imgur.com/post/v1/";
@@ -220,6 +220,8 @@ impl Resolver for ImgurResolver {
                 "direct links",
             ],
             formats: &["mp4"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Basic, Tag::Images],
             session: SessionSupport::None,
             examples: &[
                 "https://imgur.com/A61SaA1",

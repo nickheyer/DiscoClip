@@ -13,11 +13,11 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Page, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved,
-    Resolver, SessionSupport, Variant, clean_title, fetch_as_browser, navigation_headers,
+    Resolver, SessionSupport, Tag, Variant, clean_title, fetch_as_browser, navigation_headers,
     status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container};
+use crate::media::{AudioCodec, Container, MediaKind};
 
 pub const PLATFORM: &str = "bandcamp";
 
@@ -160,6 +160,23 @@ pub fn discography_of(html: &str) -> Vec<String> {
     found
 }
 
+/// The container an encoding name or file extension names.
+fn audio_container(name: &str) -> Container {
+    Container::from_extension(name).unwrap_or_else(|| Container::Other(name.to_ascii_lowercase()))
+}
+
+/// The codec an encoding name names.
+fn audio_codec(codec: &str) -> AudioCodec {
+    match codec {
+        "mp3" => AudioCodec::Mp3,
+        "aac" | "m4a" => AudioCodec::Aac,
+        "flac" => AudioCodec::Flac,
+        "vorbis" | "ogg" => AudioCodec::Vorbis,
+        "opus" => AudioCodec::Opus,
+        other => AudioCodec::Other(other.to_string()),
+    }
+}
+
 /// A track's streaming files, one variant per encoding.
 fn track_variants(track: &Value) -> Vec<Variant> {
     let mut variants = Vec::new();
@@ -173,12 +190,8 @@ fn track_variants(track: &Value) -> Vec<Variant> {
             .captures(encoding)
             .map(|caps| (caps[1].to_string(), caps[2].parse::<u64>().ok()))
             .unwrap_or((encoding.clone(), None));
-        variant.container = Some(Container::Other(codec.clone()));
-        variant.audio = Some(match codec.as_str() {
-            "mp3" => AudioCodec::Mp3,
-            "aac" | "m4a" => AudioCodec::Aac,
-            other => AudioCodec::Other(other.to_string()),
-        });
+        variant.container = Some(audio_container(&codec));
+        variant.audio = Some(audio_codec(&codec));
         variant.bitrate = kbps.map(|k| k * 1000);
         variant.duration = util::seconds(&track["duration"]);
         variant.format_id = Some(encoding.clone());
@@ -306,13 +319,8 @@ impl BandcampResolver {
                 .find(|(name, _)| *name == format_id)
                 .map(|(_, ext)| ext.clone())
                 .unwrap_or_else(|| codec.clone());
-            variant.container = Some(Container::Other(ext));
-            variant.audio = Some(match codec.as_str() {
-                "mp3" => AudioCodec::Mp3,
-                "aac" | "m4a" | "alac" if codec == "aac" => AudioCodec::Aac,
-                "vorbis" | "ogg" => AudioCodec::Vorbis,
-                other => AudioCodec::Other(other.to_string()),
-            });
+            variant.container = Some(audio_container(&ext));
+            variant.audio = Some(audio_codec(&codec));
             variant.bitrate = format_id
                 .rsplit('-')
                 .next()
@@ -326,7 +334,7 @@ impl BandcampResolver {
             variant.label = download["description"]
                 .as_str()
                 .and_then(clean_title)
-                .or_else(|| Some(format_id));
+                .or(Some(format_id));
             variants.push(variant);
         }
         variants
@@ -388,7 +396,7 @@ impl BandcampResolver {
             .or(release["artist"].as_str())
             .and_then(clean_title)
             .or_else(|| util::search(&RE_ALBUM_ARTIST, &html).and_then(|a| clean_title(&a)));
-        let mut resolved = Resolved::new(PLATFORM);
+        let mut resolved = Resolved::of(PLATFORM, MediaKind::Audio);
         resolved.id = util::text(&track["track_id"])
             .or_else(|| util::text(&track["id"]))
             .or_else(|| Some(slug.to_string()));
@@ -483,19 +491,15 @@ impl BandcampResolver {
             .and_then(|id| RE_ENCODING.captures(id))
             .map(|caps| (caps[1].to_string(), caps[2].parse::<u64>().ok()))
             .unwrap_or_else(|| ("mp3".to_string(), None));
-        variant.container = Some(Container::Other(codec.clone()));
-        variant.audio = Some(match codec.as_str() {
-            "mp3" => AudioCodec::Mp3,
-            "aac" | "m4a" => AudioCodec::Aac,
-            other => AudioCodec::Other(other.to_string()),
-        });
+        variant.container = Some(audio_container(&codec));
+        variant.audio = Some(audio_codec(&codec));
         variant.bitrate = kbps.map(|k| k * 1000);
         variant.duration = util::seconds(&audio["duration"]);
         variant.format_id = format_id.clone();
         variant.label = format_id;
         let released =
             release_date(&data["date"]).or_else(|| release_date(&data["published_date"]));
-        let mut resolved = Resolved::new(PLATFORM);
+        let mut resolved = Resolved::of(PLATFORM, MediaKind::Audio);
         resolved.id = Some(show.to_string());
         resolved.title = match (data["subtitle"].as_str().and_then(clean_title), released) {
             (Some(series), Some(at)) => Some(format!("{series}, {}", at.strftime("%Y-%m-%d"))),
@@ -584,6 +588,8 @@ impl Resolver for BandcampResolver {
                 "weekly shows",
             ],
             formats: &["mp3", "flac", "aac", "ogg", "wav", "aiff", "alac"],
+            media: &[MediaKind::Audio],
+            tags: &[Tag::Music],
             session: SessionSupport::None,
             examples: &[
                 "https://benprunty.bandcamp.com/track/lanius-battle",
@@ -738,6 +744,8 @@ mod tests {
         assert_eq!(resolved.variants.len(), 1);
         let audio = &resolved.variants[0];
         assert!(audio.audio_only);
+        assert_eq!(resolved.media, MediaKind::Audio);
+        assert_eq!(audio.container, Some(Container::Mp3));
         assert_eq!(audio.audio, Some(AudioCodec::Mp3));
         assert_eq!(audio.bitrate, Some(128_000));
         assert_eq!(audio.format_id.as_deref(), Some("mp3-128"));
@@ -827,13 +835,15 @@ mod tests {
             "the stream and eight free downloads"
         );
         assert!(track.variants.iter().all(|v| v.audio_only));
+        assert_eq!(track.media, MediaKind::Audio);
         assert_eq!(track.variants[0].format_id.as_deref(), Some("mp3-128"));
         let flac = track
             .variants
             .iter()
             .find(|v| v.format_id.as_deref() == Some("flac"))
             .unwrap();
-        assert_eq!(flac.container, Some(Container::Other("flac".into())));
+        assert_eq!(flac.container, Some(Container::Flac));
+        assert_eq!(flac.audio, Some(AudioCodec::Flac));
         assert_eq!(flac.label.as_deref(), Some("FLAC"));
         assert!(flac.url.path().starts_with("/download/track"));
         let mp3_320 = track
@@ -889,6 +899,7 @@ mod tests {
         assert_eq!(show.variants.len(), 1);
         assert_eq!(show.variants[0].format_id.as_deref(), Some("mp3-128"));
         assert!(show.variants[0].audio_only);
+        assert_eq!(show.media, MediaKind::Audio);
 
         assert!(matches!(
             resolver

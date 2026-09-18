@@ -10,11 +10,11 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Page, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport,
-    SubtitleFormat, SubtitleTrack, Variant, VariantKind, clean_title, fetch, manifests,
+    SubtitleFormat, SubtitleTrack, Tag, Variant, VariantKind, clean_title, fetch, manifests,
     status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "adobetv";
 const SITE: &str = "https://video.tv.adobe.com/v/";
@@ -30,7 +30,7 @@ pub fn video_id(url: &Url) -> Option<String> {
     if !matches!(url.scheme(), "http" | "https") {
         return None;
     }
-    if url.host_str()?.to_ascii_lowercase() != "video.tv.adobe.com" {
+    if !url.host_str()?.eq_ignore_ascii_case("video.tv.adobe.com") {
         return None;
     }
     RE_PATH.captures(url.path()).map(|caps| caps[1].to_string())
@@ -110,6 +110,8 @@ impl Resolver for AdobetvResolver {
             hosts: &["video.tv.adobe.com"],
             features: &["videos"],
             formats: &["hls", "mp4"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Video],
             session: SessionSupport::None,
             examples: &[
                 "https://video.tv.adobe.com/v/3463980/adobe-acrobat",

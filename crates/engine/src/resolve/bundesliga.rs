@@ -7,8 +7,9 @@ use async_trait::async_trait;
 use regex::Regex;
 use url::Url;
 
-use super::{Platform, Resolution, ResolveError, Resolver, SessionSupport, jwplayer};
+use super::{Platform, Resolution, ResolveError, Resolver, SessionSupport, Tag, jwplayer};
 use crate::http::Http;
+use crate::media::MediaKind;
 
 pub const PLATFORM: &str = "bundesliga";
 
@@ -56,6 +57,8 @@ impl Resolver for BundesligaResolver {
             hosts: &["bundesliga.com"],
             features: &["videos"],
             formats: &["mp4", "hls", "dash"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Video],
             session: SessionSupport::None,
             examples: &["https://www.bundesliga.com/en/bundesliga/videos?vid=bhhHkKyN"],
         }

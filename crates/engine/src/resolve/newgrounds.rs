@@ -14,11 +14,11 @@ use url::Url;
 
 use super::page::Page;
 use super::{
-    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Variant,
+    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag, Variant,
     VariantKind, clean_title, navigation_headers, parse_codecs,
 };
 use crate::http::Http;
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "newgrounds";
 const SITE: &str = "https://www.newgrounds.com/";
@@ -147,6 +147,8 @@ impl Resolver for NewgroundsResolver {
             hosts: &["newgrounds.com"],
             features: &["movies", "video submissions"],
             formats: &["mp4"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Video],
             session: SessionSupport::Optional,
             examples: &[
                 "https://www.newgrounds.com/portal/view/1004201",
@@ -447,6 +449,7 @@ mod tests {
                 &resolved.variants,
                 &crate::config::Limits::default(),
                 PLATFORM,
+                resolved.media,
             )
             .unwrap();
             assert_eq!(variant.container, Some(Container::Mp4));

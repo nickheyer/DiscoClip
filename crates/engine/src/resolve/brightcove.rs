@@ -21,11 +21,11 @@ use url::Url;
 use super::page::Page;
 use super::{
     MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved, Resolver,
-    SessionSupport, SubtitleFormat, SubtitleTrack, Variant, VariantKind, clean_title, essence,
+    SessionSupport, SubtitleFormat, SubtitleTrack, Tag, Variant, VariantKind, clean_title, essence,
     fetch, is_dash_type, is_hls_type, is_ism_type, manifests, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "brightcove";
 const PLAYERS: &str = "https://players.brightcove.net/";
@@ -909,6 +909,8 @@ impl Resolver for BrightcoveResolver {
                 "drm reported",
             ],
             formats: &["mp4", "hls", "dash", "ism", "rtmp"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Players],
             session: SessionSupport::None,
             examples: &[
                 "https://players.brightcove.net/1752604059001/default_default/index.html?videoId=4457254747001",

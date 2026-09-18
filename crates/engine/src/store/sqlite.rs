@@ -49,6 +49,38 @@ CREATE INDEX IF NOT EXISTS jobs_parent ON jobs(parent_id, created_at ASC);
 CREATE INDEX IF NOT EXISTS jobs_resolver ON jobs(resolver, status);
 ",
     },
+    Migration {
+        version: 3,
+        name: "jobs.where_columns",
+        sql: "
+ALTER TABLE jobs ADD COLUMN guild_id TEXT;
+ALTER TABLE jobs ADD COLUMN channel_id TEXT;
+ALTER TABLE jobs ADD COLUMN media TEXT;
+UPDATE jobs SET
+    guild_id = json_extract(data, '$.request.origin.guild'),
+    channel_id = json_extract(data, '$.request.origin.channel'),
+    media = COALESCE(json_extract(data, '$.artifacts.source.info.kind'),
+                     json_extract(data, '$.artifacts.resolved.media'));
+UPDATE jobs SET
+    guild_id = NULLIF(substr(json_extract(data, '$.request.origin.reference'),
+        instr(json_extract(data, '$.request.origin.reference'), ':') + 1,
+        instr(substr(json_extract(data, '$.request.origin.reference'),
+            instr(json_extract(data, '$.request.origin.reference'), ':') + 1), ':') - 1), '0'),
+    channel_id = NULLIF(substr(
+        substr(json_extract(data, '$.request.origin.reference'),
+            instr(json_extract(data, '$.request.origin.reference'), ':') + 1),
+        instr(substr(json_extract(data, '$.request.origin.reference'),
+            instr(json_extract(data, '$.request.origin.reference'), ':') + 1), ':') + 1,
+        instr(substr(substr(json_extract(data, '$.request.origin.reference'),
+                instr(json_extract(data, '$.request.origin.reference'), ':') + 1),
+            instr(substr(json_extract(data, '$.request.origin.reference'),
+                instr(json_extract(data, '$.request.origin.reference'), ':') + 1), ':') + 1), ':') - 1), '0')
+WHERE source = 'discord' AND guild_id IS NULL AND channel_id IS NULL
+  AND json_extract(data, '$.request.origin.reference') LIKE '%:%:%:%:%';
+CREATE INDEX IF NOT EXISTS jobs_guild ON jobs(guild_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS jobs_channel ON jobs(channel_id, status, created_at DESC);
+",
+    },
 ];
 
 impl From<rusqlite::Error> for StoreError {
@@ -175,7 +207,7 @@ fn decode(data: String) -> Result<Job, StoreError> {
     Ok(serde_json::from_str(&data)?)
 }
 
-fn columns(job: &Job) -> Result<[Value; 11], StoreError> {
+fn columns(job: &Job) -> Result<[Value; 14], StoreError> {
     let data = serde_json::to_string(job)?;
     Ok([
         Value::Text(job.id.to_string()),
@@ -196,6 +228,17 @@ fn columns(job: &Job) -> Result<[Value; 11], StoreError> {
             .submitted_by
             .clone()
             .map_or(Value::Null, Value::Text),
+        job.request
+            .origin
+            .guild
+            .clone()
+            .map_or(Value::Null, Value::Text),
+        job.request
+            .origin
+            .channel
+            .clone()
+            .map_or(Value::Null, Value::Text),
+        Value::Text(job.media().as_str().to_string()),
     ])
 }
 
@@ -222,6 +265,30 @@ fn clauses(filter: &JobFilter) -> (String, Vec<Value>) {
     if let Some(resolver) = &filter.resolver {
         clauses.push("resolver = ?".into());
         values.push(Value::Text(resolver.clone()));
+    }
+    if !filter.resolvers.is_empty() {
+        let marks = vec!["?"; filter.resolvers.len()].join(", ");
+        clauses.push(format!("resolver IN ({marks})"));
+        values.extend(filter.resolvers.iter().map(|r| Value::Text(r.clone())));
+    }
+    if !filter.guilds.is_empty() {
+        let marks = vec!["?"; filter.guilds.len()].join(", ");
+        clauses.push(format!("guild_id IN ({marks})"));
+        values.extend(filter.guilds.iter().map(|g| Value::Text(g.clone())));
+    }
+    if !filter.channels.is_empty() {
+        let marks = vec!["?"; filter.channels.len()].join(", ");
+        clauses.push(format!("channel_id IN ({marks})"));
+        values.extend(filter.channels.iter().map(|c| Value::Text(c.clone())));
+    }
+    if let Some(media) = filter.media {
+        clauses.push("media = ?".into());
+        values.push(Value::Text(media.as_str().to_string()));
+    }
+    if filter.with_output {
+        clauses.push(
+            "status = 'done' AND json_extract(data, '$.artifacts.output') IS NOT NULL".into(),
+        );
     }
     if let Some(parent) = filter.parent {
         clauses.push("parent_id = ?".into());
@@ -275,8 +342,8 @@ impl JobStore for SqliteStore {
         self.call(move |conn| {
             let values = columns(&job)?;
             conn.execute(
-                "INSERT INTO jobs (id, source, status, created_at, updated_at, data, url, title, resolver, parent_id, submitted_by, finished_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                "INSERT INTO jobs (id, source, status, created_at, updated_at, data, url, title, resolver, parent_id, submitted_by, guild_id, channel_id, media, finished_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
                 rusqlite::params_from_iter(values.into_iter().chain(std::iter::once(
                     job.finished_at.map_or(Value::Null, |t| Value::Integer(nanos(t))),
                 ))),
@@ -292,7 +359,8 @@ impl JobStore for SqliteStore {
             let values = columns(&job)?;
             let changed = conn.execute(
                 "UPDATE jobs SET source = ?2, status = ?3, created_at = ?4, updated_at = ?5, data = ?6, url = ?7,
-                 title = ?8, resolver = ?9, parent_id = ?10, submitted_by = ?11, finished_at = ?12 WHERE id = ?1",
+                 title = ?8, resolver = ?9, parent_id = ?10, submitted_by = ?11, guild_id = ?12, channel_id = ?13,
+                 media = ?14, finished_at = ?15 WHERE id = ?1",
                 rusqlite::params_from_iter(values.into_iter().chain(std::iter::once(
                     job.finished_at.map_or(Value::Null, |t| Value::Integer(nanos(t))),
                 ))),
@@ -493,6 +561,8 @@ mod tests {
                 source: SourceId::new("local"),
                 reference: "web".into(),
                 url: None,
+                guild: None,
+                channel: None,
             },
             Url::parse(url).unwrap(),
         )

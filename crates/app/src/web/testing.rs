@@ -18,10 +18,10 @@ use async_trait::async_trait;
 use discoclip_bot::{Clients, DiscordEndpoints, DiscordPublisher};
 use discoclip_engine::download::{DownloadContext, DownloadError, Downloaded, Downloader};
 use discoclip_engine::event::ProgressSender;
-use discoclip_engine::media::{LocalFile, MediaInfo};
+use discoclip_engine::media::{LocalFile, MediaInfo, MediaKind};
 use discoclip_engine::resolve::{
-    Platform, Resolution, ResolveError, Resolved, Resolver, SessionCheck, SessionSupport, Variant,
-    VariantKind,
+    Platform, Resolution, ResolveError, Resolved, Resolver, SessionCheck, SessionSupport, Tag,
+    Variant, VariantKind,
 };
 use discoclip_engine::transcode::{Target, TranscodeError, Transcoder};
 use discoclip_engine::{Engine, EngineConfig, Http};
@@ -34,7 +34,9 @@ use tokio_websockets::{CloseCode, Message, ServerBuilder};
 use super::{Services, WebApp, auth};
 use crate::bots::BotManager;
 use crate::fixtures::{FixtureRunner, FixtureStore};
+use crate::frontends::FrontendStore;
 use crate::oauth::{Endpoints, Kind, Provider, Registry};
+use crate::profiles::ProfileStore;
 use crate::rules::RuleStore;
 use crate::secrets::Keyring;
 use crate::settings::{AuthConfig, OAuthClient, OidcClient, Settings, SettingsStore, WebConfig};
@@ -141,7 +143,30 @@ pub async fn app_with_settings(
     }
     let settings = store.load().await.unwrap();
     let clients = Clients::default();
-    let engine = stub_engine(db.clone(), clients.clone(), &settings);
+    let profiles = ProfileStore::new(
+        db.clone(),
+        vec![
+            ("nothing", &[][..]),
+            ("fixtured", &[Tag::Basic, Tag::Video][..]),
+        ],
+    );
+    profiles.load().await.unwrap();
+    let public_url = Arc::new(std::sync::RwLock::new(settings.web.public_url.clone()));
+    let frontends = FrontendStore::new(
+        db.clone(),
+        Keyring::from_key([3; 32]),
+        profiles.cache(),
+        public_url.clone(),
+    );
+    frontends.load().await.unwrap();
+    let directories = discoclip_bot::Directories::default();
+    let engine = stub_engine(
+        db.clone(),
+        clients.clone(),
+        directories.clone(),
+        &settings,
+        frontends.cache(),
+    );
     let handle = engine.handle();
     // The engine never runs, but it must stay alive for its queue to accept submissions.
     std::mem::forget(engine);
@@ -150,9 +175,13 @@ pub async fn app_with_settings(
     let bots = Arc::new(BotManager::new(
         handle.clone(),
         discord.clone(),
-        clients,
-        crate::discord::BotGuildStore::new(db.clone()),
-        rules.cache(),
+        crate::bots::BotServices {
+            clients,
+            directories,
+            guilds: crate::discord::BotGuildStore::new(db.clone()),
+            rules: rules.cache(),
+            profiles: profiles.cache(),
+        },
         CancellationToken::new(),
     ));
     let ffmpeg = FFMPEG
@@ -179,6 +208,9 @@ pub async fn app_with_settings(
             keyring: Keyring::from_key([3; 32]),
             bots,
             rules,
+            profiles,
+            frontends,
+            public_url,
             discord,
             engine: handle,
             fixtures,
@@ -254,6 +286,8 @@ impl Resolver for Fixtured {
             hosts: &[FIXTURE_HOST],
             features: &["videos"],
             formats: &["mp4"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Basic, Tag::Video],
             session: SessionSupport::Optional,
             examples: &[
                 "https://fixture.test/ok",
@@ -310,7 +344,13 @@ impl Resolver for Fixtured {
 /// An engine that accepts links to [`SUPPORTED_HOST`] and never runs them; bots only need
 /// its handle, and the jobs they submit sit in the database. It also carries the fixtured
 /// platform, whose links resolve without the network.
-fn stub_engine(db: SqliteStore, clients: Clients, settings: &Settings) -> Engine {
+fn stub_engine(
+    db: SqliteStore,
+    clients: Clients,
+    directories: discoclip_bot::Directories,
+    settings: &Settings,
+    links: crate::frontends::FrontendCache,
+) -> Engine {
     struct Nothing;
 
     #[async_trait]
@@ -326,6 +366,8 @@ fn stub_engine(db: SqliteStore, clients: Clients, settings: &Settings) -> Engine
                 hosts: &[SUPPORTED_HOST],
                 features: &[],
                 formats: &[],
+                media: &[],
+                tags: &[],
                 session: SessionSupport::None,
                 examples: &[],
             }
@@ -383,7 +425,7 @@ fn stub_engine(db: SqliteStore, clients: Clients, settings: &Settings) -> Engine
         })
         .downloader(Nothing)
         .transcoder(Nothing)
-        .publisher(DiscordPublisher::new(clients))
+        .publisher(DiscordPublisher::new(clients, directories, Arc::new(links)))
         .publisher(crate::local::LocalPublisher::with_config(
             settings.local.dir.clone(),
             settings.local.max_bytes,
@@ -920,15 +962,27 @@ pub const ICON_HASH: &str = "0123456789abcdef0123456789abcdef";
 
 /// A `GUILD_CREATE` for an available guild, as the gateway sends it.
 pub fn guild_create(id: &str, name: &str, members: u64) -> Json {
+    guild_create_with(id, name, members, Vec::new(), Vec::new())
+}
+
+/// A `GUILD_CREATE` carrying the guild's channels and roles, as Discord's does.
+pub fn guild_create_with(
+    id: &str,
+    name: &str,
+    members: u64,
+    channels: Vec<Json>,
+    roles: Vec<Json>,
+) -> Json {
     json!({
         "op": 0, "t": "GUILD_CREATE",
         "d": {
             "id": id, "name": name, "icon": ICON_HASH, "member_count": members,
+            "channels": channels, "roles": roles,
             "owner_id": "1", "afk_channel_id": null, "afk_timeout": 300, "application_id": null,
             "banner": null, "default_message_notifications": 0, "description": null,
             "discovery_splash": null, "emojis": [], "explicit_content_filter": 0, "features": [],
             "large": false, "mfa_level": 0, "nsfw_level": 0, "preferred_locale": "en-US",
-            "premium_progress_bar_enabled": false, "public_updates_channel_id": null, "roles": [],
+            "premium_progress_bar_enabled": false, "public_updates_channel_id": null,
             "rules_channel_id": null, "splash": null, "stage_instances": [], "stickers": [],
             "system_channel_flags": 0, "system_channel_id": null, "vanity_url_code": null,
             "verification_level": 0
@@ -1616,6 +1670,44 @@ async fn gateway_connection(stream: tokio::net::TcpStream, state: Arc<Mutex<Fake
                         });
                         if ws.send(Message::text(ready.to_string())).await.is_err() {
                             return;
+                        }
+                        // As Discord does, each guild the bot is in follows with
+                        // everything in it: the guilds listed at login, and every guild
+                        // the stand-in holds channels, roles or members for.
+                        let creates: Vec<Json> = {
+                            let state = state.lock().unwrap();
+                            let mut guilds: Vec<String> = bot.guilds.clone();
+                            for guild in state
+                                .channels
+                                .values()
+                                .map(|c| c.guild.clone())
+                                .chain(state.roles.keys().cloned())
+                                .chain(state.members.keys().cloned())
+                            {
+                                if !guilds.contains(&guild) {
+                                    guilds.push(guild);
+                                }
+                            }
+                            guilds
+                                .iter()
+                                .map(|guild| {
+                                    let channels: Vec<Json> = state
+                                        .channels
+                                        .iter()
+                                        .filter(|(_, c)| &c.guild == guild)
+                                        .map(|(id, c)| c.json(id))
+                                        .collect();
+                                    let roles = state.roles.get(guild).cloned().unwrap_or_default();
+                                    guild_create_with(guild, &format!("Guild {guild}"), 1, channels, roles)
+                                })
+                                .collect()
+                        };
+                        for mut create in creates {
+                            seq += 1;
+                            create["s"] = json!(seq);
+                            if ws.send(Message::text(create.to_string())).await.is_err() {
+                                return;
+                            }
                         }
                     }
                     Some(1) => {

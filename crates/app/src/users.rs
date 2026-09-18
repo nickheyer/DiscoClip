@@ -200,11 +200,17 @@ impl From<rusqlite::Error> for UserError {
     }
 }
 
-/// Argon2id with the library's recommended parameters, as a PHC string.
+/// Argon2id with the library's recommended parameters, as a PHC string, for a password
+/// that passes [`check_password`].
 pub fn hash_password(password: &str) -> Result<String, UserError> {
     check_password(password)?;
+    hash_secret(password)
+}
+
+/// Argon2id over any secret, however short: a front end's PIN as much as a password.
+pub fn hash_secret(secret: &str) -> Result<String, UserError> {
     Argon2::default()
-        .hash_password(password.as_bytes())
+        .hash_password(secret.as_bytes())
         .map(|hash| hash.to_string())
         .map_err(|e| UserError::Hash(e.to_string()))
 }

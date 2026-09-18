@@ -12,11 +12,11 @@ use serde_json::Value;
 use url::Url;
 
 use super::{
-    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Variant,
+    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag, Variant,
     VariantKind, clean_title, fetch,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "9gag";
 const SITE: &str = "https://9gag.com/";
@@ -111,6 +111,8 @@ impl Resolver for NinegagResolver {
             hosts: &["9gag.com"],
             features: &["posts", "animated posts", "youtube posts"],
             formats: &["mp4", "webm"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Social, Tag::Images],
             session: SessionSupport::None,
             examples: &["https://9gag.com/gag/ae5Ag7B"],
         }

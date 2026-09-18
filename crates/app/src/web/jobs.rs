@@ -15,7 +15,7 @@ use axum::response::{IntoResponse, Response};
 use discoclip_engine::job::{
     Job, JobId, JobStatus, Origin, Request, RequestLimits, RequestOptions, SourceId,
 };
-use discoclip_engine::media::safe_stem;
+use discoclip_engine::media::{Container, MediaKind, safe_stem};
 use discoclip_engine::{
     EngineEvent, EventKind, JobFilter, Order, ResolverStats, Stats, StatusKind, Utilisation,
 };
@@ -33,6 +33,7 @@ use super::auth::{Auth, Identity, parse_id};
 use super::error::ApiError;
 use crate::local::SOURCE_ID as LOCAL_SOURCE;
 use crate::users::Permission;
+use discoclip_bot::{DiscordOrigin, turned_off};
 
 /// The most jobs one bulk request acts on.
 const BULK_MAX: usize = 500;
@@ -54,6 +55,9 @@ pub struct JobSummary {
     pub retry_of: Option<JobId>,
     pub title: Option<String>,
     pub resolver: Option<String>,
+    /// What the media is: what the probe found the source to be, else what the resolver
+    /// said, else a video until the link resolves.
+    pub media: MediaKind,
     pub uploader: Option<String>,
     pub webpage_url: Option<Url>,
     pub thumbnail: Option<Url>,
@@ -86,6 +90,7 @@ impl JobSummary {
             retry_of: job.request.retry_of,
             title: resolved.and_then(|r| r.title.clone()),
             resolver: resolved.map(|r| r.resolver.clone()),
+            media: job.media(),
             uploader: resolved.and_then(|r| r.uploader.clone()),
             webpage_url: resolved.and_then(|r| r.webpage_url.clone()),
             thumbnail: resolved.and_then(|r| r.thumbnail.clone()),
@@ -162,8 +167,13 @@ impl ListQuery {
             offset: self.offset,
             q: self.q,
             resolver: self.resolver,
+            resolvers: Vec::new(),
             parent: parse::<JobId>("parent", self.parent)?,
             top_level: self.top_level.unwrap_or(false),
+            guilds: Vec::new(),
+            channels: Vec::new(),
+            media: None,
+            with_output: false,
             order,
         })
     }
@@ -366,6 +376,25 @@ fn local_origin(identity: &Identity) -> Origin {
         source: SourceId::new(LOCAL_SOURCE),
         reference: identity.user.username.clone(),
         url: None,
+        guild: None,
+        channel: None,
+    }
+}
+
+/// The platforms turned off where a request's link was seen: the profiles of the guild,
+/// channel and author for a Discord origin, the whole server's for anything else.
+fn disabled_for(state: &AppState, origin: &Origin) -> Vec<String> {
+    match DiscordOrigin::parse(origin) {
+        Some(discord) => {
+            let guild = discord.guild.map(|id| id.to_string());
+            let channel = discord.channel.to_string();
+            let author = discord.author.map(|id| id.to_string());
+            state
+                .profiles
+                .effective(guild.as_deref(), Some(&channel), author.as_deref())
+                .disabled()
+        }
+        None => state.profiles.effective(None, None, None).disabled(),
     }
 }
 
@@ -383,12 +412,27 @@ pub async fn submit(
         )));
     }
     let mut job = Request::new(local_origin(&identity), request.url.clone());
+    let disabled = disabled_for(&state, &job.origin);
+    if let Some(platform) = turned_off(&state.engine.resolvers_for(&request.url), &disabled) {
+        return Err(ApiError::BadRequest(format!(
+            "{platform} links are turned off by the profile in force"
+        )));
+    }
     job.limits = request.limits;
     job.options = request.options;
     job.submitted_by = Some(identity.user.username.clone());
+    job.disabled_platforms = disabled;
     let id = state.engine.submit(job).await?;
     tracing::info!(by = identity.user.username, job = %id, url = %request.url, "link submitted");
     Ok((StatusCode::ACCEPTED, Json(Submitted { id })))
+}
+
+/// Queues a fresh job with the same request as a finished one, under the profiles in
+/// force where its link was seen as they stand now.
+async fn retry_job(state: &AppState, id: JobId) -> Result<JobId, ApiError> {
+    let job = state.engine.get(id).await?.ok_or(ApiError::NotFound)?;
+    let disabled = disabled_for(state, &job.request.origin);
+    Ok(state.engine.retry(id, disabled).await?)
 }
 
 /// Queues a fresh job with the same request as a finished one.
@@ -399,7 +443,7 @@ pub async fn retry(
 ) -> Result<(StatusCode, Json<Submitted>), ApiError> {
     identity.require(Permission::ManageJobs)?;
     let id: JobId = parse_id(&id)?;
-    let new_id = state.engine.retry(id).await?;
+    let new_id = retry_job(&state, id).await?;
     tracing::info!(by = identity.user.username, job = %id, retry = %new_id, "job retried");
     Ok((StatusCode::ACCEPTED, Json(Submitted { id: new_id })))
 }
@@ -481,12 +525,10 @@ pub async fn bulk(
     let mut results = Vec::with_capacity(request.ids.len());
     for id in request.ids {
         let outcome: Result<Option<JobId>, String> = match request.action {
-            BulkAction::Retry => state
-                .engine
-                .retry(id)
+            BulkAction::Retry => retry_job(&state, id)
                 .await
                 .map(Some)
-                .map_err(|e| e.to_string()),
+                .map_err(|e| e.message()),
             BulkAction::Cancel => state
                 .engine
                 .cancel(id)
@@ -550,32 +592,34 @@ fn output() -> Artifact {
     Artifact::Output
 }
 
-fn content_type_for(path: &FsPath) -> &'static str {
-    match path
+impl DownloadQuery {
+    /// The output, shown inline.
+    pub fn output() -> Self {
+        Self {
+            artifact: Artifact::Output,
+            index: 0,
+            inline: true,
+        }
+    }
+}
+
+fn content_type_for(path: &FsPath) -> String {
+    let ext = path
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("")
-        .to_ascii_lowercase()
-        .as_str()
-    {
-        "mp4" | "m4v" => "video/mp4",
-        "webm" => "video/webm",
-        "mkv" => "video/x-matroska",
-        "mov" => "video/quicktime",
-        "ts" | "m2ts" | "mts" => "video/mp2t",
-        "flv" => "video/x-flv",
-        "avi" => "video/x-msvideo",
-        "gif" => "image/gif",
-        "m4a" => "audio/mp4",
-        "mp3" => "audio/mpeg",
-        "ogg" | "oga" => "audio/ogg",
-        "opus" => "audio/opus",
-        "vtt" => "text/vtt; charset=utf-8",
-        "srt" => "application/x-subrip; charset=utf-8",
-        "ass" | "ssa" => "text/x-ssa; charset=utf-8",
-        "ttml" => "application/ttml+xml; charset=utf-8",
-        "json" => "application/json; charset=utf-8",
-        _ => "application/octet-stream",
+        .to_ascii_lowercase();
+    match ext.as_str() {
+        "vtt" => "text/vtt; charset=utf-8".to_string(),
+        "srt" => "application/x-subrip; charset=utf-8".to_string(),
+        "ass" | "ssa" => "text/x-ssa; charset=utf-8".to_string(),
+        "ttml" => "application/ttml+xml; charset=utf-8".to_string(),
+        // Served as a download only: an SVG shown inline could run script.
+        "svg" | "" => "application/octet-stream".to_string(),
+        _ => Container::from_extension(&ext)
+            .unwrap_or_else(|| Container::Other(ext.clone()))
+            .mime()
+            .to_string(),
     }
 }
 
@@ -590,9 +634,16 @@ async fn first_present(candidates: Vec<PathBuf>) -> Option<PathBuf> {
 }
 
 /// Where the artifact's bytes are, and the name to offer them under.
-async fn locate(job: &Job, query: &DownloadQuery) -> Result<(PathBuf, String), ApiError> {
+pub(super) async fn locate(
+    job: &Job,
+    query: &DownloadQuery,
+) -> Result<(PathBuf, String), ApiError> {
     let id = job.id.to_string();
-    let stem = format!("{}-{}", safe_stem(job.title(), "video"), &id[..8]);
+    let stem = format!(
+        "{}-{}",
+        safe_stem(job.title(), job.media().as_str()),
+        &id[..8]
+    );
     let archived = job.artifacts.archived.as_ref();
     let (candidates, suffix): (Vec<PathBuf>, &str) = match query.artifact {
         Artifact::Output => (
@@ -691,7 +742,7 @@ fn byte_range(headers: &HeaderMap, len: u64) -> Result<Option<(u64, u64)>, ApiEr
 
 /// Streams a file, whole or the range asked for, with the headers a browser or a video
 /// element needs to save or play it.
-async fn serve_file(
+pub(super) async fn serve_file(
     path: &FsPath,
     filename: &str,
     inline: bool,
@@ -931,6 +982,8 @@ mod tests {
             source: SourceId::new("local"),
             reference: "nick".into(),
             url: None,
+            guild: None,
+            channel: None,
         };
         let mut job = discoclip_engine::Job::new(Request::new(
             origin,
@@ -954,6 +1007,7 @@ mod tests {
             name: None,
             path: subtitle.clone(),
             format: discoclip_engine::resolve::SubtitleFormat::Vtt,
+            url: None,
         }];
         job.status = JobStatus::Done;
         db.insert(&job).await.unwrap();
@@ -1069,6 +1123,8 @@ mod tests {
             source: SourceId::new("discord"),
             reference: "x".into(),
             url: None,
+            guild: None,
+            channel: None,
         };
         let mut request = Request::new(
             origin,
@@ -1142,6 +1198,8 @@ mod tests {
             source: SourceId::new("discord"),
             reference: "x".into(),
             url: None,
+            guild: None,
+            channel: None,
         };
         let id = engine
             .submit(Request::new(

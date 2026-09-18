@@ -17,10 +17,10 @@ use url::Url;
 use super::page::Page;
 use super::{
     MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved, Resolver,
-    SessionSupport, SubtitleFormat, SubtitleTrack, Variant, VariantKind, clean_title, fetch,
+    SessionSupport, SubtitleFormat, SubtitleTrack, Tag, Variant, VariantKind, clean_title, fetch,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "wistia";
 const EMBED_API: &str = "https://fast.wistia.com/embed/";
@@ -358,6 +358,8 @@ impl Resolver for WistiaResolver {
                 "captions",
             ],
             formats: &["mp4", "hls"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Players],
             session: SessionSupport::None,
             examples: &[
                 "https://fast.wistia.net/embed/iframe/cmst5825to",

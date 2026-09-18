@@ -15,10 +15,11 @@ use url::Url;
 use super::page::{Page, json_after, unescape_json_string};
 use super::{
     MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved, Resolver,
-    SessionCheck, SessionSupport, Variant, VariantKind, clean_title, fetch_ok, navigation_headers,
+    SessionCheck, SessionSupport, Tag, Variant, VariantKind, clean_title, fetch_ok,
+    navigation_headers,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "instagram";
 const APP_ID: &str = "936619743392459";
@@ -310,6 +311,8 @@ impl Resolver for InstagramResolver {
             hosts: &["instagram.com"],
             features: &["posts", "reels", "igtv", "carousels"],
             formats: &["mp4"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Basic, Tag::Social, Tag::Video],
             session: SessionSupport::Optional,
             examples: &["https://www.instagram.com/p/aye83DjauH/"],
         }

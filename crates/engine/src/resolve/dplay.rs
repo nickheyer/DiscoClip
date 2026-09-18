@@ -16,11 +16,11 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved, Resolver,
-    SessionCheck, SessionSupport, SubtitleTrack, Variant, clean_title, dash, geo, hls,
+    SessionCheck, SessionSupport, SubtitleTrack, Tag, Variant, clean_title, dash, geo, hls,
     path_extension, status_error, util,
 };
 use crate::http::{BROWSER_UA, Cookie, Http, HttpError, RequestBuilder, StatusCode};
-use crate::media::Container;
+use crate::media::{Container, MediaKind};
 
 pub const PLATFORM: &str = "dplay";
 
@@ -1417,6 +1417,8 @@ impl Resolver for DplayResolver {
             ],
             features: &["videos", "shows"],
             formats: &["hls", "dash", "mp4"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Video],
             session: SessionSupport::Optional,
             examples: &[
                 "https://www.ahctv.com/video/blood-and-fury-americas-civil-war-ahc/battle-of-bull-run",

@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::archive::ArchiveEntry;
 use crate::download::LocalSubtitle;
-use crate::media::LocalFile;
+use crate::media::{LocalFile, MediaKind};
 use crate::publish::Published;
 use crate::resolve::{ClipRange, Resolved};
 
@@ -64,6 +64,12 @@ pub struct Origin {
     pub source: SourceId,
     pub reference: String,
     pub url: Option<Url>,
+    /// The community the link was seen in, as the source names it: a Discord guild.
+    #[serde(default)]
+    pub guild: Option<String>,
+    /// The room within it: a Discord channel.
+    #[serde(default)]
+    pub channel: Option<String>,
 }
 
 /// Limits tighter than the engine's own, for one request; `None` leaves the engine's.
@@ -140,6 +146,10 @@ pub struct Request {
     /// Who submitted the link, as the source names them.
     #[serde(default)]
     pub submitted_by: Option<String>,
+    /// Platforms the profile in force where the link was seen turns off, by resolver id:
+    /// their resolvers are never offered the link.
+    #[serde(default)]
+    pub disabled_platforms: Vec<String>,
 }
 
 impl Request {
@@ -153,6 +163,7 @@ impl Request {
             parent: None,
             retry_of: None,
             submitted_by: None,
+            disabled_platforms: Vec::new(),
         }
     }
 }
@@ -287,12 +298,27 @@ impl StageTiming {
     }
 }
 
+/// How the output reaches the destination.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Delivery {
+    /// The file itself is handed over.
+    #[default]
+    Upload,
+    /// A link to the page that plays the file is posted; the file stays here.
+    Link,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Artifacts {
     pub resolved: Option<Resolved>,
     pub source: Option<LocalFile>,
     pub output: Option<LocalFile>,
+    /// Whether the output was handed over or linked to; decided before publishing.
+    pub delivery: Delivery,
+    /// Why a link was posted rather than the file, when one was.
+    pub link_reason: Option<String>,
     pub published: Option<Published>,
     pub archived: Option<ArchiveEntry>,
     pub subtitles: Vec<LocalSubtitle>,
@@ -353,6 +379,18 @@ impl Job {
             .resolved
             .as_ref()
             .map(|r| r.resolver.as_str())
+    }
+
+    /// What the job's media is: what the probe found the source to be, else what the
+    /// resolver said, else a video until the link resolves.
+    pub fn media(&self) -> MediaKind {
+        self.artifacts
+            .source
+            .as_ref()
+            .and_then(|s| s.info.as_ref())
+            .map(|i| i.kind)
+            .or_else(|| self.artifacts.resolved.as_ref().map(|r| r.media))
+            .unwrap_or_default()
     }
 
     /// Marks `stage` as begun, closing the one before.
@@ -431,6 +469,8 @@ mod limit_tests {
             source: SourceId::new("local"),
             reference: "x".into(),
             url: None,
+            guild: None,
+            channel: None,
         };
         let mut job = Job::new(Request::new(
             origin,

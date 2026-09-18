@@ -11,10 +11,11 @@ use url::Url;
 
 use super::{
     ClipRange, MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionCheck,
-    SessionSupport, Variant, VariantKind, clean_title, fetch, hls, status_error, timestamp_hint,
+    SessionSupport, Tag, Variant, VariantKind, clean_title, fetch, hls, status_error,
+    timestamp_hint,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "twitch";
 const GQL: &str = "https://gql.twitch.tv/gql";
@@ -503,6 +504,8 @@ impl Resolver for TwitchResolver {
                 "subscriber-only with a session",
             ],
             formats: &["hls", "mp4"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Basic, Tag::Live],
             session: SessionSupport::Optional,
             examples: &[
                 "https://www.twitch.tv/videos/40791111",

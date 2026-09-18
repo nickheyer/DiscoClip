@@ -25,14 +25,30 @@ use uuid::Uuid;
 
 use crate::commands::{self, Invocation};
 use crate::config::{DiscordConfig, DiscordEndpoints};
+use crate::directory::{Directories, Directory};
 use crate::origin::DiscordOrigin;
+use crate::profile::{ProfileSource, turned_off};
+use crate::supervisor::BotRuntime;
 use crate::watch::{RuleSource, Watcher};
 
 const WANTED: EventTypeFlags = EventTypeFlags::READY
     .union(EventTypeFlags::MESSAGE_CREATE)
     .union(EventTypeFlags::INTERACTION_CREATE)
     .union(EventTypeFlags::GUILD_CREATE)
-    .union(EventTypeFlags::GUILD_DELETE);
+    .union(EventTypeFlags::GUILD_DELETE)
+    .union(EventTypeFlags::GUILD_UPDATE)
+    .union(EventTypeFlags::CHANNEL_CREATE)
+    .union(EventTypeFlags::CHANNEL_UPDATE)
+    .union(EventTypeFlags::CHANNEL_DELETE)
+    .union(EventTypeFlags::THREAD_CREATE)
+    .union(EventTypeFlags::THREAD_UPDATE)
+    .union(EventTypeFlags::THREAD_DELETE)
+    .union(EventTypeFlags::THREAD_LIST_SYNC)
+    .union(EventTypeFlags::ROLE_CREATE)
+    .union(EventTypeFlags::ROLE_UPDATE)
+    .union(EventTypeFlags::ROLE_DELETE)
+    .union(EventTypeFlags::MEMBER_UPDATE)
+    .union(EventTypeFlags::USER_UPDATE);
 const CLOSE_GRACE: Duration = Duration::from_secs(5);
 
 #[derive(Debug, thiserror::Error)]
@@ -86,12 +102,17 @@ pub struct Bot {
     endpoints: DiscordEndpoints,
     guild_events: mpsc::Sender<GuildEvent>,
     rules: Arc<dyn RuleSource>,
+    profiles: Arc<dyn ProfileSource>,
+    directories: Directories,
 }
 
 struct Shared {
     http: Arc<Client>,
     engine: EngineHandle,
     watcher: Watcher,
+    profiles: Arc<dyn ProfileSource>,
+    /// What the gateway has told this bot about its guilds.
+    directory: Arc<Directory>,
     application: Id<ApplicationMarker>,
     /// The server's own id for the application.
     local_application: Uuid,
@@ -110,25 +131,20 @@ struct Acknowledgement {
 }
 
 impl Bot {
-    /// `application` is the server's own id for the Discord application `config` belongs to;
-    /// it is stamped on every request the bot submits.
-    pub fn new(
-        application: Uuid,
-        config: DiscordConfig,
-        http: Arc<Client>,
-        engine: EngineHandle,
-        endpoints: DiscordEndpoints,
-        guild_events: mpsc::Sender<GuildEvent>,
-        rules: Arc<dyn RuleSource>,
-    ) -> Self {
+    /// A bot from what every start of it is made from; `runtime.application` is the
+    /// server's own id for the Discord application, stamped on every request the bot
+    /// submits.
+    pub fn new(runtime: &BotRuntime) -> Self {
         Self {
-            application,
-            config,
-            http,
-            engine,
-            endpoints,
-            guild_events,
-            rules,
+            application: runtime.application,
+            config: runtime.config.clone(),
+            http: runtime.http.clone(),
+            engine: runtime.engine.clone(),
+            endpoints: runtime.endpoints.clone(),
+            guild_events: runtime.guild_events.clone(),
+            rules: runtime.rules.clone(),
+            profiles: runtime.profiles.clone(),
+            directories: runtime.directories.clone(),
         }
     }
 
@@ -141,10 +157,23 @@ impl Bot {
         let application = self.http.current_user_application().await?.model().await?;
         tracing::info!(application = %application.id, name = %application.name, "discord application ready");
 
+        // Each run starts from nothing: the gateway sends every guild again.
+        let directory = Arc::new(Directory::new());
+        self.directories
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(self.application, directory.clone());
         let shared = Arc::new(Shared {
             http: self.http.clone(),
             engine: self.engine.clone(),
-            watcher: Watcher::new(self.application, self.rules.clone()),
+            watcher: Watcher::new(
+                self.application,
+                self.rules.clone(),
+                self.profiles.clone(),
+                Arc::new(self.engine.clone()),
+            ),
+            profiles: self.profiles.clone(),
+            directory,
             application: application.id,
             local_application: self.application,
             guild_events: self.guild_events.clone(),
@@ -194,6 +223,8 @@ impl Bot {
                 stop.cancel();
             }
         }
+        // The directory stays as the bot last knew things, so the app keeps answering
+        // while the bot is stopped; the next run replaces it whole.
         outcome
     }
 }
@@ -266,6 +297,7 @@ async fn shard_loop(
 }
 
 async fn handle_event(shared: &Shared, event: Event, shard: u32) {
+    shared.directory.update(&event);
     match event {
         Event::Ready(ready) => {
             let first = shared.seen_shards.lock().expect("shard set").insert(shard);
@@ -417,6 +449,20 @@ async fn clip(shared: &Shared, interaction: &Interaction, url: url::Url) -> Resu
         )
         .await;
     };
+    let disabled = shared.profiles.disabled_platforms(
+        interaction.guild_id,
+        Some(channel),
+        interaction.author().map(|u| u.id),
+    );
+    if let Some(platform) = turned_off(&shared.engine.resolvers_for(&url), &disabled) {
+        return respond(
+            shared,
+            interaction,
+            format!("{platform} links are turned off here"),
+            true,
+        )
+        .await;
+    }
     respond(shared, interaction, format!("Queued {url}"), false).await?;
     let message = shared
         .http
@@ -435,6 +481,7 @@ async fn clip(shared: &Shared, interaction: &Interaction, url: url::Url) -> Resu
     .to_origin();
     let mut request = Request::new(origin, url.clone());
     request.submitted_by = interaction.author().map(|u| format!("discord:{}", u.id));
+    request.disabled_platforms = disabled;
     match shared.engine.submit(request).await {
         Ok(id) => {
             tracing::info!(job = %id, %url, "queued from /clip");

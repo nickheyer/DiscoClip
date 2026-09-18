@@ -1,6 +1,8 @@
-//! Wikimedia Commons and Wikipedia file pages, through the MediaWiki API's video info: the
-//! original upload and every transcode the wiki made of it, with the file's description,
-//! author and upload time. A direct link to an upload resolves to the same file page.
+//! Wikimedia Commons and Wikipedia file pages, through the MediaWiki API's video info:
+//! a video's original upload and every transcode the wiki made of it, an audio file's
+//! original and its transcodes, an image's original at full size, and a document (PDF,
+//! DjVu) as the file it is, with the file's description, author and upload time. A
+//! direct link to an upload resolves to the same file page.
 
 use std::time::Duration;
 
@@ -10,11 +12,11 @@ use serde_json::Value;
 use url::Url;
 
 use super::{
-    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Variant,
+    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag, Variant,
     VariantKind, clean_title, essence, fetch, parse_codecs,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "wikimedia";
 const COMMONS: &str = "commons.wikimedia.org";
@@ -143,61 +145,149 @@ fn codecs_of(mime_type: &str) -> (Option<VideoCodec>, Option<AudioCodec>) {
     (video, audio)
 }
 
-/// The variants a file's video info lists: the original upload and every transcode.
-pub fn variants_of(info: &Value) -> Vec<Variant> {
+/// What a file is, by the type the wiki serves it as. Ogg files are served as
+/// `application/ogg` whether they hold video or sound alone, so those are told apart by
+/// what the wiki transcoded them into, and failing any transcode by whether the file has
+/// a picture.
+pub fn kind_of(info: &Value) -> MediaKind {
+    let mime = essence(info["mime"].as_str());
+    let derivative_types: Vec<String> = info["derivatives"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|d| essence(d["type"].as_str()))
+        .collect();
+    if mime.starts_with("video/") {
+        return MediaKind::Video;
+    }
+    if mime.starts_with("audio/") {
+        return MediaKind::Audio;
+    }
+    if mime.starts_with("image/") {
+        return MediaKind::Image;
+    }
+    if mime == "application/ogg" || mime == "application/mxf" {
+        if derivative_types.iter().any(|t| t.starts_with("video/")) {
+            return MediaKind::Video;
+        }
+        if derivative_types.iter().any(|t| t.starts_with("audio/")) {
+            return MediaKind::Audio;
+        }
+        return if info["width"].as_u64().is_some_and(|w| w > 0) {
+            MediaKind::Video
+        } else {
+            MediaKind::Audio
+        };
+    }
+    MediaKind::File
+}
+
+/// The codec an audio type names: by its `codecs` parameter, else by the type itself.
+fn audio_codec_of(mime_type: &str, container: Option<&Container>) -> Option<AudioCodec> {
+    let (_, audio) = codecs_of(mime_type);
+    audio.or(match container {
+        Some(Container::Mp3) => Some(AudioCodec::Mp3),
+        Some(Container::M4a) => Some(AudioCodec::Aac),
+        Some(Container::Opus) => Some(AudioCodec::Opus),
+        Some(Container::Flac) => Some(AudioCodec::Flac),
+        Some(Container::Ogg) => Some(AudioCodec::Vorbis),
+        _ => None,
+    })
+}
+
+/// The format a file is in: what its type names, else what its name's extension does.
+fn container_of(mime: &str, name: &str) -> Option<Container> {
+    Container::from_mime(mime)
+        .or_else(|| match mime {
+            "video/ogg" => Some(Container::Other("ogv".into())),
+            "audio/midi" | "audio/x-midi" => Some(Container::Other("mid".into())),
+            _ => None,
+        })
+        .or_else(|| Container::from_name(name))
+}
+
+/// The variants a file's video info lists, for what the file is: a video's original
+/// upload and every transcode of it, an audio file's original and its transcodes, and an
+/// image's or a document's original alone.
+pub fn variants_of(info: &Value, kind: MediaKind, name: &str) -> Vec<Variant> {
     let duration = info["duration"]
         .as_f64()
         .filter(|d| *d > 0.0)
         .map(Duration::from_secs_f64);
     let original_url = info["url"].as_str().and_then(|u| Url::parse(u).ok());
     let mut variants = Vec::new();
-    for derivative in info["derivatives"].as_array().into_iter().flatten() {
-        let Some(url) = derivative["src"].as_str().and_then(|u| Url::parse(u).ok()) else {
-            continue;
-        };
-        let mime_type = derivative["type"].as_str().unwrap_or_default();
-        let mime = essence(Some(mime_type));
-        if mime.starts_with("audio/") {
-            continue;
+    if matches!(kind, MediaKind::Video | MediaKind::Audio) {
+        for derivative in info["derivatives"].as_array().into_iter().flatten() {
+            let Some(url) = derivative["src"].as_str().and_then(|u| Url::parse(u).ok()) else {
+                continue;
+            };
+            let mime_type = derivative["type"].as_str().unwrap_or_default();
+            let mime = essence(Some(mime_type));
+            let is_audio = mime.starts_with("audio/");
+            // A video's sound-only transcodes are left out; they are its alternates, not it.
+            if is_audio != (kind == MediaKind::Audio) {
+                continue;
+            }
+            let mut v = Variant::new(url.clone(), VariantKind::File);
+            v.container = container_of(&mime, name);
+            if is_audio {
+                v.audio_only = true;
+                v.audio = audio_codec_of(mime_type, v.container.as_ref());
+            } else {
+                let (video, audio) = codecs_of(mime_type);
+                v.video = video;
+                v.audio = audio;
+                v.width = derivative["width"].as_u64().map(|w| w as u32);
+                v.height = derivative["height"].as_u64().map(|h| h as u32);
+            }
+            v.bitrate = derivative["bandwidth"].as_u64().filter(|b| *b > 0);
+            v.duration = duration;
+            let key = derivative["transcodekey"].as_str();
+            v.format_id = Some(key.unwrap_or("original").to_string());
+            v.label = Some(match (key, v.height) {
+                (None, _) => "original".to_string(),
+                (Some(_), Some(h)) => format!("{h}p"),
+                (Some(key), None) => key.to_string(),
+            });
+            if key.is_none()
+                || original_url
+                    .as_ref()
+                    .is_some_and(|o| o.path() == url.path())
+            {
+                v.size = info["size"].as_u64();
+            }
+            variants.push(v);
         }
-        let mut v = Variant::new(url.clone(), VariantKind::File);
-        v.container = Container::from_mime(&mime).or_else(|| match mime.as_str() {
-            "video/ogg" => Some(Container::Other("ogv".into())),
-            _ => None,
-        });
-        let (video, audio) = codecs_of(mime_type);
-        v.video = video;
-        v.audio = audio;
-        v.width = derivative["width"].as_u64().map(|w| w as u32);
-        v.height = derivative["height"].as_u64().map(|h| h as u32);
-        v.bitrate = derivative["bandwidth"].as_u64().filter(|b| *b > 0);
-        v.duration = duration;
-        let key = derivative["transcodekey"].as_str();
-        v.format_id = Some(key.unwrap_or("original").to_string());
-        v.label = Some(match (key, v.height) {
-            (None, _) => "original".to_string(),
-            (Some(_), Some(h)) => format!("{h}p"),
-            (Some(key), None) => key.to_string(),
-        });
-        if key.is_none()
-            || original_url
-                .as_ref()
-                .is_some_and(|o| o.path() == url.path())
-        {
-            v.size = info["size"].as_u64();
-        }
-        variants.push(v);
     }
     if variants.is_empty()
         && let Some(url) = original_url
     {
         let mime_type = info["mime"].as_str().unwrap_or_default();
+        let mime = essence(Some(mime_type));
         let mut v = Variant::new(url, VariantKind::File);
-        v.container = Container::from_mime(mime_type);
-        v.width = info["width"].as_u64().map(|w| w as u32);
-        v.height = info["height"].as_u64().map(|h| h as u32);
+        v.container = container_of(&mime, name);
+        match kind {
+            MediaKind::Audio => {
+                v.audio_only = true;
+                v.audio = audio_codec_of(mime_type, v.container.as_ref());
+                v.duration = duration;
+            }
+            MediaKind::Video => {
+                let (video, audio) = codecs_of(mime_type);
+                v.video = video;
+                v.audio = audio;
+                v.width = info["width"].as_u64().filter(|w| *w > 0).map(|w| w as u32);
+                v.height = info["height"].as_u64().filter(|h| *h > 0).map(|h| h as u32);
+                v.duration = duration;
+            }
+            MediaKind::Image => {
+                v.width = info["width"].as_u64().filter(|w| *w > 0).map(|w| w as u32);
+                v.height = info["height"].as_u64().filter(|h| *h > 0).map(|h| h as u32);
+            }
+            MediaKind::File => {}
+        }
         v.size = info["size"].as_u64();
-        v.duration = duration;
+        v.format_id = Some("original".into());
         v.label = Some("original".into());
         variants.push(v);
     }
@@ -234,12 +324,29 @@ impl Resolver for WikimediaResolver {
                 "wikipedia file pages",
                 "direct uploads",
                 "transcodes",
+                "audio",
+                "images",
+                "documents",
             ],
-            formats: &["webm", "mp4", "mov", "ogv"],
+            formats: &[
+                "webm", "mp4", "mov", "ogv", "ogg", "mp3", "opus", "flac", "wav", "mid", "jpg",
+                "png", "gif", "webp", "svg", "tiff", "pdf", "djvu",
+            ],
+            media: &[
+                MediaKind::Video,
+                MediaKind::Audio,
+                MediaKind::Image,
+                MediaKind::File,
+            ],
+            tags: &[Tag::Files, Tag::Images, Tag::Music],
             session: SessionSupport::None,
             examples: &[
                 "https://commons.wikimedia.org/wiki/File:Big_Buck_Bunny_4K.webm",
                 "https://upload.wikimedia.org/wikipedia/commons/c/c0/Big_Buck_Bunny_4K.webm",
+                "https://commons.wikimedia.org/wiki/File:Example.jpg",
+                "https://commons.wikimedia.org/wiki/File:Example.ogg",
+                "https://commons.wikimedia.org/wiki/File:Chinatown,_my_Chinatown_(1914_sound_recording).mp3",
+                "https://commons.wikimedia.org/wiki/File:Example.pdf",
             ],
         }
     }
@@ -285,21 +392,13 @@ impl Resolver for WikimediaResolver {
             .as_array()
             .and_then(|infos| infos.first())
             .ok_or_else(|| ResolveError::malformed(url, "the page carries no file info"))?;
-        let mime = essence(info["mime"].as_str());
-        if !mime.starts_with("video/") && !mime.starts_with("application/ogg") {
-            return Err(ResolveError::unavailable(
-                url,
-                format!(
-                    "the file is {}, not a video",
-                    if mime.is_empty() {
-                        "of an unknown type"
-                    } else {
-                        mime.as_str()
-                    }
-                ),
-            ));
-        }
-        let variants = variants_of(info);
+        let canonical = info["canonicaltitle"]
+            .as_str()
+            .or(page["title"].as_str())
+            .unwrap_or(&link.title);
+        let bare = canonical.strip_prefix("File:").unwrap_or(canonical);
+        let kind = kind_of(info);
+        let variants = variants_of(info, kind, bare);
         if variants.is_empty() {
             return Err(ResolveError::NotFound(url.clone()));
         }
@@ -310,26 +409,23 @@ impl Resolver for WikimediaResolver {
                 .map(strip_tags)
                 .and_then(|t| clean_title(&t))
         };
-        let canonical = info["canonicaltitle"]
-            .as_str()
-            .or(page["title"].as_str())
-            .unwrap_or(&link.title);
-        let mut resolved = Resolved::new(PLATFORM);
+        let mut resolved = Resolved::of(PLATFORM, kind);
         resolved.id = page["pageid"].as_u64().map(|id| id.to_string());
-        resolved.title = title_of("ObjectName").or_else(|| {
-            let bare = canonical.strip_prefix("File:").unwrap_or(canonical);
-            clean_title(bare.rsplit_once('.').map_or(bare, |(s, _)| s))
-        });
+        resolved.title = title_of("ObjectName")
+            .or_else(|| clean_title(bare.rsplit_once('.').map_or(bare, |(s, _)| s)));
         resolved.description = title_of("ImageDescription");
         resolved.uploader =
             title_of("Artist").or_else(|| info["user"].as_str().and_then(clean_title));
         resolved.uploaded_at = info["timestamp"]
             .as_str()
             .and_then(|t| t.parse::<Timestamp>().ok());
-        resolved.duration = info["duration"]
-            .as_f64()
-            .filter(|d| *d > 0.0)
-            .map(Duration::from_secs_f64);
+        resolved.duration = match kind {
+            MediaKind::Video | MediaKind::Audio => info["duration"]
+                .as_f64()
+                .filter(|d| *d > 0.0)
+                .map(Duration::from_secs_f64),
+            MediaKind::Image | MediaKind::File => None,
+        };
         resolved.thumbnail = info["thumburl"].as_str().and_then(|u| Url::parse(u).ok());
         resolved.webpage_url = info["descriptionurl"]
             .as_str()
@@ -439,16 +535,131 @@ mod tests {
         assert_eq!(mov.video, Some(VideoCodec::Other("mpeg4".into())));
     }
 
+    const IMAGE: &str = r#"{"batchcomplete":true,"query":{"pages":[{"pageid":6428847,"ns":6,"title":"File:Example.jpg","imagerepository":"local","videoinfo":[{"timestamp":"2010-03-14T17:20:20Z","user":"Bdk","size":9022,"width":172,"height":178,"canonicaltitle":"File:Example.jpg","thumburl":"https://upload.wikimedia.org/wikipedia/commons/a/a9/Example.jpg?utm_content=thumbnail_unscaled","thumbwidth":640,"thumbheight":662,"url":"https://upload.wikimedia.org/wikipedia/commons/a/a9/Example.jpg?utm_content=original","descriptionurl":"https://commons.wikimedia.org/wiki/File:Example.jpg","extmetadata":{"ImageDescription":{"value":"An example image."},"Artist":{"value":"<a href=\"//commons.wikimedia.org/wiki/User:Bdk\">Bdk</a>"}},"mime":"image/jpeg","derivatives":[]}]}]}}"#;
+    const AUDIO: &str = r#"{"batchcomplete":true,"query":{"pages":[{"pageid":2435766,"ns":6,"title":"File:Example.ogg","imagerepository":"local","videoinfo":[{"timestamp":"2023-01-21T23:14:57Z","user":"AntiCompositeNumber","size":104793,"width":0,"height":0,"duration":6.104036281179138,"canonicaltitle":"File:Example.ogg","thumburl":"https://commons.wikimedia.org/w/resources/assets/file-type-icons/fileicon-ogg.png","url":"https://upload.wikimedia.org/wikipedia/commons/c/c8/Example.ogg?utm_content=original","descriptionurl":"https://commons.wikimedia.org/wiki/File:Example.ogg","extmetadata":{},"mime":"application/ogg","derivatives":[{"src":"https://upload.wikimedia.org/wikipedia/commons/c/c8/Example.ogg?utm_content=original","type":"audio/ogg; codecs=\"vorbis\"","width":0,"height":0,"bandwidth":137342},{"src":"https://upload.wikimedia.org/wikipedia/commons/transcoded/c/c8/Example.ogg/Example.ogg.mp3","type":"audio/mpeg","transcodekey":"mp3","width":0,"height":0,"bandwidth":180336}]}]}]}}"#;
+    const DOCUMENT: &str = r#"{"batchcomplete":true,"query":{"pages":[{"pageid":92911132,"ns":6,"title":"File:Example.pdf","imagerepository":"local","videoinfo":[{"timestamp":"2020-08-08T23:59:17Z","user":"Speravir","size":277035,"width":1275,"height":1650,"pagecount":3,"canonicaltitle":"File:Example.pdf","thumburl":"https://thumb.wikimedia.org/wikipedia/commons/thumb/1/13/Example.pdf/page1-960px-Example.pdf.jpg","url":"https://upload.wikimedia.org/wikipedia/commons/1/13/Example.pdf?utm_content=original","descriptionurl":"https://commons.wikimedia.org/wiki/File:Example.pdf","extmetadata":{},"mime":"application/pdf","derivatives":[]}]}]}}"#;
+
     #[tokio::test]
-    async fn missing_pages_and_still_images_say_so() {
+    async fn images_resolve_as_their_original_upload() {
+        let mut fixture = Fixture::new("wikimedia", None);
+        fixture.exchanges.push(get(API, IMAGE));
+        let resolver = WikimediaResolver::new(Http::replay(fixture));
+        let resolved = resolver
+            .resolve(&Url::parse("https://commons.wikimedia.org/wiki/File:Example.jpg").unwrap())
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
+        assert_eq!(resolved.media, MediaKind::Image);
+        assert_eq!(resolved.title.as_deref(), Some("Example"));
+        assert_eq!(resolved.description.as_deref(), Some("An example image."));
+        assert_eq!(resolved.uploader.as_deref(), Some("Bdk"));
+        assert_eq!(resolved.duration, None);
+        assert_eq!(resolved.variants.len(), 1);
+        let v = &resolved.variants[0];
+        assert_eq!(v.container, Some(Container::Jpeg));
+        assert_eq!((v.width, v.height), (Some(172), Some(178)));
+        assert_eq!(v.size, Some(9022));
+        assert!(!v.audio_only && v.video.is_none());
+        assert!(v.url.path().ends_with("/a/a9/Example.jpg"));
+    }
+
+    #[tokio::test]
+    async fn audio_files_resolve_with_their_transcodes() {
+        let mut fixture = Fixture::new("wikimedia", None);
+        fixture.exchanges.push(get(API, AUDIO));
+        let resolver = WikimediaResolver::new(Http::replay(fixture));
+        let resolved = resolver
+            .resolve(&Url::parse("https://commons.wikimedia.org/wiki/File:Example.ogg").unwrap())
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
+        assert_eq!(resolved.media, MediaKind::Audio);
+        assert_eq!(resolved.title.as_deref(), Some("Example"));
+        assert_eq!(
+            resolved.duration,
+            Some(Duration::from_secs_f64(6.104036281179138))
+        );
+        assert_eq!(resolved.variants.len(), 2);
+        let original = &resolved.variants[0];
+        assert!(original.audio_only);
+        assert_eq!(original.container, Some(Container::Ogg));
+        assert_eq!(original.audio, Some(AudioCodec::Vorbis));
+        assert_eq!(original.size, Some(104793));
+        assert_eq!(original.label.as_deref(), Some("original"));
+        let mp3 = &resolved.variants[1];
+        assert!(mp3.audio_only);
+        assert_eq!(mp3.container, Some(Container::Mp3));
+        assert_eq!(mp3.audio, Some(AudioCodec::Mp3));
+        assert_eq!(mp3.bitrate, Some(180336));
+        assert_eq!(mp3.label.as_deref(), Some("mp3"));
+        assert!(mp3.url.path().ends_with("/Example.ogg.mp3"));
+    }
+
+    #[tokio::test]
+    async fn documents_resolve_as_the_file_they_are() {
+        let mut fixture = Fixture::new("wikimedia", None);
+        fixture.exchanges.push(get(API, DOCUMENT));
+        let resolver = WikimediaResolver::new(Http::replay(fixture));
+        let resolved = resolver
+            .resolve(&Url::parse("https://commons.wikimedia.org/wiki/File:Example.pdf").unwrap())
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
+        assert_eq!(resolved.media, MediaKind::File);
+        assert_eq!(resolved.title.as_deref(), Some("Example"));
+        assert_eq!(resolved.variants.len(), 1);
+        let v = &resolved.variants[0];
+        assert_eq!(v.container, Some(Container::Other("pdf".into())));
+        assert_eq!(v.size, Some(277035));
+        assert_eq!((v.width, v.height), (None, None));
+        assert!(v.url.path().ends_with("/1/13/Example.pdf"));
+        assert!(
+            resolved
+                .thumbnail
+                .unwrap()
+                .as_str()
+                .contains("page1-960px-Example.pdf.jpg")
+        );
+    }
+
+    #[test]
+    fn kinds_follow_the_served_type_and_the_transcodes() {
+        let kind = |json: &str| kind_of(&serde_json::from_str::<Value>(json).unwrap());
+        assert_eq!(kind(r#"{"mime":"video/webm"}"#), MediaKind::Video);
+        assert_eq!(kind(r#"{"mime":"audio/mpeg"}"#), MediaKind::Audio);
+        assert_eq!(kind(r#"{"mime":"image/svg+xml"}"#), MediaKind::Image);
+        assert_eq!(kind(r#"{"mime":"application/pdf"}"#), MediaKind::File);
+        assert_eq!(
+            kind(
+                r#"{"mime":"application/ogg","derivatives":[{"type":"video/ogg; codecs=theora"}]}"#
+            ),
+            MediaKind::Video
+        );
+        assert_eq!(
+            kind(
+                r#"{"mime":"application/ogg","derivatives":[{"type":"audio/ogg; codecs=vorbis"}]}"#
+            ),
+            MediaKind::Audio
+        );
+        assert_eq!(
+            kind(r#"{"mime":"application/ogg","width":0,"height":0}"#),
+            MediaKind::Audio
+        );
+        assert_eq!(
+            kind(r#"{"mime":"application/ogg","width":320,"height":240}"#),
+            MediaKind::Video
+        );
+    }
+
+    #[tokio::test]
+    async fn missing_pages_say_so() {
         let mut fixture = Fixture::new("wikimedia", None);
         fixture.exchanges.push(get(
             API,
             r#"{"query":{"pages":[{"ns":6,"title":"File:Nope.webm","missing":true}]}}"#,
-        ));
-        fixture.exchanges.push(get(
-            API,
-            r#"{"query":{"pages":[{"pageid":1,"ns":6,"title":"File:Cat.jpg","videoinfo":[{"mime":"image/jpeg","url":"https://upload.wikimedia.org/x/Cat.jpg","size":5}]}]}}"#,
         ));
         let resolver = WikimediaResolver::new(Http::replay(fixture));
         assert!(matches!(
@@ -458,13 +669,5 @@ mod tests {
                 .unwrap_err(),
             ResolveError::NotFound(_)
         ));
-        let error = resolver
-            .resolve(&Url::parse("https://commons.wikimedia.org/wiki/File:Cat.jpg").unwrap())
-            .await
-            .unwrap_err();
-        assert!(
-            matches!(&error, ResolveError::Unavailable { reason, .. } if reason.contains("not a video")),
-            "{error}"
-        );
     }
 }

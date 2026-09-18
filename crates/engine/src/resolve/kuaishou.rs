@@ -15,10 +15,10 @@ use url::Url;
 use super::page::json_after;
 use super::{
     ClipRange, MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionCheck,
-    SessionSupport, Variant, VariantKind, clean_title, fetch, timestamp_hint,
+    SessionSupport, Tag, Variant, VariantKind, clean_title, fetch, timestamp_hint,
 };
 use crate::http::{BROWSER_UA, Http, MOBILE_UA};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "kuaishou";
 const SITE: &str = "https://www.kuaishou.com/";
@@ -537,6 +537,8 @@ impl Resolver for KuaishouResolver {
             hosts: &["kuaishou.com", "v.kuaishou.com", "chenzhongtech.com"],
             features: &["videos", "short links", "share pages"],
             formats: &["mp4"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Social, Tag::Video],
             session: SessionSupport::Optional,
             examples: &[
                 "https://www.kuaishou.com/short-video/3x7qbj8xmmgbjbu",

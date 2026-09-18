@@ -54,9 +54,18 @@ pub struct JobFilter {
     /// Matched against the link, the title and the submitter, as a substring.
     pub q: Option<String>,
     pub resolver: Option<String>,
+    /// Only jobs of these resolvers; empty means any.
+    pub resolvers: Vec<String>,
     pub parent: Option<JobId>,
     /// Leave out jobs expanded from playlists.
     pub top_level: bool,
+    /// Only jobs whose origin names one of these guilds; empty means any.
+    pub guilds: Vec<String>,
+    /// Only jobs whose origin names one of these channels; empty means any.
+    pub channels: Vec<String>,
+    pub media: Option<crate::media::MediaKind>,
+    /// Only jobs with an output the web can play or hand out.
+    pub with_output: bool,
     pub order: Order,
 }
 

@@ -13,11 +13,11 @@ use url::Url;
 
 use super::{
     ClipRange, MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved,
-    Resolver, SessionSupport, SubtitleFormat, SubtitleTrack, Variant, clean_title, fetch, hls,
+    Resolver, SessionSupport, SubtitleFormat, SubtitleTrack, Tag, Variant, clean_title, fetch, hls,
     timestamp_hint, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "bluesky";
 const SITE: &str = "https://bsky.app/";
@@ -71,7 +71,7 @@ pub fn parse_link(url: &Url) -> Option<PostRef> {
         if parts.next() != Some("app.bsky.feed.post") {
             return None;
         }
-        let rkey = parts.next()?.split(|c| c == '?' || c == '#').next()?;
+        let rkey = parts.next()?.split(['?', '#']).next()?;
         return (RE_RKEY.is_match(rkey) && !actor.is_empty()).then(|| PostRef {
             actor: actor.to_string(),
             rkey: rkey.to_string(),
@@ -428,6 +428,8 @@ impl Resolver for BlueskyResolver {
                 "captions",
             ],
             formats: &["hls", "mp4"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Basic, Tag::Social],
             session: SessionSupport::None,
             examples: &["https://bsky.app/profile/bsky.app/post/3mk4lzkrnk22d"],
         }

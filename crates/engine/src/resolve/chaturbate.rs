@@ -12,9 +12,10 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved, Resolver,
-    SessionSupport, Variant, clean_title, hls, status_error, util,
+    SessionSupport, Tag, Variant, clean_title, hls, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
+use crate::media::MediaKind;
 
 pub const PLATFORM: &str = "chaturbate";
 /// How many rooms a listing is read up to.
@@ -119,11 +120,11 @@ fn status_error_of(status: &str, room: &str, url: &Url) -> ResolveError {
 
 /// `initialRoomDossier = "{…}"`: the room's state on its page, JSON in a JS string.
 static RE_DOSSIER: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"initialRoomDossier\s*=\s*(?:"((?:[^"\]|\.)+)"|'((?:[^'\]|\.)+)')"#).unwrap()
+    Regex::new(r#"initialRoomDossier\s*=\s*(?:"((?:[^"\\]|\\.)+)"|'((?:[^'\\]|\\.)+)')"#).unwrap()
 });
 /// `'https://….m3u8…'`: a stream link in the page's escaped scripts.
 static RE_ESCAPED_M3U8: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\u002[27](https?://.+?\.m3u8.*?)\u002[27]").unwrap());
+    LazyLock::new(|| Regex::new(r"\\u002[27](https?://.+?\.m3u8.*?)\\u002[27]").unwrap());
 /// `"https://….m3u8…"`: a stream link in the page's scripts.
 static RE_PLAIN_M3U8: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"["'](https?://[^"']+?\.m3u8[^"']*?)["']"#).unwrap());
@@ -414,6 +415,8 @@ impl Resolver for ChaturbateResolver {
             hosts: &["chaturbate.com", "chaturbate.eu", "chaturbate.global"],
             features: &["live", "listings"],
             formats: &["hls"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Nsfw, Tag::Live],
             session: SessionSupport::None,
             examples: &[
                 "https://chaturbate.com/",

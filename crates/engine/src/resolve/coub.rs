@@ -12,11 +12,11 @@ use serde_json::Value;
 use url::Url;
 
 use super::{
-    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Variant,
+    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag, Variant,
     VariantKind, clean_title, fetch,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "coub";
 const SITE: &str = "https://coub.com/";
@@ -161,7 +161,7 @@ pub fn variants_of(coub: &Value) -> Vec<Variant> {
             continue;
         };
         let mut v = Variant::new(url, VariantKind::File);
-        v.container = Some(Container::Other("mp3".into()));
+        v.container = Some(Container::Mp3);
         v.audio = Some(AudioCodec::Mp3);
         v.audio_only = true;
         v.size = entry["size"].as_u64().filter(|s| *s > 0);
@@ -209,7 +209,7 @@ pub fn variants_of(coub: &Value) -> Vec<Variant> {
         .and_then(|u| Url::parse(u).ok())
     {
         let mut v = Variant::new(url, VariantKind::File);
-        v.container = Some(Container::Other("mp3".into()));
+        v.container = Some(Container::Mp3);
         v.audio = Some(AudioCodec::Mp3);
         v.audio_only = true;
         v.duration = duration;
@@ -243,6 +243,8 @@ impl Resolver for CoubResolver {
             hosts: &["coub.com"],
             features: &["coubs", "embeds", "short links", "recoubs"],
             formats: &["mp4"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Video, Tag::Images],
             session: SessionSupport::None,
             examples: &["https://coub.com/view/5u5n1"],
         }

@@ -13,10 +13,10 @@ use url::Url;
 
 use super::{
     ClipRange, MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionCheck,
-    SessionSupport, Variant, VariantKind, clean_title, hls, timestamp_hint,
+    SessionSupport, Tag, Variant, VariantKind, clean_title, hls, timestamp_hint,
 };
 use crate::http::{BROWSER_UA, Cookie, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "loom";
 const SITE: &str = "https://www.loom.com/";
@@ -248,6 +248,8 @@ impl Resolver for LoomResolver {
             hosts: &["loom.com"],
             features: &["recordings", "embeds", "password protected recordings"],
             formats: &["mp4", "hls"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Video],
             session: SessionSupport::Optional,
             examples: &["https://www.loom.com/share/43d05f362f734614a2e81b4694a3a523"],
         }

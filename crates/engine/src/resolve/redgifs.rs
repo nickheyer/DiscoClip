@@ -10,11 +10,11 @@ use serde_json::Value;
 use url::Url;
 
 use super::{
-    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Variant,
+    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag, Variant,
     VariantKind, clean_title,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "redgifs";
 const API: &str = "https://api.redgifs.com/v2/";
@@ -205,6 +205,8 @@ impl Resolver for RedgifsResolver {
             hosts: &["redgifs.com"],
             features: &["clips", "embeds", "direct links"],
             formats: &["mp4"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Nsfw, Tag::Images],
             session: SessionSupport::None,
             examples: &["https://www.redgifs.com/watch/messytrustingnutria"],
         }

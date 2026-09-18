@@ -14,9 +14,10 @@ use url::Url;
 use super::page::Page;
 use super::{
     ClipRange, MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved,
-    Resolver, SessionCheck, SessionSupport, Variant, clean_title, fetch, hls, timestamp_hint,
+    Resolver, SessionCheck, SessionSupport, Tag, Variant, clean_title, fetch, hls, timestamp_hint,
 };
 use crate::http::{BROWSER_UA, Http};
+use crate::media::MediaKind;
 
 pub const PLATFORM: &str = "niconico";
 const SITE: &str = "https://www.nicovideo.jp/";
@@ -505,6 +506,8 @@ impl Resolver for NiconicoResolver {
             hosts: &["nicovideo.jp", "nico.ms"],
             features: &["videos", "short links", "mylists", "series", "user pages"],
             formats: &["hls"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Video],
             session: SessionSupport::Optional,
             examples: &[
                 "https://www.nicovideo.jp/watch/sm9",

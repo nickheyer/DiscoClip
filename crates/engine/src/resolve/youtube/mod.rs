@@ -23,9 +23,10 @@ use player::{Player, PlayerCache};
 use super::page::{Page, json_after};
 use super::{
     ClipRange, MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionCheck,
-    SessionSupport, Variant, VariantKind, fetch_ok, hls, timestamp_hint,
+    SessionSupport, Tag, Variant, VariantKind, fetch_ok, hls, timestamp_hint,
 };
 use crate::http::{BROWSER_UA, Cookie, Http};
+use crate::media::MediaKind;
 
 static RE_VIDEO_ID: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z0-9_-]{11}$").unwrap());
 static RE_LIST_ID: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z0-9_-]{13,}$").unwrap());
@@ -433,6 +434,8 @@ impl Resolver for YoutubeResolver {
                 "subtitles",
             ],
             formats: &["mp4", "webm", "hls", "dash"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Basic, Tag::Video, Tag::Live, Tag::Music],
             session: SessionSupport::Optional,
             examples: &[
                 "https://www.youtube.com/watch?v=jNQXAC9IVRw",
@@ -740,6 +743,7 @@ mod tests {
             &resolved.variants,
             &crate::config::Limits::default(),
             PLATFORM,
+            resolved.media,
         )
         .unwrap();
         assert_eq!(chosen.audio_url.unwrap().path(), "/native-audio");
@@ -815,7 +819,9 @@ mod tests {
             max_height: 1080,
             ..Default::default()
         };
-        let variant = crate::plan::select_variant(&resolved.variants, &limits, PLATFORM).unwrap();
+        let variant =
+            crate::plan::select_variant(&resolved.variants, &limits, PLATFORM, resolved.media)
+                .unwrap();
         assert_eq!(variant.kind, VariantKind::File);
         assert_eq!(variant.height, Some(1080));
         assert!(variant.audio_url.is_some() || !variant.video_only);

@@ -649,11 +649,13 @@ pub fn pkce() -> (String, String) {
     (verifier, challenge)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Intent {
     Login,
     Link,
+    /// A viewer logging into the front end at this slug.
+    Frontend(String),
 }
 
 /// A flow the browser has been sent off on and has not come back from.

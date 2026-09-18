@@ -10,10 +10,11 @@ use serde_json::Value;
 use url::Url;
 
 use super::{
-    MAX_PAGE, Page, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport,
+    MAX_PAGE, Page, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag,
     clean_title, fetch, hls, navigation_headers, parse_time_stamp, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
+use crate::media::MediaKind;
 
 pub const PLATFORM: &str = "cpac";
 
@@ -213,6 +214,8 @@ impl Resolver for CpacResolver {
             hosts: &["cpac.ca"],
             features: &["videos", "live", "programmes"],
             formats: &["hls"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::News],
             session: SessionSupport::None,
             examples: &[
                 "https://www.cpac.ca/episode?id=fc7edcae-4660-47e1-ba61-5b7f29a9db0f",

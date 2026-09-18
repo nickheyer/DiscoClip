@@ -12,10 +12,10 @@ use url::Url;
 use super::page::Page;
 use super::{
     MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved, Resolver,
-    SessionSupport, Variant, clean_title, fetch, hls, status_error, util,
+    SessionSupport, Tag, Variant, clean_title, fetch, hls, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "bitchute";
 const SITE: &str = "https://www.bitchute.com/";
@@ -269,7 +269,7 @@ impl BitchuteResolver {
                     }
                     Err(error) => {
                         tracing::debug!(url = %candidate, "BitChute seed not reached: {error}");
-                        refusal = Some(error.into());
+                        refusal = Some(error);
                     }
                 }
             }
@@ -508,6 +508,8 @@ impl Resolver for BitchuteResolver {
             hosts: &["bitchute.com"],
             features: &["videos", "live", "channels", "playlists"],
             formats: &["mp4", "hls"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Video],
             session: SessionSupport::None,
             examples: &[
                 "https://www.bitchute.com/video/UGlrF9o9b-Q/",

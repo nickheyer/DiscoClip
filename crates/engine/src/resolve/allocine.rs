@@ -10,11 +10,11 @@ use serde_json::Value;
 use url::Url;
 
 use super::{
-    MAX_PAGE, Page, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport,
+    MAX_PAGE, Page, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag,
     Variant, clean_title, fetch, navigation_headers, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "allocine";
 const MEDIA_API: &str = "https://www.allocine.fr/ws/AcVisiondataV5.ashx?media=";
@@ -90,6 +90,8 @@ impl Resolver for AllocineResolver {
             hosts: &["allocine.fr"],
             features: &["videos", "articles", "films"],
             formats: &["mp4", "hls"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::News, Tag::Video],
             session: SessionSupport::None,
             examples: &[
                 "https://www.allocine.fr/video/video-19550147/",

@@ -1,5 +1,6 @@
-//! Catbox files and albums: a file on the hosts by its name, probed for its length, and an
-//! album's video files as a playlist.
+//! Catbox files and albums: a file on the hosts by its name, probed for its length and
+//! told apart as a video, audio, an image or another file by what the host serves it as
+//! and by its name, and an album's files as a playlist.
 
 use async_trait::async_trait;
 use jiff::Timestamp;
@@ -11,10 +12,10 @@ use url::Url;
 use super::page::Page;
 use super::{
     MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved, Resolver,
-    SessionSupport, Variant, VariantKind, clean_title, essence, fetch, probe_file,
+    SessionSupport, Tag, Variant, VariantKind, clean_title, essence, fetch, probe_file,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "catbox";
 const FILE_HOSTS: [&str; 4] = [
@@ -58,24 +59,59 @@ pub fn parse_link(url: &Url) -> Option<Link> {
     None
 }
 
-const AUDIO_EXTENSIONS: &[&str] = &[
-    "mp3", "ogg", "oga", "opus", "flac", "m4a", "wav", "aac", "wma", "aiff",
-];
+/// What a file is and the format it is in: from the content type the host serves it as
+/// when that names a format, else from the file's own name, else from the broad type
+/// the host serves (`image/…`, `audio/…`, `video/…`). The host serves anything it does
+/// not know as `application/octet-stream`, so the name outranks that.
+pub fn classify(name: &str, content_type: &str) -> (MediaKind, Option<Container>) {
+    if let Some(container) = Container::from_mime(content_type) {
+        return (container.kind(), Some(container));
+    }
+    if let Some(container) = Container::from_name(name) {
+        return (container.kind(), Some(container));
+    }
+    (MediaKind::from_mime(content_type), None)
+}
 
-/// The container a file name's extension names: a video container, or an audio one.
-fn media_container(name: &str) -> Option<Container> {
-    let ext = name.rsplit('.').next()?.to_ascii_lowercase();
-    Container::from_extension(&ext).or_else(|| {
-        AUDIO_EXTENSIONS
-            .contains(&ext.as_str())
-            .then(|| Container::Other(ext.clone()))
+/// The codec an audio container implies, for the variant's `audio`.
+fn audio_codec(container: &Container) -> Option<AudioCodec> {
+    Some(match container {
+        Container::Mp3 => AudioCodec::Mp3,
+        Container::M4a => AudioCodec::Aac,
+        Container::Ogg => AudioCodec::Vorbis,
+        Container::Opus => AudioCodec::Opus,
+        Container::Flac => AudioCodec::Flac,
+        Container::Wav => AudioCodec::Other("pcm".into()),
+        _ => return None,
     })
 }
 
-fn is_audio_name(name: &str) -> bool {
-    name.rsplit('.')
-        .next()
-        .is_some_and(|ext| AUDIO_EXTENSIONS.contains(&ext.to_ascii_lowercase().as_str()))
+/// A variant for a file of any kind, marked as the pipeline picks and shrinks it.
+fn file_variant(
+    url: Url,
+    kind: MediaKind,
+    container: Option<Container>,
+    size: Option<u64>,
+) -> Variant {
+    let mut v = Variant::new(url, VariantKind::File);
+    match kind {
+        MediaKind::Audio => {
+            v.audio_only = true;
+            v.audio = container.as_ref().and_then(audio_codec);
+        }
+        MediaKind::Video if container == Some(Container::Mp4) => {
+            v.video = Some(VideoCodec::H264);
+            v.audio = Some(AudioCodec::Aac);
+        }
+        _ => {}
+    }
+    v.container = container;
+    v.size = size;
+    v
+}
+
+fn stem(name: &str) -> String {
+    name.rsplit_once('.').map_or(name, |(s, _)| s).to_string()
 }
 
 fn parse_created(text: &str) -> Option<Timestamp> {
@@ -99,9 +135,6 @@ impl CatboxResolver {
         let name = percent_encoding::percent_decode_str(file.path().trim_start_matches('/'))
             .decode_utf8_lossy()
             .into_owned();
-        let container = media_container(&name).ok_or_else(|| {
-            ResolveError::unavailable(origin, format!("{name} is not a video or audio file"))
-        })?;
         let probed = probe_file(&self.http, file, PLATFORM, BROWSER_UA, &[]).await?;
         match probed.status.as_u16() {
             200 | 206 => {}
@@ -119,39 +152,12 @@ impl CatboxResolver {
         if served == "text/html" {
             return Err(ResolveError::NotFound(origin.clone()));
         }
-        let mut v = Variant::new(file.clone(), VariantKind::File);
-        v.container = Some(container.clone());
-        if is_audio_name(&name) {
-            v.audio_only = true;
-            v.audio = Some(
-                match name
-                    .rsplit('.')
-                    .next()
-                    .map(|e| e.to_ascii_lowercase())
-                    .as_deref()
-                {
-                    Some("mp3") => AudioCodec::Mp3,
-                    Some("m4a") | Some("aac") => AudioCodec::Aac,
-                    Some("ogg") | Some("oga") => AudioCodec::Vorbis,
-                    Some("opus") => AudioCodec::Opus,
-                    Some(other) => AudioCodec::Other(other.to_string()),
-                    None => AudioCodec::Other("audio".to_string()),
-                },
-            );
-        } else if container == Container::Mp4 {
-            v.video = Some(VideoCodec::H264);
-            v.audio = Some(AudioCodec::Aac);
-        }
-        v.size = probed.size;
-        let mut resolved = Resolved::new(PLATFORM);
-        resolved.id = Some(
-            name.rsplit_once('.')
-                .map_or(name.as_str(), |(s, _)| s)
-                .to_string(),
-        );
+        let (kind, container) = classify(&name, &served);
+        let mut resolved = Resolved::of(PLATFORM, kind);
+        resolved.id = Some(stem(&name));
         resolved.title = resolved.id.clone();
         resolved.webpage_url = Some(file.clone());
-        resolved.variants = vec![v];
+        resolved.variants = vec![file_variant(file.clone(), kind, container, probed.size)];
         Ok(resolved)
     }
 
@@ -198,16 +204,12 @@ impl CatboxResolver {
                     continue;
                 }
                 let name = file.path().trim_start_matches('/').to_string();
-                if media_container(&name).is_none() || entries.iter().any(|e| e.url == file) {
+                if entries.iter().any(|e| e.url == file) {
                     continue;
                 }
                 entries.push(PlaylistEntry {
                     url: file,
-                    title: Some(
-                        name.rsplit_once('.')
-                            .map_or(name.as_str(), |(s, _)| s)
-                            .to_string(),
-                    ),
+                    title: Some(stem(&name)),
                     duration: None,
                 });
             }
@@ -217,7 +219,7 @@ impl CatboxResolver {
             return Err(if title.is_none() && !html.contains("imagecontainer") {
                 ResolveError::NotFound(origin.clone())
             } else {
-                ResolveError::unavailable(origin, "the album holds no video files")
+                ResolveError::unavailable(origin, "the album holds no files")
             });
         }
         if entries.len() == 1 {
@@ -256,11 +258,30 @@ impl Resolver for CatboxResolver {
                 "litter.catbox.moe",
                 "litterbox.catbox.moe",
             ],
-            features: &["files", "litterbox files", "albums", "audio"],
-            formats: &["mp4", "webm", "mkv", "mov", "gif", "mp3", "ogg", "flac"],
+            features: &[
+                "files",
+                "litterbox files",
+                "albums",
+                "audio",
+                "images",
+                "any file",
+            ],
+            formats: &[
+                "mp4", "webm", "mkv", "mov", "gif", "mp3", "ogg", "flac", "jpg", "png", "webp",
+                "zip", "pdf",
+            ],
+            media: &[
+                MediaKind::Video,
+                MediaKind::Audio,
+                MediaKind::Image,
+                MediaKind::File,
+            ],
+            tags: &[Tag::Files, Tag::Images],
             session: SessionSupport::None,
             examples: &[
                 "https://files.catbox.moe/safuz8.mp4",
+                "https://files.catbox.moe/00koca.jpg",
+                "https://files.catbox.moe/53103j.zip",
                 "https://catbox.moe/c/8xw6g4",
             ],
         }
@@ -359,6 +380,7 @@ mod tests {
             .media()
             .unwrap();
         assert_eq!(resolved.title.as_deref(), Some("safuz8"));
+        assert_eq!(resolved.media, MediaKind::Video);
         assert_eq!(resolved.variants[0].size, Some(7971211));
         assert_eq!(resolved.variants[0].container, Some(Container::Mp4));
         assert!(matches!(
@@ -368,18 +390,86 @@ mod tests {
                 .unwrap_err(),
             ResolveError::NotFound(_)
         ));
-        let error = resolver
-            .resolve(&Url::parse("https://files.catbox.moe/ulnqno.py").unwrap())
-            .await
-            .unwrap_err();
-        assert!(
-            matches!(&error, ResolveError::Unavailable { reason, .. } if reason.contains("not a video")),
-            "{error}"
+    }
+
+    /// The JPEG, ZIP and Markdown exchanges were recorded from the host on 2026-09-18,
+    /// which serves a type it does not know as `application/octet-stream`; the FLAC
+    /// exchange has the same shape.
+    #[tokio::test]
+    async fn images_audio_and_other_files_are_told_apart() {
+        let mut fixture = Fixture::new("catbox", None);
+        fixture.exchanges.push(get(
+            "https://files.catbox.moe/00koca.jpg",
+            206,
+            "image/jpeg",
+            "",
+            &[("content-range", "bytes 0-0/2401473")],
+        ));
+        fixture.exchanges.push(get(
+            "https://files.catbox.moe/k2ln8a.flac",
+            206,
+            "application/octet-stream",
+            "",
+            &[("content-range", "bytes 0-0/30412201")],
+        ));
+        fixture.exchanges.push(get(
+            "https://files.catbox.moe/53103j.zip",
+            206,
+            "application/zip",
+            "",
+            &[("content-range", "bytes 0-0/6376")],
+        ));
+        fixture.exchanges.push(get(
+            "https://files.catbox.moe/mlzoua.md",
+            206,
+            "application/octet-stream",
+            "",
+            &[("content-range", "bytes 0-0/38552")],
+        ));
+        let resolver = CatboxResolver::new(Http::replay(fixture));
+        let resolve = |link: &str| {
+            let url = Url::parse(link).unwrap();
+            let resolver = &resolver;
+            async move { resolver.resolve(&url).await.unwrap().media().unwrap() }
+        };
+        let image = resolve("https://files.catbox.moe/00koca.jpg").await;
+        assert_eq!(image.media, MediaKind::Image);
+        assert_eq!(image.title.as_deref(), Some("00koca"));
+        assert_eq!(image.variants[0].container, Some(Container::Jpeg));
+        assert_eq!(image.variants[0].size, Some(2401473));
+        assert!(!image.variants[0].audio_only);
+        let audio = resolve("https://files.catbox.moe/k2ln8a.flac").await;
+        assert_eq!(audio.media, MediaKind::Audio);
+        assert_eq!(audio.variants[0].container, Some(Container::Flac));
+        assert_eq!(audio.variants[0].audio, Some(AudioCodec::Flac));
+        assert!(audio.variants[0].audio_only);
+        assert_eq!(audio.variants[0].size, Some(30412201));
+        let archive = resolve("https://files.catbox.moe/53103j.zip").await;
+        assert_eq!(archive.media, MediaKind::File);
+        assert_eq!(
+            archive.variants[0].container,
+            Some(Container::Other("zip".into()))
+        );
+        assert_eq!(archive.variants[0].size, Some(6376));
+        let notes = resolve("https://files.catbox.moe/mlzoua.md").await;
+        assert_eq!(notes.media, MediaKind::File);
+        assert_eq!(
+            notes.variants[0].container,
+            Some(Container::Other("md".into()))
+        );
+        assert_eq!(notes.variants[0].size, Some(38552));
+        assert_eq!(
+            classify("clip.webm", "application/octet-stream"),
+            (MediaKind::Video, Some(Container::Webm))
+        );
+        assert_eq!(
+            classify("shot", "image/x-portable-pixmap"),
+            (MediaKind::Image, None)
         );
     }
 
     #[tokio::test]
-    async fn albums_list_their_video_files() {
+    async fn albums_list_their_files() {
         let mut fixture = Fixture::new("catbox", None);
         fixture.exchanges.push(get(
             "https://catbox.moe/c/8xw6g4",
@@ -389,6 +479,14 @@ mod tests {
             &[],
         ));
         fixture.exchanges.push(get("https://catbox.moe/c/zeara1", 200, "text/html; charset=UTF-8", r#"<html><body><div class="title"><h1>Six</h1></div><div class="imagecontainer"><a href='https://files.catbox.moe/3bs9a6.png'><img src='x'></a></div></body></html>"#, &[]));
+        fixture.exchanges.push(get(
+            "https://files.catbox.moe/3bs9a6.png",
+            206,
+            "image/png",
+            "",
+            &[("content-range", "bytes 0-0/51200")],
+        ));
+        fixture.exchanges.push(get("https://catbox.moe/c/empty1", 200, "text/html; charset=UTF-8", r#"<html><body><div class="title"><h1>Empty</h1></div><div class="imagecontainer"></div></body></html>"#, &[]));
         let resolver = CatboxResolver::new(Http::replay(fixture));
         let playlist = match resolver
             .resolve(&Url::parse("https://catbox.moe/c/8xw6g4").unwrap())
@@ -399,23 +497,75 @@ mod tests {
             other => panic!("expected a playlist, got {other:?}"),
         };
         assert_eq!(playlist.title.as_deref(), Some("blender_dump"));
-        assert_eq!(playlist.entries.len(), 2);
+        assert_eq!(playlist.entries.len(), 3);
         assert_eq!(
             playlist.entries[0].url.as_str(),
+            "https://files.catbox.moe/00koca.jpg"
+        );
+        assert_eq!(playlist.entries[0].title.as_deref(), Some("00koca"));
+        assert_eq!(
+            playlist.entries[1].url.as_str(),
             "https://files.catbox.moe/s2dd6o.gif"
         );
-        assert_eq!(playlist.entries[1].title.as_deref(), Some("clip42"));
-        let error = resolver
+        assert_eq!(playlist.entries[2].title.as_deref(), Some("clip42"));
+        // An album of one file resolves that file, an image here, under the album's name.
+        let single = resolver
             .resolve(&Url::parse("https://catbox.moe/c/zeara1").unwrap())
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
+        assert_eq!(single.media, MediaKind::Image);
+        assert_eq!(single.title.as_deref(), Some("Six"));
+        assert_eq!(single.variants[0].container, Some(Container::Png));
+        let error = resolver
+            .resolve(&Url::parse("https://catbox.moe/c/empty1").unwrap())
             .await
             .unwrap_err();
         assert!(
-            matches!(&error, ResolveError::Unavailable { reason, .. } if reason.contains("no video")),
+            matches!(&error, ResolveError::Unavailable { reason, .. } if reason.contains("no files")),
             "{error}"
         );
         assert_eq!(
             parse_created("Created March 19 2022").unwrap().to_string(),
             "2022-03-19T00:00:00Z"
         );
+    }
+
+    /// Every example link resolves live, and the image and the archive among them come
+    /// back as what they are.
+    #[tokio::test]
+    #[ignore = "requires live Catbox access"]
+    async fn live_examples_resolve_to_their_kinds() {
+        use std::time::Duration;
+
+        let resolver = CatboxResolver::new(Http::new(crate::http::HttpConfig::default()));
+        let mut kinds = Vec::new();
+        for link in resolver.platform().examples {
+            let url = Url::parse(link).unwrap();
+            let resolution = tokio::time::timeout(Duration::from_secs(60), resolver.resolve(&url))
+                .await
+                .expect("resolution timed out")
+                .unwrap();
+            match resolution {
+                Resolution::Media(resolved) => {
+                    assert!(resolved.variants[0].size.is_some(), "{link}: no size");
+                    kinds.push((link.to_string(), resolved.media));
+                }
+                Resolution::Playlist(playlist) => assert!(!playlist.entries.is_empty()),
+            }
+        }
+        assert!(kinds.contains(&(
+            "https://files.catbox.moe/00koca.jpg".to_string(),
+            MediaKind::Image
+        )));
+        assert!(kinds.contains(&(
+            "https://files.catbox.moe/53103j.zip".to_string(),
+            MediaKind::File
+        )));
+        assert!(kinds.contains(&(
+            "https://files.catbox.moe/safuz8.mp4".to_string(),
+            MediaKind::Video
+        )));
     }
 }

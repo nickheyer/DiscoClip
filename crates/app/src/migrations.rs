@@ -260,6 +260,88 @@ ALTER TABLE fixture_results ADD COLUMN login_required INTEGER NOT NULL DEFAULT 0
 ALTER TABLE fixture_platforms ADD COLUMN login_required INTEGER NOT NULL DEFAULT 0;
 ",
     },
+    Migration {
+        version: 17,
+        name: "fixture_found",
+        sql: "
+ALTER TABLE fixture_results ADD COLUMN found_kind TEXT;
+ALTER TABLE fixture_results ADD COLUMN found_count INTEGER;
+",
+    },
+    Migration {
+        version: 18,
+        name: "profiles",
+        sql: "
+CREATE TABLE profiles (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    platforms TEXT NOT NULL,
+    builtin INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX profiles_name ON profiles(name COLLATE NOCASE);
+CREATE TABLE profile_assignments (
+    scope TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    guild_id TEXT,
+    profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    updated_at INTEGER NOT NULL
+);
+CREATE INDEX profile_assignments_guild ON profile_assignments(guild_id, kind);
+CREATE INDEX profile_assignments_profile ON profile_assignments(profile_id);
+INSERT INTO profiles (id, name, description, platforms, builtin, created_at, updated_at)
+VALUES ('00000000-0000-0000-0000-000000000001', 'Default',
+        'Every platform on. In force wherever nothing else is assigned.',
+        '{\"default\":\"enabled\",\"overrides\":{}}', 1,
+        CAST(strftime('%s', 'now') AS INTEGER) * 1000000000,
+        CAST(strftime('%s', 'now') AS INTEGER) * 1000000000);
+INSERT INTO profile_assignments (scope, kind, guild_id, profile_id, updated_at)
+VALUES ('global', 'global', NULL, '00000000-0000-0000-0000-000000000001',
+        CAST(strftime('%s', 'now') AS INTEGER) * 1000000000);
+",
+    },
+    Migration {
+        version: 19,
+        name: "frontends",
+        sql: "
+CREATE TABLE frontends (
+    id TEXT PRIMARY KEY,
+    slug TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    profile_id TEXT NOT NULL REFERENCES profiles(id),
+    config TEXT NOT NULL,
+    secret_hash TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX frontends_slug ON frontends(slug COLLATE NOCASE);
+CREATE TABLE frontend_users (
+    id TEXT PRIMARY KEY,
+    frontend_id TEXT NOT NULL REFERENCES frontends(id) ON DELETE CASCADE,
+    username TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX frontend_users_name ON frontend_users(frontend_id, username COLLATE NOCASE);
+CREATE TABLE frontend_sessions (
+    id TEXT PRIMARY KEY,
+    frontend_id TEXT NOT NULL REFERENCES frontends(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL UNIQUE,
+    subject TEXT NOT NULL,
+    display TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_seen_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    ip TEXT,
+    user_agent TEXT
+);
+CREATE INDEX frontend_sessions_frontend ON frontend_sessions(frontend_id, last_seen_at DESC);
+",
+    },
 ];
 
 /// Brings the application's tables up to date; returns how many migrations ran.

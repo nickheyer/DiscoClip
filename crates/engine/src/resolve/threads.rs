@@ -13,10 +13,10 @@ use url::Url;
 use super::page::Page;
 use super::{
     ClipRange, MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved,
-    Resolver, SessionSupport, Variant, VariantKind, clean_title, timestamp_hint,
+    Resolver, SessionSupport, Tag, Variant, VariantKind, clean_title, timestamp_hint,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "threads";
 const SITE: &str = "https://www.threads.net/";
@@ -248,6 +248,8 @@ impl Resolver for ThreadsResolver {
             hosts: &["threads.net", "threads.com"],
             features: &["posts", "carousels"],
             formats: &["mp4"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Social],
             session: SessionSupport::None,
             examples: &["https://www.threads.net/@instagram/post/DdHPeall2Bx"],
         }

@@ -11,11 +11,11 @@ use serde_json::Value;
 use url::Url;
 
 use super::{
-    MAX_PAGE, Page, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport,
+    MAX_PAGE, Page, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag,
     Variant, clean_title, fetch, navigation_headers, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container};
+use crate::media::{AudioCodec, Container, MediaKind};
 
 pub const PLATFORM: &str = "applepodcasts";
 const SITE: &str = "https://podcasts.apple.com";
@@ -39,7 +39,7 @@ pub fn parse_link(url: &Url) -> Option<Link> {
     if !matches!(url.scheme(), "http" | "https") {
         return None;
     }
-    if url.host_str()?.to_ascii_lowercase() != "podcasts.apple.com" {
+    if !url.host_str()?.eq_ignore_ascii_case("podcasts.apple.com") {
         return None;
     }
     let caps = RE_PATH.captures(url.path())?;
@@ -97,11 +97,11 @@ fn audio_variant(url: Url) -> Variant {
     let mut variant = Variant::file(url);
     variant.audio_only = true;
     let extension = super::path_extension(&variant.url).unwrap_or_default();
-    variant.container = Some(Container::Other(if extension.is_empty() {
-        "mp3".to_string()
-    } else {
-        extension.clone()
-    }));
+    variant.container = Some(match extension.as_str() {
+        "" => Container::Mp3,
+        "mp4" => Container::M4a,
+        ext => Container::from_extension(ext).unwrap_or_else(|| Container::Other(ext.to_string())),
+    });
     variant.audio = Some(match extension.as_str() {
         "m4a" | "mp4" | "aac" => AudioCodec::Aac,
         _ => AudioCodec::Mp3,
@@ -120,7 +120,7 @@ impl ApplePodcastsResolver {
     }
 
     /// The episode as the catalogue API describes it, read with the bundle's token.
-    async fn from_api(&self, html: &str, link: &Link, url: &Url) -> Result<Resolved, ResolveError> {
+    async fn via_api(&self, html: &str, link: &Link, url: &Url) -> Result<Resolved, ResolveError> {
         let script_path = util::search(&RE_SCRIPT, html)
             .ok_or_else(|| ResolveError::malformed(url, "the page names no script bundle"))?;
         let script_url = Url::parse(&format!("{SITE}{script_path}"))
@@ -175,7 +175,7 @@ impl ApplePodcastsResolver {
                 .set_scheme("https")
                 .map_err(|()| ResolveError::malformed(url, "the asset link has no host"))?;
         }
-        let mut resolved = Resolved::new(PLATFORM);
+        let mut resolved = Resolved::of(PLATFORM, MediaKind::Audio);
         resolved.title = attributes["name"].as_str().and_then(clean_title);
         resolved.description = attributes["fullDescription"]
             .as_str()
@@ -216,6 +216,8 @@ impl Resolver for ApplePodcastsResolver {
             hosts: &["podcasts.apple.com"],
             features: &["audio", "podcasts"],
             formats: &["mp3", "m4a"],
+            media: &[MediaKind::Audio],
+            tags: &[Tag::Podcasts],
             session: SessionSupport::None,
             examples: &[
                 "https://podcasts.apple.com/us/podcast/urbana-podcast-724-by-david-penn/id1531349107?i=1000748574256",
@@ -258,7 +260,7 @@ impl Resolver for ApplePodcastsResolver {
             Some(model) => {
                 let stream = util::url_of(&model["playAction"]["episodeOffer"]["streamUrl"], None)
                     .ok_or_else(|| ResolveError::NotFound(url.clone()))?;
-                let mut resolved = Resolved::new(PLATFORM);
+                let mut resolved = Resolved::of(PLATFORM, MediaKind::Audio);
                 resolved.title = model["title"].as_str().and_then(clean_title);
                 resolved.description = model["summary"]
                     .as_str()
@@ -274,7 +276,7 @@ impl Resolver for ApplePodcastsResolver {
                 if !fetched.status.is_success() && fetched.status.as_u16() != 500 {
                     return Err(status_error(fetched.status, url).expect("not a success"));
                 }
-                self.from_api(&html, &link, url).await?
+                self.via_api(&html, &link, url).await?
             }
         };
         resolved.id = Some(link.episode.clone());
@@ -421,6 +423,8 @@ mod tests {
         assert_eq!(resolved.variants.len(), 1);
         let audio = &resolved.variants[0];
         assert!(audio.audio_only);
+        assert_eq!(resolved.media, MediaKind::Audio);
+        assert_eq!(audio.container, Some(Container::M4a));
         assert_eq!(audio.audio, Some(AudioCodec::Aac));
         assert_eq!(
             audio.url.as_str(),

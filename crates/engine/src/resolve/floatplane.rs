@@ -13,11 +13,11 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved, Resolver,
-    SessionCheck, SessionSupport, SubtitleFormat, SubtitleTrack, Variant, VariantKind, clean_title,
-    fetch, parse_codecs, path_extension, util,
+    SessionCheck, SessionSupport, SubtitleFormat, SubtitleTrack, Tag, Variant, VariantKind,
+    clean_title, fetch, parse_codecs, path_extension, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::Container;
+use crate::media::{Container, MediaKind};
 
 pub const PLATFORM: &str = "floatplane";
 
@@ -448,7 +448,11 @@ pub async fn attachment(
             "the delivery info offers no stream",
         ));
     }
-    let mut resolved = Resolved::new(site.platform);
+    let media = match attachment.kind {
+        AttachmentKind::Audio => MediaKind::Audio,
+        AttachmentKind::Video => MediaKind::Video,
+    };
+    let mut resolved = Resolved::of(site.platform, media);
     resolved.id = Some(attachment.id.clone());
     resolved.title = metadata["title"]
         .as_str()
@@ -692,6 +696,8 @@ impl Resolver for FloatplaneResolver {
             hosts: &["floatplane.com"],
             features: &["videos", "audio", "posts", "channels"],
             formats: &["hls", "mp4", "aac"],
+            media: &[MediaKind::Video, MediaKind::Audio],
+            tags: &[Tag::Video, Tag::Podcasts],
             session: SessionSupport::Required,
             examples: &[
                 "https://www.floatplane.com/post/957jPKiAOV",
@@ -886,6 +892,7 @@ mod tests {
             "https://pbs.floatplane.com/video_thumbnails/yuleLogLTT/a.jpeg"
         );
         assert_eq!(resolved.variants.len(), 2);
+        assert_eq!(resolved.media, MediaKind::Video);
         let best = &resolved.variants[0];
         assert_eq!(best.kind, VariantKind::Hls);
         assert_eq!(
@@ -992,6 +999,7 @@ mod tests {
         let audio = &resolved.variants[0];
         assert_eq!(audio.kind, VariantKind::File);
         assert!(audio.audio_only);
+        assert_eq!(resolved.media, MediaKind::Audio);
         assert_eq!(audio.bitrate, Some(192000));
         assert_eq!(audio.audio, Some(crate::media::AudioCodec::Aac));
         assert_eq!(

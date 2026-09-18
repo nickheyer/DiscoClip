@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use discoclip_bot::{
-    BotControl, BotRuntime, BotStatus, Clients, ControlError, DiscordConfig, DiscordEndpoints,
-    GuildEvent, http_client, supervise,
+    BotControl, BotRuntime, BotStatus, Clients, ControlError, Directories, Directory,
+    DiscordConfig, DiscordEndpoints, GuildEvent, http_client, supervise,
 };
 use discoclip_engine::EngineHandle;
 use serde::Serialize;
@@ -16,6 +16,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::applications::{Application, ApplicationId};
 use crate::discord::{BotGuildStore, JoinedGuild};
+use crate::profiles::ProfileCache;
 use crate::rules::RuleCache;
 
 struct Running {
@@ -35,13 +36,26 @@ pub struct BotEvent {
     pub removed: bool,
 }
 
+/// What every bot runs with beside the engine: the stores it reads and the maps it
+/// shares with the Discord publisher.
+pub struct BotServices {
+    /// Shared with the Discord publisher, which posts through the same clients.
+    pub clients: Clients,
+    /// Shared with the Discord publisher, which reads guild limits from them.
+    pub directories: Directories,
+    pub guilds: BotGuildStore,
+    pub rules: RuleCache,
+    pub profiles: ProfileCache,
+}
+
 pub struct BotManager {
     engine: EngineHandle,
     endpoints: DiscordEndpoints,
-    /// Shared with the Discord publisher, which posts through the same clients.
     clients: Clients,
+    directories: Directories,
     guilds: BotGuildStore,
     rules: RuleCache,
+    profiles: ProfileCache,
     shutdown: CancellationToken,
     bots: Mutex<HashMap<ApplicationId, Running>>,
     events: broadcast::Sender<BotEvent>,
@@ -51,17 +65,24 @@ impl BotManager {
     pub fn new(
         engine: EngineHandle,
         endpoints: DiscordEndpoints,
-        clients: Clients,
-        guilds: BotGuildStore,
-        rules: RuleCache,
+        services: BotServices,
         shutdown: CancellationToken,
     ) -> Self {
+        let BotServices {
+            clients,
+            directories,
+            guilds,
+            rules,
+            profiles,
+        } = services;
         Self {
             engine,
             endpoints,
             clients,
+            directories,
             guilds,
             rules,
+            profiles,
             shutdown,
             bots: Mutex::new(HashMap::new()),
             events: broadcast::channel(256).0,
@@ -116,6 +137,15 @@ impl BotManager {
         control.start().await
     }
 
+    /// What a running application's bot knows about its guilds from the gateway.
+    pub fn directory(&self, id: ApplicationId) -> Option<Arc<Directory>> {
+        self.directories
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&id.0)
+            .cloned()
+    }
+
     /// The REST client of a running application's bot.
     pub fn client(&self, id: ApplicationId) -> Option<Arc<twilight_http::Client>> {
         self.clients
@@ -152,6 +182,8 @@ impl BotManager {
                 endpoints: self.endpoints.clone(),
                 guild_events: events,
                 rules: Arc::new(self.rules.clone()),
+                profiles: Arc::new(self.profiles.clone()),
+                directories: self.directories.clone(),
             },
             application.enabled,
             stop.clone(),

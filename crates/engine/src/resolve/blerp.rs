@@ -8,11 +8,11 @@ use serde_json::{Value, json};
 use url::Url;
 
 use super::{
-    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Variant,
+    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag, Variant,
     clean_title, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container};
+use crate::media::{AudioCodec, Container, MediaKind};
 
 pub const PLATFORM: &str = "blerp";
 const GRAPHQL: &str = "https://api.blerp.com/graphql";
@@ -194,6 +194,8 @@ impl Resolver for BlerpResolver {
             hosts: &["blerp.com"],
             features: &["sound bites", "audio"],
             formats: &["mp3"],
+            media: &[MediaKind::Audio],
+            tags: &[Tag::Music],
             session: SessionSupport::None,
             examples: &[
                 "https://blerp.com/soundbites/6320fe8745636cb4dd677a5a",
@@ -215,12 +217,12 @@ impl Resolver for BlerpResolver {
         let mp3 = util::url_of(&bite["audio"]["mp3"]["url"], None)
             .ok_or_else(|| ResolveError::malformed(url, "the bite names no mp3 file"))?;
         let mut variant = Variant::file(mp3);
-        variant.container = Some(Container::Other("mp3".into()));
+        variant.container = Some(Container::Mp3);
         variant.audio = Some(AudioCodec::Mp3);
         variant.audio_only = true;
         variant.format_id = Some("mp3".into());
         let bite_id = util::text(&bite["_id"]).unwrap_or_else(|| id.clone());
-        let mut resolved = Resolved::new(PLATFORM);
+        let mut resolved = Resolved::of(PLATFORM, MediaKind::Audio);
         resolved.id = Some(bite_id.clone());
         resolved.title = bite["title"].as_str().and_then(clean_title);
         resolved.description = bite["description"].as_str().and_then(clean_title);
@@ -312,7 +314,8 @@ mod tests {
         assert_eq!(audio.url.as_str(), "https://audio.blerp.com/audio/abc.mp3");
         assert!(audio.audio_only);
         assert_eq!(audio.audio, Some(AudioCodec::Mp3));
-        assert_eq!(audio.container, Some(Container::Other("mp3".into())));
+        assert_eq!(audio.container, Some(Container::Mp3));
+        assert_eq!(resolved.media, MediaKind::Audio);
     }
 
     #[tokio::test]

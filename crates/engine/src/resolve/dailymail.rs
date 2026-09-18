@@ -10,11 +10,11 @@ use serde_json::Value;
 use url::Url;
 
 use super::{
-    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Variant,
+    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag, Variant,
     clean_title, fetch, hls, navigation_headers, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "dailymail";
 const SITE: &str = "https://www.dailymail.com";
@@ -89,6 +89,8 @@ impl Resolver for DailymailResolver {
             hosts: &["dailymail.com", "dailymail.co.uk"],
             features: &["videos"],
             formats: &["hls", "mp4"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::News],
             session: SessionSupport::None,
             examples: &[
                 "https://www.dailymail.com/video/royals/video-3692517/Video-Meghan-shares-playful-clips-45th-birthday.html",

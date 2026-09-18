@@ -10,11 +10,11 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Page, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport,
-    SubtitleFormat, SubtitleTrack, Variant, clean_title, fetch_ok, navigation_headers, page,
+    SubtitleFormat, SubtitleTrack, Tag, Variant, clean_title, fetch_ok, navigation_headers, page,
     path_extension, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "democracynow";
 
@@ -71,10 +71,13 @@ impl Resolver for DemocracynowResolver {
             hosts: &["democracynow.org"],
             features: &["shows", "videos", "audio"],
             formats: &["mp4", "m4a"],
+            media: &[MediaKind::Video, MediaKind::Audio],
+            tags: &[Tag::News, Tag::Podcasts],
             session: SessionSupport::None,
             examples: &[
                 "http://www.democracynow.org/shows/2015/7/3",
                 "http://www.democracynow.org/2015/7/3/this_flag_comes_down_today_bree",
+                "https://www.democracynow.org/shows/2001/9/11",
             ],
         }
     }
@@ -152,6 +155,10 @@ impl Resolver for DemocracynowResolver {
                 url,
                 "the page offers no media file",
             ));
+        }
+        // The player names what the page carries: a show with only an audio file is audio.
+        if resolved.variants.iter().all(|v| v.audio_only) {
+            resolved.media = MediaKind::Audio;
         }
         if let Some(caption) = util::url_of(&data["caption_file"], Some(url)) {
             resolved.subtitles.push(SubtitleTrack {
@@ -278,6 +285,7 @@ mod tests {
         );
         assert_eq!(video.container, Some(Container::Mp4));
         assert!(!video.audio_only);
+        assert_eq!(resolved.media, MediaKind::Video);
         assert_eq!(resolved.subtitles.len(), 2);
         assert_eq!(
             resolved.subtitles[0].url.as_str(),
@@ -287,6 +295,39 @@ mod tests {
         assert_eq!(resolved.subtitles[0].language, "en");
         assert_eq!(resolved.subtitles[1].language, "en");
         assert_eq!(resolved.subtitles[1].format, SubtitleFormat::Vtt);
+    }
+
+    #[tokio::test]
+    async fn shows_with_only_an_audio_file_are_audio() {
+        let page = r#"<html><head><meta property="og:description" content="Democracy Now! for September 11, 2001."></head><body>
+        <script type="text/json" id="player-data">
+        {"video":"","high_res_video":"","audio":"https://www.archive.org/download/dn2001-0911/dn2001-0911-1_64kb.mp3","image":"https://assets.democracynow.org/assets/default.jpg","title":"Democracy Now! for September 11, 2001","locale":"en"}
+        </script></body></html>"#;
+        let mut fixture = Fixture::new(PLATFORM, None);
+        fixture.exchanges.push(get(
+            "https://www.democracynow.org/shows/2001/9/11",
+            200,
+            "text/html",
+            page.into(),
+        ));
+        let resolver = DemocracynowResolver::new(Http::replay(fixture));
+        let url = Url::parse("https://www.democracynow.org/shows/2001/9/11").unwrap();
+        let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
+        assert_eq!(resolved.media, MediaKind::Audio);
+        assert_eq!(resolved.id.as_deref(), Some("2001-0911-1_64kb"));
+        assert_eq!(
+            resolved.title.as_deref(),
+            Some("Democracy Now! for September 11, 2001")
+        );
+        assert_eq!(resolved.variants.len(), 1);
+        let audio = &resolved.variants[0];
+        assert!(audio.audio_only);
+        assert_eq!(audio.container, Some(Container::Mp3));
+        assert_eq!(audio.audio, Some(AudioCodec::Mp3));
+        assert_eq!(
+            audio.url.as_str(),
+            "https://www.archive.org/download/dn2001-0911/dn2001-0911-1_64kb.mp3"
+        );
     }
 
     #[tokio::test]

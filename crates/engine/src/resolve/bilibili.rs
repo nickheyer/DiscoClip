@@ -16,11 +16,11 @@ use url::Url;
 
 use super::{
     ClipRange, MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved,
-    Resolver, SessionCheck, SessionSupport, SubtitleFormat, SubtitleTrack, Variant, VariantKind,
-    clean_title, fetch, hls, status_error, timestamp_hint, util,
+    Resolver, SessionCheck, SessionSupport, SubtitleFormat, SubtitleTrack, Tag, Variant,
+    VariantKind, clean_title, fetch, hls, status_error, timestamp_hint, util,
 };
 use crate::http::{BROWSER_UA, Cookie, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "bilibili";
 const API: &str = "https://api.bilibili.com";
@@ -1208,15 +1208,8 @@ impl BilibiliResolver {
             .await?;
         let mut variant = Variant::file(file);
         variant.audio_only = true;
-        variant.container = Some(Container::Other(
-            variant
-                .url
-                .path()
-                .rsplit('.')
-                .next()
-                .unwrap_or("m4a")
-                .to_ascii_lowercase(),
-        ));
+        variant.container =
+            Some(Container::from_name(variant.url.path()).unwrap_or(Container::M4a));
         variant.audio = Some(if variant.url.path().ends_with(".mp3") {
             AudioCodec::Mp3
         } else {
@@ -1229,7 +1222,7 @@ impl BilibiliResolver {
             .map(Duration::from_secs);
         variant.format_id = Some("audio".to_string());
         variant.headers = vec![("referer".to_string(), origin.to_string())];
-        let mut resolved = Resolved::new(PLATFORM);
+        let mut resolved = Resolved::of(PLATFORM, MediaKind::Audio);
         resolved.id = Some(format!("au{sid}"));
         resolved.title = song["title"].as_str().and_then(clean_title);
         resolved.description = song["intro"].as_str().and_then(clean_title);
@@ -2363,6 +2356,8 @@ impl Resolver for BilibiliResolver {
                 "subtitles",
             ],
             formats: &["mp4", "flv", "hls", "m4a"],
+            media: &[MediaKind::Video, MediaKind::Audio],
+            tags: &[Tag::Basic, Tag::Video, Tag::Music],
             session: SessionSupport::Optional,
             examples: &[
                 "https://www.bilibili.com/video/BV1xx411c7mD/",
@@ -2752,6 +2747,7 @@ mod tests {
             "https://i0.hdslb.com/pic.jpg"
         );
         assert_eq!(resolved.variants.len(), 5);
+        assert_eq!(resolved.media, MediaKind::Video);
         let video: Vec<_> = resolved.variants.iter().filter(|v| v.video_only).collect();
         assert_eq!(video.len(), 3);
         assert_eq!(video[0].video, Some(VideoCodec::H265));
@@ -3091,6 +3087,7 @@ mod tests {
         assert_eq!(song.duration, Some(Duration::from_secs(183)));
         assert_eq!(song.variants.len(), 1);
         assert!(song.variants[0].audio_only);
+        assert_eq!(song.media, MediaKind::Audio);
         assert_eq!(song.subtitles.len(), 1, "the lyrics");
 
         let Resolution::Playlist(season) = resolver

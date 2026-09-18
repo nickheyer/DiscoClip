@@ -14,11 +14,11 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Page, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved,
-    Resolver, SessionSupport, Variant, clean_title, fetch, fetch_ok, hls, navigation_headers,
+    Resolver, SessionSupport, Tag, Variant, clean_title, fetch, fetch_ok, hls, navigation_headers,
     status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "ustream";
 const SITE: &str = "https://video.ibm.com";
@@ -533,6 +533,8 @@ impl Resolver for UstreamResolver {
             hosts: &["video.ibm.com", "ustream.tv"],
             features: &["recordings", "live", "channels", "embeds"],
             formats: &["hls", "mp4", "flv"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Live],
             session: SessionSupport::None,
             examples: &[
                 "https://video.ibm.com/recorded/134842643",

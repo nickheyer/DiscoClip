@@ -14,11 +14,11 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Page, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport,
-    SubtitleFormat, SubtitleTrack, Variant, VariantKind, clean_title, fetch, hls, path_extension,
-    status_error, util,
+    SubtitleFormat, SubtitleTrack, Tag, Variant, VariantKind, clean_title, fetch, hls,
+    path_extension, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "amp";
 
@@ -790,6 +790,8 @@ impl Resolver for AmpResolver {
             ],
             features: &["videos", "embeds", "feeds"],
             formats: &["hls", "mp4"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Players],
             session: SessionSupport::None,
             examples: &[
                 "https://www.foxnews.com/video/6320653836112",

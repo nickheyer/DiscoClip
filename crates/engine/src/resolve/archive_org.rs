@@ -1,9 +1,10 @@
 //! Internet Archive items, through the metadata API that lists an item's files and the
 //! embeddable player that groups them: the video and audio files of an item, each
-//! original with its derivatives as variants and the player's subtitle tracks, and an
-//! item holding several recordings as a playlist of them. A link naming one file of the
-//! item resolves that recording alone. Files marked private are listed only with a
-//! logged-in session.
+//! original with its derivatives as variants and the player's subtitle tracks, the
+//! item's original images and documents (PDF, EPUB, DjVu, text) as the files they are,
+//! and an item holding several of these as a playlist of them. A link naming one file of
+//! the item resolves that recording, or that file whatever its kind. Files marked
+//! private are listed only with a logged-in session.
 
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -18,11 +19,11 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved, Resolver,
-    SessionSupport, SubtitleFormat, SubtitleTrack, Variant, VariantKind, clean_title, fetch,
+    SessionSupport, SubtitleFormat, SubtitleTrack, Tag, Variant, VariantKind, clean_title, fetch,
     parse_time_stamp, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "archive_org";
 const SITE: &str = "https://archive.org/";
@@ -49,6 +50,10 @@ const AUDIO_EXTENSIONS: &[&str] = &[
     "mp3", "m4a", "m4b", "m4r", "aac", "flac", "ogg", "oga", "opus", "spx", "wav", "aiff", "alac",
     "ape", "wma", "mka", "weba", "f4a", "f4b",
 ];
+const IMAGE_EXTENSIONS: &[&str] = &[
+    "jpg", "jpeg", "png", "webp", "avif", "bmp", "tif", "tiff", "heic", "svg", "jp2",
+];
+const DOCUMENT_EXTENSIONS: &[&str] = &["pdf", "epub", "djvu", "txt", "mobi", "azw3", "cbz", "cbr"];
 
 /// An item, and one of its files when the link names one.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -116,6 +121,50 @@ pub fn is_audio_name(name: &str) -> bool {
 /// Whether a file is one that plays: a video or an audio file, not a thumbnail strip.
 pub fn is_media_name(name: &str) -> bool {
     is_video_name(name) || is_audio_name(name)
+}
+
+pub fn is_image_name(name: &str) -> bool {
+    !name.contains(".thumbs/")
+        && extension_of(name).is_some_and(|ext| IMAGE_EXTENSIONS.contains(&ext.as_str()))
+}
+
+pub fn is_document_name(name: &str) -> bool {
+    extension_of(name).is_some_and(|ext| DOCUMENT_EXTENSIONS.contains(&ext.as_str()))
+}
+
+/// The files the archive keeps about an item rather than in it: its metadata, its file
+/// listing, its reviews, its torrent and its tile.
+pub fn is_housekeeping_name(name: &str) -> bool {
+    let base = name.rsplit('/').next().unwrap_or(name);
+    base.starts_with("__ia_thumb")
+        || base.ends_with("_meta.xml")
+        || base.ends_with("_files.xml")
+        || base.ends_with("_reviews.xml")
+        || base.ends_with("_meta.sqlite")
+        || base.ends_with("_archive.torrent")
+        || base.ends_with("_scandata.xml")
+        || base.ends_with("_events.json")
+        || base.ends_with("_hocr.html")
+        || base.ends_with("_chocr.html.gz")
+        || base.ends_with("_page_numbers.json")
+        || base.ends_with("_spectrogram.png")
+        || base.ends_with("_esshash.json")
+        || base.ends_with("_thumb.jpg")
+        || base.ends_with("_itemimage.jpg")
+        || name.contains(".thumbs/")
+}
+
+/// What a file of the item is, by its name.
+pub fn kind_of_name(name: &str) -> MediaKind {
+    if is_video_name(name) {
+        MediaKind::Video
+    } else if is_audio_name(name) {
+        MediaKind::Audio
+    } else if is_image_name(name) {
+        MediaKind::Image
+    } else {
+        MediaKind::File
+    }
 }
 
 /// One file of the item as the API lists it.
@@ -395,8 +444,27 @@ fn audio_codec_for(ext: &str) -> AudioCodec {
 pub fn variant_of(item: &str, file: &ItemFile) -> Variant {
     let ext = extension_of(&file.name).unwrap_or_default();
     let mut v = Variant::new(download_url(item, &file.name), VariantKind::File);
+    v.container = Container::from_name(&file.name);
+    v.size = file.size;
+    v.format_id = Some(file.format.clone());
+    match kind_of_name(&file.name) {
+        MediaKind::Video | MediaKind::Audio => {}
+        MediaKind::Image => {
+            v.width = file.width;
+            v.height = file.height;
+            v.label = Some(if file.source == "original" {
+                "original".to_string()
+            } else {
+                file.format.clone()
+            });
+            return v;
+        }
+        MediaKind::File => {
+            v.label = Some(file.format.clone());
+            return v;
+        }
+    }
     let audio_only = is_audio_name(&file.name);
-    v.container = Container::from_extension(&ext).or_else(|| Some(Container::Other(ext.clone())));
     let (video, audio) = codecs_for(&file.format, &ext);
     v.video = if audio_only { None } else { video };
     v.audio = if audio_only {
@@ -407,14 +475,12 @@ pub fn variant_of(item: &str, file: &ItemFile) -> Variant {
     v.audio_only = audio_only;
     v.width = file.width;
     v.height = file.height;
-    v.size = file.size;
     v.duration = file.length;
     if let (Some(size), Some(length)) = (file.size, file.length)
         && length.as_secs_f64() > 0.0
     {
         v.bitrate = Some((size as f64 * 8.0 / length.as_secs_f64()) as u64);
     }
-    v.format_id = Some(file.format.clone());
     v.label = Some(match (file.source.as_str(), file.height) {
         ("original", _) => "original".to_string(),
         (_, Some(h)) if !audio_only => format!("{h}p {}", file.format),
@@ -504,11 +570,75 @@ fn joined_text(value: &Value) -> Option<String> {
     }
 }
 
+/// The item's original images and documents, the files it holds beyond its recordings:
+/// what was uploaded, not what the archive derived from it or keeps about it. Private
+/// files are left out unless `logged_in`.
+pub fn plain_files(files: &[ItemFile], logged_in: bool) -> Vec<ItemFile> {
+    files
+        .iter()
+        .filter(|file| file.source == "original")
+        .filter(|file| !is_housekeeping_name(&file.name))
+        .filter(|file| file.format != "Metadata")
+        .filter(|file| is_image_name(&file.name) || is_document_name(&file.name))
+        .filter(|file| !file.private || logged_in)
+        .cloned()
+        .collect()
+}
+
+/// What the item's metadata says about the item, on any file resolved from it.
+fn describe_item(resolved: &mut Resolved, item: &str, metadata: &Value) {
+    let meta = &metadata["metadata"];
+    resolved.description = joined_text(&meta["description"])
+        .map(|d| util::clean_html(&d))
+        .and_then(|d| clean_title(&d));
+    resolved.uploader = text(&meta["creator"])
+        .or_else(|| text(&meta["uploader"]))
+        .or_else(|| text(&meta["adder"]))
+        .and_then(|u| clean_title(&u));
+    resolved.uploaded_at = text(&meta["publicdate"])
+        .or_else(|| text(&meta["addeddate"]))
+        .and_then(|d| parse_date(&d));
+    resolved.thumbnail = Url::parse(&format!("{SITE}services/img/{item}")).ok();
+    resolved.webpage_url = Url::parse(&format!("{SITE}details/{item}")).ok();
+}
+
+/// One file of an item that is not a recording, an image or a document, as the file it
+/// is: named by its own title, or the item's when it is the item's only file.
+fn file_resolved(item: &str, metadata: &Value, file: &ItemFile, alone: bool) -> Resolved {
+    let mut resolved = Resolved::of(PLATFORM, kind_of_name(&file.name));
+    describe_item(&mut resolved, item, metadata);
+    resolved.id = Some(if alone {
+        item.to_string()
+    } else {
+        format!("{item}/{}", file.name)
+    });
+    let item_title = text(&metadata["metadata"]["title"]).and_then(|t| clean_title(&t));
+    resolved.title = file
+        .title
+        .clone()
+        .or(if alone { item_title } else { None })
+        .or_else(|| Some(stem(&file.name)));
+    resolved.webpage_url = Url::parse(&format!(
+        "{SITE}details/{item}/{}",
+        utf8_percent_encode(&file.name, PATH)
+    ))
+    .ok();
+    resolved.variants = vec![variant_of(item, file)];
+    resolved
+}
+
 /// One recording of an item as media: named by the player (or the item, for an item of
-/// one recording), with every file that plays it and its subtitle tracks.
+/// one recording), with every file that plays it and its subtitle tracks. A recording
+/// whose files are all sound alone is audio.
 fn resolved_of(item: &str, metadata: &Value, recording: &Recording, alone: bool) -> Resolved {
     let meta = &metadata["metadata"];
-    let mut resolved = Resolved::new(PLATFORM);
+    let kind =
+        if !recording.files.is_empty() && recording.files.iter().all(|f| is_audio_name(&f.name)) {
+            MediaKind::Audio
+        } else {
+            MediaKind::Video
+        };
+    let mut resolved = Resolved::of(PLATFORM, kind);
     resolved.id = Some(if alone {
         item.to_string()
     } else {
@@ -573,17 +703,30 @@ impl Resolver for ArchiveOrgResolver {
                 "embeds",
                 "multi-recording items",
                 "audio",
+                "images",
+                "documents",
                 "subtitles",
             ],
             formats: &[
-                "mp4", "webm", "ogv", "avi", "mkv", "mov", "mp3", "ogg", "flac",
+                "mp4", "webm", "ogv", "avi", "mkv", "mov", "mp3", "ogg", "flac", "jpg", "png",
+                "tiff", "pdf", "epub", "djvu", "txt",
             ],
+            media: &[
+                MediaKind::Video,
+                MediaKind::Audio,
+                MediaKind::Image,
+                MediaKind::File,
+            ],
+            tags: &[Tag::Files, Tag::Video, Tag::Music],
             session: SessionSupport::Optional,
             examples: &[
                 "https://archive.org/details/BigBuckBunny_124",
                 "https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4",
                 "https://archive.org/details/Greatest_Speeches_of_the_20th_Century",
                 "https://archive.org/details/Greatest_Speeches_of_the_20th_Century/AbdicationAddress.mp3",
+                "https://archive.org/details/KSC-KSC-03PD-0626",
+                "https://archive.org/download/KSC-KSC-03PD-0626/03pd0626.jpg",
+                "https://archive.org/details/thecruiseoftheka06586gut",
             ],
         }
     }
@@ -597,34 +740,47 @@ impl Resolver for ArchiveOrgResolver {
         let metadata = self.metadata(&link.item, url).await?;
         let files = files_of(&metadata);
         let playlist = self.player(&link.item, url).await?;
-        let recordings = recordings_of(&files, &playlist, self.logged_in());
+        let logged_in = self.logged_in();
+        let recordings = recordings_of(&files, &playlist, logged_in);
+        let plain = plain_files(&files, logged_in);
+        let total = recordings.len() + plain.len();
         if let Some(wanted) = &link.file {
-            let recording = recordings
+            if let Some(recording) = recordings
                 .iter()
                 .find(|r| r.root == *wanted || r.files.iter().any(|f| &f.name == wanted))
+            {
+                let mut resolved = resolved_of(&link.item, &metadata, recording, total == 1);
+                resolved.webpage_url = Url::parse(&format!(
+                    "{SITE}details/{}/{}",
+                    link.item,
+                    utf8_percent_encode(&recording.root, PATH)
+                ))
+                .ok();
+                return Ok(Resolution::from(resolved));
+            }
+            // Any other file of the item, whatever its kind, as the file it is.
+            let file = files
+                .iter()
+                .find(|f| f.name == *wanted && (!f.private || logged_in))
                 .ok_or_else(|| ResolveError::NotFound(url.clone()))?;
-            let mut resolved = resolved_of(&link.item, &metadata, recording, recordings.len() == 1);
-            resolved.webpage_url = Url::parse(&format!(
-                "{SITE}details/{}/{}",
-                link.item,
-                utf8_percent_encode(&recording.root, PATH)
-            ))
-            .ok();
-            return Ok(Resolution::from(resolved));
+            let alone = total == 1 && plain.iter().any(|p| p.name == file.name);
+            return Ok(Resolution::from(file_resolved(
+                &link.item, &metadata, file, alone,
+            )));
         }
-        match recordings.len() {
-            0 => Err(ResolveError::unavailable(
+        match (recordings.as_slice(), plain.as_slice()) {
+            ([], []) => Err(ResolveError::unavailable(
                 url,
-                "the item holds no video or audio files",
+                "the item holds no video, audio, image or document files",
             )),
-            1 => Ok(Resolution::from(resolved_of(
-                &link.item,
-                &metadata,
-                &recordings[0],
-                true,
+            ([recording], []) => Ok(Resolution::from(resolved_of(
+                &link.item, &metadata, recording, true,
+            ))),
+            ([], [file]) => Ok(Resolution::from(file_resolved(
+                &link.item, &metadata, file, true,
             ))),
             _ => {
-                let entries = recordings
+                let mut entries: Vec<PlaylistEntry> = recordings
                     .iter()
                     .map(|recording| PlaylistEntry {
                         url: Url::parse(&format!(
@@ -644,7 +800,19 @@ impl Resolver for ArchiveOrgResolver {
                             .max()
                             .or(recording.duration),
                     })
-                    .collect::<Vec<_>>();
+                    .collect();
+                entries.extend(plain.iter().map(|file| {
+                    PlaylistEntry {
+                        url: Url::parse(&format!(
+                            "{SITE}details/{}/{}",
+                            link.item,
+                            utf8_percent_encode(&file.name, PATH)
+                        ))
+                        .expect("valid"),
+                        title: file.title.clone().or_else(|| Some(stem(&file.name))),
+                        duration: None,
+                    }
+                }));
                 Ok(Resolution::Playlist(Playlist {
                     resolver: PLATFORM.into(),
                     id: Some(link.item.clone()),
@@ -843,13 +1011,19 @@ mod tests {
             other => panic!("expected a playlist, got {other:?}"),
         };
         assert_eq!(playlist.title.as_deref(), Some("Two videos"));
-        assert_eq!(playlist.entries.len(), 2);
+        // The two recordings, then the item's original text file.
+        assert_eq!(playlist.entries.len(), 3);
         assert_eq!(
             playlist.entries[0].url.as_str(),
             "https://archive.org/details/two/a.mp4"
         );
         assert_eq!(playlist.entries[0].title.as_deref(), Some("a"));
         assert_eq!(playlist.entries[1].duration, Some(Duration::from_secs(8)));
+        assert_eq!(
+            playlist.entries[2].url.as_str(),
+            "https://archive.org/details/two/notes.txt"
+        );
+        assert_eq!(playlist.entries[2].title.as_deref(), Some("notes"));
         // One entry resolves to its own group.
         let resolved = resolver
             .resolve(&playlist.entries[0].url)
@@ -858,6 +1032,7 @@ mod tests {
             .media()
             .unwrap();
         assert_eq!(resolved.title.as_deref(), Some("a"));
+        assert_eq!(resolved.media, MediaKind::Video);
         assert_eq!(resolved.variants.len(), 2);
         assert!(matches!(
             resolver
@@ -866,14 +1041,195 @@ mod tests {
                 .unwrap_err(),
             ResolveError::NotFound(_)
         ));
+        // A text file without a source is not an original of the item, so an item of
+        // nothing else holds nothing.
         let error = resolver
             .resolve(&Url::parse("https://archive.org/details/text").unwrap())
             .await
             .unwrap_err();
         assert!(
-            matches!(&error, ResolveError::Unavailable { reason, .. } if reason.contains("no video")),
+            matches!(&error, ResolveError::Unavailable { reason, .. } if reason.contains("no video, audio, image or document")),
             "{error}"
         );
+    }
+
+    const PHOTO_ITEM: &str = r#"{"files":[
+        {"name":"03pd0626.jpg","source":"original","format":"JPEG","size":"391769","width":"3000","height":"2400"},
+        {"name":"03pd0626_thumb.jpg","source":"derivative","format":"JPEG Thumb","size":"4482","original":"03pd0626.jpg"},
+        {"name":"KSC-KSC-03PD-0626_archive.torrent","source":"metadata","format":"Archive BitTorrent","size":"1680"},
+        {"name":"KSC-KSC-03PD-0626_files.xml","source":"original","format":"Metadata"},
+        {"name":"KSC-KSC-03PD-0626_meta.xml","source":"original","format":"Metadata","size":"1466"},
+        {"name":"__ia_thumb.jpg","source":"original","format":"Item Tile","size":"8634"}
+      ],"metadata":{"identifier":"KSC-KSC-03PD-0626","title":"KSC-03PD-0626","mediatype":"image","creator":"NASA","publicdate":"2009-09-29 09:35:25","description":"Another shipment of Columbia debris arrives at the KSC RLV Hangar."}}"#;
+    const BOOK_ITEM: &str = r#"{"files":[
+        {"name":"crskw10.txt","source":"original","format":"Text","size":"158578"},
+        {"name":"crskw10.zip","source":"original","format":"ZIP","size":"66398"},
+        {"name":"thecruiseoftheka06586gut_archive.torrent","source":"metadata","format":"Archive BitTorrent","size":"1728"},
+        {"name":"thecruiseoftheka06586gut_files.xml","source":"metadata","format":"Metadata"},
+        {"name":"thecruiseoftheka06586gut_meta.xml","source":"metadata","format":"Metadata","size":"786"}
+      ],"metadata":{"identifier":"thecruiseoftheka06586gut","title":"The Cruise of the Kawa","mediatype":"texts","creator":"Chappell, George S. (George Shepard), 1877-1946","publicdate":"2014-09-24 07:46:33"}}"#;
+
+    #[tokio::test]
+    async fn an_item_of_one_image_resolves_as_that_image() {
+        let mut fixture = Fixture::new("archive_org", None);
+        fixture.exchanges.push(get(
+            "https://archive.org/metadata/KSC-KSC-03PD-0626",
+            200,
+            PHOTO_ITEM,
+        ));
+        fixture.exchanges.push(get(
+            "https://archive.org/embed/KSC-KSC-03PD-0626",
+            404,
+            "<html>not found</html>",
+        ));
+        fixture.exchanges.push(get(
+            "https://archive.org/metadata/KSC-KSC-03PD-0626",
+            200,
+            PHOTO_ITEM,
+        ));
+        fixture.exchanges.push(get(
+            "https://archive.org/embed/KSC-KSC-03PD-0626",
+            404,
+            "<html>not found</html>",
+        ));
+        let resolver = ArchiveOrgResolver::new(Http::replay(fixture));
+        let resolved = resolver
+            .resolve(&Url::parse("https://archive.org/details/KSC-KSC-03PD-0626").unwrap())
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
+        assert_eq!(resolved.media, MediaKind::Image);
+        assert_eq!(resolved.id.as_deref(), Some("KSC-KSC-03PD-0626"));
+        assert_eq!(resolved.title.as_deref(), Some("KSC-03PD-0626"));
+        assert_eq!(resolved.uploader.as_deref(), Some("NASA"));
+        assert!(
+            resolved
+                .description
+                .as_deref()
+                .unwrap()
+                .starts_with("Another shipment")
+        );
+        assert_eq!(resolved.duration, None);
+        assert_eq!(resolved.variants.len(), 1);
+        let v = &resolved.variants[0];
+        assert_eq!(
+            v.url.as_str(),
+            "https://archive.org/download/KSC-KSC-03PD-0626/03pd0626.jpg"
+        );
+        assert_eq!(v.container, Some(Container::Jpeg));
+        assert_eq!((v.width, v.height), (Some(3000), Some(2400)));
+        assert_eq!(v.size, Some(391769));
+        assert_eq!(v.label.as_deref(), Some("original"));
+        assert!(!v.audio_only && v.video.is_none() && v.bitrate.is_none());
+        // The direct link to the file resolves the same image.
+        let direct = resolver
+            .resolve(
+                &Url::parse("https://archive.org/download/KSC-KSC-03PD-0626/03pd0626.jpg").unwrap(),
+            )
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
+        assert_eq!(direct.media, MediaKind::Image);
+        assert_eq!(direct.title.as_deref(), Some("KSC-03PD-0626"));
+        assert_eq!(direct.variants[0].size, Some(391769));
+    }
+
+    #[tokio::test]
+    async fn documents_resolve_as_files_and_any_named_file_resolves_directly() {
+        let mut fixture = Fixture::new("archive_org", None);
+        for _ in 0..3 {
+            fixture.exchanges.push(get(
+                "https://archive.org/metadata/thecruiseoftheka06586gut",
+                200,
+                BOOK_ITEM,
+            ));
+            fixture.exchanges.push(get(
+                "https://archive.org/embed/thecruiseoftheka06586gut",
+                404,
+                "<html>not found</html>",
+            ));
+        }
+        let resolver = ArchiveOrgResolver::new(Http::replay(fixture));
+        // The text is the item's one document; the zip is not a document, so the item is
+        // the text alone.
+        let book = resolver
+            .resolve(&Url::parse("https://archive.org/details/thecruiseoftheka06586gut").unwrap())
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
+        assert_eq!(book.media, MediaKind::File);
+        assert_eq!(book.title.as_deref(), Some("The Cruise of the Kawa"));
+        assert!(
+            book.uploader
+                .as_deref()
+                .unwrap()
+                .starts_with("Chappell, George S.")
+        );
+        assert_eq!(book.variants.len(), 1);
+        assert_eq!(
+            book.variants[0].url.as_str(),
+            "https://archive.org/download/thecruiseoftheka06586gut/crskw10.txt"
+        );
+        assert_eq!(
+            book.variants[0].container,
+            Some(Container::Other("txt".into()))
+        );
+        assert_eq!(book.variants[0].size, Some(158578));
+        assert_eq!(book.variants[0].label.as_deref(), Some("Text"));
+        // The zip resolves by its own link, as the file it is.
+        let zip = resolver
+            .resolve(
+                &Url::parse("https://archive.org/download/thecruiseoftheka06586gut/crskw10.zip")
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
+        assert_eq!(zip.media, MediaKind::File);
+        assert_eq!(
+            zip.id.as_deref(),
+            Some("thecruiseoftheka06586gut/crskw10.zip")
+        );
+        assert_eq!(zip.title.as_deref(), Some("crskw10"));
+        assert_eq!(
+            zip.variants[0].container,
+            Some(Container::Other("zip".into()))
+        );
+        assert_eq!(zip.variants[0].size, Some(66398));
+        assert!(matches!(
+            resolver
+                .resolve(
+                    &Url::parse(
+                        "https://archive.org/download/thecruiseoftheka06586gut/missing.pdf"
+                    )
+                    .unwrap()
+                )
+                .await
+                .unwrap_err(),
+            ResolveError::NotFound(_)
+        ));
+    }
+
+    #[test]
+    fn housekeeping_files_are_told_from_the_items_own() {
+        assert!(is_housekeeping_name("x_meta.xml"));
+        assert!(is_housekeeping_name("x_files.xml"));
+        assert!(is_housekeeping_name("x_reviews.xml"));
+        assert!(is_housekeeping_name("__ia_thumb.jpg"));
+        assert!(is_housekeeping_name("x.thumbs/x_000001.jpg"));
+        assert!(!is_housekeeping_name("photo.jpg"));
+        assert_eq!(kind_of_name("a.mp4"), MediaKind::Video);
+        assert_eq!(kind_of_name("a.flac"), MediaKind::Audio);
+        assert_eq!(kind_of_name("a.tiff"), MediaKind::Image);
+        assert_eq!(kind_of_name("a.pdf"), MediaKind::File);
+        let files = files_of(&serde_json::from_str::<Value>(PHOTO_ITEM).unwrap());
+        let plain = plain_files(&files, false);
+        assert_eq!(plain.len(), 1);
+        assert_eq!(plain[0].name, "03pd0626.jpg");
     }
 
     #[tokio::test]
@@ -922,6 +1278,7 @@ mod tests {
             .media()
             .unwrap();
         assert_eq!(one.id.as_deref(), Some("speeches/One.mp3"));
+        assert_eq!(one.media, MediaKind::Audio);
         assert_eq!(one.title.as_deref(), Some("Number one"));
         assert_eq!(one.uploader.as_deref(), Some("King Edward VIII"));
         assert_eq!(one.description.as_deref(), Some("First. Second."));

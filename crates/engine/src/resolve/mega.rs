@@ -1,8 +1,9 @@
 //! MEGA files and folders. Files are stored encrypted with a key that only the link
 //! carries: the download link comes from the API, the file's name from its attributes
 //! decrypted with that key, and the bytes are decrypted with AES-128 in counter mode as
-//! they are fetched. A folder link lists its nodes, each node's key decrypted with the
-//! folder's, and its videos become a playlist whose entries name their node.
+//! they are fetched. A file of any kind resolves as what its name says it is. A folder
+//! link lists its nodes, each node's key decrypted with the folder's, and its files become
+//! a playlist whose entries name their node.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -19,10 +20,10 @@ use url::Url;
 
 use super::{
     Cipher, MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved,
-    Resolver, SessionSupport, Variant, VariantKind, clean_title,
+    Resolver, SessionSupport, Tag, Variant, VariantKind, clean_title,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "mega";
 const API: &str = "https://g.api.mega.co.nz/cs";
@@ -190,16 +191,36 @@ fn api_error(code: i64, origin: &Url) -> ResolveError {
     }
 }
 
-fn media_container(name: &str) -> Option<Container> {
-    name.rsplit('.').next().and_then(Container::from_extension)
+/// What a file is, by its name: MEGA knows nothing of a file beyond its name and size.
+pub fn kind_of(name: &str) -> MediaKind {
+    Container::from_name(name).map_or(MediaKind::File, |c| c.kind())
+}
+
+/// The codec an audio file's format implies.
+fn audio_codec_of(container: Option<&Container>) -> Option<AudioCodec> {
+    match container {
+        Some(Container::Mp3) => Some(AudioCodec::Mp3),
+        Some(Container::M4a) => Some(AudioCodec::Aac),
+        Some(Container::Ogg) => Some(AudioCodec::Vorbis),
+        Some(Container::Opus) => Some(AudioCodec::Opus),
+        Some(Container::Flac) => Some(AudioCodec::Flac),
+        _ => None,
+    }
 }
 
 fn variant_for(url: Url, name: &str, size: Option<u64>, key: FileKey) -> Variant {
     let mut v = Variant::new(url, VariantKind::File);
-    v.container = media_container(name);
-    if v.container == Some(Container::Mp4) {
-        v.video = Some(VideoCodec::H264);
-        v.audio = Some(AudioCodec::Aac);
+    v.container = Container::from_name(name);
+    match kind_of(name) {
+        MediaKind::Video if v.container == Some(Container::Mp4) => {
+            v.video = Some(VideoCodec::H264);
+            v.audio = Some(AudioCodec::Aac);
+        }
+        MediaKind::Audio => {
+            v.audio_only = true;
+            v.audio = audio_codec_of(v.container.as_ref());
+        }
+        MediaKind::Video | MediaKind::Image | MediaKind::File => {}
     }
     v.size = size;
     v.cipher = Some(Cipher::Aes128Ctr {
@@ -371,13 +392,7 @@ impl MegaResolver {
             .as_str()
             .and_then(|u| Url::parse(u).ok())
             .ok_or_else(|| ResolveError::unavailable(origin, "the API gave no download link"))?;
-        if media_container(&name).is_none() {
-            return Err(ResolveError::unavailable(
-                origin,
-                format!("{name} is not a video file"),
-            ));
-        }
-        let mut resolved = Resolved::new(PLATFORM);
+        let mut resolved = Resolved::of(PLATFORM, kind_of(&name));
         resolved.id = Some(id.to_string());
         resolved.title = clean_title(name.rsplit_once('.').map_or(name.as_str(), |(s, _)| s));
         resolved.webpage_url = Some(origin.clone());
@@ -411,12 +426,6 @@ impl MegaResolver {
             let folded = file.key.ok_or_else(|| {
                 ResolveError::unavailable(origin, "the node's key does not decrypt")
             })?;
-            if media_container(&file.name).is_none() {
-                return Err(ResolveError::unavailable(
-                    origin,
-                    format!("{} is not a video file", file.name),
-                ));
-            }
             let record = self
                 .call(json!({"a": "g", "g": 1, "n": handle}), Some(id), origin)
                 .await?;
@@ -426,7 +435,7 @@ impl MegaResolver {
                 .ok_or_else(|| {
                     ResolveError::unavailable(origin, "the API gave no download link")
                 })?;
-            let mut resolved = Resolved::new(PLATFORM);
+            let mut resolved = Resolved::of(PLATFORM, kind_of(&file.name));
             resolved.id = Some(handle.to_string());
             resolved.title = clean_title(
                 file.name
@@ -456,7 +465,6 @@ impl MegaResolver {
         let key_text = URL_SAFE_NO_PAD.encode(key);
         let entries: Vec<PlaylistEntry> = files_under(&nodes, root.as_deref())
             .into_iter()
-            .filter(|n| media_container(&n.name).is_some())
             .map(|n| PlaylistEntry {
                 url: Url::parse(&format!(
                     "https://mega.nz/folder/{id}#{key_text}/file/{}",
@@ -470,7 +478,7 @@ impl MegaResolver {
         if entries.is_empty() {
             return Err(ResolveError::unavailable(
                 origin,
-                "the folder holds no video files",
+                "the folder holds no files",
             ));
         }
         Ok(Resolution::Playlist(Playlist {
@@ -500,8 +508,21 @@ impl Resolver for MegaResolver {
                 "files within folders",
                 "legacy links",
                 "embeds",
+                "audio",
+                "images",
+                "documents",
             ],
-            formats: &["mp4", "mkv", "webm", "mov"],
+            formats: &[
+                "mp4", "mkv", "webm", "mov", "mp3", "m4a", "flac", "jpg", "png", "pdf", "zip",
+                "any file",
+            ],
+            media: &[
+                MediaKind::Video,
+                MediaKind::Audio,
+                MediaKind::Image,
+                MediaKind::File,
+            ],
+            tags: &[Tag::Files],
             session: SessionSupport::None,
             examples: &[
                 "https://mega.nz/file/MR5F3QCI#Vj2aut_FqBVciXFJ9eck22uczDouiElMTBdwmGnk9-g",
@@ -674,7 +695,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn folders_list_their_videos_and_entries_resolve_within_them() {
+    async fn folders_list_their_files_and_entries_resolve_within_them() {
         let mut fixture = Fixture::new("mega", None);
         fixture.exchanges.push(post(
             "https://g.api.mega.co.nz/cs?id=0&n=qQVUTAyZ",
@@ -688,6 +709,14 @@ mod tests {
             "https://g.api.mega.co.nz/cs?id=2&n=qQVUTAyZ",
             r#"[{"s":39859166,"g":"http://gfs.userstorage.mega.co.nz/dl/token","at":"x"}]"#,
         ));
+        fixture.exchanges.push(post(
+            "https://g.api.mega.co.nz/cs?id=3&n=qQVUTAyZ",
+            &folder_listing(),
+        ));
+        fixture.exchanges.push(post(
+            "https://g.api.mega.co.nz/cs?id=4&n=qQVUTAyZ",
+            r#"[{"s":1234,"g":"http://gfs.userstorage.mega.co.nz/dl/ziptoken","at":"x"}]"#,
+        ));
         let resolver = MegaResolver::new(Http::replay(fixture));
         let playlist = match resolver
             .resolve(&Url::parse(FOLDER_LINK).unwrap())
@@ -698,9 +727,13 @@ mod tests {
             other => panic!("expected a playlist, got {other:?}"),
         };
         assert_eq!(playlist.title.as_deref(), Some("Eldritch_Dimensions"));
-        assert_eq!(playlist.entries.len(), 1);
-        let entry = &playlist.entries[0];
-        assert_eq!(entry.title.as_deref(), Some("trailer"));
+        // The video and the two zip files beside it.
+        assert_eq!(playlist.entries.len(), 3);
+        let entry = playlist
+            .entries
+            .iter()
+            .find(|e| e.title.as_deref() == Some("trailer"))
+            .unwrap();
         assert!(
             entry
                 .url
@@ -709,8 +742,81 @@ mod tests {
         );
         let resolved = resolver.resolve(&entry.url).await.unwrap().media().unwrap();
         assert_eq!(resolved.title.as_deref(), Some("trailer"));
+        assert_eq!(resolved.media, MediaKind::Video);
         assert_eq!(resolved.variants[0].size, Some(39859166));
         assert!(resolved.variants[0].cipher.is_some());
         assert!(resolved.uploaded_at.is_some());
+        let zip = playlist
+            .entries
+            .iter()
+            .find(|e| e.title.as_deref() != Some("trailer"))
+            .unwrap();
+        let resolved = resolver.resolve(&zip.url).await.unwrap().media().unwrap();
+        assert_eq!(resolved.media, MediaKind::File);
+        assert_eq!(
+            resolved.variants[0].container,
+            Some(Container::Other("zip".into()))
+        );
+        assert_eq!(resolved.variants[0].size, Some(1234));
+        assert!(resolved.variants[0].cipher.is_some());
+        assert!(!resolved.variants[0].audio_only);
+    }
+
+    #[tokio::test]
+    async fn images_and_audio_files_resolve_as_what_their_names_say() {
+        // The file record of the video above, its attributes re-encrypted under the same
+        // key for a photo and for a song, so the names decrypt to those.
+        let raw = decode_key("Vj2aut_FqBVciXFJ9eck22uczDouiElMTBdwmGnk9-g").unwrap();
+        let folded = fold_key(&raw).unwrap();
+        let attributes = |name: &str| {
+            use aes::cipher::BlockModeEncrypt;
+            let mut plain = format!("MEGA{{\"n\":\"{name}\"}}").into_bytes();
+            while plain.len() % 16 != 0 {
+                plain.push(0);
+            }
+            let encryptor =
+                cbc::Encryptor::<Aes128>::new_from_slices(&folded.key, &[0u8; 16]).unwrap();
+            URL_SAFE_NO_PAD.encode(encryptor.encrypt_padded_vec::<NoPadding>(&plain))
+        };
+        let record = |name: &str, size: u64| {
+            format!(
+                r#"[{{"s":{size},"at":"{}","g":"http://gfs.userstorage.mega.co.nz/dl/{size}"}}]"#,
+                attributes(name)
+            )
+        };
+        let mut fixture = Fixture::new("mega", None);
+        fixture.exchanges.push(post(
+            "https://g.api.mega.co.nz/cs?id=0",
+            &record("Holiday photo.JPG", 3_500_000),
+        ));
+        fixture.exchanges.push(post(
+            "https://g.api.mega.co.nz/cs?id=1",
+            &record("Demo take 3.flac", 25_000_000),
+        ));
+        let resolver = MegaResolver::new(Http::replay(fixture));
+        let image = resolver
+            .resolve(&Url::parse(FILE_LINK).unwrap())
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
+        assert_eq!(image.media, MediaKind::Image);
+        assert_eq!(image.title.as_deref(), Some("Holiday photo"));
+        assert_eq!(image.variants[0].container, Some(Container::Jpeg));
+        assert_eq!(image.variants[0].size, Some(3_500_000));
+        assert!(image.variants[0].cipher.is_some());
+        let audio = resolver
+            .resolve(&Url::parse(FILE_LINK).unwrap())
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
+        assert_eq!(audio.media, MediaKind::Audio);
+        assert_eq!(audio.title.as_deref(), Some("Demo take 3"));
+        let v = &audio.variants[0];
+        assert!(v.audio_only);
+        assert_eq!(v.container, Some(Container::Flac));
+        assert_eq!(v.audio, Some(AudioCodec::Flac));
+        assert_eq!(v.size, Some(25_000_000));
     }
 }

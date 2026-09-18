@@ -9,10 +9,11 @@ use regex::Regex;
 use url::Url;
 
 use super::{
-    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, clean_title,
-    fetch_ok, hls, util,
+    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag,
+    clean_title, fetch_ok, hls, util,
 };
 use crate::http::{BROWSER_UA, Http};
+use crate::media::MediaKind;
 
 pub const PLATFORM: &str = "uplynk";
 /// Every asset is served from here whichever Uplynk host the link names.
@@ -198,6 +199,8 @@ impl Resolver for UplynkResolver {
             hosts: &["uplynk.com"],
             features: &["videos", "playback sessions"],
             formats: &["hls"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Players],
             session: SessionSupport::None,
             examples: &[
                 "https://content.uplynk.com/ext/b82f6b1017f64c7b872b8d80b276b280/0160476a-bfd0-425d-82f9-5757bde3bf37.m3u8",

@@ -9,11 +9,11 @@ use serde_json::Value;
 use url::Url;
 
 use super::{
-    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Variant,
+    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag, Variant,
     clean_title, fetch_ok, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "dctp";
 const API_BASE: &str = "http://dctp-ivms2-restapi.s3.amazonaws.com";
@@ -100,6 +100,8 @@ impl Resolver for DctpResolver {
             hosts: &["dctp.tv"],
             features: &["videos"],
             formats: &["mp4", "hls"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Video],
             session: SessionSupport::None,
             examples: &["http://www.dctp.tv/filme/videoinstallation-fuer-eine-kaufhausfassade/"],
         }

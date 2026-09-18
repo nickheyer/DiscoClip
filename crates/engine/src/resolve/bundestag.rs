@@ -11,11 +11,11 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport,
-    SubtitleFormat, SubtitleTrack, Variant, clean_title, fetch, fetch_ok, hls, navigation_headers,
-    util,
+    SubtitleFormat, SubtitleTrack, Tag, Variant, clean_title, fetch, fetch_ok, hls,
+    navigation_headers, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "bundestag";
 const OVERLAY_URL: &str = "https://www.bundestag.de/mediathekoverlay";
@@ -165,8 +165,10 @@ impl Resolver for BundestagResolver {
             id: PLATFORM,
             name: "Bundestag",
             hosts: &["dbtg.tv", "bundestag.de"],
-            features: &["videos", "audio"],
+            features: &["videos", "audio downloads"],
             formats: &["hls", "mp4", "mp3"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::News],
             session: SessionSupport::None,
             examples: &[
                 "https://dbtg.tv/cvid/7605304",
@@ -390,6 +392,7 @@ mod tests {
             Some("145. Sitzung vom 15.12.2023, TOP 24 Barrierefreiheit")
         );
         assert_eq!(resolved.description.as_deref(), Some("Barrierefreiheit"));
+        assert_eq!(resolved.media, MediaKind::Video);
         assert_eq!(resolved.variants.len(), 4);
         assert_eq!(
             resolved.variants[0].format_id.as_deref(),

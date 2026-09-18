@@ -194,7 +194,9 @@ impl From<discoclip_engine::SubmitError> for ApiError {
     fn from(error: discoclip_engine::SubmitError) -> Self {
         use discoclip_engine::SubmitError;
         match error {
-            SubmitError::Unsupported(_) => ApiError::BadRequest(error.to_string()),
+            SubmitError::Unsupported(_) | SubmitError::Disabled { .. } => {
+                ApiError::BadRequest(error.to_string())
+            }
             SubmitError::UnknownSource(_) => ApiError::Internal(error.to_string()),
             SubmitError::Closed => ApiError::Unavailable(error.to_string()),
             SubmitError::Store(_) => ApiError::Internal(error.to_string()),

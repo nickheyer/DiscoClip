@@ -16,11 +16,11 @@ use url::Url;
 use super::page::Page;
 use super::{
     MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved, Resolver,
-    SessionSupport, SubtitleFormat, SubtitleTrack, Variant, VariantKind, clean_title, essence,
+    SessionSupport, SubtitleFormat, SubtitleTrack, Tag, Variant, VariantKind, clean_title, essence,
     fetch, hls, path_extension,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "vidyard";
 const PLAYER: &str = "https://play.vidyard.com/";
@@ -344,6 +344,8 @@ impl Resolver for VidyardResolver {
                 "captions",
             ],
             formats: &["mp4", "hls"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Players],
             session: SessionSupport::None,
             examples: &[
                 "https://play.vidyard.com/oTDMPlUv--51Th455G5u7Q",

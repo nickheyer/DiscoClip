@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { goto, invalidate } from '$app/navigation';
 	import type { PageData } from './$types';
-	import { STAGES, codecName, durationSeconds, jobs as api, messageOf } from '$lib/api';
-	import type { Job, JobSummary, LogEntry, Stage, Variant } from '$lib/api';
+	import { MEDIA_LABELS, STAGES, codecName, durationSeconds, jobs as api, messageOf } from '$lib/api';
+	import type { Job, JobSummary, LogEntry, MediaKind, Stage, Variant } from '$lib/api';
 	import Alert from '$lib/components/Alert.svelte';
 	import Badge from '$lib/components/Badge.svelte';
 	import Button from '$lib/components/Button.svelte';
@@ -215,6 +215,11 @@
 		{ kind: 'source' as const, label: 'Source', file: job.artifacts.source }
 	]);
 
+	/** What the media is: what the probe found the output or source to be, else what the resolver said. */
+	const media = $derived<MediaKind>(
+		job.artifacts.output?.info?.kind ?? job.artifacts.source?.info?.kind ?? job.artifacts.resolved?.media ?? 'video'
+	);
+
 	let showRequest = $state(false);
 	let showResolved = $state(false);
 </script>
@@ -348,6 +353,8 @@
 							<dd>{resolved.title ?? '—'}</dd>
 							<dt>Resolver</dt>
 							<dd>{resolved.resolver}{#if resolved.id} · <code>{resolved.id}</code>{/if}</dd>
+							<dt>Kind</dt>
+							<dd>{MEDIA_LABELS[resolved.media]}{#if media !== resolved.media} <span class="faint small">the file turned out to be {MEDIA_LABELS[media].toLowerCase()}</span>{/if}</dd>
 							{#if resolved.uploader}
 								<dt>Uploader</dt>
 								<dd>{#if resolved.uploader_url}<a href={resolved.uploader_url} target="_blank" rel="noreferrer">{resolved.uploader}</a>{:else}{resolved.uploader}{/if}</dd>
@@ -396,9 +403,19 @@
 		{:else}
 			<div class="card-body stack">
 				{#if job.status.status === 'done' && job.artifacts.output}
-					<video class="preview" controls preload="metadata" src={api.downloadUrl(job.id, 'output', 0, true)}>
-						<track kind="captions" />
-					</video>
+					{#if media === 'video'}
+						<video class="preview" controls preload="metadata" src={api.downloadUrl(job.id, 'output', 0, true)}>
+							<track kind="captions" />
+						</video>
+					{:else if media === 'audio'}
+						<audio class="preview audio" controls preload="metadata" src={api.downloadUrl(job.id, 'output', 0, true)}></audio>
+					{:else if media === 'image'}
+						<a href={api.downloadUrl(job.id, 'output', 0, true)} target="_blank" rel="noreferrer">
+							<img class="preview" src={api.downloadUrl(job.id, 'output', 0, true)} alt={title} loading="lazy" />
+						</a>
+					{:else}
+						<p class="muted">A {MEDIA_LABELS[media].toLowerCase()} is published as it is; download it above to open it.</p>
+					{/if}
 				{/if}
 				<div class="grid-2">
 					{#each files as { kind, label, file } (kind)}
@@ -411,6 +428,7 @@
 								<dl class="kv small">
 									<dt>Size</dt><dd>{formatBytes(file.size)}</dd>
 									{#if file.info}
+										<dt>Kind</dt><dd>{MEDIA_LABELS[file.info.kind]}</dd>
 										<dt>Container</dt><dd>{codecName(file.info.container)}</dd>
 										{#if file.info.video}<dt>Video</dt><dd>{codecName(file.info.video.codec)} {file.info.video.width}×{file.info.video.height}{#if file.info.video.fps} @ {file.info.video.fps.toFixed(2)} fps{/if}{#if file.info.video.bitrate} · {Math.round(file.info.video.bitrate / 1000)} kb/s{/if}</dd>{/if}
 										{#if file.info.audio}<dt>Audio</dt><dd>{codecName(file.info.audio.codec)} {file.info.audio.channels}ch {file.info.audio.sample_rate} Hz{#if file.info.audio.bitrate} · {Math.round(file.info.audio.bitrate / 1000)} kb/s{/if}</dd>{/if}
@@ -434,9 +452,12 @@
 				{/if}
 				{#if job.artifacts.published}
 					<div class="artifact">
-						<span class="strong">Published</span>
+						<span class="row"><span class="strong">Published</span>{#if job.artifacts.delivery === 'link'}<Badge tone="accent" size="sm">Posted as a link</Badge>{/if}</span>
 						<dl class="kv small">
 							<dt>Where</dt><dd>{#if job.artifacts.published.url}<a href={job.artifacts.published.url} target="_blank" rel="noreferrer" class="break">{job.artifacts.published.url}</a>{:else}<span class="mono break">{job.artifacts.published.reference}</span>{/if}</dd>
+							{#if job.artifacts.delivery === 'link'}
+								<dt>As a link</dt><dd>The message carries the front end's page for this media instead of the file{#if job.artifacts.link_reason}: {job.artifacts.link_reason}{/if}.</dd>
+							{/if}
 							<dt>When</dt><dd><Time value={job.artifacts.published.at} mode="absolute" /></dd>
 						</dl>
 					</div>
@@ -603,6 +624,15 @@
 		max-height: 420px;
 		border-radius: var(--radius-sm);
 		background: #000;
+	}
+
+	img.preview {
+		object-fit: contain;
+	}
+
+	.preview.audio {
+		max-height: 54px;
+		background: transparent;
 	}
 
 	.artifact {

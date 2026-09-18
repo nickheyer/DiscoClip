@@ -12,11 +12,11 @@ use super::page::{Page, ld_objects_of_type};
 use super::web::parse_iso_duration;
 use super::{
     MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved, Resolver,
-    SessionSupport, Variant, VariantKind, clean_title, fetch_ok, hls, navigation_headers,
+    SessionSupport, Tag, Variant, VariantKind, clean_title, fetch_ok, hls, navigation_headers,
     probe_file,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "20min";
 const HOST: &str = "https://unityvideo.appuser.ch/";
@@ -293,6 +293,8 @@ impl Resolver for TwentyMinResolver {
             hosts: &["20min.ch", "videoplayer.20min.ch"],
             features: &["videos", "stories", "embeds"],
             formats: &["hls", "mp4"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::News],
             session: SessionSupport::None,
             examples: &[
                 "https://www.20min.ch/video/adoptions-serie-dachte-mami-liebt-mich-nicht-adoptierte-suchen-antworten-103468193",

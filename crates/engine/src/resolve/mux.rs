@@ -13,11 +13,11 @@ use url::Url;
 
 use super::page::Page;
 use super::{
-    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Variant,
+    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag, Variant,
     VariantKind, clean_title, fetch, hls, probe_file,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "mux";
 const STREAM: &str = "https://stream.mux.com/";
@@ -173,6 +173,8 @@ impl Resolver for MuxResolver {
                 "live",
             ],
             formats: &["hls", "mp4"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Players],
             session: SessionSupport::None,
             examples: &[
                 "https://stream.mux.com/DS00Spx1CV902MCtPj5WknGlR102V5HFkDe.m3u8",
@@ -246,7 +248,7 @@ impl Resolver for MuxResolver {
             }
             let name = target
                 .path_segments()
-                .and_then(|s| s.last())
+                .and_then(|mut s| s.next_back())
                 .unwrap_or_default()
                 .to_string();
             let stem = name.split('.').next().unwrap_or(&name).to_string();

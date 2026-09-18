@@ -11,11 +11,11 @@ use url::Url;
 
 use super::{
     ClipRange, MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved,
-    Resolver, SessionSupport, Variant, VariantKind, clean_title, fetch, timestamp_hint,
+    Resolver, SessionSupport, Tag, Variant, VariantKind, clean_title, fetch, timestamp_hint,
 };
 use crate::http::cookies::parse_http_date;
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "pinterest";
 const SITE: &str = "https://www.pinterest.com/";
@@ -225,6 +225,8 @@ impl Resolver for PinterestResolver {
             hosts: &["pinterest.com", "pin.it"],
             features: &["video pins", "idea pins", "short links"],
             formats: &["mp4", "hls"],
+            media: &[MediaKind::Video],
+            tags: &[Tag::Social, Tag::Images],
             session: SessionSupport::None,
             examples: &["https://www.pinterest.com/pin/4855512095534420/"],
         }

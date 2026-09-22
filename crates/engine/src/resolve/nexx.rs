@@ -28,7 +28,7 @@ pub enum Link {
         video_id: String,
     },
     /// An `embed.nexx.cloud` player page: the domain, the stream type when the link
-    /// names one (`video`, `audio`, …; the host no longer serves a page without one),
+    /// names one (`video`, `audio`, …. The host no longer serves a page without one),
     /// and the media hash.
     Embed {
         domain_id: String,
@@ -388,7 +388,7 @@ fn azure_streams(video: &Value, video_id: &str, origin: &Url) -> Result<Streams,
 }
 
 /// Free CDN layout: the file path is built from the original domain, an optional folder
-/// hierarchy taken from the reversed id, the id and the video hash; Akamai (`ak`) serves
+/// hierarchy taken from the reversed id, the id and the video hash. Akamai (`ak`) serves
 /// an HLS master over a `.csmil` bundle, CenturyLink (`ce`) an `asset.ism` in DASH and
 /// HLS beside the progressive files.
 fn free_streams(video: &Value, video_id: &str, origin: &Url) -> Result<Streams, ResolveError> {
@@ -578,7 +578,7 @@ fn threeq_streams(video: &Value, origin: &Url) -> Result<Streams, ResolveError> 
     Ok(streams)
 }
 
-/// Expands every manifest the layout named, keeping the progressive files; a manifest
+/// Expands every manifest the layout named, keeping the progressive files. A manifest
 /// the CDN does not serve is skipped, and the first failure is the error when nothing
 /// plays. Every variant of a manifest carries the manifest's id, then its own: the DASH
 /// representation's id, the Smooth Streaming level's, or the HLS rendition's bitrate.

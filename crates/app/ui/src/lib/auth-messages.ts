@@ -1,24 +1,24 @@
 import type { CallbackError } from './api/types';
 
-/** What each `?error=` a provider flow can end in means to the person reading it. */
+/** Login error messages. */
 export const CALLBACK_ERRORS: Record<CallbackError, string> = {
-	state: 'That login attempt expired or was already used. Start again.',
-	denied: 'You cancelled at the provider, so nothing was changed.',
+	state: 'Login expired. Try again.',
+	denied: 'Login cancelled.',
 	provider: 'The provider refused the request.',
-	identity: 'The provider did not send back a usable identity.',
-	exchange: 'The provider could not be reached to finish the login.',
+	identity: 'Could not identify your account. Try again.',
+	exchange: 'Could not reach the login provider. Try again.',
 	session: 'Your session changed while linking. Log in and try again.',
 	already_linked: 'That identity is already linked to another account.',
 	provider_linked:
-		'This account is already linked to a different identity at that provider. Unlink it first.',
+		'Unlink the current provider account before linking another.',
 	unknown_identity:
-		'No account is linked to that identity. Log in with your password, then link it from your account page.'
+		'Log in with your password, then link this provider in Account.'
 };
 
 export function callbackErrorMessage(code: string | null): string | null {
 	if (!code) return null;
 	if (code in CALLBACK_ERRORS) return CALLBACK_ERRORS[code as CallbackError];
-	return `The provider flow failed (${code}).`;
+	return `Login failed (${code}).`;
 }
 
 export function providerIcon(id: string): string {

@@ -128,7 +128,7 @@ impl YoutubeResolver {
         Ok(player)
     }
 
-    /// Asks the apps for the video in turn until one plays it; an age gate sends the
+    /// Asks the apps for the video in turn until one plays it. An age gate sends the
     /// embedded app, which gets past it for embeddable videos, and a logged-in session
     /// goes with the web app for the rest.
     async fn video(

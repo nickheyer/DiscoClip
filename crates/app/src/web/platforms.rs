@@ -153,7 +153,7 @@ impl CookieFormat {
 pub struct CookiesImport {
     pub format: CookieFormat,
     pub text: String,
-    /// The domain cookies given as a header belong to; the platform's first host otherwise.
+    /// The domain cookies given as a header belong to. The platform's first host otherwise.
     #[serde(default)]
     pub domain: Option<String>,
 }
@@ -306,7 +306,7 @@ mod tests {
         assert!(body["cookies_updated_at"].is_null());
         assert!(body["session_check"].is_null());
 
-        // Operators may not; admins import a cookies.txt and the platform is asked.
+        // Operators may not. Admins import a cookies.txt and the platform is asked.
         let netscape = json!({
             "format": "netscape",
             "text": "# Netscape HTTP Cookie File\n.fixture.test\tTRUE\t/\tTRUE\t2147483647\tsid\tsecret-value\n"
@@ -383,7 +383,7 @@ mod tests {
             StatusCode::NOT_FOUND
         );
 
-        // The check runs on request; clearing empties the jar and the platform is logged out.
+        // The check runs on request. Clearing empties the jar and the platform is logged out.
         let (status, body) = admin
             .post("/api/platforms/fixtured/session/check", Json::Null)
             .await;
@@ -464,7 +464,7 @@ mod tests {
         let nothing = platforms.iter().find(|p| p["id"] == "nothing").unwrap();
         assert_eq!(nothing["fixtures"], json!([]));
 
-        // Viewers look; running takes managing jobs.
+        // Viewers look. Running takes managing jobs.
         assert_eq!(
             viewer
                 .post("/api/platforms/fixtured/check", Json::Null)
@@ -490,7 +490,7 @@ mod tests {
         let (status, body) = admin.post("/api/platforms/nothing/check", Json::Null).await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
 
-        // A run starts in the background; a second start meanwhile is refused.
+        // A run starts in the background. A second start meanwhile is refused.
         let (status, body) = admin
             .post("/api/platforms/fixtured/check", Json::Null)
             .await;

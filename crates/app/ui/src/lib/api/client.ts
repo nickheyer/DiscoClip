@@ -1,5 +1,4 @@
-// One place every request goes through: JSON in and out, the CSRF echo a session must
-// send with state changes, and errors as the API reports them.
+// JSON requests with session CSRF headers and structured API errors.
 
 export class ApiError extends Error {
 	readonly status: number;
@@ -140,11 +139,7 @@ export async function request<T>(
 	throw error;
 }
 
-/**
- * A request on a front end's behalf: cookies go along as always, the Origin the CSRF
- * guard checks is the browser's own, but no admin CSRF token is sent and a 401 is the
- * front end's to handle, never the admin app's.
- */
+/** Viewer requests use site cookies and handle their own 401 responses. */
 export async function publicRequest<T>(
 	method: Method,
 	path: string,

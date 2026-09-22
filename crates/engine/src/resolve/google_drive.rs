@@ -59,7 +59,7 @@ pub fn parse_link(url: &Url) -> Option<Link> {
             .map(|(_, v)| v.into_owned())
             .filter(|id| RE_ID.is_match(id))
     };
-    // Account prefixes: /u/0/... and /a/domain/..., before or after /drive/.
+    // Account prefixes: /u/0/... And /a/domain/..., before or after /drive/.
     let stripped: Vec<&str> = match segments.as_slice() {
         ["u" | "a", _, rest @ ..] => rest.to_vec(),
         ["drive", "u" | "a", _, rest @ ..] => std::iter::once("drive")
@@ -318,7 +318,7 @@ impl GoogleDriveResolver {
                 .map(|(_, v)| v.clone())
         };
         let mut variants = stream_variants(&fields);
-        // The player streams are only ever a video's; anything else is known by its upload.
+        // The player streams are only ever a video's. Anything else is known by its upload.
         let mut media = MediaKind::Video;
         let mut title = field("title").and_then(|t| clean_title(&t));
         if let Some((source, name, kind)) = self.source_variant(id).await? {
@@ -341,7 +341,7 @@ impl GoogleDriveResolver {
                 return Err(ResolveError::unavailable(
                     origin,
                     format!(
-                        "the link opens a Google {} document, not a file; export it from Google Docs to share it as a file",
+                        "This is a Google {} document. Export it as a file before sharing.",
                         match kind {
                             "document" => "Docs",
                             "spreadsheets" => "Sheets",
@@ -904,7 +904,7 @@ mod tests {
     }
 
     /// Every example link resolves live, and the image and the PDF among them come back
-    /// as what they are; a public Google Doc is turned away as a document.
+    /// as what they are. A public Google Doc is turned away as a document.
     #[tokio::test]
     #[ignore = "requires live Google Drive access"]
     async fn live_examples_resolve_to_their_kinds() {

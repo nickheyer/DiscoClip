@@ -15,9 +15,9 @@ use twilight_model::id::marker::ApplicationMarker;
 pub enum CommandMode {
     /// Nowhere: any earlier registration is removed.
     Off,
-    /// Everywhere the bot is; Discord takes up to an hour to show them.
+    /// Everywhere the bot is. Discord takes up to an hour to show them.
     Global,
-    /// In the listed guilds only, at once.
+    /// In the listed guilds only, immediately.
     Guilds,
 }
 

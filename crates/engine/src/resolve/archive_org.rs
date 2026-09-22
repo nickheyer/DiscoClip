@@ -1,10 +1,8 @@
-//! Internet Archive items, through the metadata API that lists an item's files and the
-//! embeddable player that groups them: the video and audio files of an item, each
-//! original with its derivatives as variants and the player's subtitle tracks, the
-//! item's original images and documents (PDF, EPUB, DjVu, text) as the files they are,
-//! and an item holding several of these as a playlist of them. A link naming one file of
-//! the item resolves that recording, or that file whatever its kind. Files marked
-//! private are listed only with a logged-in session.
+//! Resolve Internet Archive items through metadata and player APIs. Group original audio
+//! and video with derivative variants and subtitles.
+//!
+//! Return images and documents as files. Multiple files form a playlist. File-specific
+//! links select one entry. Private files require a session.
 
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -332,7 +330,7 @@ pub fn player_playlist(html: &str) -> Vec<PlayerEntry> {
 }
 
 /// The item's recordings: the player's playlist entries, each with the files that are
-/// its original or derive from it; without a player playlist, every original media file
+/// its original or derive from it. Without a player playlist, every original media file
 /// with its derivatives, as the metadata chains them. Private files are left out unless
 /// `logged_in`.
 pub fn recordings_of(
@@ -1152,7 +1150,7 @@ mod tests {
             ));
         }
         let resolver = ArchiveOrgResolver::new(Http::replay(fixture));
-        // The text is the item's one document; the zip is not a document, so the item is
+        // The text is the item's one document. The zip is not a document, so the item is
         // the text alone.
         let book = resolver
             .resolve(&Url::parse("https://archive.org/details/thecruiseoftheka06586gut").unwrap())
@@ -1305,7 +1303,7 @@ mod tests {
             "https://archive.org/download/speeches/One.vtt"
         );
 
-        // The private original is left out without a session; its derivative plays.
+        // The private original is left out without a session. Its derivative plays.
         let two = resolver
             .resolve(&Url::parse("https://archive.org/details/speeches/Two.flac").unwrap())
             .await

@@ -171,7 +171,7 @@ impl Resolver for DumpertResolver {
                 resolved.variants.push(variant);
             }
         }
-        // The master playlist's renditions are the per-version playlists again; keep
+        // The master playlist's renditions are the per-version playlists again. Keep
         // each once, as the master describes it.
         let mut kept: Vec<Variant> = Vec::new();
         for variant in resolved.variants.drain(..) {

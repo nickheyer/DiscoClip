@@ -94,7 +94,7 @@ pub struct DownloadConfig {
     /// Bytes each ranged request asks for.
     pub chunk_bytes: u64,
     /// How many times a transfer that breaks is picked up from where it stopped before
-    /// the download fails; `0` fails at the first break.
+    /// the download fails. `0` fails at the first break.
     pub resume_attempts: u32,
 }
 
@@ -112,11 +112,11 @@ impl Default for DownloadConfig {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct RetentionConfig {
-    /// Finished jobs older than this are removed; `0` keeps them forever.
+    /// Finished jobs older than this are removed. `0` keeps them forever.
     pub jobs_days: u32,
-    /// Failed and cancelled jobs older than this are removed; `0` keeps them forever.
+    /// Failed and cancelled jobs older than this are removed. `0` keeps them forever.
     pub failed_jobs_days: u32,
-    /// The cache directory is trimmed back under this many bytes; `0` never trims.
+    /// The cache directory is trimmed back under this many bytes. `0` never trims.
     pub cache_max_bytes: u64,
     /// How often retention runs.
     pub sweep_interval_secs: u64,

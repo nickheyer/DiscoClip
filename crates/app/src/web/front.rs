@@ -1,7 +1,7 @@
 //! What a front end serves to the public: who it is and how to get in, the media it
 //! shows, the files themselves, and the page for one piece of media with what link
 //! unfurlers need to play it inline. Viewers hold a session cookie of the front end's
-//! own; a signed token opens one file without a session, for the unfurlers.
+//! own. A signed token opens one file without a session, for the unfurlers.
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
@@ -133,7 +133,7 @@ async fn info(
     })
 }
 
-/// Who the front end is and how to get in; readable before logging in.
+/// Who the front end is and how to get in. Readable before logging in.
 pub async fn get(
     State(state): State<AppState>,
     Path(slug): Path<String>,
@@ -334,7 +334,7 @@ pub struct FrontJob {
     /// The output's media type.
     pub content_type: String,
     pub published_at: Timestamp,
-    /// Plays or shows the media; carries the token that opens it without a session.
+    /// Plays or shows the media. Carries the token that opens it without a session.
     pub media_url: String,
     /// Hands the file out, when the front end allows downloads.
     pub download_url: Option<String>,
@@ -665,7 +665,7 @@ fn clock(secs: f64) -> String {
 
 /// The page for one piece of media: the app's shell with the unfurl metadata in its
 /// head. Anyone with the link gets the metadata, so the link can be unfurled wherever it
-/// is posted; the page itself asks for a login as the front end does.
+/// is posted. The page itself asks for a login as the front end does.
 pub async fn page(
     State(state): State<AppState>,
     Path((slug, id)): Path<(String, String)>,

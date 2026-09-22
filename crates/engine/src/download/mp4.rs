@@ -117,10 +117,10 @@ pub struct Protection {
     /// `cbcs`, `cbc1`, `cenc` or `cens`.
     pub scheme: [u8; 4],
     pub protected: bool,
-    /// Bytes of IV each sample carries; zero when `constant_iv` serves every sample.
+    /// Bytes of IV each sample carries. Zero when `constant_iv` serves every sample.
     pub iv_size: u8,
     pub constant_iv: Option<Vec<u8>>,
-    /// The pattern, in 16-byte blocks: so many encrypted, then so many clear; both zero
+    /// The pattern, in 16-byte blocks: so many encrypted, then so many clear. Both zero
     /// when every whole block is encrypted.
     pub crypt_blocks: u8,
     pub skip_blocks: u8,
@@ -190,7 +190,7 @@ fn free(out: &mut [u8], at: &BoxRef) {
     out[at.start + 4..at.start + 8].copy_from_slice(b"free");
 }
 
-/// The `seig` sample group descriptions in an `sgpd` box, in order; empty for any other
+/// The `seig` sample group descriptions in an `sgpd` box, in order. Empty for any other
 /// grouping.
 fn seig_entries(data: &[u8], sgpd: &BoxRef, scheme: [u8; 4]) -> Result<Vec<Protection>, DownloadError> {
     let body = sgpd.start + sgpd.header;
@@ -388,7 +388,7 @@ fn sample_infos(
 }
 
 /// The sample group each sample of a fragment belongs to, from an `sbgp` of type `seig`:
-/// `(sample count, group description index)` runs; empty when there is none.
+/// `(sample count, group description index)` runs. Empty when there is none.
 fn seig_groups(data: &[u8], parts: &[BoxRef]) -> Result<Vec<(u32, u32)>, DownloadError> {
     for sbgp in parts.iter().filter(|b| &b.kind == b"sbgp") {
         let body = sbgp.start + sbgp.header;
@@ -1155,7 +1155,7 @@ pub mod build {
                 }
                 inserted += senc.len();
             }
-            // Sample data moved by what was inserted before it; every trun's offset
+            // Sample data moved by what was inserted before it. Every trun's offset
             // is relative to the moof, so it grows by the same amount.
             let moof_now = boxes(&out, moof.start..out.len()).unwrap()[0];
             for traf in boxes(&out, moof_now.body()).unwrap().iter().filter(|b| &b.kind == b"traf") {
@@ -1390,7 +1390,7 @@ mod tests {
         assert!(!init.cleared.windows(4).any(|w| w == b"sinf"));
         assert_eq!(init.cleared.len(), protected.len());
 
-        // A plain section reads as unprotected; only its pssh is freed.
+        // A plain section reads as unprotected. Only its pssh is freed.
         let plain_init = read_init(&plain).unwrap();
         assert!(plain_init.tracks[0].protection.is_none());
         let mut expected = plain.clone();

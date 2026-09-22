@@ -6,7 +6,7 @@ import type { Permission } from './types';
 import { session } from '$lib/state/session.svelte';
 import { PERMISSION_LABELS } from '$lib/permissions';
 
-/** Runs the call; a failure becomes the error page, and a lost session the login page. */
+/** Runs the call. A failure becomes the error page, and a lost session the login page. */
 export async function guarded<T>(run: () => Promise<T>): Promise<T> {
 	try {
 		return await run();
@@ -20,10 +20,7 @@ export async function guarded<T>(run: () => Promise<T>): Promise<T> {
 	}
 }
 
-/**
- * The same call, but an answer in `absent` becomes `null`: for what the account may not
- * be allowed to see next to what it may. Anything else fails the page like `guarded`.
- */
+/** Return null for expected HTTP errors. Other failures use the error page. */
 export async function optional<T>(
 	run: () => Promise<T>,
 	absent: number[] = [403, 404]
@@ -56,10 +53,7 @@ export async function settle<T>(run: () => Promise<T>): Promise<Settled<T>> {
 
 type Parent = () => Promise<unknown>;
 
-/**
- * Page loads run alongside the layout's, so a page waits for the layout, which is what
- * fetches the session, before asking who is logged in.
- */
+/** Wait for the layout to load the session before checking access. */
 export async function requireSession(parent: Parent): Promise<void> {
 	await parent();
 	if (!session.me) redirect(307, '/login');

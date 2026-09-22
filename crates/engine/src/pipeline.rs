@@ -190,7 +190,7 @@ pub(crate) fn kept_files(job: &Job) -> Vec<PathBuf> {
     keep
 }
 
-/// Removes what a finished job left in its directory beyond [`kept_files`]; a directory
+/// Removes what a finished job left in its directory beyond [`kept_files`]. A directory
 /// with nothing to keep goes altogether.
 async fn tidy_job_dir(job: &Job, job_dir: &Path) {
     let keep = kept_files(job);
@@ -294,7 +294,7 @@ async fn expand_playlist(
         job,
         Some(stage),
         format!(
-            "{} listed {total} entries; queued {} as separate jobs",
+            "{} returned {total} entries. Queued {} jobs.",
             playlist.resolver,
             ids.len()
         ),
@@ -370,7 +370,7 @@ async fn execute(ctx: &Context, job: &mut Job, job_dir: &Path) -> Result<(), Int
         job,
         Some(stage),
         format!(
-            "{} resolved {media} with {} variant(s); selected {} {}",
+            "{} resolved {media} with {} variants. Selected {} {}.",
             resolved.resolver,
             resolved.variants.len(),
             variant.kind.as_str(),
@@ -499,7 +499,7 @@ async fn execute(ctx: &Context, job: &mut Job, job_dir: &Path) -> Result<(), Int
         .constraints(job)
         .await
         .map_err(|e| failed(stage)(e.into()))?;
-    // A file that is not media is never probed; anything else is, and what the probe
+    // A file that is not media is never probed. Anything else is, and what the probe
     // finds the file to be outranks what the resolver said it was.
     let info: Option<MediaInfo> = match media {
         MediaKind::File => None,
@@ -516,7 +516,7 @@ async fn execute(ctx: &Context, job: &mut Job, job_dir: &Path) -> Result<(), Int
             job,
             Some(stage),
             format!(
-                "{} called this {media}; the file is {kind}",
+                "{} reported {media}. The downloaded file is {kind}.",
                 resolved.resolver
             ),
         )
@@ -553,7 +553,7 @@ async fn execute(ctx: &Context, job: &mut Job, job_dir: &Path) -> Result<(), Int
     )
     .await;
     // A destination with a link to fall back on gets one when the upload cannot be
-    // made, or would be too reduced; the output is then made for the page instead.
+    // made, or would be too reduced. The output is then made for the page instead.
     let output = match produced {
         Ok(Produced::Upload(output)) => output,
         Ok(Produced::Link { output, reason }) => {
@@ -565,7 +565,7 @@ async fn execute(ctx: &Context, job: &mut Job, job_dir: &Path) -> Result<(), Int
             ctx.note(
                 job,
                 Some(stage),
-                format!("{reason}; a link to the page will be posted instead of the file"),
+                format!("{reason}. Posting a media link."),
             )
             .await
             .map_err(|e| failed(stage)(e.into()))?;
@@ -822,7 +822,7 @@ async fn produce(
                 job,
                 Some(stage),
                 format!(
-                    "source already satisfies {}; publishing as is",
+                    "Source meets {} requirements. Publishing without conversion.",
                     describe_constraints(constraints, kind)
                 ),
             )
@@ -834,7 +834,7 @@ async fn produce(
                 job,
                 Some(stage),
                 format!(
-                    "source is {} {}; converting to {}{}",
+                    "Source: {} {}. Converting to {}{}.",
                     info.map(describe_info).unwrap_or_else(|| kind.to_string()),
                     source.size,
                     describe_target(&target),

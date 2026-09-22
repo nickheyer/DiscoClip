@@ -5,11 +5,11 @@ import { safeNext } from '$lib/format';
 import { session } from '$lib/state/session.svelte';
 import { setupNeeded } from '$lib/state/setup';
 
-// The app is a single page served by the DiscoClip binary; the API is the only server side.
+// The app is a single page served by the DiscoClip binary. The API is the only server side.
 export const ssr = false;
 export const prerender = false;
 
-/** Whether a path belongs to a public front end, which the admin session has no say over. */
+/** Whether a path belongs to a public media site, which the admin session has no say over. */
 export function isFrontPath(path: string): boolean {
 	return path === '/f' || path.startsWith('/f/');
 }

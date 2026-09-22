@@ -87,7 +87,7 @@
 | `404` | `{ "error": "not found" }` |
 | `415` | `text/plain` axum content type rejection |
 | `422` | `text/plain` axum JSON schema rejection |
-| `429` | `{ "error": "too many attempts; try again in <n> seconds" }` + `Retry-After: <n>` |
+| `429` | `{ "error": "Too many attempts. Try again in <n> seconds." }` + `Retry-After: <n>` |
 | `416` | `{ "error": "<message>" }` + `Content-Range: bytes */<length>` |
 | `500` | `{ "error": "internal error" }` |
 | `502` | `{ "error": "<message>" }` |
@@ -107,26 +107,26 @@
 
 #### GET /api/setup
 
-Reports whether the first admin account still has to be created.
+Reports whether an admin account needs to be created.
 
 | Field | Value |
 |---|---|
 | Auth | none |
-| Path | — |
-| Query | — |
-| Body | — |
+| Path | None |
+| Query | None |
+| Body | None |
 | Response | `200` `SetupStatus` |
-| Errors | — |
+| Errors | None |
 
 #### POST /api/setup
 
-Creates the first admin account with the printed setup token and opens its session.
+Creates the first admin account using the setup token and starts a session.
 
 | Field | Value |
 |---|---|
 | Auth | none |
-| Path | — |
-| Query | — |
+| Path | None |
+| Query | None |
 | Body | `SetupRequest` |
 | Response | `200` `WhoAmI` + `Set-Cookie` |
 | Errors | `400` `403` `409` `429` |
@@ -138,8 +138,8 @@ Opens a browser session for a username and password.
 | Field | Value |
 |---|---|
 | Auth | none |
-| Path | — |
-| Query | — |
+| Path | None |
+| Query | None |
 | Body | `LoginRequest` |
 | Response | `200` `WhoAmI` + `Set-Cookie` |
 | Errors | `401` `429` |
@@ -151,22 +151,22 @@ Ends the browser session making the request and clears its cookie.
 | Field | Value |
 |---|---|
 | Auth | session |
-| Path | — |
-| Query | — |
-| Body | — |
+| Path | None |
+| Query | None |
+| Body | None |
 | Response | `204` + cleared cookie |
 | Errors | `401` `403` |
 
 #### GET /api/session
 
-Returns the account behind the request with its session or API token.
+Returns the authenticated account and its session or API token.
 
 | Field | Value |
 |---|---|
 | Auth | any |
-| Path | — |
-| Query | — |
-| Body | — |
+| Path | None |
+| Query | None |
+| Body | None |
 | Response | `200` `WhoAmI` |
 | Errors | `401` |
 
@@ -174,27 +174,27 @@ Returns the account behind the request with its session or API token.
 
 #### GET /api/sessions
 
-Lists the live browser sessions of the requesting account.
+Lists active browser sessions for the current account.
 
 | Field | Value |
 |---|---|
 | Auth | session |
-| Path | — |
-| Query | — |
-| Body | — |
+| Path | None |
+| Query | None |
+| Body | None |
 | Response | `200` `SessionView[]` |
 | Errors | `401` `403` |
 
 #### GET /api/sessions/all
 
-Lists the live browser sessions of every account newest first.
+Lists active sessions across all accounts, newest first.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_users` |
-| Path | — |
-| Query | — |
-| Body | — |
+| Path | None |
+| Query | None |
+| Body | None |
 | Response | `200` `AccountSessionView[]` |
 | Errors | `401` `403` |
 
@@ -205,9 +205,9 @@ Ends every session of the requesting account except the current one.
 | Field | Value |
 |---|---|
 | Auth | session |
-| Path | — |
-| Query | — |
-| Body | — |
+| Path | None |
+| Query | None |
+| Body | None |
 | Response | `200` `Revoked` |
 | Errors | `401` `403` |
 
@@ -219,8 +219,8 @@ Ends one session of the requesting account.
 |---|---|
 | Auth | session |
 | Path | `id` `uuid` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `204` + cleared cookie when `id` is the current session |
 | Errors | `401` `403` `404` |
 
@@ -228,14 +228,14 @@ Ends one session of the requesting account.
 
 #### GET /api/roles
 
-Lists every role with its permissions and the accounts holding it.
+Lists roles, permissions and assigned accounts.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_users` |
-| Path | — |
-| Query | — |
-| Body | — |
+| Path | None |
+| Query | None |
+| Body | None |
 | Response | `200` `RoleView[]` |
 | Errors | `401` `403` |
 
@@ -248,9 +248,9 @@ Lists every account.
 | Field | Value |
 |---|---|
 | Auth | `manage_users` |
-| Path | — |
-| Query | — |
-| Body | — |
+| Path | None |
+| Query | None |
+| Body | None |
 | Response | `200` `User[]` |
 | Errors | `401` `403` |
 
@@ -261,8 +261,8 @@ Creates an account with a role and an optional password.
 | Field | Value |
 |---|---|
 | Auth | `manage_users` |
-| Path | — |
-| Query | — |
+| Path | None |
+| Query | None |
 | Body | `UserCreateRequest` |
 | Response | `201` `User` |
 | Errors | `400` `401` `403` `409` |
@@ -275,8 +275,8 @@ Returns one account.
 |---|---|
 | Auth | self or `manage_users` |
 | Path | `id` `uuid` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `200` `User` |
 | Errors | `401` `403` `404` |
 
@@ -288,21 +288,21 @@ Changes an account's role.
 |---|---|
 | Auth | `manage_users` |
 | Path | `id` `uuid` |
-| Query | — |
+| Query | None |
 | Body | `UserUpdateRequest` |
 | Response | `200` `User` |
 | Errors | `401` `403` `404` `409` |
 
 #### DELETE /api/users/{id}
 
-Removes an account together with its sessions and tokens and provider grants.
+Deletes an account, its sessions, tokens and provider grants.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_users` |
 | Path | `id` `uuid` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `204` |
 | Errors | `401` `403` `404` `409` |
 
@@ -314,7 +314,7 @@ Sets an account's password and ends its other sessions.
 |---|---|
 | Auth | self with `current_password` or `manage_users` |
 | Path | `id` `uuid` |
-| Query | — |
+| Query | None |
 | Body | `PasswordRequest` |
 | Response | `204` |
 | Errors | `400` `401` `403` `404` `429` |
@@ -327,8 +327,8 @@ Lists the live browser sessions of an account.
 |---|---|
 | Auth | `manage_users` |
 | Path | `id` `uuid` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `200` `SessionView[]` |
 | Errors | `401` `403` `404` |
 
@@ -340,8 +340,8 @@ Ends every browser session of an account.
 |---|---|
 | Auth | `manage_users` |
 | Path | `id` `uuid` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `200` `Revoked` + cleared cookie when `id` is the requesting account |
 | Errors | `401` `403` `404` |
 
@@ -353,8 +353,8 @@ Ends one browser session of an account.
 |---|---|
 | Auth | `manage_users` |
 | Path | `id` `uuid` · `session` `uuid` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `204` + cleared cookie when `session` is the requesting session |
 | Errors | `401` `403` `404` |
 
@@ -367,35 +367,35 @@ Lists the API tokens of the requesting account.
 | Field | Value |
 |---|---|
 | Auth | session |
-| Path | — |
-| Query | — |
-| Body | — |
+| Path | None |
+| Query | None |
+| Body | None |
 | Response | `200` `ApiToken[]` |
 | Errors | `401` `403` |
 
 #### POST /api/tokens
 
-Mints an API token and returns its secret once.
+Creates an API token. The response includes the secret once.
 
 | Field | Value |
 |---|---|
 | Auth | session |
-| Path | — |
-| Query | — |
+| Path | None |
+| Query | None |
 | Body | `TokenCreateRequest` |
 | Response | `201` `Minted` |
 | Errors | `400` `401` `403` |
 
 #### GET /api/tokens/all
 
-Lists the live API tokens of every account newest first.
+Lists active API tokens across all accounts, newest first.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_users` |
-| Path | — |
-| Query | — |
-| Body | — |
+| Path | None |
+| Query | None |
+| Body | None |
 | Response | `200` `AccountTokenView[]` |
 | Errors | `401` `403` |
 
@@ -407,8 +407,8 @@ Revokes one API token of the requesting account.
 |---|---|
 | Auth | session |
 | Path | `id` `uuid` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `204` |
 | Errors | `401` `403` `404` |
 
@@ -420,8 +420,8 @@ Lists the API tokens of an account.
 |---|---|
 | Auth | `manage_users` |
 | Path | `id` `uuid` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `200` `ApiToken[]` |
 | Errors | `401` `403` `404` |
 
@@ -433,8 +433,8 @@ Revokes one API token of an account.
 |---|---|
 | Auth | `manage_users` |
 | Path | `id` `uuid` · `token` `uuid` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `204` |
 | Errors | `401` `403` `404` |
 
@@ -447,11 +447,11 @@ Lists the login providers the server offers.
 | Field | Value |
 |---|---|
 | Auth | none |
-| Path | — |
-| Query | — |
-| Body | — |
+| Path | None |
+| Query | None |
+| Body | None |
 | Response | `200` `ProviderInfo[]` |
-| Errors | — |
+| Errors | None |
 
 #### GET /api/auth/{provider}/start
 
@@ -462,7 +462,7 @@ Redirects the browser to a provider to log in or link an identity.
 | Auth | none for `intent=login` · any for `intent=link` |
 | Path | `provider` `string` |
 | Query | `intent` `Intent` default `login` |
-| Body | — |
+| Body | None |
 | Response | `303` `Location: <provider authorize url>` |
 | Errors | `400` `401` `404` `429` `502` |
 
@@ -475,9 +475,9 @@ Completes a provider flow and redirects the browser into the app.
 | Auth | none for `login` · session of the linking account for `link` |
 | Path | `provider` `string` |
 | Query | `code` `string` · `state` `string` · `error` `string` |
-| Body | — |
+| Body | None |
 | Response | `303` `Location` per `CallbackRedirect` + `Set-Cookie` after a login |
-| Errors | — |
+| Errors | None |
 
 #### GET /api/auth/identities
 
@@ -486,9 +486,9 @@ Lists the provider identities linked to the requesting account.
 | Field | Value |
 |---|---|
 | Auth | any |
-| Path | — |
-| Query | — |
-| Body | — |
+| Path | None |
+| Query | None |
+| Body | None |
 | Response | `200` `Identity[]` |
 | Errors | `401` |
 
@@ -500,21 +500,21 @@ Unlinks a provider identity and revokes its grant at the provider.
 |---|---|
 | Auth | any |
 | Path | `provider` `string` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `200` `Unlinked` |
 | Errors | `401` `404` `409` |
 
 #### POST /api/auth/identities/{provider}/refresh
 
-Fetches a linked identity's profile again and renews its provider tokens.
+Refreshes a linked identity and its provider tokens.
 
 | Field | Value |
 |---|---|
 | Auth | any |
 | Path | `provider` `string` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `200` `Identity` |
 | Errors | `401` `404` `409` `502` |
 
@@ -522,79 +522,79 @@ Fetches a linked identity's profile again and renews its provider tokens.
 
 #### GET /api/settings
 
-Returns every setting with its default and which values are stored and by whom.
+Returns settings, defaults and saved value sources.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_settings` |
-| Path | — |
-| Query | — |
-| Body | — |
+| Path | None |
+| Query | None |
+| Body | None |
 | Response | `200` `SettingsView` |
 | Errors | `401` `403` |
 
 #### PATCH /api/settings
 
-Stores several keys and resets several keys together and applies them to the running server.
+Sets and resets multiple settings in one operation. Changes apply immediately.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_settings` |
-| Path | — |
-| Query | — |
+| Path | None |
+| Query | None |
 | Body | `SettingsChange` |
 | Response | `200` `SettingsView` |
 | Errors | `400` `401` `403` |
 
 #### PUT /api/settings/{key}
 
-Stores one value at a dotted key and applies it to the running server.
+Saves and applies a value at a dotted key.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_settings` |
 | Path | `key` `string` |
-| Query | — |
+| Query | None |
 | Body | `SettingSetRequest` |
 | Response | `200` `SettingsView` |
 | Errors | `400` `401` `403` |
 
 #### DELETE /api/settings/{key}
 
-Removes the stored value at a dotted key and everything beneath it so the default applies.
+Deletes a saved key and its children, restoring defaults.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_settings` |
 | Path | `key` `string` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `200` `SettingsView` |
 | Errors | `400` `401` `403` |
 
 #### POST /api/settings/import
 
-Stores every key of a provisioning file as an app change and applies them.
+Imports and applies config values as app settings.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_settings` |
-| Path | — |
-| Query | — |
+| Path | None |
+| Query | None |
 | Body | `SettingsImportRequest` |
 | Response | `200` `SettingsView` |
 | Errors | `400` `401` `403` |
 
 #### GET /api/settings/export
 
-Returns the stored values as a provisioning file.
+Exports saved settings as a config file.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_settings` |
-| Path | — |
+| Path | None |
 | Query | `format` `SettingsFormat` default `toml` |
-| Body | — |
+| Body | None |
 | Response | `200` `application/toml` `application/yaml` `application/json` file |
 | Errors | `400` `401` `403` |
 
@@ -607,9 +607,9 @@ Lists every Discord application with its bot state and install link.
 | Field | Value |
 |---|---|
 | Auth | `manage_applications` |
-| Path | — |
-| Query | — |
-| Body | — |
+| Path | None |
+| Query | None |
+| Body | None |
 | Response | `200` `ApplicationView[]` |
 | Errors | `401` `403` |
 
@@ -620,8 +620,8 @@ Adds a Discord application by its bot token and launches its bot.
 | Field | Value |
 |---|---|
 | Auth | `manage_applications` |
-| Path | — |
-| Query | — |
+| Path | None |
+| Query | None |
 | Body | `ApplicationCreateRequest` |
 | Response | `201` `ApplicationView` |
 | Errors | `400` `401` `403` `409` `502` |
@@ -634,112 +634,112 @@ Returns one Discord application with its bot state and install link.
 |---|---|
 | Auth | `manage_applications` |
 | Path | `id` `uuid` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `200` `ApplicationView` |
 | Errors | `401` `403` `404` |
 
 #### PATCH /api/discord/applications/{id}
 
-Changes an application's name or credentials or login flag.
+Updates an application name, credentials or login setting.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_applications` |
 | Path | `id` `uuid` |
-| Query | — |
+| Query | None |
 | Body | `ApplicationUpdateRequest` |
 | Response | `200` `ApplicationView` |
 | Errors | `400` `401` `403` `404` `502` |
 
 #### DELETE /api/discord/applications/{id}
 
-Removes an application with its rules and guilds and retires its bot.
+Stops the bot and deletes its application, rules and server records.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_applications` |
 | Path | `id` `uuid` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `204` |
 | Errors | `401` `403` `404` |
 
 #### GET /api/discord/applications/{id}/install
 
-Returns the link that adds the application's bot to a guild.
+Returns a bot installation link.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_applications` |
 | Path | `id` `uuid` |
 | Query | `guild` `snowflake` |
-| Body | — |
+| Body | None |
 | Response | `200` `InstallLink` |
 | Errors | `401` `403` `404` |
 
 #### GET /api/discord/applications/{id}/guilds
 
-Lists the guilds the application's bot is in or was removed from.
+Lists current and previous Discord servers for the bot.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_applications` |
 | Path | `id` `uuid` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `200` `BotGuild[]` |
 | Errors | `401` `403` `404` |
 
 #### GET /api/discord/applications/{id}/guilds/{guild}/channels
 
-Lists the channels of a guild as the application's bot sees them with the rule watching each.
+Lists channels visible to the bot and their watch rules.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_watch_rules` or session managing `guild` |
 | Path | `id` `uuid` · `guild` `snowflake` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `200` `GuildChannel[]` |
 | Errors | `401` `403` `404` `409` `502` |
 
 #### GET /api/discord/applications/{id}/guilds/{guild}/roles
 
-Lists the roles of a guild as the application's bot sees them.
+Lists server roles visible to the bot.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_watch_rules` or session managing `guild` |
 | Path | `id` `uuid` · `guild` `snowflake` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `200` `GuildRole[]` |
 | Errors | `401` `403` `404` `409` `502` |
 
 #### GET /api/discord/applications/{id}/guilds/{guild}/members
 
-Searches the members of a guild by name through the application's bot.
+Searches Discord server members by name.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_watch_rules` or session managing `guild` |
 | Path | `id` `uuid` · `guild` `snowflake` |
 | Query | `q` `string` · `limit` `integer` default `20` max `100` |
-| Body | — |
+| Body | None |
 | Response | `200` `GuildMember[]` |
 | Errors | `400` `401` `403` `404` `409` `502` |
 
 #### GET /api/discord/applications/{id}/guilds/{guild}/members/{user}
 
-Returns one member of a guild by id through the application's bot.
+Returns a Discord server member by ID.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_watch_rules` or session managing `guild` |
 | Path | `id` `uuid` · `guild` `snowflake` · `user` `snowflake` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `200` `GuildMember` |
 | Errors | `400` `401` `403` `404` `409` `502` |
 
@@ -747,40 +747,40 @@ Returns one member of a guild by id through the application's bot.
 
 #### GET /api/discord/applications/{id}/commands
 
-Returns the command scope and the last registration outcome and the commands.
+Returns the registered commands, scope and latest registration result.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_applications` |
 | Path | `id` `uuid` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `200` `CommandsView` |
 | Errors | `401` `403` `404` |
 
 #### PUT /api/discord/applications/{id}/commands
 
-Sets where the slash commands are registered and registers them there.
+Updates command registration scope and registers the commands.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_applications` |
 | Path | `id` `uuid` |
-| Query | — |
+| Query | None |
 | Body | `CommandScope` |
 | Response | `200` `CommandsView` |
 | Errors | `400` `401` `403` `404` `409` `502` |
 
 #### POST /api/discord/applications/{id}/commands/register
 
-Registers the slash commands again where the scope says.
+Registers commands again using the saved scope.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_applications` |
 | Path | `id` `uuid` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `200` `CommandsView` |
 | Errors | `401` `403` `404` `409` `502` |
 
@@ -788,53 +788,53 @@ Registers the slash commands again where the scope says.
 
 #### POST /api/discord/applications/{id}/bot/start
 
-Starts the application's bot and marks it meant to run.
+Enables and starts the bot.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_bots` |
 | Path | `id` `uuid` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `200` `ApplicationView` |
 | Errors | `401` `403` `404` `409` |
 
 #### POST /api/discord/applications/{id}/bot/stop
 
-Stops the application's bot until it is started again.
+Stops the bot until explicitly started.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_bots` |
 | Path | `id` `uuid` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `200` `ApplicationView` |
 | Errors | `401` `403` `404` `409` |
 
 #### POST /api/discord/applications/{id}/bot/restart
 
-Stops and starts the application's bot and marks it meant to run.
+Enables and restarts the bot.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_bots` |
 | Path | `id` `uuid` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `200` `ApplicationView` |
 | Errors | `401` `403` `404` `409` |
 
 #### GET /api/discord/bots/events
 
-Streams every bot's status now and each change as server-sent events.
+Streams initial bot states and subsequent changes as server-sent events.
 
 | Field | Value |
 |---|---|
 | Auth | any |
-| Path | — |
-| Query | — |
-| Body | — |
+| Path | None |
+| Query | None |
+| Body | None |
 | Response | `200` `text/event-stream` · `event: bot` · `data: BotEvent` |
 | Errors | `401` |
 
@@ -842,40 +842,40 @@ Streams every bot's status now and each change as server-sent events.
 
 #### GET /api/discord/applications/{id}/guilds/{guild}/rules
 
-Lists the watch rules of a guild for an application.
+Lists watch rules for an application and Discord server.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_watch_rules` or session managing `guild` |
 | Path | `id` `uuid` · `guild` `snowflake` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `200` `Rule[]` |
 | Errors | `401` `403` `404` |
 
 #### POST /api/discord/applications/{id}/guilds/{guild}/rules
 
-Adds a watch rule for a channel of a guild.
+Creates a channel watch rule.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_watch_rules` or session managing `guild` |
 | Path | `id` `uuid` · `guild` `snowflake` |
-| Query | — |
+| Query | None |
 | Body | `RuleInput` |
 | Response | `201` `Rule` |
 | Errors | `400` `401` `403` `404` `409` `502` |
 
 #### GET /api/discord/rules
 
-Lists every watch rule of every application.
+Lists all watch rules.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_watch_rules` |
-| Path | — |
-| Query | — |
-| Body | — |
+| Path | None |
+| Query | None |
+| Body | None |
 | Response | `200` `Rule[]` |
 | Errors | `401` `403` |
 
@@ -887,20 +887,20 @@ Returns one watch rule.
 |---|---|
 | Auth | `manage_watch_rules` or session managing the rule's guild |
 | Path | `id` `uuid` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `200` `Rule` |
 | Errors | `401` `403` `404` |
 
 #### PUT /api/discord/rules/{id}
 
-Replaces what a watch rule says.
+Updates a watch rule.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_watch_rules` or session managing the rule's guild |
 | Path | `id` `uuid` |
-| Query | — |
+| Query | None |
 | Body | `RuleInput` |
 | Response | `200` `Rule` |
 | Errors | `400` `401` `403` `404` `409` `502` |
@@ -913,16 +913,14 @@ Removes a watch rule.
 |---|---|
 | Auth | `manage_watch_rules` or session managing the rule's guild |
 | Path | `id` `uuid` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `204` |
 | Errors | `401` `403` `404` |
 
 ### Profiles
 
-Profiles say which platforms are on. They are put in force at scopes, addressed as
-`global`, `guild:<guild>`, `channel:<guild>:<channel>` or `user:<guild>:<user>`, and
-apply from the widest to the narrowest. See `Profile`, `Scope` and `EffectiveProfile`.
+Profiles control platform access and media limits. Assignments apply from global to server, channel and member. See `Profile`, `Scope` and `EffectiveProfile`.
 
 #### GET /api/profiles
 
@@ -931,9 +929,9 @@ Lists every profile.
 | Field | Value |
 |---|---|
 | Auth | any account |
-| Path | — |
-| Query | — |
-| Body | — |
+| Path | None |
+| Query | None |
+| Body | None |
 | Response | `200` `Profile[]` |
 | Errors | `401` |
 
@@ -944,8 +942,8 @@ Adds a profile.
 | Field | Value |
 |---|---|
 | Auth | `manage_settings` |
-| Path | — |
-| Query | — |
+| Path | None |
+| Query | None |
 | Body | `ProfileInput` |
 | Response | `201` `Profile` |
 | Errors | `400` `401` `403` `409` |
@@ -958,41 +956,40 @@ Returns one profile.
 |---|---|
 | Auth | any account |
 | Path | `id` `uuid` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `200` `Profile` |
 | Errors | `401` `404` |
 
 #### PUT /api/profiles/{id}
 
-Replaces what a profile says.
+Updates a profile.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_settings` |
 | Path | `id` `uuid` |
-| Query | — |
+| Query | None |
 | Body | `ProfileInput` |
 | Response | `200` `Profile` |
 | Errors | `400` `401` `403` `404` `409` |
 
 #### DELETE /api/profiles/{id}
 
-Removes a profile and takes it off every scope; the built-in profile and the one in force
-for the whole server are refused with `409`.
+Deletes a profile and its assignments. Returns `409` for the built-in profile or current global default.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_settings` |
 | Path | `id` `uuid` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `204` |
 | Errors | `401` `403` `404` `409` |
 
 #### GET /api/profiles/presets
 
-The presets a profile can choose, each with the platforms in it.
+Lists category presets and their platform IDs.
 
 | Field | Value |
 |---|---|
@@ -1002,64 +999,59 @@ The presets a profile can choose, each with the platforms in it.
 
 #### GET /api/profiles/assignments
 
-The profiles in force: the whole server's and, with `guild`, that guild's scopes; every
-guild's without.
+Lists profile assignments. With `guild`, returns global and matching server assignments. Without it, returns all assignments.
 
 | Field | Value |
 |---|---|
-| Auth | with `guild`: `manage_watch_rules` or session managing `guild`; without: `manage_watch_rules` |
-| Path | — |
+| Auth | with `guild`: `manage_watch_rules` or session managing `guild`. Without: `manage_watch_rules` |
+| Path | None |
 | Query | `guild` `snowflake` optional |
-| Body | — |
+| Body | None |
 | Response | `200` `Assignment[]` |
 | Errors | `401` `403` |
 
 #### PUT /api/profiles/assignments/{scope}
 
-Puts a profile in force at a scope, replacing whatever was.
+Assigns a profile to a scope, replacing the previous assignment.
 
 | Field | Value |
 |---|---|
-| Auth | `global`: `manage_settings`; a guild's scopes: `manage_watch_rules` or session managing the guild |
+| Auth | `global`: `manage_settings`. A guild's scopes: `manage_watch_rules` or session managing the guild |
 | Path | `scope` `ScopeKey` |
-| Query | — |
+| Query | None |
 | Body | `{ "profile_id": uuid }` |
 | Response | `200` `Assignment` |
 | Errors | `400` `401` `403` `404` |
 
 #### DELETE /api/profiles/assignments/{scope}
 
-Takes the profile off a scope, so the wider scope's applies there again; `global` is
-refused with `409`.
+Removes an assignment to restore inheritance. Returns `409` for the global scope.
 
 | Field | Value |
 |---|---|
 | Auth | as `PUT` |
 | Path | `scope` `ScopeKey` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `204` |
 | Errors | `400` `401` `403` `409` |
 
 #### GET /api/profiles/effective
 
-What the profiles in force add up to for a link seen in `channel` of `guild` from
-`user`; the whole server's alone without a guild.
+Returns effective settings for `channel`, `guild` and `user`. Without `guild`, returns global settings.
 
 | Field | Value |
 |---|---|
 | Auth | any account |
-| Path | — |
+| Path | None |
 | Query | `guild` `snowflake` optional · `channel` `snowflake` optional · `user` `snowflake` optional |
-| Body | — |
+| Body | None |
 | Response | `200` `EffectiveView` |
 | Errors | `400` `401` |
 
-### Front ends
+### Media sites
 
-Front ends are public sites over the server's media, at `/f/<slug>`. Admins manage them
-here; what a front end serves to its visitors is under `/api/f/<slug>` below, without an
-admin session. See `Frontend`, `FrontendInput`, `FrontInfo` and `FrontJob`.
+Media sites share completed media at `/f/<slug>`. Admin routes manage sites. Viewer routes use `/api/f/<slug>` and separate sessions. See `Frontend`, `FrontendInput`, `FrontInfo` and `FrontJob`.
 
 #### GET /api/frontends
 
@@ -1071,7 +1063,7 @@ admin session. See `Frontend`, `FrontendInput`, `FrontInfo` and `FrontJob`.
 
 #### POST /api/frontends
 
-Adds a front end. Turning its links on needs `web.public_url`.
+Creates a media site. Discord links require `web.public_url`.
 
 | Field | Value |
 |---|---|
@@ -1101,7 +1093,7 @@ Adds a front end. Turning its links on needs `web.public_url`.
 
 #### DELETE /api/frontends/{id}
 
-Removes a front end with its accounts and sessions.
+Deletes a media site, its accounts and sessions.
 
 | Field | Value |
 |---|---|
@@ -1112,7 +1104,7 @@ Removes a front end with its accounts and sessions.
 
 #### PUT /api/frontends/{id}/secret
 
-Stores the shared secret, hashed; `null` removes it. It is never read back.
+Hashes and saves the shared secret. Pass `null` to remove it. Secrets cannot be retrieved.
 
 | Field | Value |
 |---|---|
@@ -1173,7 +1165,7 @@ Removes an account and its sessions.
 
 #### DELETE /api/frontends/{id}/sessions
 
-Ends every viewer session of the front end.
+Ends all viewer sessions for the site.
 
 | Field | Value |
 |---|---|
@@ -1191,16 +1183,13 @@ Ends every viewer session of the front end.
 | Response | `204` |
 | Errors | `401` `403` `404` |
 
-### Front end visitors
+### Media site visitors
 
-These routes serve a front end's visitors and take no admin session. A viewer's session
-is the cookie `dcf_<slug>`. Routes that list or hand out media answer `401` when the
-front end asks for a login and the visitor has none, and `404` for a slug that is not an
-enabled front end.
+Viewer routes use the `dcf_<slug>` session cookie. Media routes return `401` when login is required and `404` for missing or disabled sites.
 
 #### GET /api/f/{slug}
 
-Who the front end is and how to get in.
+Returns site details and available login methods.
 
 | Field | Value |
 |---|---|
@@ -1211,8 +1200,7 @@ Who the front end is and how to get in.
 
 #### POST /api/f/{slug}/login
 
-Logs in with the shared secret, or with one of the front end's accounts, and sets the
-session cookie. Wrong ones count against the address.
+Authenticates a shared secret or site account and sets a session cookie. Failed attempts are rate limited by address.
 
 | Field | Value |
 |---|---|
@@ -1233,9 +1221,7 @@ session cookie. Wrong ones count against the address.
 
 #### GET /api/f/{slug}/auth/{provider}/start
 
-Sends the browser to a login provider the front end names; it comes back to `/f/<slug>`
-logged in, or to `/f/<slug>/login?error=<reason>` with `reason` one of `state`, `denied`,
-`provider`, `exchange`, `identity`, `frontend`, `not_listed`, `not_member`, `guilds`.
+Redirects to a configured login provider. Success returns to `/f/<slug>`. Failure returns to `/f/<slug>/login?error=<reason>`. Reasons: `state`, `denied`, `provider`, `exchange`, `identity`, `frontend`, `not_listed`, `not_member`, `guilds`.
 
 | Field | Value |
 |---|---|
@@ -1246,7 +1232,7 @@ logged in, or to `/f/<slug>/login?error=<reason>` with `reason` one of `state`, 
 
 #### GET /api/f/{slug}/jobs
 
-The media the front end shows, newest first.
+Lists site media, newest first.
 
 | Field | Value |
 |---|---|
@@ -1267,8 +1253,7 @@ The media the front end shows, newest first.
 
 #### GET /api/f/{slug}/jobs/{id}/media
 
-The output itself, inline, with byte ranges. A signed token `t`, as `FrontJob.media_url`
-carries it, opens it without a session until the front end's signed links run out.
+Streams the output with byte-range support. The signed `t` token in `FrontJob.media_url` permits access without a session until expiry.
 
 | Field | Value |
 |---|---|
@@ -1280,7 +1265,7 @@ carries it, opens it without a session until the front end's signed links run ou
 
 #### GET /api/f/{slug}/jobs/{id}/download
 
-The output as an attachment, when the front end allows downloads.
+Downloads the output as an attachment when site downloads are enabled.
 
 | Field | Value |
 |---|---|
@@ -1291,36 +1276,33 @@ The output as an attachment, when the front end allows downloads.
 
 #### GET /f/{slug}/j/{id}
 
-Not under `/api`: the web app's page for one piece of media, with Open Graph and Twitter
-card metadata in its head (`og:video` and a direct, signed media link for a video,
-`og:audio` for audio, `og:image` for a picture) so link unfurlers play it inline. Any
-other `/f/...` path is the web app's shell.
+Returns a media page with Open Graph and Twitter preview metadata. Video, audio and image previews use signed media links. Other `/f/...` paths return the web app shell.
 
 ### Account guilds
 
 #### GET /api/discord/guilds
 
-Lists the Discord guilds of the requesting account as last fetched.
+Returns the cached Discord server list for the current account.
 
 | Field | Value |
 |---|---|
 | Auth | any |
-| Path | — |
-| Query | — |
-| Body | — |
+| Path | None |
+| Query | None |
+| Body | None |
 | Response | `200` `Guild[]` |
 | Errors | `401` |
 
 #### POST /api/discord/guilds/refresh
 
-Fetches the requesting account's Discord guilds again and stores them.
+Refreshes the current account Discord server list.
 
 | Field | Value |
 |---|---|
 | Auth | any |
-| Path | — |
-| Query | — |
-| Body | — |
+| Path | None |
+| Query | None |
+| Body | None |
 | Response | `200` `Guild[]` |
 | Errors | `401` `404` `502` |
 
@@ -1333,9 +1315,9 @@ Lists jobs newest first with filters and paging.
 | Field | Value |
 |---|---|
 | Auth | any |
-| Path | — |
+| Path | None |
 | Query | `JobQuery` |
-| Body | — |
+| Body | None |
 | Response | `200` `JobPage` |
 | Errors | `400` `401` |
 
@@ -1346,35 +1328,35 @@ Queues a link submitted from the web app as a local job.
 | Field | Value |
 |---|---|
 | Auth | `manage_jobs` |
-| Path | — |
-| Query | — |
+| Path | None |
+| Query | None |
 | Body | `SubmitRequest` |
 | Response | `202` `Submitted` |
 | Errors | `400` `401` `403` `503` |
 
 #### POST /api/jobs/bulk
 
-Retries or cancels or deletes several jobs and reports each.
+Retries, cancels or deletes multiple jobs and returns individual results.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_jobs` |
-| Path | — |
-| Query | — |
+| Path | None |
+| Query | None |
 | Body | `BulkRequest` |
 | Response | `200` `BulkResponse` |
 | Errors | `400` `401` `403` |
 
 #### GET /api/jobs/stats
 
-Returns the job counts and the workers' load and each resolver's record.
+Returns job counts, worker load and resolver results.
 
 | Field | Value |
 |---|---|
 | Auth | any |
-| Path | — |
-| Query | — |
-| Body | — |
+| Path | None |
+| Query | None |
+| Body | None |
 | Response | `200` `JobStats` |
 | Errors | `401` |
 
@@ -1385,35 +1367,35 @@ Streams the job stats and every job event as server-sent events.
 | Field | Value |
 |---|---|
 | Auth | any |
-| Path | — |
-| Query | — |
-| Body | — |
+| Path | None |
+| Query | None |
+| Body | None |
 | Response | `200` `text/event-stream` · `event: stats` · `data: JobStats` · `event: job` · `data: JobEvent` |
 | Errors | `401` |
 
 #### GET /api/events
 
-Streams everything the web app watches live on one connection: the job stats and job events of `GET /api/jobs/events` and the bot statuses of `GET /api/discord/bots/events`. The web app holds one such connection per browser, shared by its tabs, so a tab's other requests never wait for a connection.
+Streams job statistics, job events and bot status on one connection. Browser tabs share this stream to avoid exhausting connections.
 
 | Field | Value |
 |---|---|
 | Auth | any |
-| Path | — |
-| Query | — |
-| Body | — |
+| Path | None |
+| Query | None |
+| Body | None |
 | Response | `200` `text/event-stream` · `event: stats` · `data: JobStats` · `event: job` · `data: JobEvent` · `event: bot` · `data: BotEvent` |
 | Errors | `401` |
 
 #### GET /api/jobs/{id}
 
-Returns one job with its request and stage log and artifacts.
+Returns a job, its request, stage log and artifacts.
 
 | Field | Value |
 |---|---|
 | Auth | any |
 | Path | `id` `uuid` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `200` `Job` |
 | Errors | `401` `404` |
 
@@ -1425,8 +1407,8 @@ Removes a finished job's record and its cached files.
 |---|---|
 | Auth | `manage_jobs` |
 | Path | `id` `uuid` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `204` |
 | Errors | `401` `403` `404` `409` |
 
@@ -1438,8 +1420,8 @@ Queues a fresh job with the same request as a finished one.
 |---|---|
 | Auth | `manage_jobs` |
 | Path | `id` `uuid` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `202` `Submitted` |
 | Errors | `400` `401` `403` `404` `409` `503` |
 
@@ -1451,34 +1433,34 @@ Stops a queued or running job.
 |---|---|
 | Auth | `manage_jobs` |
 | Path | `id` `uuid` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `204` |
 | Errors | `401` `403` `404` `409` |
 
 #### GET /api/jobs/{id}/download
 
-Streams a job's output or source or subtitle file from the cache or the archive.
+Streams an output, source or subtitle file from cache or archive.
 
 | Field | Value |
 |---|---|
 | Auth | any |
 | Path | `id` `uuid` |
 | Query | `artifact` `Artifact` default `output` · `index` `integer` default `0` · `inline` `bool` default `false` |
-| Body | — |
+| Body | None |
 | Response | `200` file · `206` file with `Range` |
 | Errors | `401` `404` `409` `416` |
 
 #### GET /api/jobs/{id}/children
 
-Lists the jobs a playlist job expanded into oldest first.
+Lists playlist child jobs, oldest first.
 
 | Field | Value |
 |---|---|
 | Auth | any |
 | Path | `id` `uuid` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `200` `JobSummary[]` |
 | Errors | `401` `404` |
 
@@ -1491,9 +1473,9 @@ Lists audit log entries newest first with filters and paging.
 | Field | Value |
 |---|---|
 | Auth | `view_audit_log` |
-| Path | — |
+| Path | None |
 | Query | `AuditQuery` |
-| Body | — |
+| Body | None |
 | Response | `200` `Page` |
 | Errors | `400` `401` `403` |
 
@@ -1501,53 +1483,53 @@ Lists audit log entries newest first with filters and paging.
 
 #### GET /api/platforms
 
-Lists every platform with what its resolver covers and what its fixtures last found.
+Lists platform capabilities and latest test results.
 
 | Field | Value |
 |---|---|
 | Auth | any |
-| Path | — |
-| Query | — |
-| Body | — |
+| Path | None |
+| Query | None |
+| Body | None |
 | Response | `200` `PlatformCoverage[]` |
 | Errors | `401` |
 
 #### GET /api/platforms/{id}
 
-Returns one platform with what its fixtures last found.
+Returns platform details and latest test results.
 
 | Field | Value |
 |---|---|
 | Auth | any |
 | Path | `id` `string` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `200` `PlatformCoverage` |
 | Errors | `401` `404` |
 
 #### POST /api/platforms/check
 
-Starts a run of the fixtures of every platform not already running them.
+Starts platform tests, skipping those already running.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_jobs` |
-| Path | — |
-| Query | — |
-| Body | — |
+| Path | None |
+| Query | None |
+| Body | None |
 | Response | `202` `CheckStarted` |
 | Errors | `400` `401` `403` `409` |
 
 #### POST /api/platforms/{id}/check
 
-Starts a run of one platform's fixtures.
+Starts tests for one platform.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_jobs` |
 | Path | `id` `string` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `202` `PlatformCoverage` |
 | Errors | `400` `401` `403` `404` `409` |
 
@@ -1555,13 +1537,13 @@ Starts a run of one platform's fixtures.
 
 #### PUT /api/platforms/{id}/cookies
 
-Replaces a platform's cookies and asks the platform what session they make.
+Replaces platform cookies and checks the resulting session.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_settings` |
 | Path | `id` `string` |
-| Query | — |
+| Query | None |
 | Body | `CookiesImport` |
 | Response | `200` `SessionOutcome` |
 | Errors | `400` `401` `403` `404` |
@@ -1574,21 +1556,21 @@ Removes a platform's cookies.
 |---|---|
 | Auth | `manage_settings` |
 | Path | `id` `string` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `200` `PlatformCoverage` |
 | Errors | `401` `403` `404` |
 
 #### POST /api/platforms/{id}/session/check
 
-Asks the platform what its stored cookies are worth now.
+Checks the saved platform session.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_settings` |
 | Path | `id` `string` |
-| Query | — |
-| Body | — |
+| Query | None |
+| Body | None |
 | Response | `200` `PlatformCoverage` |
 | Errors | `401` `403` `404` `502` |
 
@@ -1596,27 +1578,27 @@ Asks the platform what its stored cookies are worth now.
 
 #### GET /api/health
 
-Checks every part the server runs on and sums them up.
+Returns component health checks and overall status.
 
 | Field | Value |
 |---|---|
 | Auth | any |
-| Path | — |
-| Query | — |
-| Body | — |
+| Path | None |
+| Query | None |
+| Body | None |
 | Response | `200` `Health` |
 | Errors | `401` |
 
 #### GET /api/metrics
 
-Measures the process and the machine and the jobs and the HTTP client and the stores.
+Returns process, host, job, HTTP and storage metrics.
 
 | Field | Value |
 |---|---|
 | Auth | any |
-| Path | — |
-| Query | — |
-| Body | — |
+| Path | None |
+| Query | None |
+| Body | None |
 | Response | `200` `Metrics` |
 | Errors | `401` `500` |
 
@@ -1624,14 +1606,14 @@ Measures the process and the machine and the jobs and the HTTP client and the st
 
 #### GET /api/logs
 
-Lists the newest kept log lines that match the filter with paging.
+Lists retained log entries with filtering and pagination.
 
 | Field | Value |
 |---|---|
 | Auth | `view_logs` |
-| Path | — |
+| Path | None |
 | Query | `LogQuery` |
-| Body | — |
+| Body | None |
 | Response | `200` `LogPage` |
 | Errors | `400` `401` `403` |
 
@@ -1642,9 +1624,9 @@ Streams every new log line that matches the filter as server-sent events.
 | Field | Value |
 |---|---|
 | Auth | `view_logs` |
-| Path | — |
+| Path | None |
 | Query | `LogQuery` without `before` and `limit` |
-| Body | — |
+| Body | None |
 | Response | `200` `text/event-stream` · `event: log` · `data: LogLine` · `event: skipped` · `data: Skipped` |
 | Errors | `400` `401` `403` |
 
@@ -1672,7 +1654,7 @@ Shows the job counts by status.
 
 | Field | Value |
 |---|---|
-| Option | — |
+| Option | None |
 | Ephemeral | `DiscoClip <version>: <n> queued, <n> running, <n> done, <n> failed, <n> cancelled` |
 | Ephemeral | `Could not read job stats: <error>` |
 
@@ -1682,7 +1664,7 @@ Rejects a command name the bot does not define.
 
 | Field | Value |
 |---|---|
-| Option | — |
+| Option | None |
 | Ephemeral | `` Unknown command `<name>` `` |
 
 ### Request schemas
@@ -1781,12 +1763,8 @@ Rejects a command name the bot does not define.
 |---|---|---|
 | `channel_id` | `snowflake` | yes |
 | `post_to` | `snowflake \| null` | no |
-| `allow_hosts` | `string[]` | no · default `[]` |
 | `allow_users` | `snowflake[]` | no · default `[]` |
 | `allow_roles` | `snowflake[]` | no · default `[]` |
-| `max_source_bytes` | `integer \| null` | no |
-| `max_duration_secs` | `integer \| null` | no |
-| `max_height` | `integer \| null` | no |
 | `enabled` | `bool` | no · default `true` |
 
 #### ProfileInput
@@ -1796,24 +1774,33 @@ Rejects a command name the bot does not define.
 | `name` | `string` | yes |
 | `description` | `string` | no |
 | `platforms` | `PlatformToggles` | no |
+| `limits` | `ProfileLimits` | no, none named |
+
+#### ProfileLimits
+
+| Field | Type | Required |
+|---|---|---|
+| `max_source_bytes` | `integer \| null`: above zero | no |
+| `max_duration_secs` | `integer \| null`: zero refuses live streams and accepts nothing else | no |
+| `max_height` | `integer \| null`: above zero | no |
 
 #### PlatformToggles
 
 | Field | Type | Required |
 |---|---|---|
-| `default` | `PlatformDefault` — ignored while `presets` is non-empty | no, `inherit` |
-| `presets` | `string[]` — preset ids; when any, the whitelist: platforms in any chosen preset are on, all others off | no |
-| `overrides` | `object` of platform id → `bool` — win over presets and the default | no |
+| `default` | `PlatformDefault`: ignored while `presets` is non-empty | no, `inherit` |
+| `presets` | `string[]`: preset ids. When any, the whitelist: platforms in any chosen preset are on, all others off | no |
+| `overrides` | `object` of platform id → `bool`: win over presets and the default | no |
 
 #### FrontendInput
 
 | Field | Type | Required |
 |---|---|---|
 | `name` | `string` | yes |
-| `slug` | `string` — lower-case letters, digits and dashes | yes |
+| `slug` | `string`: lower-case letters, digits and dashes | yes |
 | `description` | `string` | no |
 | `enabled` | `bool` | no, `true` |
-| `profile_id` | `uuid` — the platforms shown | no, the built-in profile |
+| `profile_id` | `uuid`: the platforms shown | no, the built-in profile |
 | `scope` | `ContentScope` | no, everything |
 | `access` | `Access` | no, closed with no way in |
 | `downloads` | `bool` | no, `true` |
@@ -1826,27 +1813,27 @@ Rejects a command name the bot does not define.
 | `guilds` | `snowflake[]` | no |
 | `channels` | `snowflake[]` | no |
 
-Empty on both sides means every job; otherwise jobs seen in any listed guild or channel.
+Includes jobs from any listed server or channel. Both lists empty includes all jobs.
 
 #### Access
 
 | Field | Type | Required |
 |---|---|---|
-| `open` | `bool` — everyone gets in | no |
-| `secret_kind` | `"pin" \| "password" \| "token" \| null` — how the shared secret is asked for | no |
-| `accounts` | `bool` — the front end's own accounts may log in | no |
-| `providers` | `string[]` — login provider ids | no |
-| `discord_members` | `bool` — a Discord login must belong to every guild in the scope | no |
-| `discord_users` | `snowflake[]` — a Discord login must be one of these | no |
+| `open` | `bool`: everyone gets in | no |
+| `secret_kind` | `"pin" \| "password" \| "token" \| null`: how the shared secret is asked for | no |
+| `accounts` | `bool`: the media site's own accounts may log in | no |
+| `providers` | `string[]`: login provider ids | no |
+| `discord_members` | `bool`: a Discord login must belong to every guild in the scope | no |
+| `discord_users` | `snowflake[]`: a Discord login must be one of these | no |
 
 #### LinkPolicy
 
 | Field | Type | Required |
 |---|---|---|
 | `enabled` | `bool` | no, `false` |
-| `min_height` | `integer` — pixels | no, `720` |
-| `min_bitrate` | `integer` — bits per second | no, `1500000` |
-| `max_bytes` | `integer` — bound of the output made for the page | no, 2 GiB |
+| `min_height` | `integer`: pixels | no, `720` |
+| `min_bitrate` | `integer`: bits per second | no, `1500000` |
+| `max_bytes` | `integer`: bound of the output made for the page | no, 2 GiB |
 | `signed_link_days` | `integer` | no, `30` |
 
 #### SubmitRequest
@@ -2193,7 +2180,7 @@ Empty on both sides means every job; otherwise jobs seen in any listed guild or 
 |---|---|
 | `id` | `uuid` |
 | `...ProfileInput` | `ProfileInput` |
-| `builtin` | `bool` — ships with the server, cannot be removed |
+| `builtin` | `bool`: ships with the server, cannot be removed |
 | `created_at` | `timestamp` |
 | `updated_at` | `timestamp` |
 
@@ -2201,10 +2188,10 @@ Empty on both sides means every job; otherwise jobs seen in any listed guild or 
 
 | Field | Type |
 |---|---|
-| `id` | `string` — `basic`, `sfw`, `nsfw`, `news`, `social`, `video`, `music`, `podcasts`, `live`, `files`, `images` or `players` |
+| `id` | `string`: `basic`, `sfw`, `nsfw`, `news`, `social`, `video`, `music`, `podcasts`, `live`, `files`, `images` or `players` |
 | `label` | `string` |
 | `description` | `string` |
-| `platforms` | `string[]` — resolver ids in it |
+| `platforms` | `string[]`: resolver ids in it |
 
 #### Scope
 
@@ -2215,8 +2202,7 @@ Empty on both sides means every job; otherwise jobs seen in any listed guild or 
 | `channel_id` | `snowflake` | `channel` |
 | `user_id` | `snowflake` | `user` |
 
-A `ScopeKey` in a path is the same scope as one string: `global`, `guild:<guild>`,
-`channel:<guild>:<channel>` or `user:<guild>:<user>`.
+`ScopeKey` encodes a scope as `global`, `guild:<guild>`, `channel:<guild>:<channel>` or `user:<guild>:<user>`.
 
 #### Assignment
 
@@ -2230,15 +2216,16 @@ A `ScopeKey` in a path is the same scope as one string: `global`, `guild:<guild>
 
 | Field | Type |
 |---|---|
-| `platforms` | `object` of platform id → `bool` — every platform, on or off |
-| `applied` | `Assignment[]` — the assignments applied, widest first |
+| `platforms` | `object` of platform id → `bool`: every platform, on or off |
+| `limits` | `RequestLimits`: effective profile limits. `null` uses the engine limit |
+| `applied` | `Assignment[]`: the assignments applied, widest first |
 
 #### EffectiveView
 
 | Field | Type |
 |---|---|
 | `...EffectiveProfile` | `EffectiveProfile` |
-| `disabled` | `string[]` — the platform ids turned off |
+| `disabled` | `string[]`: the platform ids turned off |
 
 #### Frontend
 
@@ -2265,7 +2252,7 @@ A `ScopeKey` in a path is the same scope as one string: `global`, `guild:<guild>
 |---|---|
 | `id` | `uuid` |
 | `frontend_id` | `uuid` |
-| `subject` | `string` — `secret`, `account:<username>` or `provider:<id>:<subject>` |
+| `subject` | `string`: `secret`, `account:<username>` or `provider:<id>:<subject>` |
 | `display` | `string` |
 | `created_at` | `timestamp` |
 | `last_seen_at` | `timestamp` |
@@ -2282,7 +2269,7 @@ A `ScopeKey` in a path is the same scope as one string: `global`, `guild:<guild>
 | `description` | `string` |
 | `downloads` | `bool` |
 | `access` | `{ open, secret: "pin" \| "password" \| "token" \| null, accounts, providers: [{ id, name }], discord_members }` |
-| `platforms` | `string[]` — resolver ids shown |
+| `platforms` | `string[]`: resolver ids shown |
 | `viewer` | `{ frontend_id, subject, display } \| null` |
 
 #### FrontPage
@@ -2290,7 +2277,7 @@ A `ScopeKey` in a path is the same scope as one string: `global`, `guild:<guild>
 | Field | Type |
 |---|---|
 | `jobs` | `FrontJob[]` |
-| `next` | `timestamp \| null` — the `before` of the next page |
+| `next` | `timestamp \| null`: the `before` of the next page |
 
 #### FrontJob
 
@@ -2304,13 +2291,13 @@ A `ScopeKey` in a path is the same scope as one string: `global`, `guild:<guild>
 | `webpage_url` | `url \| null` |
 | `thumbnail` | `url \| null` |
 | `duration_secs` | `number \| null` |
-| `live` | `bool` — a recorded stream |
+| `live` | `bool`: a recorded stream |
 | `size` | `integer` |
 | `width` | `integer \| null` |
 | `height` | `integer \| null` |
 | `content_type` | `string` |
 | `published_at` | `timestamp` |
-| `media_url` | `string` — plays or shows the media, with its signed token |
+| `media_url` | `string`: plays or shows the media, with its signed token |
 | `download_url` | `string \| null` |
 
 #### Guild
@@ -2373,7 +2360,7 @@ A `ScopeKey` in a path is the same scope as one string: `global`, `guild:<guild>
 | `retry_of` | `uuid \| null` |
 | `title` | `string \| null` |
 | `resolver` | `string \| null` |
-| `media` | `MediaKind` — what the probe found the source to be, else what the resolver said, else `video` |
+| `media` | `MediaKind`: what the probe found the source to be, else what the resolver said, else `video` |
 | `uploader` | `string \| null` |
 | `webpage_url` | `url \| null` |
 | `thumbnail` | `url \| null` |
@@ -2539,8 +2526,8 @@ A `ScopeKey` in a path is the same scope as one string: `global`, `guild:<guild>
 | `resolved` | `Resolved \| null` |
 | `source` | `LocalFile \| null` |
 | `output` | `LocalFile \| null` |
-| `delivery` | `"upload" \| "link"` — whether the output was handed over or a front end's page was posted |
-| `link_reason` | `string \| null` — why a link was posted rather than the file |
+| `delivery` | `"upload" \| "link"`: whether the output was handed over or a media site's page was posted |
+| `link_reason` | `string \| null`: why a link was posted rather than the file |
 | `published` | `Published \| null` |
 | `archived` | `ArchiveEntry \| null` |
 | `subtitles` | `LocalSubtitle[]` |
@@ -2552,7 +2539,7 @@ A `ScopeKey` in a path is the same scope as one string: `global`, `guild:<guild>
 | Field | Type |
 |---|---|
 | `resolver` | `string` |
-| `media` | `MediaKind` — what the link is; decides how it is picked, shrunk and shown |
+| `media` | `MediaKind`: what the link is. Decides how it is picked, shrunk and shown |
 | `id` | `string \| null` |
 | `title` | `string \| null` |
 | `description` | `string \| null` |
@@ -2634,7 +2621,7 @@ A `ScopeKey` in a path is the same scope as one string: `global`, `guild:<guild>
 | Field | Type |
 |---|---|
 | `container` | `Codec` |
-| `kind` | `MediaKind` — a still image has its picture in `video` with no `fps` |
+| `kind` | `MediaKind`: a still image has its picture in `video` with no `fps` |
 | `duration` | `Duration \| null` |
 | `video` | `VideoTrack \| null` |
 | `audio` | `AudioTrack \| null` |
@@ -2718,8 +2705,8 @@ A `ScopeKey` in a path is the same scope as one string: `global`, `guild:<guild>
 | `hosts` | `string[]` |
 | `features` | `string[]` |
 | `formats` | `string[]` |
-| `media` | `MediaKind[]` — every kind its links can resolve to |
-| `tags` | `string[]` — what kind of place it is: the preset ids minus `sfw` |
+| `media` | `MediaKind[]`: every kind its links can resolve to |
+| `tags` | `string[]`: what kind of place it is: the preset ids minus `sfw` |
 | `session` | `SessionSupport` |
 | `cookies` | `integer` |
 | `fixtures` | `FixtureResult[]` |
@@ -2757,7 +2744,7 @@ A `ScopeKey` in a path is the same scope as one string: `global`, `guild:<guild>
 | `last_pass_at` | `timestamp \| null` |
 | `error` | `string \| null` |
 | `title` | `string \| null` |
-| `found` | `Found \| null` — what the link resolved to, when it did |
+| `found` | `Found \| null`: what the link resolved to, when it did |
 | `duration_ms` | `integer \| null` |
 
 #### Found
@@ -2766,13 +2753,12 @@ A `ScopeKey` in a path is the same scope as one string: `global`, `guild:<guild>
 |---|---|---|
 | `kind` | `"media" \| "playlist"` | all |
 | `media` | `MediaKind` | `media` |
-| `variants` | `integer` — playable variants | `media` |
+| `variants` | `integer`: playable variants | `media` |
 | `entries` | `integer` | `playlist` |
 
 #### MediaKind
 
-`"video"`, `"audio"`, `"image"` or `"file"`: a moving picture (animated GIFs count),
-sound alone, a still picture, or any other file.
+Media kinds: `"video"` (including animated GIFs), `"audio"`, `"image"` and `"file"`.
 
 #### CheckStarted
 
@@ -2999,6 +2985,7 @@ sound alone, a still picture, or any other file.
 | `session.import` | `format` | `CookieFormat` |
 | `session.clear` | `cookies` | `integer` |
 | `profile.create` `profile.update` `profile.delete` | `profile` | `ProfileInput` |
+| `profile.create` | `converted_from_rule` | `object`: watch-rule migration metadata: `rule_id`, `application_id`, `guild_id`, `channel_id`, `allow_hosts`, `unmatched_hosts` (hosts using `web`), `max_source_bytes`, `max_duration_secs`, `max_height` |
 | `profile.update` | `previous` | `ProfileInput` |
 | `profile.delete` | `assignments_removed` | `integer` |
 | `profile.assign` `profile.unassign` | `scope` | `Scope` |
@@ -3137,6 +3124,7 @@ sound alone, a still picture, or any other file.
 | `ism` |
 | `rtmp` |
 | `rtsp` |
+| `rtp` |
 | `whep` |
 | `browser` |
 
@@ -3260,7 +3248,7 @@ sound alone, a still picture, or any other file.
 
 | Value | Meaning |
 |---|---|
-| `inherit` | Platforms the profile does not name stay as the wider scope has them |
+| `inherit` | Platforms the profile does not name stay as the parent scope has them |
 | `enabled` | Platforms the profile does not name are on |
 | `disabled` | Platforms the profile does not name are off |
 

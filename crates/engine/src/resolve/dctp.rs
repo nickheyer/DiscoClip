@@ -1,4 +1,4 @@
-//! dctp.tv films, through the versioned REST API on S3 that the site's player reads; the
+//! dctp.tv films, through the versioned REST API on S3 that the site's player reads. The
 //! media itself is served as HLS and as progressive m4v files from two hosts.
 
 use std::sync::LazyLock;

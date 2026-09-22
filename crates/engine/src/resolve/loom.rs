@@ -130,7 +130,7 @@ impl LoomResolver {
             }),
             Some("VideoPasswordMissingOrIncorrect") => Err(ResolveError::unavailable(
                 origin,
-                "the recording is password protected; add ?password= to the link",
+                "Password required. Add ?password= to the link.",
             )),
             None if record.is_null() => {
                 let message = answer["errors"][0]["message"].as_str().unwrap_or("");

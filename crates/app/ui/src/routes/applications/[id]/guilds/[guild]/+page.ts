@@ -15,8 +15,7 @@ export const load: PageLoad = async ({ params, depends, parent }) => {
 			optional(() => applications.install(params.id, params.guild)),
 			loadDirectory(params.id, params.guild),
 			guarded(profiles.list),
-			// Listing a guild's assignments needs what editing its rules needs; without it the
-			// profiles section shows what the whole server has and no controls.
+			// Assignment access requires rule permissions. Otherwise show only the global profile.
 			optional(() => profiles.assignments(params.guild), [403])
 		]);
 	return {

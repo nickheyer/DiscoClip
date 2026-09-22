@@ -70,7 +70,7 @@ pub fn parse_link(url: &Url) -> Option<StatusRef> {
 
 pub struct MastodonResolver {
     http: Http,
-    /// Servers found not to speak the API, so their links are handed on at once.
+    /// Servers found not to speak the API, so their links are handed on immediately.
     declined: Mutex<HashMap<String, Timestamp>>,
 }
 

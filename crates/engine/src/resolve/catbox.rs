@@ -176,7 +176,7 @@ impl CatboxResolver {
             }
         }
         let html = fetched.text();
-        // The page's document lives on one thread; everything is read from it before the
+        // The page's document lives on one thread. Everything is read from it before the
         // future crosses threads again.
         let (title, created, entries) = {
             let page = Page::parse(&html, &page_url);
@@ -393,7 +393,7 @@ mod tests {
     }
 
     /// The JPEG, ZIP and Markdown exchanges were recorded from the host on 2026-09-18,
-    /// which serves a type it does not know as `application/octet-stream`; the FLAC
+    /// which serves a type it does not know as `application/octet-stream`. The FLAC
     /// exchange has the same shape.
     #[tokio::test]
     async fn images_audio_and_other_files_are_told_apart() {

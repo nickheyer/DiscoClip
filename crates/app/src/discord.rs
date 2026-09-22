@@ -53,7 +53,7 @@ pub struct Guild {
     pub fetched_at: Timestamp,
 }
 
-/// Lists the guilds `access_token` belongs to; needs the `guilds` scope.
+/// Lists the guilds `access_token` belongs to. Needs the `guilds` scope.
 pub async fn fetch_guilds(
     http: &reqwest::Client,
     guilds_url: &Url,
@@ -352,7 +352,7 @@ impl BotGuildStore {
         .await
     }
 
-    /// Records that `application`'s bot is no longer in `guild_id`; whether it was.
+    /// Records that `application`'s bot is no longer in `guild_id`. Whether it was.
     pub async fn left(
         &self,
         application: ApplicationId,
@@ -372,7 +372,7 @@ impl BotGuildStore {
         .await
     }
 
-    /// At login the gateway lists the guilds the bot is in; any other guild still marked
+    /// At login the gateway lists the guilds the bot is in. Any other guild still marked
     /// present was left while the bot was away. Returns the ids marked left.
     pub async fn reconcile(
         &self,

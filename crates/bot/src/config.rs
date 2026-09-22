@@ -12,7 +12,7 @@ pub struct DiscordConfig {
     pub token: SecretString,
 }
 
-/// Where Discord is reached. Empty in production; tests point both at a stand-in.
+/// Where Discord is reached. Empty in production. Tests point both at a stand-in.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DiscordEndpoints {
     /// `host[:port]` that takes the REST API's place, over plain HTTP.
@@ -41,10 +41,7 @@ impl DiscordEndpoints {
     }
 }
 
-/// A channel to watch for links. Results are posted to `post_to`, or back into the
-/// watched channel when unset. `allow_hosts` limits which link hosts are picked up, and
-/// `allow_users` and `allow_roles` who may post them; an empty list means no limit. The
-/// limits tighten the engine's own for links from this channel.
+/// A channel to watch for links
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WatchRule {
@@ -52,17 +49,9 @@ pub struct WatchRule {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub post_to: Option<Id<ChannelMarker>>,
     #[serde(default)]
-    pub allow_hosts: Vec<String>,
-    #[serde(default)]
     pub allow_users: Vec<Id<UserMarker>>,
     #[serde(default)]
     pub allow_roles: Vec<Id<RoleMarker>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_source_bytes: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_duration_secs: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_height: Option<u32>,
 }
 
 impl WatchRule {
@@ -71,12 +60,8 @@ impl WatchRule {
         Self {
             channel,
             post_to: None,
-            allow_hosts: Vec::new(),
             allow_users: Vec::new(),
             allow_roles: Vec::new(),
-            max_source_bytes: None,
-            max_duration_secs: None,
-            max_height: None,
         }
     }
 

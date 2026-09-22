@@ -1,4 +1,4 @@
-//! Profiles: which platforms are on where, edited by admins, and put in force per guild,
+//! Profiles: which platforms are on where, edited by admins, and put assigned per guild,
 //! channel or user by operators and by whoever manages the guild on Discord.
 
 use axum::Json;
@@ -31,8 +31,8 @@ impl From<ProfileError> for ApiError {
     }
 }
 
-/// 403 unless the account may put profiles in force at `scope`: the whole server needs
-/// the settings permission; a guild's scopes need what editing its rules needs.
+/// 403 unless the account may put profiles assigned at `scope`: the whole server needs
+/// the settings permission. A guild's scopes need what editing its rules needs.
 async fn may_assign(state: &AppState, identity: &Identity, scope: &Scope) -> Result<(), ApiError> {
     match scope.guild_id() {
         None => identity.require(Permission::ManageSettings),
@@ -102,12 +102,12 @@ pub async fn delete(
 
 #[derive(Debug, Deserialize)]
 pub struct AssignmentsQuery {
-    /// The guild whose scopes to list, beside the whole server's; every guild's without.
+    /// The guild whose scopes to list, beside the whole server's. Every guild's without.
     #[serde(default)]
     pub guild: Option<String>,
 }
 
-/// The profiles in force: the whole server's and, for a guild, its guild, channel and
+/// The profiles assigned: the whole server's and, for a guild, its guild, channel and
 /// user scopes. Listing every guild's needs the rules permission.
 pub async fn assignments(
     State(state): State<AppState>,
@@ -132,7 +132,7 @@ fn parse_scope(key: &str) -> Result<Scope, ApiError> {
     key.parse().map_err(ApiError::BadRequest)
 }
 
-/// Puts a profile in force at a scope, named as `global`, `guild:<id>`,
+/// Puts a profile assigned at a scope, named as `global`, `guild:<id>`,
 /// `channel:<guild>:<id>` or `user:<guild>:<id>`.
 pub async fn assign(
     State(state): State<AppState>,
@@ -150,7 +150,7 @@ pub async fn assign(
     Ok(Json(assignment))
 }
 
-/// Takes the profile off a scope, so the wider scope's applies there again.
+/// Takes the profile off a scope, so the parent scope's applies there again.
 pub async fn unassign(
     State(state): State<AppState>,
     Auth(identity): Auth,
@@ -180,7 +180,7 @@ pub struct EffectiveQuery {
     pub user: Option<String>,
 }
 
-/// What the profiles in force add up to for a link seen in a channel of a guild from a
+/// What the profiles assigned add up to for a link seen in a channel of a guild from a
 /// user, or for the whole server alone.
 #[derive(Debug, Serialize)]
 pub struct EffectiveView {
@@ -233,7 +233,7 @@ mod tests {
         let mut viewer = Client::new(&app);
         viewer.login("viewer", "battery staple").await;
 
-        // The built-in profile is there from the start and in force for the whole server.
+        // The built-in profile is there from the start and assigned for the whole server.
         let (status, body) = viewer.get("/api/profiles").await;
         assert_eq!(status, StatusCode::OK, "{body}");
         let profiles = body.as_array().unwrap();
@@ -247,13 +247,15 @@ mod tests {
         assert_eq!(body["platforms"]["fixtured"], true);
         assert_eq!(body["platforms"]["nothing"], true);
         assert_eq!(body["disabled"], json!([]));
+        assert_eq!(body["limits"], json!({"max_source_bytes": null, "max_duration_secs": null, "max_height": null}));
         assert_eq!(body["applied"][0]["scope"]["kind"], "global");
 
         // Viewers may not edit.
         let input = json!({
             "name": "No fixtures",
             "description": "Keeps the fixtured platform off",
-            "platforms": {"default": "inherit", "overrides": {"fixtured": false}}
+            "platforms": {"default": "inherit", "overrides": {"fixtured": false}},
+            "limits": {"max_duration_secs": 120, "max_height": 720}
         });
         assert_eq!(
             viewer.post("/api/profiles", input.clone()).await.0,
@@ -264,6 +266,16 @@ mod tests {
         let id = body["id"].as_str().unwrap().to_string();
         assert_eq!(body["builtin"], false);
         assert_eq!(body["platforms"]["overrides"]["fixtured"], false);
+        assert_eq!(body["limits"]["max_duration_secs"], 120);
+        assert_eq!(body["limits"]["max_height"], 720);
+        assert!(body["limits"]["max_source_bytes"].is_null());
+        let (status, body) = admin
+            .post(
+                "/api/profiles",
+                json!({"name": "Zero", "limits": {"max_height": 0}}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
 
         // Names are unique, platforms must exist, and the built-in one stays.
         assert_eq!(
@@ -282,7 +294,7 @@ mod tests {
             StatusCode::CONFLICT
         );
 
-        // Put in force for the whole server, the profile turns the platform off there.
+        // Put assigned for the whole server, the profile turns the platform off there.
         let (status, body) = admin
             .send(
                 Method::PUT,
@@ -295,6 +307,7 @@ mod tests {
         let (_, body) = viewer.get("/api/profiles/effective").await;
         assert_eq!(body["platforms"]["fixtured"], false);
         assert_eq!(body["disabled"], json!(["fixtured"]));
+        assert_eq!(body["limits"]["max_duration_secs"], 120);
         let (status, body) = admin
             .post("/api/jobs", json!({"url": "https://fixture.test/ok"}))
             .await;
@@ -306,7 +319,22 @@ mod tests {
                 .contains("fixtured links are turned off"),
             "{body}"
         );
-        // The profile in force cannot be removed, and the server always has one.
+        // A link the profile allows is queued under its limits, tightened by the
+        // submitter's own, and a retry takes the profile as it stands then.
+        let (status, body) = admin
+            .post(
+                "/api/jobs",
+                json!({"url": format!("https://{}/ok", crate::web::testing::SUPPORTED_HOST), "limits": {"max_height": 480, "max_duration_secs": 600}}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+        let job_id = body["id"].as_str().unwrap().to_string();
+        let (status, body) = admin.get(&format!("/api/jobs/{job_id}")).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["request"]["limits"]["max_height"], 480);
+        assert_eq!(body["request"]["limits"]["max_duration_secs"], 120);
+        assert!(body["request"]["limits"]["max_source_bytes"].is_null());
+        // The profile assigned cannot be removed, and the server always has one.
         assert_eq!(
             admin.delete(&format!("/api/profiles/{id}")).await.0,
             StatusCode::CONFLICT
@@ -319,7 +347,7 @@ mod tests {
             StatusCode::CONFLICT
         );
 
-        // Guild scopes narrow the server's; the whole server needs the settings permission.
+        // Guild scopes narrow the server's. The whole server needs the settings permission.
         let (status, body) = admin
             .send(
                 Method::PUT,

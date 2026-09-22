@@ -8,7 +8,7 @@ use std::process::Command;
 
 use sha2::{Digest, Sha256};
 
-/// What Cargo watches for changes; anything else under `ui/` is derived from these.
+/// What Cargo watches for changes. Anything else under `ui/` is derived from these.
 const WATCHED: [&str; 6] = [
     "src",
     "static",

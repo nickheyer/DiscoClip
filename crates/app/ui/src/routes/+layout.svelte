@@ -46,8 +46,8 @@
 				{ href: '/applications', label: 'Applications', icon: 'bot', permission: 'manage_applications' },
 				{ href: '/rules', label: 'Watch rules', icon: 'rules', permission: 'manage_watch_rules' },
 				{ href: '/profiles', label: 'Profiles', icon: 'sparkles' },
-				{ href: '/frontends', label: 'Front ends', icon: 'monitor', permission: 'manage_settings' },
-				{ href: '/guilds', label: 'My guilds', icon: 'server' }
+				{ href: '/frontends', label: 'Media sites', icon: 'monitor', permission: 'manage_settings' },
+				{ href: '/guilds', label: 'Discord servers', icon: 'server' }
 			]
 		},
 		{
@@ -86,13 +86,45 @@
 		})).filter((group) => group.items.length > 0)
 	);
 	let navOpen = $state(false);
+	let mobile = $state(false);
+	let menuButton = $state<HTMLButtonElement>();
+	let sidebar = $state<HTMLElement>();
 	let loggingOut = $state(false);
+
+	function closeNav() {
+		navOpen = false;
+		menuButton?.focus();
+	}
+
+	function navKey(event: KeyboardEvent) {
+		if (!mobile || !navOpen) return;
+		if (event.key === 'Escape') { event.preventDefault(); closeNav(); }
+		if (event.key !== 'Tab') return;
+		const links = Array.from(sidebar?.querySelectorAll<HTMLElement>('a[href], button:not(:disabled)') ?? [])
+			.filter((element) => element.getClientRects().length > 0);
+		const first = links[0];
+		const last = links.at(-1);
+		if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+		else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+	}
+
+	$effect(() => {
+		if (!mobile || !navOpen) return;
+		const overflow = document.body.style.overflow;
+		document.body.style.overflow = 'hidden';
+		sidebar?.querySelector<HTMLElement>('a[href]')?.focus();
+		return () => { document.body.style.overflow = overflow; };
+	});
 
 	function active(href: string): boolean {
 		return pathname === href || (href !== '/' && pathname.startsWith(`${href}/`));
 	}
 
 	onMount(() => {
+		const media = window.matchMedia('(max-width: 900px)');
+		const resize = () => { mobile = media.matches; if (!mobile) navOpen = false; };
+		resize();
+		media.addEventListener('change', resize);
 		theme.init();
 		clock.start();
 		onUnauthorized(() => {
@@ -100,8 +132,7 @@
 			toast.info('Your session ended. Log in again to continue.');
 			void session.leave(`${page.url.pathname}${page.url.search}`);
 		});
-		// A document the browser keeps in its back/forward cache must not hold the status
-		// stream open, or it takes up one of the few connections the browser allows a host.
+		// Release stream connections while the document is in the back/forward cache.
 		const hide = () => {
 			bots.stop();
 			jobs.stop();
@@ -115,6 +146,7 @@
 		window.addEventListener('pagehide', hide);
 		window.addEventListener('pageshow', show);
 		return () => {
+			media.removeEventListener('change', resize);
 			window.removeEventListener('pagehide', hide);
 			window.removeEventListener('pageshow', show);
 			clock.stop();
@@ -175,6 +207,8 @@
 	);
 </script>
 
+<svelte:window onkeydown={navKey} />
+
 <svelte:head>
 	<link rel="icon" href={favicon} />
 </svelte:head>
@@ -190,6 +224,7 @@
 		<a class="skip" href="#main">Skip to content</a>
 		<header class="topbar">
 			<button
+				bind:this={menuButton}
 				type="button"
 				class="icon-btn"
 				onclick={() => (navOpen = !navOpen)}
@@ -205,7 +240,8 @@
 			</a>
 		</header>
 
-		<aside id="sidebar" class={['sidebar', navOpen && 'open']}>
+		<aside bind:this={sidebar} id="sidebar" class={['sidebar', navOpen && 'open']}>
+			<button class="close-nav icon-btn" type="button" onclick={closeNav} aria-label="Close menu"><Icon name="x" size={18} /></button>
 			<a href="/" class="brand brand-side">
 				<span class="logo"><Icon name="video" size={15} /></span>
 				<span>DiscoClip</span>
@@ -263,11 +299,11 @@
 			</div>
 		</aside>
 		{#if navOpen}
-			<button type="button" class="scrim" onclick={() => (navOpen = false)} aria-label="Close menu"
+			<button type="button" class="scrim" onclick={closeNav} aria-label="Close menu" tabindex="-1"
 			></button>
 		{/if}
 
-		<main id="main" class="main">
+		<main id="main" class="main" tabindex="-1" inert={mobile && navOpen}>
 			<div class="content">{@render children()}</div>
 		</main>
 	</div>
@@ -352,8 +388,8 @@
 		width: 28px;
 		height: 28px;
 		border-radius: 8px;
-		background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 60%, #22d3ee));
-		color: #fff;
+		background: var(--accent);
+		color: var(--text-on-accent);
 		box-shadow: var(--shadow-sm);
 	}
 
@@ -383,10 +419,9 @@
 
 	.nav-label {
 		padding: 4px 10px 2px;
-		font-size: 11px;
+		font-size: 13px;
 		font-weight: 600;
-		letter-spacing: 0.06em;
-		text-transform: uppercase;
+		letter-spacing: 0;
 		color: var(--text-3);
 	}
 
@@ -394,6 +429,7 @@
 		display: flex;
 		align-items: center;
 		gap: 10px;
+		min-height: 44px;
 		padding: 8px 10px;
 		border-radius: var(--radius-sm);
 		color: var(--text-2);
@@ -429,7 +465,7 @@
 		align-items: center;
 		gap: 8px;
 		padding: 0 6px;
-		font-size: 12px;
+		font-size: 13px;
 		color: var(--text-3);
 	}
 
@@ -491,8 +527,8 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		width: 32px;
-		height: 32px;
+		width: 44px;
+		height: 44px;
 		border: none;
 		border-radius: var(--radius-sm);
 		background: transparent;
@@ -524,6 +560,7 @@
 	.scrim {
 		display: none;
 	}
+	.close-nav { display: none; }
 
 	@media (max-width: 900px) {
 		.shell {
@@ -550,13 +587,16 @@
 			z-index: 60;
 			width: var(--sidebar-w);
 			transform: translateX(-100%);
+			visibility: hidden;
 			transition: transform 0.18s ease-out;
 			box-shadow: var(--shadow-lg);
 		}
 
 		.sidebar.open {
 			transform: none;
+			visibility: visible;
 		}
+		.close-nav { display: flex; position: absolute; top: 6px; right: 8px; }
 
 		.scrim {
 			display: block;

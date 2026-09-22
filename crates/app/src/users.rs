@@ -35,7 +35,7 @@ impl std::str::FromStr for UserId {
     }
 }
 
-/// What an account may do; checked wherever the app acts on a request.
+/// What an account may do. Checked wherever the app acts on a request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
@@ -47,7 +47,7 @@ pub enum Role {
     Viewer,
 }
 
-/// Something a request wants to do; each role allows some of them, and an API token is
+/// Something a request wants to do. Each role allows some of them, and an API token is
 /// limited to the ones it was minted with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -56,7 +56,7 @@ pub enum Permission {
     ManageUsers,
     /// Add, change and remove the Discord applications the server runs bots for.
     ManageApplications,
-    /// Edit the watch rules of any guild; Discord managers of a guild edit theirs regardless.
+    /// Edit the watch rules of any guild. Discord managers of a guild edit theirs regardless.
     ManageWatchRules,
     /// Start, stop and restart the bots.
     ManageBots,
@@ -184,7 +184,7 @@ pub enum UserError {
     InvalidPassword,
     #[error("the username {0} is taken")]
     Taken(String),
-    #[error("an account exists already; the first admin is set up only once")]
+    #[error("Setup is complete. An account already exists.")]
     AlreadySetUp,
     #[error("password hashing failed: {0}")]
     Hash(String),
@@ -344,7 +344,7 @@ impl UserStore {
         .await
     }
 
-    /// Changes `id`'s role; the last admin keeps theirs.
+    /// Changes `id`'s role. The last admin keeps theirs.
     pub async fn set_role(&self, id: UserId, role: Role) -> Result<User, UserError> {
         transact(&self.db, move |tx| {
             let user = get_in(tx, id)?.ok_or(UserError::NotFound(id))?;
@@ -384,7 +384,7 @@ impl UserStore {
         .await
     }
 
-    /// Removes `id`, and through the database their sessions; the last admin stays.
+    /// Removes `id`, and through the database their sessions. The last admin stays.
     pub async fn delete(&self, id: UserId) -> Result<(), UserError> {
         transact(&self.db, move |tx| {
             let user = get_in(tx, id)?.ok_or(UserError::NotFound(id))?;

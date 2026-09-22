@@ -1,10 +1,8 @@
-//! Generic resolver for direct media files (video, audio and images), HLS, DASH and
-//! Smooth Streaming manifests, and web pages that advertise their video through standard
-//! metadata, `<video>` tags, or an embedded player the registry knows. A page reached
-//! through a redirect to another host, as short links are, is handed back to the registry
-//! so the host's own resolver takes it. A link to any other kind of file, a document or
-//! an archive on an arbitrary host, is refused as unsupported: only the hosts with a
-//! resolver of their own serve such files.
+//! Resolve direct video, audio and image files, streaming manifests and supported page
+//! metadata or players.
+//!
+//! Delegate cross-host redirects to the registry. Generic files such as documents and
+//! archives require a dedicated host resolver.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -28,7 +26,7 @@ const MAX_CANDIDATES: usize = 8;
 
 pub struct WebResolver {
     http: Http,
-    /// The resolvers whose players a page may embed; a page carrying one is handed to it.
+    /// The resolvers whose players a page may embed. A page carrying one is handed to it.
     players: Vec<Arc<dyn Resolver>>,
 }
 
@@ -45,13 +43,22 @@ pub enum Kind {
     Hls,
     Dash,
     Ism,
+    /// A session description of an RTP session.
+    Sdp,
     Html,
     Other,
 }
 
+/// A variant for a stream that runs while it is watched: an RTP session has no length.
+fn live_variant(url: Url, kind: VariantKind) -> Variant {
+    let mut variant = Variant::new(url, kind);
+    variant.live = true;
+    variant
+}
+
 /// What a URL points at, from its content type and path. A file is media when its type is
 /// `video/*`, `audio/*` or `image/*`, or when it is served without a type and its
-/// extension names a format; SVG, which is markup rather than a picture, is not taken.
+/// extension names a format. SVG, which is markup rather than a picture, is not taken.
 pub fn classify(url: &Url, content_type: Option<&str>) -> Kind {
     let ct = essence(content_type);
     let ext = path_extension(url);
@@ -66,6 +73,9 @@ pub fn classify(url: &Url, content_type: Option<&str>) -> Kind {
         || (ism_path.ends_with(".ism") || ism_path.ends_with(".isml"))
     {
         return Kind::Ism;
+    }
+    if ct == "application/sdp" || ext.as_deref() == Some("sdp") {
+        return Kind::Sdp;
     }
     if ct == "image/svg+xml" {
         return Kind::Other;
@@ -322,6 +332,7 @@ impl WebResolver {
                 .map(|e| e.variants),
             Kind::Dash => Some(vec![Variant::new(final_url, VariantKind::Dash)]),
             Kind::Ism => Some(vec![Variant::new(final_url, VariantKind::Ism)]),
+            Kind::Sdp => Some(vec![live_variant(final_url, VariantKind::Rtp)]),
             Kind::Html | Kind::Other => None,
         }
     }
@@ -377,6 +388,14 @@ impl WebResolver {
                 let mut resolved = Resolved::new("web");
                 resolved.title = file_title(&final_url);
                 resolved.variants = vec![Variant::new(final_url, VariantKind::Ism)];
+                Ok(Some(resolved))
+            }
+            Kind::Sdp => {
+                drop(response);
+                let mut resolved = Resolved::new("web");
+                resolved.title = file_title(&final_url);
+                resolved.live = true;
+                resolved.variants = vec![live_variant(final_url, VariantKind::Rtp)];
                 Ok(Some(resolved))
             }
             Kind::Html => {
@@ -531,6 +550,8 @@ mod tests {
             Kind::Dash
         );
         assert_eq!(classify(&url("https://h/v.ism/Manifest"), None), Kind::Ism);
+        assert_eq!(classify(&url("https://h/cam/session.sdp"), None), Kind::Sdp);
+        assert_eq!(classify(&url("https://h/cam"), Some("application/sdp")), Kind::Sdp);
         assert_eq!(
             classify(&url("https://h/v.mp4"), Some("application/octet-stream")),
             Kind::File(Some(Container::Mp4), MediaKind::Video)

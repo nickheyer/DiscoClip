@@ -231,7 +231,7 @@ impl Resolver for DropboxResolver {
         }
         let mut html = fetched.text();
         let mut parts = prefetched_parts(&html);
-        // A password-protected share names its content id; the password on the link
+        // A password-protected share names its content id. The password on the link
         // unlocks it for this session.
         if let Some(content_id) = parts
             .iter()
@@ -242,7 +242,7 @@ impl Resolver for DropboxResolver {
             else {
                 return Err(ResolveError::unavailable(
                     url,
-                    "the share is password protected; add ?password=… to the link",
+                    "Password required. Add ?password= to the link.",
                 ));
             };
             let token = self
@@ -296,7 +296,7 @@ impl Resolver for DropboxResolver {
         }
         let mut resolved = Resolved::new(PLATFORM);
         let mut downloads_allowed = false;
-        // The transcode is only ever a video's; anything else is known by its original.
+        // The transcode is only ever a video's. Anything else is known by its original.
         for part in &parts {
             if part.contains("anonymous:\tanonymous") {
                 downloads_allowed = true;
@@ -391,7 +391,7 @@ impl DropboxResolver {
         if content_type == "text/html" {
             return Err(ResolveError::unavailable(
                 origin,
-                "the link opens a page rather than a file; it may be a folder or need a login",
+                "No file found. The link may point to a folder or require login.",
             ));
         }
         let name = probed
@@ -590,7 +590,7 @@ mod tests {
     /// The image and PDF download exchanges were recorded from the content host on
     /// 2026-09-18: it serves every file as `application/binary`, with the name in
     /// `Content-Disposition`. The share pages carry no transcode for them, only the
-    /// downloads-allowed part; the audio share has the same shape.
+    /// downloads-allowed part. The audio share has the same shape.
     #[tokio::test]
     async fn images_audio_and_other_files_resolve_through_their_originals() {
         let allowed = r#"<html><head><meta property="og:title" content="%TITLE%"></head><body><script>registerStreamedPrefetch("a", "EngKYW5vbnltb3VzOglhbm9ueW1vdXMK");</script></body></html>"#;

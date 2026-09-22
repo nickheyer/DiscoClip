@@ -339,7 +339,7 @@ impl Resolver for InstagramResolver {
                 return Err(error);
             }
             Err(error) => {
-                tracing::debug!(%url, "instagram query refused: {error}; reading the embed page");
+                tracing::debug!(%url, "Instagram query failed: {error}. Trying the embed page.");
                 self.embed(&code, url).await?
             }
         };

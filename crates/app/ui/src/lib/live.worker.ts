@@ -1,9 +1,6 @@
 /// <reference lib="webworker" />
-// One connection to the server's live feed for every tab of the app in this browser. The
-// tabs connect to this worker, which holds the event stream, relays everything it
-// carries, and hands a tab that connects later the latest counts and bot statuses, as a
-// fresh stream would. A browser allows a host only a few connections at a time, so a
-// stream per tab would leave none for pages, downloads and video once a few tabs are open.
+
+// Share one event stream across tabs. Replay the latest counts and bot states to new tabs.
 
 import { LIVE_EVENTS_URL } from '$lib/api/endpoints';
 import { LIVE_EVENT_NAMES } from '$lib/live';

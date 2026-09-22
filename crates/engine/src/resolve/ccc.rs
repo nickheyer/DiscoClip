@@ -1,6 +1,6 @@
 //! media.ccc.de, the Chaos Computer Club's conference recordings: every talk page names
 //! its event, which the public API describes with one recording per rendition and
-//! language; a conference page lists its talks.
+//! language. A conference page lists its talks.
 
 use std::sync::LazyLock;
 
@@ -226,7 +226,7 @@ impl CccResolver {
             .filter(|s| !s.is_empty())
             .or_else(|| event["conference_title"].as_str().and_then(clean_title));
         resolved.uploader_url = util::url_of(&event["conference_url"], None).and_then(|api_url| {
-            // The conference's API link names its acronym; its page is `/c/{acronym}`.
+            // The conference's API link names its acronym. Its page is `/c/{acronym}`.
             let acronym = api_url.path_segments()?.next_back()?.to_string();
             Url::parse(&format!("https://media.ccc.de/c/{acronym}")).ok()
         });

@@ -67,7 +67,7 @@ pub enum RpcAnswer {
 
 /// Reads the `wrb.fr` entry for `rpc` out of a `batchexecute` answer: the anti-hijacking
 /// prefix is dropped, then the chunks follow, each a byte count on its own line and a
-/// JSON array of entries; the entry's result is JSON in a string. `None` when no chunk
+/// JSON array of entries. The entry's result is JSON in a string. `None` when no chunk
 /// carries the call's entry, or a chunk is not JSON.
 pub fn rpc_answer(text: &str, rpc: &str) -> Option<RpcAnswer> {
     let mut rest = text.strip_prefix(")]}'").unwrap_or(text);

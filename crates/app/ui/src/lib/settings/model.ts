@@ -1,4 +1,4 @@
-// How the settings page reads a settings view and turns edits into a change.
+// Settings values and validation.
 
 import type { SettingEntry, SettingSource, SettingValue, SettingsView } from '$lib/api';
 import type { FieldKind, FieldSpec } from './schema';
@@ -27,8 +27,8 @@ export function sourceOf(
 }
 
 export const SOURCE_LABELS: Record<ValueSource, string> = {
-	app: 'Set here',
-	provisioning: 'Provisioned',
+	app: 'Saved',
+	provisioning: 'Config file',
 	default: 'Default'
 };
 
@@ -53,13 +53,13 @@ export function isBlank(value: SettingValue | undefined): boolean {
 	return value === undefined || value === null || value === '';
 }
 
-/** A message when `value` does not fit `spec`; nothing when it does. */
+/** A message when `value` does not fit `spec`. Nothing when it does. */
 export function problemOf(spec: FieldSpec, value: SettingValue | undefined): string | null {
 	if (isBlank(value)) {
 		if (spec.nullable) return null;
 		if (spec.kind === 'list') return null;
 		if (spec.kind === 'secret') return null;
-		return 'A value is needed.';
+		return 'Enter a value.';
 	}
 	switch (spec.kind) {
 		case 'integer':
@@ -67,12 +67,12 @@ export function problemOf(spec: FieldSpec, value: SettingValue | undefined): str
 		case 'seconds':
 		case 'days':
 		case 'millis': {
-			if (typeof value !== 'number' || !Number.isInteger(value)) return 'A whole number.';
+			if (typeof value !== 'number' || !Number.isInteger(value)) return 'Enter a whole number.';
 			if (spec.min !== undefined && value < spec.min) return `At least ${spec.min}.`;
 			return null;
 		}
 		case 'number': {
-			if (typeof value !== 'number' || !Number.isFinite(value)) return 'A number.';
+			if (typeof value !== 'number' || !Number.isFinite(value)) return 'Enter a number.';
 			if (spec.min !== undefined && value < spec.min) return `At least ${spec.min}.`;
 			return null;
 		}
@@ -82,20 +82,20 @@ export function problemOf(spec: FieldSpec, value: SettingValue | undefined): str
 			if (typeof value !== 'string') return 'A URL.';
 			try {
 				const url = new URL(value);
-				return url.protocol ? null : 'A URL with a scheme.';
+				return url.protocol ? null : 'Include the URL scheme, such as https://.';
 			} catch {
-				return 'A URL such as https://example.com.';
+				return 'Enter a URL, such as https://example.com.';
 			}
 		}
 		case 'socket':
 			return typeof value === 'string' &&
 				/^(\[[0-9a-f:.]+\]|[^:\s[\]]+):\d{1,5}$/i.test(value.trim())
 				? null
-				: 'An address and port such as 127.0.0.1:8080 or [::]:8080.';
+				: 'Enter an IP address and port, such as 127.0.0.1:8080.';
 		case 'list':
 			return Array.isArray(value) ? null : 'A list.';
 		case 'enum':
-			return spec.options?.some((o) => o.value === value) ? null : 'One of the choices.';
+			return spec.options?.some((o) => o.value === value) ? null : 'Choose an option.';
 		default:
 			return typeof value === 'string' ? null : 'Text.';
 	}

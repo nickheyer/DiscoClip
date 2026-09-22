@@ -1,10 +1,7 @@
-//! Business Insider (businessinsider.com, businessinsider.nl) articles: the JW Player
-//! media the article's player names, read from JW Player's delivery API for every
-//! rendition, with the article's own title, summary, author and date. Video articles
-//! carry the id on the player element (`data-media-id`), in the page state
-//! (`"jwplayer":{"assetID":…}`), in the structured data's player script link
-//! (`content.jwplatform.com/players/{id}-…`), on older player elements, and as a bare
-//! `id: "…"` value in the player's setup.
+//! Resolve Business Insider article videos through JW Player. Read player IDs from data-
+//! media-id, page state, structured data or legacy player setup.
+//!
+//! Preserve the article title, summary, author and date.
 
 use std::sync::LazyLock;
 

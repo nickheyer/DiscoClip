@@ -15,8 +15,7 @@ export const load: PageLoad = async ({ depends, parent }) => {
 		);
 		apps.forEach((app: ApplicationView, i: number) => guildsByApp.set(app.id, lists[i] ?? []));
 	}
-	// Each guild's channels, so rules are shown by name; a guild the bot cannot list keeps
-	// its error and its rules are shown by id.
+	// Load channel names. Fall back to IDs when a directory request fails.
 	const pairs = new Map<string, { applicationId: string; guildId: string }>();
 	for (const rule of list) {
 		pairs.set(groupKey(rule.application_id, rule.guild_id), {

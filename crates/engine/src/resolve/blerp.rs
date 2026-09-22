@@ -121,7 +121,7 @@ const QUERY: &str = r#"query webBitePageGetBite($_id: MongoID!) {
 
         "#;
 
-/// `/soundbites/{id}`; the id is the leading run of letters and digits.
+/// `/soundbites/{id}`. The id is the leading run of letters and digits.
 static RE_BITE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^/soundbites/([0-9a-zA-Z]+)").unwrap());
 

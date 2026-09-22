@@ -28,12 +28,12 @@ const MAX_ENTRIES: usize = 500;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Link {
-    /// `/watch/{id}`; with `?playlistId=` the playlist the video plays in.
+    /// `/watch/{id}`. With `?playlistId=` the playlist the video plays in.
     Video {
         id: String,
         playlist: Option<String>,
     },
-    /// `/channel/{id}`; with `?playlist=` one of the channel's playlists.
+    /// `/channel/{id}`. With `?playlist=` one of the channel's playlists.
     Channel {
         id: String,
         playlist: Option<String>,

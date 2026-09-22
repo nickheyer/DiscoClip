@@ -1,12 +1,10 @@
-//! Front ends: public sites the server hosts, each a browser over the media the server
-//! has made, scoped to a guild, a channel or everything and to the platforms a profile
-//! turns on. A front end lets viewers in as its access says: to anyone, with a shared
-//! secret, with an account of its own, or through a login provider, Discord among them
-//! with membership of the scoped guilds required. A front end can also be where Discord
-//! is sent instead of an upload: when a job's media cannot be uploaded well, the bot
-//! posts the front end's page for it, which plays the media inline. Edited in the app,
-//! read by the bots and the public routes through a cache the store keeps up. Every
-//! change is written to the audit log in the same transaction.
+//! Media sites expose completed jobs through scoped, profile-filtered pages. Access can
+//! be public or require a shared secret, site account or login provider.
+//!
+//! Discord membership restrictions are optional. Bots can post site links when uploads
+//! exceed size or quality limits.
+//!
+//! Bots and viewer routes read a shared cache. Changes are audited transactionally.
 
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -540,7 +538,7 @@ impl LinkTargets for FrontendCache {
             tracing::warn!(
                 frontend = frontend.input.slug,
                 job = %job.id,
-                "web.public_url is not set; the media will be uploaded, not linked"
+                "Public URL is missing. Uploading the media file."
             );
             return None;
         };
@@ -573,7 +571,7 @@ struct MediaTicket {
 const MEDIA_CONTEXT: &str = "frontend-media";
 
 impl FrontendStore {
-    /// Over a database the application's migrations have been applied to; `load` fills
+    /// Over a database the application's migrations have been applied to. `load` fills
     /// the cache before anything reads it.
     pub fn new(
         db: SqliteStore,
@@ -748,7 +746,7 @@ impl FrontendStore {
         .await
     }
 
-    /// Stores the shared secret, hashed; `None` removes it.
+    /// Stores the shared secret, hashed. `None` removes it.
     pub async fn set_secret(
         &self,
         actor: &Actor,
@@ -985,7 +983,7 @@ impl FrontendStore {
         .await
     }
 
-    /// Opens a session for a viewer let in as `subject`; the token to set as the cookie.
+    /// Opens a session for a viewer let in as `subject`. The token to set as the cookie.
     pub async fn open_session(
         &self,
         viewer: &Viewer,
@@ -1165,7 +1163,7 @@ impl FrontendStore {
     }
 
     /// A token that opens `job`'s media on `frontend` without a session, until the
-    /// front end's signed links run out; what the page hands Discord to play the media.
+    /// front end's signed links run out. What the page hands Discord to play the media.
     pub fn sign_media(&self, frontend: &Frontend, job: Uuid) -> String {
         let days = frontend.input.links.signed_link_days.max(1);
         let expires = Timestamp::now() + SignedDuration::from_hours(24 * i64::from(days));
@@ -1299,14 +1297,21 @@ mod tests {
     use discoclip_engine::job::{Origin, Request, SourceId};
 
     use super::*;
-    use crate::profiles::{PlatformDefault, PlatformToggles, ProfileInput, ProfileStore};
+    use crate::profiles::{
+        PlatformDefault, PlatformFacts, PlatformToggles, ProfileInput, ProfileLimits, ProfileStore,
+    };
 
     async fn stores() -> (FrontendStore, ProfileStore) {
         let db = SqliteStore::open_in_memory().await.unwrap();
         crate::migrations::apply(&db).await.unwrap();
+        let facts = |id: &'static str| PlatformFacts {
+            id,
+            tags: &[],
+            hosts: &[],
+        };
         let profiles = ProfileStore::new(
             db.clone(),
-            vec![("youtube", &[][..]), ("reddit", &[][..]), ("web", &[][..])],
+            vec![facts("youtube"), facts("reddit"), facts("web")],
         );
         profiles.load().await.unwrap();
         let store = FrontendStore::new(
@@ -1455,6 +1460,7 @@ mod tests {
                         presets: Vec::new(),
                         overrides: [("youtube".to_string(), false)].into_iter().collect(),
                     },
+                    limits: ProfileLimits::default(),
                 },
             )
             .await

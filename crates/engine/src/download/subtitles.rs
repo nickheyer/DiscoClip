@@ -203,11 +203,10 @@ fn format_vtt_time(seconds: f64) -> String {
     vtt_time((seconds.max(0.0) * 1000.0).round() as u64)
 }
 
-/// An HLS WebVTT segment's cues, shifted so that time zero is the media's start: the
-/// segment's `X-TIMESTAMP-MAP` relates its cue times to MPEG-TS time, and `media_start`
-/// is the MPEG-TS time, in seconds, the media file begins at. Without a map, or without a
-/// media start to relate it to, the cues are kept as they are. Cues that end before the
-/// media begins are dropped; the header block never comes through.
+/// Map WebVTT cue times to the recording timeline using X-TIMESTAMP-MAP and media_start.
+/// Preserve timing when either value is missing.
+///
+/// Drop cues ending before the recording and omit the header block.
 pub fn hls_vtt_cues(text: &str, media_start: Option<f64>) -> String {
     let mut shift = 0.0;
     let mut out = String::new();
@@ -461,7 +460,7 @@ fn parse_ttml_time(text: &str) -> Option<f64> {
 }
 
 /// A TTML document with every `begin` and `end` attribute moved by `shift` seconds,
-/// clamped at zero; times the document counts in frames or ticks are left as they are.
+/// clamped at zero. Times the document counts in frames or ticks are left as they are.
 pub fn shift_ttml(document: &str, shift: f64) -> String {
     if shift == 0.0 {
         return document.to_string();
@@ -523,7 +522,7 @@ fn vtt_time(ms: u64) -> String {
     )
 }
 
-/// Converts YouTube `json3` timed text to WebVTT; `None` when the text is not json3.
+/// Converts YouTube `json3` timed text to WebVTT. `None` when the text is not json3.
 pub fn json3_to_vtt(text: &str) -> Option<String> {
     let value: serde_json::Value = serde_json::from_str(text).ok()?;
     let events = value.get("events")?.as_array()?;
@@ -585,7 +584,7 @@ fn tiktok_json_to_vtt(text: &str) -> Option<String> {
 }
 
 /// Converts Bilibili's JSON subtitles, a `body` of cues with `from` and `to` in seconds,
-/// to WebVTT; `None` when the text is not one.
+/// to WebVTT. `None` when the text is not one.
 pub fn bilibili_json_to_vtt(text: &str) -> Option<String> {
     let value: serde_json::Value = serde_json::from_str(text).ok()?;
     let cues = value.get("body")?.as_array()?;
@@ -698,7 +697,7 @@ mod tests {
 
     #[test]
     fn vtt_cues_are_shifted_by_the_timestamp_map_onto_the_media_start() {
-        // The map says local 0 is MPEG-TS 900000 (10 s); the media starts at 12 s, so
+        // The map says local 0 is MPEG-TS 900000 (10 s). The media starts at 12 s, so
         // cues move back by two seconds and one ending before the start is dropped.
         let piece = "WEBVTT\nX-TIMESTAMP-MAP=MPEGTS:900000,LOCAL:00:00:00.000\n\n1\n00:00:00.500 --> 00:00:01.500\nGone\n\n2\n00:00:03.000 --> 00:00:04.250 line:90%\nKept\n\n00:05.000 --> 00:06.000\nShort form\n";
         assert_eq!(

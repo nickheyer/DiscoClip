@@ -1,9 +1,8 @@
-//! Douyin videos, through the web API when a browser's cookies are stored and through
-//! the share page the app renders for visitors otherwise, with `v.douyin.com` short
-//! links unwrapped. The share host answers some visits with the page's frame and no
-//! video and others with the video, for one client and one link alike, so a visit that
-//! brought no video is repeated; a client that asks too often is answered with a
-//! JavaScript challenge instead of a page.
+//! Resolve Douyin through the web API with stored browser cookies, otherwise through the
+//! public share page. Follow v.douyin.com redirects.
+//!
+//! Retry share pages that omit video data. Frequent requests may receive a JavaScript
+//! challenge.
 
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -131,7 +130,7 @@ impl DouyinResolver {
         BROWSER_COOKIES.iter().any(|name| jar.get(name).is_some())
     }
 
-    /// The video's record through the web API; `None` when the API keeps quiet, as it
+    /// The video's record through the web API. `None` when the API keeps quiet, as it
     /// does without a browser's cookies.
     async fn detail(&self, id: &str, origin: &Url) -> Result<Option<Value>, ResolveError> {
         let mut url = Url::parse(DETAIL_API).expect("valid");
@@ -188,7 +187,7 @@ impl DouyinResolver {
             None => Url::parse(&format!("{SHARE_PAGE}{id}/")).expect("valid"),
         };
         // The host answers some visits with the page's frame and no video, and the
-        // same visit again with the video, whether or not it hands out cookies; a page
+        // same visit again with the video, whether or not it hands out cookies. A page
         // without its router data at all is the frame it serves when it skipped
         // rendering. Either is asked again, up to `SHARE_VISITS` times in all.
         let mut info = Value::Null;
@@ -275,7 +274,7 @@ impl DouyinResolver {
             ResolveError::login_required(
                 origin,
                 PLATFORM,
-                "the share page hands visitors no video here; the web API answers to a browser's cookies",
+                "The share page has no video. Import browser cookies to use the web API.",
             )
         }
     }
@@ -794,7 +793,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_bare_share_page_is_asked_again() {
-        // The first visit answers with the frame and no video, and sets no cookie; the
+        // The first visit answers with the frame and no video, and sets no cookie. The
         // second carries the video.
         let mut fixture = Fixture::new("douyin", None);
         fixture.exchanges.push(exchange(

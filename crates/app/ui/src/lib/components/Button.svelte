@@ -1,6 +1,5 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import type { HTMLAnchorAttributes, HTMLButtonAttributes } from 'svelte/elements';
 	import Icon from './Icon.svelte';
 
 	type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'danger-soft' | 'link';
@@ -19,6 +18,7 @@
 		/** Opens the URL in a new tab. */
 		newTab?: boolean;
 		type?: 'button' | 'submit' | 'reset';
+		form?: string;
 		title?: string;
 		block?: boolean;
 		square?: boolean;
@@ -38,6 +38,7 @@
 		external = false,
 		newTab = false,
 		type = 'button',
+		form,
 		title,
 		block = false,
 		square = false,
@@ -63,6 +64,7 @@
 		{href}
 		class={classes}
 		{title}
+		aria-label={square ? title : undefined}
 		target={newTab ? '_blank' : undefined}
 		data-sveltekit-reload={external ? '' : undefined}
 		rel={external || newTab ? 'noreferrer' : undefined}
@@ -75,8 +77,10 @@
 {:else}
 	<button
 		{type}
+		{form}
 		class={classes}
 		{title}
+		aria-label={square ? title : undefined}
 		disabled={disabled || loading}
 		aria-busy={loading ? 'true' : undefined}
 		{onclick}
@@ -97,12 +101,12 @@
 		align-items: center;
 		justify-content: center;
 		gap: 7px;
-		min-height: 36px;
+		min-height: 44px;
 		padding: 0 14px;
 		border: 1px solid transparent;
 		border-radius: var(--radius-sm);
-		font-weight: 500;
-		font-size: 13.5px;
+		font-weight: 600;
+		font-size: 14px;
 		line-height: 1;
 		white-space: nowrap;
 		cursor: pointer;
@@ -130,14 +134,14 @@
 	}
 
 	.btn-sm {
-		min-height: 30px;
+		min-height: 36px;
 		padding: 0 10px;
-		font-size: 12.5px;
+		font-size: 13px;
 		gap: 6px;
 	}
 
 	.btn-lg {
-		min-height: 42px;
+		min-height: 48px;
 		padding: 0 18px;
 		font-size: 14.5px;
 	}
@@ -148,11 +152,11 @@
 
 	.btn-square {
 		padding: 0;
-		width: 36px;
+		width: 44px;
 	}
 
 	.btn-square.btn-sm {
-		width: 30px;
+		width: 36px;
 	}
 
 	.btn-primary {

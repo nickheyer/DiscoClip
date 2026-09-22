@@ -23,7 +23,7 @@ pub struct Expanded {
 }
 
 /// Reads the master playlist at `url` as `platform`, returning one variant per stream
-/// with its default audio rendition, and every subtitle rendition; a media playlist is
+/// with its default audio rendition, and every subtitle rendition. A media playlist is
 /// one variant.
 pub async fn expand(
     http: &Http,

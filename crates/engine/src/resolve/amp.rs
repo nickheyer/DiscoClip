@@ -1,7 +1,7 @@
 //! Akamai Adaptive Media Player feeds: the JSON (often JSONP-wrapped) feed an Akamai AMP
 //! player reads, whose `channel.item` carries the media files and playlists, thumbnails
 //! and captions. The news sites built on it, Fox News (with Fox Business) and ABC News,
-//! number their videos, and a video page, player embed or feed link names that number;
+//! number their videos, and a video page, player embed or feed link names that number.
 //! [`feed_info`] reads any AMP feed.
 
 use std::sync::LazyLock;
@@ -190,7 +190,7 @@ fn fox_page(url: &Url) -> Option<Site> {
 }
 
 /// The JSON inside a JSONP answer such as `uid_123({…});` or `cb && cb({…}) // done`,
-/// as yt-dlp's `strip_jsonp` reads it; text that is not a call comes back as it is.
+/// as yt-dlp's `strip_jsonp` reads it. Text that is not a call comes back as it is.
 pub fn strip_jsonp(text: &str) -> &str {
     let text = text.trim();
     let rest = text.strip_prefix("window.").unwrap_or(text);
@@ -298,7 +298,7 @@ const MIME_EXTENSIONS: &[(&str, &str)] = &[
 ];
 
 /// The file extension a MIME type stands for, as yt-dlp's `mimetype2ext`: `video/mp4`
-/// is `mp4`, `application/vnd.apple.mpegurl` is `m3u8`; a type the table does not know
+/// is `mp4`, `application/vnd.apple.mpegurl` is `m3u8`. A type the table does not know
 /// is its subtype, with `+` written as `.`.
 pub fn mime_extension(mime: &str) -> Option<String> {
     let mimetype = mime.split(';').next()?.trim().to_ascii_lowercase();
@@ -313,7 +313,7 @@ pub fn mime_extension(mime: &str) -> Option<String> {
     (!ext.is_empty()).then_some(ext)
 }
 
-/// The subtitle format a file extension names; other extensions are not subtitles the
+/// The subtitle format a file extension names. Other extensions are not subtitles the
 /// engine converts.
 pub fn subtitle_format(ext: &str) -> Option<SubtitleFormat> {
     match ext.to_ascii_lowercase().as_str() {
@@ -702,7 +702,7 @@ impl AmpResolver {
     }
 
     /// An ABC News story: its one video resolves through the site's feed with the
-    /// story's own headline; several are a playlist of the site's player embeds and the
+    /// story's own headline. Several are a playlist of the site's player embeds and the
     /// frames the story carries.
     async fn resolve_story(&self, link: &Link, url: &Url) -> Result<Resolution, ResolveError> {
         let fetched = fetch(

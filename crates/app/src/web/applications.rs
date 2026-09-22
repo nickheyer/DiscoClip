@@ -360,8 +360,8 @@ pub async fn get_commands(
     Ok(Json(commands_view(application)))
 }
 
-/// Sets where the commands are registered and registers them there at once. A failed
-/// registration keeps the new scope and reports the error; `register_commands` retries.
+/// Sets where the commands are registered and registers them there immediately. A failed
+/// registration keeps the new scope and reports the error. `register_commands` retries.
 pub async fn set_commands(
     State(state): State<AppState>,
     Auth(identity): Auth,
@@ -487,7 +487,7 @@ pub async fn restart_bot(
     Ok(Json(view(&state, &client, application).await?))
 }
 
-/// Every bot's status now, then each change as it happens, as `bot` events; an
+/// Every bot's status now, then each change as it happens, as `bot` events. An
 /// application's removal is the last event about its bot.
 pub(super) async fn bot_stream(
     state: AppState,
@@ -504,7 +504,7 @@ pub(super) async fn bot_stream(
     let rest = live.filter_map(move |item| async move {
         match item {
             Ok(bot) => Some(Ok(event(bot))),
-            // A slow reader missed some changes; the next one brings it up to date.
+            // A slow reader missed some changes. The next one brings it up to date.
             Err(BroadcastStreamRecvError::Lagged(_)) => None,
         }
     });
@@ -856,7 +856,7 @@ mod tests {
         assert_eq!(clips["member_count"], 12);
         assert!(clips["left_at"].is_null());
 
-        // Removal marks the guild left; an outage does not.
+        // Removal marks the guild left. An outage does not.
         discord.emit(guild_delete("400", false));
         discord.emit(guild_delete("100", true));
         ledger_shows("the removed guild to be marked left", |guilds| {
@@ -970,7 +970,7 @@ mod tests {
             .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
 
-        // Off clears everything; registering again is idempotent.
+        // Off clears everything. Registering again is idempotent.
         let (status, body) = admin
             .send(Method::PUT, &path, Some(json!({"mode": "off"})))
             .await;

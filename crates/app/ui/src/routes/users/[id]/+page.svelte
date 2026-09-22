@@ -1,4 +1,5 @@
 <script lang="ts">
+	import FormFeedback from '$lib/components/FormFeedback.svelte';
 	import { goto, invalidate } from '$app/navigation';
 	import type { PageData } from './$types';
 	import { ROLES, messageOf, users } from '$lib/api';
@@ -147,7 +148,7 @@
 	async function revokeToken(id: string, name: string) {
 		const ok = await confirm.ask({
 			title: `Revoke “${name}”?`,
-			message: 'Anything still using this token stops working at once.',
+			message: 'Requests using this token will be rejected.',
 			confirmLabel: 'Revoke',
 			danger: true
 		});
@@ -171,7 +172,7 @@
 	async function remove() {
 		const ok = await confirm.ask({
 			title: `Delete ${user.username}?`,
-			message: 'The account goes away with its sessions, API tokens and linked logins. This cannot be undone.',
+			message: 'Deletes this account, its sessions, API tokens and linked logins.',
 			confirmLabel: 'Delete account',
 			danger: true,
 			typed: user.username
@@ -214,7 +215,7 @@
 			<div class="card-header"><h2>Role</h2></div>
 			<form class="card-body stack" onsubmit={saveRole}>
 				{#if roleError}
-					<Alert tone="danger" message={roleError} onclose={() => (roleError = null)} />
+					<FormFeedback message={roleError} />
 				{/if}
 				{#each ROLES as option (option)}
 					<label class="radio">
@@ -236,7 +237,7 @@
 			<div class="card-header"><h2>{user.has_password ? 'Reset password' : 'Set a password'}</h2></div>
 			<form class="card-body stack" onsubmit={resetPassword} novalidate>
 				{#if passwordError}
-					<Alert tone="danger" message={passwordError} onclose={() => (passwordError = null)} />
+					<FormFeedback message={passwordError} />
 				{/if}
 				<Field label="New password" for="reset-password" error={newPasswordProblem} hint="8 to 256 characters.">
 					<PasswordInput id="reset-password" bind:value={password} autocomplete="new-password" invalid={!!newPasswordProblem} required />
@@ -275,7 +276,7 @@
 										{#if view.current}<Badge tone="ok" size="sm">Your current session</Badge>{/if}
 									</div>
 								</td>
-								<td class="mono">{view.ip ?? '—'}</td>
+								<td class="mono">{view.ip ?? 'Not available'}</td>
 								<td><Time value={view.created_at} /></td>
 								<td><Time value={view.last_seen_at} /></td>
 								<td><Time value={view.expires_at} /></td>
@@ -327,7 +328,7 @@
 		<div class="card-body row-between">
 			<div class="row">
 				<Avatar name={user.username} size={32} />
-				<p class="muted">Removes {user.username} with every session, API token and linked login. The last admin cannot be removed.</p>
+				<p class="muted">Removes {user.username} and its sessions, API tokens and linked logins. The last admin cannot be deleted.</p>
 			</div>
 			<Button variant="danger" icon="trash" loading={deleting} onclick={remove}>Delete account</Button>
 		</div>

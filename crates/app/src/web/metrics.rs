@@ -19,7 +19,7 @@ use super::health::{bot_state_name, database_bytes, uptime_secs};
 use super::jobs::{JobStats, read_stats};
 use crate::telemetry::LOG_CAPACITY;
 
-/// Reads the process and the machine; kept so CPU use is measured between two reads.
+/// Reads the process and the machine. Kept so CPU use is measured between two reads.
 pub struct Sampler {
     system: Mutex<System>,
     pid: Pid,
@@ -39,7 +39,7 @@ impl Sampler {
         }
     }
 
-    /// The process and the machine as they stand; the process is absent when the OS does
+    /// The process and the machine as they stand. The process is absent when the OS does
     /// not list it.
     pub fn sample(
         &self,

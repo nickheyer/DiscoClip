@@ -32,7 +32,7 @@ pub enum FfmpegError {
     Io(#[from] io::Error),
 }
 
-/// Where the tools live; shared by every clone, so a relocation reaches them all.
+/// Where the tools live. Shared by every clone, so a relocation reaches them all.
 #[derive(Debug, Clone)]
 struct Tools {
     ffmpeg: PathBuf,
@@ -43,13 +43,24 @@ struct Tools {
 #[derive(Debug, Clone)]
 pub struct Ffmpeg {
     tools: Arc<RwLock<Tools>>,
-    /// Held while unpacking, so two relocations at once do not race over the files.
+    /// Held while unpacking, so two concurrent relocations do not race over the files.
     unpacking: Arc<tokio::sync::Mutex<()>>,
 }
 
 pub struct Output {
     pub stderr: String,
     pub last_time: Option<Duration>,
+}
+
+/// How a recording ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ending {
+    /// ffmpeg ran to the end of its input or its own limits.
+    Finished,
+    /// The output stopped advancing and ffmpeg was told to stop.
+    Stalled,
+    /// The caller told ffmpeg to stop.
+    Stopped,
 }
 
 impl Ffmpeg {
@@ -65,7 +76,7 @@ impl Ffmpeg {
         Ok(handle)
     }
 
-    /// Unpacks the binaries under another cache directory and uses them from then on;
+    /// Unpacks the binaries under another cache directory and uses them from then on.
     /// every clone of this handle follows.
     pub async fn relocate(&self, cache_dir: &Path) -> Result<(), FfmpegError> {
         let _unpacking = self.unpacking.lock().await;
@@ -117,7 +128,7 @@ impl Ffmpeg {
     }
 
     /// Runs ffmpeg with the given arguments. Global options for unattended use and machine
-    /// readable progress are added; `on_time` receives the output timestamp as encoding advances.
+    /// readable progress are added. `on_time` receives the output timestamp as encoding advances.
     pub async fn run(
         &self,
         args: impl IntoIterator<Item = OsString>,
@@ -179,6 +190,118 @@ impl Ffmpeg {
             )));
         }
         Ok(Output { stderr, last_time })
+    }
+
+    /// Runs ffmpeg as [`run`](Self::run) does, on a source that arrives as it plays:
+    /// ffmpeg is told to stop, and so writes its output out whole, when `stop` resolves or
+    /// when its output has not advanced for `stall`, as when the stream behind it has
+    /// gone quiet. How it ended comes back with the output.
+    pub async fn record(
+        &self,
+        args: impl IntoIterator<Item = OsString>,
+        mut on_time: impl FnMut(Duration) + Send,
+        stall: Duration,
+        stop: Option<tokio::sync::oneshot::Receiver<()>>,
+    ) -> Result<(Output, Ending), FfmpegError> {
+        use tokio::io::AsyncWriteExt;
+
+        let mut command = Command::new(self.ffmpeg_path());
+        command
+            .arg("-hide_banner")
+            .arg("-y")
+            .arg("-nostats")
+            .arg("-progress")
+            .arg("pipe:1")
+            .args(args)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true);
+        let mut child = command.spawn()?;
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| FfmpegError::Process("no stdin".into()))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| FfmpegError::Process("no stdout".into()))?;
+        let mut stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| FfmpegError::Process("no stderr".into()))?;
+        let stderr_task = tokio::spawn(async move {
+            let mut buf = Vec::new();
+            let _ = stderr.read_to_end(&mut buf).await;
+            buf
+        });
+        let stop = async move {
+            match stop {
+                Some(receiver) => {
+                    let _ = receiver.await;
+                }
+                None => std::future::pending::<()>().await,
+            }
+        };
+        tokio::pin!(stop);
+        let mut lines = BufReader::new(stdout).lines();
+        let mut last_time = None;
+        let mut ending = Ending::Finished;
+        let mut asked = false;
+        loop {
+            let line = tokio::select! {
+                line = lines.next_line() => line?,
+                _ = &mut stop, if !asked => {
+                    ending = Ending::Stopped;
+                    asked = true;
+                    let _ = stdin.write_all(b"q\n").await;
+                    let _ = stdin.flush().await;
+                    continue;
+                }
+                _ = tokio::time::sleep(stall), if !asked => {
+                    ending = Ending::Stalled;
+                    asked = true;
+                    let _ = stdin.write_all(b"q\n").await;
+                    let _ = stdin.flush().await;
+                    continue;
+                }
+            };
+            let Some(line) = line else {
+                break;
+            };
+            if let Some(value) = line
+                .strip_prefix("out_time_us=")
+                .or_else(|| line.strip_prefix("out_time_ms="))
+                && let Ok(us) = value.trim().parse::<u64>()
+            {
+                let t = Duration::from_micros(us);
+                last_time = Some(t);
+                on_time(t);
+            }
+        }
+        drop(stdin);
+        // A stopped ffmpeg has a few seconds to write its trailer before it is killed.
+        let status = match tokio::time::timeout(Duration::from_secs(15), child.wait()).await {
+            Ok(status) => status?,
+            Err(_) => {
+                child.kill().await?;
+                child.wait().await?
+            }
+        };
+        let stderr_bytes = stderr_task.await.unwrap_or_default();
+        let stderr = tail(&stderr_bytes);
+        // ffmpeg stopped by request exits with 255. That is the stop taking effect.
+        if !status.success() && !(asked && status.code() == Some(255)) {
+            return Err(FfmpegError::Process(format!(
+                "exit status {}: {}",
+                status
+                    .code()
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "signal".into()),
+                summarize(&stderr)
+            )));
+        }
+        Ok((Output { stderr, last_time }, ending))
     }
 
     /// Reads container, duration, and the first video and audio streams with ffprobe.
@@ -423,7 +546,7 @@ impl ProbeStream {
 }
 
 /// A still image counts as a picture of its own size, so a still is reported as `Image`
-/// with the picture in `video` and no frame rate; a file with a moving picture is `Video`,
+/// with the picture in `video` and no frame rate. A file with a moving picture is `Video`,
 /// one with sound alone `Audio`, and anything ffprobe reads but finds neither in is `File`.
 fn media_info(report: &ProbeReport, path: &Path) -> MediaInfo {
     let moving = report

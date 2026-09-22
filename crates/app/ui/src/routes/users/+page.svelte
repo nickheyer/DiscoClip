@@ -1,4 +1,5 @@
 <script lang="ts">
+	import FormFeedback from '$lib/components/FormFeedback.svelte';
 	import { goto, invalidate } from '$app/navigation';
 	import type { PageData } from './$types';
 	import { ROLES, messageOf, users } from '$lib/api';
@@ -87,7 +88,7 @@
 
 <div class="stack">
 	<div class="row-between">
-		<input class="input search" type="search" placeholder="Filter by username" bind:value={query} aria-label="Filter accounts" />
+		<Field label="Filter accounts" for="control-2856"><input id="control-2856" class="input search" type="search" placeholder="Filter by username" bind:value={query} aria-label="Filter accounts" /></Field>
 		<span class="faint small">{shown.length} of {data.users.length}</span>
 	</div>
 
@@ -130,7 +131,7 @@
 <Dialog bind:open={dialog} title="New account" busy={creating}>
 	<form id="user-form" class="stack" onsubmit={create} novalidate>
 		{#if error}
-			<Alert tone="danger" message={error} onclose={() => (error = null)} />
+			<FormFeedback message={error} />
 		{/if}
 		<Field label="Username" for="new-username" error={usernameError} hint={`Up to ${USERNAME_MAX} letters, digits, '.', '_' or '-'.`}>
 			<input id="new-username" class="input" bind:value={username} autocomplete="off" spellcheck="false" maxlength={USERNAME_MAX} required aria-invalid={usernameError ? 'true' : undefined} />

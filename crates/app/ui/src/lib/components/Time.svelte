@@ -4,12 +4,12 @@
 
 	interface Props {
 		value: string | null | undefined;
-		/** What is shown; the other form goes in the tooltip. */
+		/** What is shown. The other form goes in the tooltip. */
 		mode?: 'relative' | 'absolute';
 		empty?: string;
 	}
 
-	let { value, mode = 'relative', empty = '—' }: Props = $props();
+	let { value, mode = 'relative', empty = 'Not available' }: Props = $props();
 
 	const absolute = $derived(value ? formatDateTime(value, true) : '');
 	const relative = $derived(value ? formatRelative(value, clock.now) : '');

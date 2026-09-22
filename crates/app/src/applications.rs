@@ -1,6 +1,6 @@
 //! Discord applications the server runs bots for, several per install, with their client
 //! secrets and bot tokens sealed under the keyring. Every change is written to the audit
-//! log in the same transaction; the secrets never are, only that they were replaced.
+//! log in the same transaction. The secrets never are, only that they were replaced.
 
 use discoclip_bot::DiscordEndpoints;
 use discoclip_engine::StoreError;
@@ -100,7 +100,7 @@ pub struct Application {
     pub login: bool,
     pub has_client_secret: bool,
     pub commands: CommandsState,
-    /// Whether the bot is meant to run; a stopped bot stays stopped across restarts.
+    /// Whether the bot is meant to run. A stopped bot stays stopped across restarts.
     pub enabled: bool,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
@@ -123,7 +123,7 @@ pub struct Credentials {
     pub client_secret: Option<String>,
 }
 
-/// What an update may change; `None` leaves a field as it is.
+/// What an update may change. `None` leaves a field as it is.
 #[derive(Debug, Clone, Default)]
 pub struct Changes {
     pub name: Option<String>,
@@ -184,7 +184,7 @@ impl ApplicationStore {
         Self { db, keyring }
     }
 
-    /// Adds an application by `actor`; `client_id` is Discord's id for it.
+    /// Adds an application by `actor`. `client_id` is Discord's id for it.
     pub async fn create(
         &self,
         actor: &Actor,
@@ -285,7 +285,7 @@ impl ApplicationStore {
         .await
     }
 
-    /// Every application with its secrets opened, oldest first; what starts the bots.
+    /// Every application with its secrets opened, oldest first. What starts the bots.
     pub async fn all_credentials(
         &self,
     ) -> Result<Vec<(Application, Credentials)>, ApplicationError> {
@@ -387,7 +387,7 @@ impl ApplicationStore {
                 )?;
                 application.login = login;
             } else if application.login && !application.has_client_secret {
-                // The secret went; so does what needed it.
+                // The secret went. So does what needed it.
                 tx.execute(
                     "UPDATE discord_applications SET login = 0 WHERE id = ?1",
                     params![id.to_string()],
@@ -414,7 +414,7 @@ impl ApplicationStore {
         .await
     }
 
-    /// Sets where the commands are to be registered, by `actor`; registering is the
+    /// Sets where the commands are to be registered, by `actor`. Registering is the
     /// caller's next step.
     pub async fn set_commands(
         &self,

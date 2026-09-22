@@ -1,4 +1,4 @@
-//! The application's tables, as a versioned list; the engine keeps its own.
+//! The application's tables, as a versioned list. The engine keeps its own.
 
 use discoclip_engine::StoreError;
 use discoclip_engine::store::migrate::Migration;
@@ -342,9 +342,39 @@ CREATE TABLE frontend_sessions (
 CREATE INDEX frontend_sessions_frontend ON frontend_sessions(frontend_id, last_seen_at DESC);
 ",
     },
+    Migration {
+        version: 20,
+        name: "profile_limits",
+        sql: "
+ALTER TABLE profiles ADD COLUMN max_source_bytes INTEGER;
+ALTER TABLE profiles ADD COLUMN max_duration_secs INTEGER;
+ALTER TABLE profiles ADD COLUMN max_height INTEGER;
+CREATE TABLE watch_rule_policies (
+    rule_id TEXT PRIMARY KEY,
+    application_id TEXT NOT NULL,
+    guild_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    allow_hosts TEXT NOT NULL,
+    max_source_bytes INTEGER,
+    max_duration_secs INTEGER,
+    max_height INTEGER
+);
+INSERT INTO watch_rule_policies (rule_id, application_id, guild_id, channel_id, allow_hosts,
+    max_source_bytes, max_duration_secs, max_height)
+SELECT id, application_id, guild_id, channel_id, allow_hosts, max_source_bytes,
+    max_duration_secs, max_height
+FROM watch_rules
+WHERE allow_hosts <> '[]' OR max_source_bytes IS NOT NULL OR max_duration_secs IS NOT NULL
+    OR max_height IS NOT NULL;
+ALTER TABLE watch_rules DROP COLUMN allow_hosts;
+ALTER TABLE watch_rules DROP COLUMN max_source_bytes;
+ALTER TABLE watch_rules DROP COLUMN max_duration_secs;
+ALTER TABLE watch_rules DROP COLUMN max_height;
+",
+    },
 ];
 
-/// Brings the application's tables up to date; returns how many migrations ran.
+/// Brings the application's tables up to date. Returns how many migrations ran.
 pub async fn apply(db: &SqliteStore) -> Result<usize, StoreError> {
     db.migrate(SCOPE, MIGRATIONS).await
 }

@@ -1,6 +1,6 @@
 //! Niconico videos, through the data the watch page hands its player and the access
 //! rights the delivery API grants for an HLS stream, with `nico.ms` short links
-//! unwrapped; mylists, series and user pages become playlists through the site's API.
+//! unwrapped. Mylists, series and user pages become playlists through the site's API.
 
 use std::sync::LazyLock;
 use std::time::Duration;

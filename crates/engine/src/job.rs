@@ -72,7 +72,7 @@ pub struct Origin {
     pub channel: Option<String>,
 }
 
-/// Limits tighter than the engine's own, for one request; `None` leaves the engine's.
+/// Limits tighter than the engine's own, for one request. `None` leaves the engine's.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RequestLimits {
@@ -82,6 +82,22 @@ pub struct RequestLimits {
 }
 
 impl RequestLimits {
+    /// These limits and `other` together: each the tighter of the two, or whichever is
+    /// named.
+    pub fn tightened(self, other: RequestLimits) -> RequestLimits {
+        fn tighter<T: Ord>(a: Option<T>, b: Option<T>) -> Option<T> {
+            match (a, b) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
+            }
+        }
+        RequestLimits {
+            max_source_bytes: tighter(self.max_source_bytes, other.max_source_bytes),
+            max_duration_secs: tighter(self.max_duration_secs, other.max_duration_secs),
+            max_height: tighter(self.max_height, other.max_height),
+        }
+    }
+
     /// The engine's `limits` tightened by these.
     pub fn applied_to(&self, limits: &Limits) -> Limits {
         Limits {
@@ -118,7 +134,7 @@ pub enum SubtitleMode {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RequestOptions {
-    /// The portion of the media wanted; overrides what the link itself names.
+    /// The portion of the media wanted. Overrides what the link itself names.
     pub clip: Option<ClipRange>,
     pub subtitles: SubtitleMode,
     /// The subtitle language preferred when several are offered.
@@ -146,7 +162,7 @@ pub struct Request {
     /// Who submitted the link, as the source names them.
     #[serde(default)]
     pub submitted_by: Option<String>,
-    /// Platforms the profile in force where the link was seen turns off, by resolver id:
+    /// Platforms the profile assigned where the link was seen turns off, by resolver id:
     /// their resolvers are never offered the link.
     #[serde(default)]
     pub disabled_platforms: Vec<String>,
@@ -305,7 +321,7 @@ pub enum Delivery {
     /// The file itself is handed over.
     #[default]
     Upload,
-    /// A link to the page that plays the file is posted; the file stays here.
+    /// A link to the page that plays the file is posted. The file stays here.
     Link,
 }
 
@@ -315,7 +331,7 @@ pub struct Artifacts {
     pub resolved: Option<Resolved>,
     pub source: Option<LocalFile>,
     pub output: Option<LocalFile>,
-    /// Whether the output was handed over or linked to; decided before publishing.
+    /// Whether the output was handed over or linked to. Decided before publishing.
     pub delivery: Delivery,
     /// Why a link was posted rather than the file, when one was.
     pub link_reason: Option<String>,

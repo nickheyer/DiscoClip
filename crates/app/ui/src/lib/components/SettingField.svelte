@@ -22,7 +22,7 @@
 		id: string;
 		spec: FieldSpec;
 		value: SettingValue | undefined;
-		/** What the server runs on now. */
+		/** Current saved value. */
 		effective: SettingValue | undefined;
 		fallback: SettingValue | undefined;
 		source: ValueSource;
@@ -30,7 +30,8 @@
 		/** For secrets: whether one is set on the server. */
 		secretSet?: boolean;
 		disabled?: boolean;
-		/** Whether the field is within a section that is off; nothing is shown as stored. */
+		showErrors?: boolean;
+		/** Whether the field is within a section that is off. Nothing is shown as stored. */
 		dormant?: boolean;
 		onreset?: () => void;
 	}
@@ -45,11 +46,13 @@
 		updatedAt,
 		secretSet = false,
 		disabled = false,
+		showErrors = false,
 		dormant = false,
 		onreset
 	}: Props = $props();
 
-	const problem = $derived(problemOf(spec, value));
+	let touched = $state(false);
+	const problem = $derived(showErrors || touched ? (spec.kind === 'secret' && !secretSet && isBlank(value) ? 'Enter a secret.' : problemOf(spec, value)) : null);
 	const dirty = $derived(JSON.stringify(value ?? null) !== JSON.stringify(effective ?? null));
 	const canReset = $derived(
 		!dormant && source !== 'default' && spec.kind !== 'secret' && onreset !== undefined
@@ -117,7 +120,7 @@
 	}
 </script>
 
-<div class={['setting', dirty && 'dirty']} id={`setting-${id}`}>
+<div class={['setting', dirty && 'dirty']} id={`setting-${id}`} onfocusout={() => (touched = true)}>
 	<Field label={spec.label} for={id} hint={spec.hint || undefined} error={problem}>
 		{#if spec.kind === 'boolean'}
 			<label class="checkbox">
@@ -146,7 +149,7 @@
 			<PasswordInput
 				{id}
 				bind:value={secretDraft}
-				placeholder={secretSet ? 'Enter a new secret to replace the one set' : 'Enter the secret'}
+				placeholder={secretSet ? 'Leave blank to keep current secret' : ''}
 				mono
 				{disabled}
 				autocomplete="off"
@@ -178,7 +181,7 @@
 					{disabled}
 					aria-invalid={problem ? 'true' : undefined}
 				/>
-				<select class="select" bind:value={unit} onchange={commitAmount} aria-label="Unit" {disabled}>
+				<select class="select" bind:value={unit} onchange={commitAmount} aria-label={`${spec.label} unit`} {disabled}>
 					{#each units as u (u.label)}
 						<option value={u.label}>{u.label}</option>
 					{/each}
@@ -219,6 +222,8 @@
 			/>
 		{/if}
 	</Field>
+	<details class="details">
+		<summary>Default and source</summary>
 	<div class="meta">
 		{#if spec.kind === 'secret'}
 			{#if secretSet}
@@ -240,8 +245,8 @@
 		{#if canReset}
 			<Button size="sm" variant="link" onclick={onreset} {disabled}>Use default</Button>
 		{/if}
-		{#if dirty}<Badge tone="warn" size="sm">Changed</Badge>{/if}
 	</div>
+	</details>
 </div>
 
 <style>
@@ -249,25 +254,31 @@
 		display: flex;
 		flex-direction: column;
 		gap: 6px;
-		padding: 12px 0;
+		padding: 24px 0;
+		max-width: 680px;
 		border-bottom: 1px solid var(--border);
 	}
 
 	.setting:last-child {
 		border-bottom: none;
 	}
+	.setting:first-child { padding-top: 0; }
+	.details { color: var(--text-2); font-size: 13px; }
+	.details summary { padding-block: 6px; min-height: 32px; }
+	.meta { padding-block: 8px; }
 
 	.meta {
 		display: flex;
 		align-items: center;
 		gap: 10px;
 		flex-wrap: wrap;
-		font-size: 12.5px;
+		font-size: 13px;
 	}
 
 	.unit {
 		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto;
+		grid-template-columns: minmax(0, 180px) auto;
+		justify-content: start;
 		gap: 6px;
 		align-items: center;
 	}
@@ -278,7 +289,7 @@
 
 	.unit-label {
 		color: var(--text-3);
-		font-size: 12.5px;
+		font-size: 13px;
 		padding: 0 6px;
 	}
 </style>

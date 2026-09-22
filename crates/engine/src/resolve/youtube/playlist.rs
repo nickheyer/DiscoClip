@@ -10,7 +10,7 @@ use super::PLATFORM;
 use super::innertube::{InnerTube, WEB};
 use crate::resolve::{Playlist, PlaylistEntry, ResolveError, clean_title};
 
-/// How many pages of a playlist are read; the engine caps entries below that anyway.
+/// How many pages of a playlist are read. The engine caps entries below that anyway.
 const MAX_PAGES: usize = 10;
 
 /// Every value under `key` anywhere in `value`, depth first.

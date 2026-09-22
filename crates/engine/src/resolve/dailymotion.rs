@@ -201,7 +201,7 @@ impl DailymotionResolver {
         ))
     }
 
-    /// One GraphQL query, with the client token; the API's own errors become resolver
+    /// One GraphQL query, with the client token. The API's own errors become resolver
     /// errors.
     async fn graphql(&self, query: Value, origin: &Url) -> Result<Value, ResolveError> {
         let token = self.token(origin).await?;
@@ -256,7 +256,7 @@ impl DailymotionResolver {
                 .unwrap_or("the API has no record of the video")
                 .to_string();
             return Err(if message.to_ascii_lowercase().contains("password") {
-                ResolveError::unavailable(origin, format!("{message}; add ?password=… to the link"))
+                ResolveError::unavailable(origin, format!("{message}. Add ?password= to the link."))
             } else if message.to_ascii_lowercase().contains("not found")
                 || message.to_ascii_lowercase().contains("does not exist")
             {

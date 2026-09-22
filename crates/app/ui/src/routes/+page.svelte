@@ -88,7 +88,7 @@
 			});
 		}
 		list.push({
-			label: 'Your Discord guilds',
+			label: 'Your Discord servers',
 			icon: 'server',
 			href: '/guilds',
 			value: data.guilds.ok ? data.guilds.value.length : null,
@@ -185,7 +185,7 @@
 				<div class="card-body"><Alert tone="danger" message={`Could not load the jobs: ${data.recent.error}`} /></div>
 			{:else if recentJobs.length === 0}
 				<div class="card-body">
-					<Empty compact icon="video" title="No jobs yet" description="Links posted in watched channels, sent with /clip, or submitted from the jobs page show up here as they run." />
+					<Empty compact icon="video" title="No jobs yet" description="Submit a link from Jobs or post one in a watched Discord channel." />
 				</div>
 			{:else}
 				<ul class="jobs">
@@ -230,8 +230,8 @@
 				icon="bot"
 				title="No bots yet"
 				description={canManageApps
-					? 'Add a Discord application with its bot token and DiscoClip runs a bot for it.'
-					: 'An admin adds Discord applications; their bots show up here as soon as they exist.'}
+					? 'Add a Discord application to start a bot.'
+					: 'An admin can add a bot from Applications.'}
 			>
 				{#if canManageApps}
 					<Button variant="primary" icon="plus" href="/applications">Add an application</Button>
@@ -263,7 +263,7 @@
 						{#if card.status.state === 'retrying'}
 							<Alert tone="warn" title={`Attempt ${formatNumber(card.status.attempt)} · next try in ${secondsUntil(card.status.next_attempt_at, clock.now)}s`} message={card.status.error} />
 						{:else if card.status.state === 'failed'}
-							<Alert tone="danger" title="The bot stays down until it is started again" message={card.status.error} />
+							<Alert tone="danger" title="Restart the bot after fixing the error." message={card.status.error} />
 						{/if}
 						<div class="bot-foot">
 							<BotControls application={card.id} botState={card.status.state} />
@@ -331,7 +331,7 @@
 					</dd>
 					{#if me.session}
 						<dt>Address</dt>
-						<dd class="mono">{me.session.ip ?? '—'}</dd>
+						<dd class="mono">{me.session.ip ?? 'Not available'}</dd>
 						<dt>Client</dt>
 						<dd title={me.session.user_agent ?? undefined}>{describeUserAgent(me.session.user_agent)}</dd>
 						<dt>Logged in</dt>

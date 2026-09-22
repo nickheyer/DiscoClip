@@ -1,9 +1,8 @@
-//! Downloads MPEG-DASH presentations segment by segment, by every way a manifest
-//! addresses them: one indexed file (`SegmentBase`), a list of segments (`SegmentList`),
-//! or a template filled with numbers or the times of a `SegmentTimeline`; every period in
-//! turn, joined into one recording; a dynamic manifest reloaded as the stream goes on,
-//! until it turns static, the capture limit is reached or it stops answering; the text
-//! tracks that go with the media; and Common Encryption reported as DRM, never fetched.
+//! Download DASH SegmentBase, SegmentList and SegmentTemplate representations, including
+//! timelines and text tracks. Join periods into one recording.
+//!
+//! Reload dynamic manifests until completion, capture limit or failure. Reject Common
+//! Encryption as DRM.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -25,7 +24,7 @@ use super::{
 use crate::event::{Progress, ProgressSender};
 use crate::ffmpeg::Ffmpeg;
 use crate::http::Http;
-use crate::resolve::dash::{drm_system, protection_of};
+use crate::resolve::dash::{presentation_protection, protection_of};
 use crate::resolve::{SubtitleFormat, SubtitleTrack, Variant, VariantKind, parse_codecs};
 
 const MAX_MANIFEST: usize = 16 * 1024 * 1024;
@@ -280,7 +279,7 @@ impl<'a> Track<'a> {
         self.rep.lang.as_deref().or(self.set.lang.as_deref())
     }
 
-    /// Whether the representation says where its segments are; without that it is one
+    /// Whether the representation says where its segments are. Without that it is one
     /// file at its base URL.
     fn segmented(&self) -> bool {
         self.template.as_ref().is_some_and(|t| t.media.is_some())
@@ -566,7 +565,7 @@ impl Session<'_> {
         Ok(())
     }
 
-    /// The initialization section `init` names, fetched once; a section whose samples
+    /// The initialization section `init` names, fetched once. A section whose samples
     /// are protected is DRM.
     async fn init_section(&self, init: &(Url, Option<(u64, u64)>)) -> Result<Arc<InitSection>, DownloadError> {
         let id = init_id(init);
@@ -613,7 +612,7 @@ impl Session<'_> {
     }
 
     /// Fetches `pieces` in order into `consumer`, for a `live` stream skipping one that
-    /// cannot be fetched; whether the capture reached its limit.
+    /// cannot be fetched. Whether the capture reached its limit.
     async fn fetch_track(
         &self,
         name: &str,
@@ -857,13 +856,6 @@ fn best_audio<'a>(period: &'a Period, wanted: &Wanted) -> Option<(&'a Adaptation
     })
 }
 
-fn drm_of(mpd: &MPD, period: &Period) -> Option<String> {
-    mpd.ContentProtection
-        .iter()
-        .chain(period.ContentProtection.iter())
-        .find_map(|p| drm_system(&p.schemeIdUri, p.value.as_deref()))
-}
-
 fn choose<'a>(
     manifest_base: &Url,
     manifest: &Url,
@@ -874,7 +866,7 @@ fn choose<'a>(
     text_languages: &[String],
 ) -> Result<Chosen<'a>, DownloadError> {
     let period = &mpd.periods[period_index];
-    if let Some(system) = drm_of(mpd, period) {
+    if let Some(system) = presentation_protection(mpd, period) {
         return Err(DownloadError::Drm(manifest.to_string(), system));
     }
     let video = if wanted.audio_only {
@@ -1072,7 +1064,7 @@ impl Downloader for DashDownloader {
                             continue;
                         }
                         session.note(format!(
-                            "the manifest could not be reloaded {failures} times ({error}); the stream counts as ended after {:.0} s",
+                            "Manifest reload failed {failures} times ({error}). Recording stopped after {:.0} s.",
                             cursors.0.captured
                         ));
                         break;
@@ -1208,7 +1200,7 @@ impl Downloader for DashDownloader {
             if !live {
                 if was_live == Some(true) {
                     session.note(format!(
-                        "the live stream ended; {:.0} s captured",
+                        "Stream ended. Recorded {:.0} s.",
                         cursors.0.captured
                     ));
                 }
@@ -1578,7 +1570,7 @@ mod tests {
             .mpd
             .replace("<S t=\"0\" d=\"10240\" r=\"2\" />", &video_line)
             .replace("<S t=\"0\" d=\"10240\" r=\"4\" />", &video_line);
-        // The audio timeline lists one entry per segment; keep the first `count`.
+        // The audio timeline lists one entry per segment. Keep the first `count`.
         let start = mpd.find("timescale=\"44100\"").unwrap();
         let tl_start = mpd[start..].find("<SegmentTimeline>").unwrap() + start + "<SegmentTimeline>".len();
         let tl_end = mpd[tl_start..].find("</SegmentTimeline>").unwrap() + tl_start;
@@ -1628,7 +1620,7 @@ mod tests {
         assert_eq!(progress.total, Some(60));
         assert_eq!(progress.done, 5);
 
-        // A window that keeps growing is cut at the limit; the last segment is never asked for.
+        // A window that keeps growing is cut at the limit. The last segment is never asked for.
         let site = Site::new();
         packaged.serve(&site, "");
         site.put_series(

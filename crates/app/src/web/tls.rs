@@ -47,7 +47,7 @@ fn provider() -> Arc<CryptoProvider> {
     if let Some(provider) = CryptoProvider::get_default() {
         return provider.clone();
     }
-    // Another library may install its own first; either way one is in place after this.
+    // Another library may install its own first. Either way one is in place after this.
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
     CryptoProvider::get_default()
         .cloned()
@@ -108,7 +108,7 @@ impl Reloading {
         }))
     }
 
-    /// Reads the files again when either has changed; whether the certificate changed.
+    /// Reads the files again when either has changed. Whether the certificate changed.
     pub fn reload_if_changed(&self) -> Result<bool, TlsError> {
         let now = (modified(&self.config.cert), modified(&self.config.key));
         {

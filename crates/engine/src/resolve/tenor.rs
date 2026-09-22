@@ -1,5 +1,5 @@
 //! Tenor GIFs, from the store the view page renders: every media format of the GIF, its
-//! title, uploader and time; `tenor.com/{code}.gif` short links unwrapped to their view
+//! title, uploader and time. `tenor.com/{code}.gif` short links unwrapped to their view
 //! page, and direct media links by their file.
 
 use std::sync::LazyLock;

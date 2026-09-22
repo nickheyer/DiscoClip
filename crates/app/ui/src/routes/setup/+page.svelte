@@ -1,4 +1,5 @@
 <script lang="ts">
+	import FormFeedback from '$lib/components/FormFeedback.svelte';
 	import { goto } from '$app/navigation';
 	import { auth, isApiError, messageOf } from '$lib/api';
 	import Alert from '$lib/components/Alert.svelte';
@@ -52,7 +53,7 @@
 					setupDone();
 					error = 'An account exists already, so setup is over. Log in instead.';
 				} else if (cause.status === 403) {
-					error = 'That setup token is wrong. Copy the one the server printed when it started.';
+					error = 'Enter the setup token shown in the server log.';
 				} else {
 					error = cause.message;
 				}
@@ -71,11 +72,11 @@
 
 <AuthCard
 	title="Create the admin account"
-	subtitle="The server printed a setup token when it started without any account. Enter it here with the first admin's username and password."
+	subtitle="Enter the setup token from the server log and choose your login details."
 >
 	<form class="stack" onsubmit={submit} novalidate>
 		{#if error}
-			<Alert tone="danger" message={error} onclose={() => (error = null)} />
+			<FormFeedback message={error} />
 		{/if}
 		{#if wait > 0}
 			<Alert tone="warn" message={`Too many wrong tokens. Try again in ${wait}s.`} />

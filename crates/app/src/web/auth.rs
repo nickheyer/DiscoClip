@@ -66,7 +66,7 @@ impl Identity {
         Ok(())
     }
 
-    /// The browser session behind the request; 403 for an API token.
+    /// The browser session behind the request. 403 for an API token.
     pub fn session(&self) -> Result<&Session, ApiError> {
         match &self.via {
             Via::Session { session, .. } => Ok(session),

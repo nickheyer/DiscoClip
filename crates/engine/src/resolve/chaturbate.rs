@@ -144,7 +144,7 @@ fn is_final_status(status: &str) -> bool {
 }
 
 /// The stream links a room page names: in the room dossier, in escaped script strings,
-/// or in plain ones; each with its `_fast` twin and the plain one.
+/// or in plain ones. Each with its `_fast` twin and the plain one.
 pub fn page_playlists(html: &str) -> Vec<Url> {
     let mut found: Vec<String> = Vec::new();
     if let Some(caps) = RE_DOSSIER.captures(html)
@@ -269,7 +269,7 @@ impl ChaturbateResolver {
                 tracing::debug!(
                     room,
                     status,
-                    "chaturbate API named no stream; reading the room page"
+                    "Chaturbate API returned no stream. Trying the room page."
                 );
                 self.playlists_from_page(&site, room, url).await?
             }

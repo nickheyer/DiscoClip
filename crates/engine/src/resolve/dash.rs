@@ -2,9 +2,10 @@
 //! the audio the presentation carries, the subtitle tracks it lists as whole files, its
 //! length, whether it is live, and the DRM system it is locked with when it is.
 
+use std::collections::HashSet;
 use std::time::Duration;
 
-use dash_mpd::{AdaptationSet, MPD, Representation};
+use dash_mpd::{AdaptationSet, ContentProtection, MPD, Period, Representation};
 use url::Url;
 
 use super::{
@@ -51,7 +52,7 @@ pub async fn expand(
 pub fn drm_system(scheme_id_uri: &str, value: Option<&str>) -> Option<String> {
     let scheme = scheme_id_uri.trim().to_ascii_lowercase();
     if scheme == "urn:mpeg:dash:mp4protection:2011" {
-        // Only says the content is encrypted; the system comes from another element,
+        // Only says the content is encrypted. The system comes from another element,
         // and when none does the content is at least CENC locked.
         return value
             .map(|v| format!("cenc ({})", v.trim()))
@@ -77,13 +78,9 @@ pub fn drm_system(scheme_id_uri: &str, value: Option<&str>) -> Option<String> {
     )
 }
 
-/// The DRM system an adaptation set or representation is locked with, when one is:
-/// a named system over a bare CENC marker.
-pub fn protection_of(set: &AdaptationSet, representation: &Representation) -> Option<String> {
-    let protections = set
-        .ContentProtection
-        .iter()
-        .chain(representation.ContentProtection.iter());
+/// The DRM system a run of `ContentProtection` elements names, when one does: a named
+/// system over a bare CENC marker.
+fn protection_in<'a>(protections: impl Iterator<Item = &'a ContentProtection>) -> Option<String> {
     let mut fallback = None;
     for protection in protections {
         let system = drm_system(&protection.schemeIdUri, protection.value.as_deref())?;
@@ -94,6 +91,25 @@ pub fn protection_of(set: &AdaptationSet, representation: &Representation) -> Op
         }
     }
     fallback
+}
+
+/// The DRM system an adaptation set or representation is locked with, when one is.
+pub fn protection_of(set: &AdaptationSet, representation: &Representation) -> Option<String> {
+    protection_in(
+        set.ContentProtection
+            .iter()
+            .chain(representation.ContentProtection.iter()),
+    )
+}
+
+/// The DRM system a whole presentation or period is locked with, declared above its
+/// adaptation sets, when one is.
+pub fn presentation_protection(mpd: &MPD, period: &Period) -> Option<String> {
+    protection_in(
+        mpd.ContentProtection
+            .iter()
+            .chain(period.ContentProtection.iter()),
+    )
 }
 
 fn container_of(mime: Option<&str>) -> Option<Container> {
@@ -133,7 +149,21 @@ pub fn expand_manifest(
     let mut subtitles = Vec::new();
     let mut locked = 0usize;
     let mut systems: Vec<String> = Vec::new();
+    // A representation of a later period that repeats an earlier one, by id and shape,
+    // is the same ladder rung carried across the periods, which the downloader joins in
+    // turn. It is listed once.
+    let mut seen: HashSet<(String, Option<u32>, Option<u32>, Option<String>, bool)> = HashSet::new();
     for (period_index, period) in mpd.periods.iter().enumerate() {
+        let period_drm = presentation_protection(&mpd, period);
+        let prefixed = |id: Option<String>| {
+            id.map(|id| {
+                if period_index == 0 {
+                    id
+                } else {
+                    format!("p{period_index}-{id}")
+                }
+            })
+        };
         let audio_sets: Vec<&AdaptationSet> = period
             .adaptations
             .iter()
@@ -158,16 +188,21 @@ pub fn expand_manifest(
             for representation in &set.representations {
                 let codecs = representation.codecs.as_deref().or(set.codecs.as_deref());
                 let (video, audio_in_video) = parse_codecs(codecs);
+                let width = representation.width.or(set.width).map(|w| w as u32);
+                let height = representation.height.or(set.height).map(|h| h as u32);
+                if !seen.insert((
+                    representation.id.clone().unwrap_or_default(),
+                    width,
+                    height,
+                    codecs.map(str::to_string),
+                    false,
+                )) {
+                    continue;
+                }
                 let mut v = Variant::new(url.clone(), VariantKind::Dash);
-                v.format_id = representation.id.clone().map(|id| {
-                    if period_index == 0 {
-                        id
-                    } else {
-                        format!("p{period_index}-{id}")
-                    }
-                });
-                v.width = representation.width.or(set.width).map(|w| w as u32);
-                v.height = representation.height.or(set.height).map(|h| h as u32);
+                v.format_id = prefixed(representation.id.clone());
+                v.width = width;
+                v.height = height;
                 v.fps = representation
                     .frameRate
                     .as_deref()
@@ -206,7 +241,7 @@ pub fn expand_manifest(
                     Some(fps) if fps > 30.5 => format!("{h}p{}", fps.round()),
                     _ => format!("{h}p"),
                 });
-                v.drm = protection_of(set, representation);
+                v.drm = protection_of(set, representation).or_else(|| period_drm.clone());
                 if let Some(system) = &v.drm {
                     locked += 1;
                     if !systems.contains(system) {
@@ -225,8 +260,17 @@ pub fn expand_manifest(
             for set in &audio_sets {
                 for representation in &set.representations {
                     let codecs = representation.codecs.as_deref().or(set.codecs.as_deref());
+                    if !seen.insert((
+                        representation.id.clone().unwrap_or_default(),
+                        None,
+                        None,
+                        codecs.map(str::to_string),
+                        true,
+                    )) {
+                        continue;
+                    }
                     let mut v = Variant::new(url.clone(), VariantKind::Dash);
-                    v.format_id = representation.id.clone();
+                    v.format_id = prefixed(representation.id.clone());
                     v.bitrate = representation.bandwidth;
                     v.codecs = codecs.map(str::to_string);
                     v.audio = parse_codecs(codecs).1;
@@ -235,7 +279,7 @@ pub fn expand_manifest(
                     v.duration = duration;
                     v.live = live;
                     v.headers = headers.to_vec();
-                    v.drm = protection_of(set, representation);
+                    v.drm = protection_of(set, representation).or_else(|| period_drm.clone());
                     if let Some(system) = &v.drm {
                         locked += 1;
                         if !systems.contains(system) {
@@ -271,7 +315,7 @@ pub fn expand_manifest(
                 } else {
                     continue;
                 };
-                // Only whole-file tracks are fetched; segmented text streams need a
+                // Only whole-file tracks are fetched. Segmented text streams need a
                 // segment fetcher and are the DASH downloader's business.
                 let Some(file) = representation
                     .BaseURL
@@ -402,6 +446,38 @@ mod tests {
         );
         let broken = expand_manifest(&url, &url, "<MPD", &[]);
         assert!(matches!(broken, Err(ResolveError::Malformed { .. })));
+    }
+
+    #[test]
+    fn periods_repeat_one_ladder_and_carry_protection_of_their_own() {
+        let url = Url::parse("https://cdn.test/v/manifest.mpd").unwrap();
+        let period = &MPD[MPD.find("<Period>").unwrap()..MPD.find("</Period>").unwrap() + "</Period>".len()];
+        let three = MPD.replace(period, &format!("{period}{period}{period}"));
+        let expanded = expand_manifest(&url, &url, &three, &[]).unwrap();
+        assert_eq!(expanded.variants.len(), 2, "{:?}", expanded.variants.iter().map(|v| &v.format_id).collect::<Vec<_>>());
+        assert_eq!(expanded.variants[0].format_id.as_deref(), Some("v720"));
+        // A later period with a rung of its own adds it, named for its period.
+        let extra = period.replace(
+            r#"<Representation id="v720" bandwidth="1500000" width="1280" height="720" codecs="avc1.64001f"/>"#,
+            r#"<Representation id="v480" bandwidth="800000" width="854" height="480" codecs="avc1.64001e"/>"#,
+        );
+        let mixed = MPD.replace(period, &format!("{period}{extra}"));
+        let expanded = expand_manifest(&url, &url, &mixed, &[]).unwrap();
+        let ids: Vec<&str> = expanded.variants.iter().filter_map(|v| v.format_id.as_deref()).collect();
+        assert_eq!(ids, ["v720", "v1080", "p1-v480"]);
+        // Protection declared on the period or the presentation locks every rung in it.
+        let locked = MPD.replace(
+            "<Period>",
+            r#"<Period><ContentProtection schemeIdUri="urn:uuid:9a04f079-9840-4286-ab92-e65be0885f95"/>"#,
+        );
+        let expanded = expand_manifest(&url, &url, &locked, &[]).unwrap();
+        assert_eq!(expanded.drm.as_deref(), Some("playready"));
+        let locked = MPD.replace(
+            r#"profiles="urn:mpeg:dash:profile:isoff-on-demand:2011">"#,
+            r#"profiles="urn:mpeg:dash:profile:isoff-on-demand:2011"><ContentProtection schemeIdUri="urn:mpeg:dash:mp4protection:2011" value="cenc"/>"#,
+        );
+        let expanded = expand_manifest(&url, &url, &locked, &[]).unwrap();
+        assert_eq!(expanded.drm.as_deref(), Some("cenc (cenc)"));
     }
 
     #[tokio::test]

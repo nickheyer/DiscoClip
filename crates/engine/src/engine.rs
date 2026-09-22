@@ -15,7 +15,7 @@ use crate::config::EngineConfig;
 use crate::download::Downloader;
 use crate::event::{EngineEvent, EventKind};
 use crate::http::Http;
-use crate::job::{Job, JobId, JobStatus, Request, SourceId, StatusKind};
+use crate::job::{Job, JobId, JobStatus, Request, RequestLimits, SourceId, StatusKind};
 use crate::pipeline::{self, Context};
 use crate::publish::Publisher;
 use crate::resolve::{
@@ -201,10 +201,10 @@ impl Engine {
             shared.queued.fetch_sub(1, Ordering::Relaxed);
             let token = CancellationToken::new();
             {
-                // Recovery and a concurrent submit can both queue the same id; run it once.
+                // Recovery and a concurrent submit can both queue the same id. Run it once.
                 let mut active = shared.active.lock().expect("active jobs lock");
                 if active.contains_key(&id) {
-                    tracing::debug!(job = %id, "already running; dropping duplicate dispatch");
+                    tracing::debug!(job = %id, "Job already running. Skipping duplicate dispatch.");
                     continue;
                 }
                 active.insert(id, token.clone());
@@ -252,7 +252,7 @@ impl Engine {
     }
 
     /// Requeues the jobs that were running or waiting when the engine last stopped, and
-    /// removes cache directories of jobs the store no longer has; a finished job's
+    /// removes cache directories of jobs the store no longer has. A finished job's
     /// directory stays, since it holds the output the web app serves, until retention
     /// takes it.
     async fn recover(&self) -> Result<(), EngineError> {
@@ -299,7 +299,7 @@ struct Shared {
     submit: mpsc::Sender<JobId>,
     events: broadcast::Sender<EngineEvent>,
     active: Mutex<HashMap<JobId, CancellationToken>>,
-    /// How many jobs may run at once; the semaphore holds that many permits.
+    /// How many jobs may run concurrently. The semaphore holds that many permits.
     workers: AtomicUsize,
     semaphore: Arc<Semaphore>,
     queued: AtomicUsize,
@@ -323,7 +323,7 @@ impl Shared {
             .clone()
     }
 
-    /// Grows or shrinks the worker pool to `wanted`. Growing frees permits at once;
+    /// Grows or shrinks the worker pool to `wanted`. Growing frees permits immediately.
     /// shrinking takes permits back as running jobs release them, so nothing is
     /// interrupted.
     fn resize_workers(self: &Arc<Self>, wanted: usize) {
@@ -525,10 +525,13 @@ impl EngineHandle {
 
     /// Queues a fresh job with the same request as a finished one, under the platforms
     /// turned off where the link was seen as they stand now.
+    /// Queues the request of a finished job again, under the platforms turned off and the
+    /// limits assigned where its link was seen as they stand now.
     pub async fn retry(
         &self,
         id: JobId,
         disabled_platforms: Vec<String>,
+        limits: RequestLimits,
     ) -> Result<JobId, RetryError> {
         let job = self
             .shared
@@ -542,6 +545,7 @@ impl EngineHandle {
         let mut request = job.request.clone();
         request.retry_of = Some(id);
         request.disabled_platforms = disabled_platforms;
+        request.limits = limits;
         Ok(self.submit(request).await?)
     }
 
@@ -606,7 +610,7 @@ impl EngineHandle {
         Ok(())
     }
 
-    /// Removes finished jobs older than `before` of the given kinds; how many went.
+    /// Removes finished jobs older than `before` of the given kinds. How many went.
     pub async fn purge(
         &self,
         before: Timestamp,
@@ -627,7 +631,7 @@ impl EngineHandle {
     }
 
     /// Removes cached job directories of jobs that are not running, oldest first, until the
-    /// cache is under `max_bytes`; how many bytes were freed.
+    /// cache is under `max_bytes`. How many bytes were freed.
     pub async fn trim_cache(&self, max_bytes: u64) -> Result<u64, std::io::Error> {
         let jobs_dir = self.shared.cache_dir().join("jobs");
         let active: HashSet<String> = self.active().iter().map(|id| id.to_string()).collect();
@@ -752,7 +756,7 @@ pub enum CancelError {
 pub enum RetryError {
     #[error("job {0} not found")]
     NotFound(JobId),
-    #[error("job {0} is still running; cancel it first")]
+    #[error("Cancel running job {0} before continuing.")]
     NotFinished(JobId),
     #[error(transparent)]
     Submit(#[from] SubmitError),
@@ -764,7 +768,7 @@ pub enum RetryError {
 pub enum DeleteError {
     #[error("job {0} not found")]
     NotFound(JobId),
-    #[error("job {0} is still running; cancel it first")]
+    #[error("Cancel running job {0} before continuing.")]
     NotFinished(JobId),
     #[error(transparent)]
     Store(#[from] StoreError),

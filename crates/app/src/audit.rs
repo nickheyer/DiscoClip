@@ -1,6 +1,6 @@
 //! The audit log: who changed which setting, and who added, changed or removed which
 //! Discord application, rule or bot, when, and what changed. An entry is written in the
-//! transaction that makes the change, so a change that is stored is logged; values at keys
+//! transaction that makes the change, so a change that is stored is logged. Values at keys
 //! named like secrets are redacted before they are written.
 
 use std::collections::BTreeMap;
@@ -146,7 +146,7 @@ pub enum Action {
     ProfileCreate,
     ProfileUpdate,
     ProfileDelete,
-    /// A profile put in force at a scope.
+    /// A profile put assigned at a scope.
     ProfileAssign,
     /// A profile taken off a scope.
     ProfileUnassign,
@@ -383,7 +383,7 @@ pub struct Entry {
     pub actor: Actor,
     pub action: Action,
     pub target: Target,
-    /// What changed, as the action defines it; secrets are redacted.
+    /// What changed, as the action defines it. Secrets are redacted.
     pub details: Json,
 }
 
@@ -471,7 +471,7 @@ pub fn record(
     })
 }
 
-/// Which entries to list; newest first, `limit` at a time.
+/// Which entries to list. Newest first, `limit` at a time.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Filter {
     /// Entries by this account.
@@ -544,7 +544,7 @@ impl Filter {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Page {
     pub entries: Vec<Entry>,
-    /// Pass as `before` to get the entries older than these; absent on the last page.
+    /// Pass as `before` to get the entries older than these. Absent on the last page.
     pub next: Option<AuditId>,
 }
 

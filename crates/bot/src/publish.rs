@@ -38,7 +38,7 @@ pub fn upload_limit(tier: PremiumTier) -> u64 {
     }
 }
 
-/// The REST clients of the running applications, by the server's id for each; shared with
+/// The REST clients of the running applications, by the server's id for each. Shared with
 /// whatever starts and stops the bots.
 pub type Clients = Arc<RwLock<HashMap<Uuid, Arc<Client>>>>;
 
@@ -101,7 +101,7 @@ impl DiscordPublisher {
             .await
             .map_err(|_| {
                 PublishError::Rejected(format!(
-                    "Discord did not answer a guild lookup within {}s; its rate limit is likely exhausted",
+                    "Discord server lookup timed out after {}s. The API may be rate limited.",
                     REST_WAIT.as_secs()
                 ))
             })?

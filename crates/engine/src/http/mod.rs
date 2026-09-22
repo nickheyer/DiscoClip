@@ -115,7 +115,7 @@ impl HttpError {
     }
 }
 
-/// Proxies by platform and by host suffix, over a default; `bypass` hosts go direct.
+/// Proxies by platform and by host suffix, over a default. `bypass` hosts go direct.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Proxies {
@@ -157,7 +157,7 @@ pub struct HttpConfig {
     /// Sent when a request names no other user agent.
     pub user_agent: String,
     pub connect_timeout_secs: u64,
-    /// Bound on a whole page or API request; media downloads have none.
+    /// Bound on a whole page or API request. Media downloads have none.
     pub request_timeout_secs: u64,
     /// Longest pause between two chunks of a body.
     pub read_timeout_secs: u64,
@@ -233,7 +233,7 @@ struct Inner {
     config: RwLock<HttpConfig>,
     jars: RwLock<HashMap<String, Jar>>,
     /// Cookies each platform's resolver sends to get past consent and age gates without
-    /// an account; a jar cookie of the same name and domain replaces one.
+    /// an account. A jar cookie of the same name and domain replaces one.
     seeds: RwLock<HashMap<String, Vec<Cookie>>>,
     limiter: HostLimiter,
     stats: Stats,
@@ -275,7 +275,7 @@ impl Http {
         }
     }
 
-    /// Answers from a recorded fixture, at once and without retries.
+    /// Answers from a recorded fixture, immediately and without retries.
     pub fn replay(fixture: Fixture) -> Self {
         Self::with_transport(Arc::new(ReplayTransport::new(fixture)), Self::test_config())
     }
@@ -433,6 +433,10 @@ impl Http {
         self.request(Method::POST, url)
     }
 
+    pub fn delete(&self, url: Url) -> RequestBuilder {
+        self.request(Method::DELETE, url)
+    }
+
     /// Where `url` ends up after its redirects, without reading any body: unwraps short
     /// links such as `t.co`, `bit.ly` and `youtu.be`.
     pub async fn unwrap_redirects(
@@ -494,7 +498,7 @@ enum Timeout {
     Some(Duration),
 }
 
-/// One request being put together; `send` runs it.
+/// One request being put together. `send` runs it.
 pub struct RequestBuilder {
     http: Http,
     method: Method,
@@ -576,7 +580,7 @@ impl RequestBuilder {
         self.header("content-type", "application/x-www-form-urlencoded")
     }
 
-    /// Whether 3xx answers are followed; off, the redirect itself is returned.
+    /// Whether 3xx answers are followed. Off, the redirect itself is returned.
     pub fn follow_redirects(mut self, follow: bool) -> Self {
         self.follow_redirects = follow;
         self
@@ -959,7 +963,7 @@ mod tests {
         assert_eq!(seen.len(), 3);
         assert_eq!(seen[0].method, Method::POST);
         assert_eq!(seen[0].headers["user-agent"], "test-agent");
-        // 302 on POST becomes GET without body; the cookie set on hop one is sent on hop two.
+        // 302 on POST becomes GET without body. The cookie set on hop one is sent on hop two.
         assert_eq!(seen[1].method, Method::GET);
         assert!(seen[1].body.is_none());
         assert_eq!(seen[1].headers["cookie"], "a=1");

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import FormFeedback from '$lib/components/FormFeedback.svelte';
 	import { invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import type { PageData } from './$types';
@@ -15,6 +16,7 @@
 	import Field from '$lib/components/Field.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import SectionNav from '$lib/components/SectionNav.svelte';
 	import PasswordInput from '$lib/components/PasswordInput.svelte';
 	import Time from '$lib/components/Time.svelte';
 	import { describeUserAgent, pluralize } from '$lib/format';
@@ -198,7 +200,7 @@
 	async function revokeToken(id: string, name: string) {
 		const ok = await confirm.ask({
 			title: `Revoke “${name}”?`,
-			message: 'Anything still using this token stops working at once.',
+			message: 'Requests using this token will be rejected.',
 			confirmLabel: 'Revoke',
 			danger: true
 		});
@@ -262,7 +264,7 @@
 	async function unlink(row: ProviderRow) {
 		const ok = await confirm.ask({
 			title: `Unlink ${row.name}?`,
-			message: 'The grant is revoked at the provider too, where the provider allows it.',
+			message: 'Also revokes access at the provider when supported.',
 			confirmLabel: 'Unlink',
 			danger: true
 		});
@@ -289,6 +291,8 @@
 </svelte:head>
 
 <PageHeader title="Account" description="Your password, sessions, API tokens and linked logins." />
+
+<SectionNav items={[{ id: 'password', label: 'Password' }, { id: 'sessions', label: 'Sessions' }, { id: 'tokens', label: 'API tokens' }, { id: 'logins', label: 'Linked logins' }]} />
 
 <div class="stack-lg">
 	{#if flowError}
@@ -323,13 +327,13 @@
 		</div>
 	</section>
 
-	<section class="card" id="password">
+	<section class="card" id="password" tabindex="-1">
 		<div class="card-header"><h2>Password</h2></div>
 		<div class="card-body">
 			{#if user.has_password}
 				<form class="stack narrow" onsubmit={changePassword} novalidate>
 					{#if passwordError}
-						<Alert tone="danger" message={passwordError} onclose={() => (passwordError = null)} />
+						<FormFeedback message={passwordError} />
 					{/if}
 					{#if passwordWait > 0}
 						<Alert tone="warn" message={`Too many wrong passwords. Try again in ${passwordWait}s.`} />
@@ -352,13 +356,13 @@
 				<Alert
 					tone="info"
 					title="This account has no password"
-					message="You log in through a linked provider. An admin can set a password for you from the accounts page."
+					message="An admin can set a password for this account."
 				/>
 			{/if}
 		</div>
 	</section>
 
-	<section class="card" id="sessions">
+	<section class="card" id="sessions" tabindex="-1">
 		<div class="card-header">
 			<h2>Sessions</h2>
 			<Button size="sm" variant="danger-soft" icon="logout" loading={endingOthers} disabled={otherSessions.length === 0} onclick={endOthers}>
@@ -387,7 +391,7 @@
 									{#if view.current}<Badge tone="ok" size="sm">This device</Badge>{/if}
 								</div>
 							</td>
-							<td class="mono">{view.ip ?? '—'}</td>
+							<td class="mono">{view.ip ?? 'Not available'}</td>
 							<td><Time value={view.created_at} /></td>
 							<td><Time value={view.last_seen_at} /></td>
 							<td><Time value={view.expires_at} /></td>
@@ -403,7 +407,7 @@
 		</div>
 	</section>
 
-	<section class="card" id="tokens">
+	<section class="card" id="tokens" tabindex="-1">
 		<div class="card-header">
 			<div>
 				<h2>API tokens</h2>
@@ -413,7 +417,7 @@
 		</div>
 		{#if data.tokens.length === 0}
 			<div class="card-body">
-				<Empty compact icon="key" title="No API tokens" description="Mint one for scripts and integrations; the secret is shown once." />
+				<Empty compact icon="key" title="No API tokens" description="Create a token for a script or integration." />
 			</div>
 		{:else}
 			<div class="table-wrap flush">
@@ -459,7 +463,7 @@
 		{/if}
 	</section>
 
-	<section class="card" id="logins">
+	<section class="card" id="logins" tabindex="-1">
 		<div class="card-header">
 			<div>
 				<h2>Linked logins</h2>
@@ -468,7 +472,7 @@
 		</div>
 		{#if providerRows.length === 0}
 			<div class="card-body">
-				<Empty compact icon="link" title="No login providers" description="This server offers no provider logins. An admin configures GitHub, Google, an OpenID Connect issuer, or marks a Discord application for login." />
+				<Empty compact icon="link" title="No login providers" description="An admin can configure login providers in Settings or Applications." />
 			</div>
 		{:else}
 			<ul class="providers">
@@ -497,7 +501,7 @@
 									</dd>
 									<dt>Granted</dt>
 									<dd>
-										{row.identity.scope ?? '—'}
+										{row.identity.scope ?? 'Not available'}
 										{#if row.identity.has_refresh_token}<span class="faint">· renewable</span>{/if}
 									</dd>
 									<dt>Token expires</dt>
@@ -527,7 +531,7 @@
 <Dialog bind:open={tokenDialog} title="New API token" busy={mintingToken}>
 	<form id="token-form" class="stack" onsubmit={mintToken} novalidate>
 		{#if tokenError}
-			<Alert tone="danger" message={tokenError} onclose={() => (tokenError = null)} />
+			<FormFeedback message={tokenError} />
 		{/if}
 		<Field label="Name" for="token-name" hint="What this token is for, so you can tell it apart later.">
 			<input id="token-name" class="input" bind:value={tokenName} maxlength={TOKEN_NAME_MAX} required />
@@ -569,7 +573,7 @@
 	</form>
 	{#snippet footer()}
 		<Button variant="ghost" onclick={() => (tokenDialog = false)} disabled={mintingToken}>Cancel</Button>
-		<Button variant="primary" type="submit" loading={mintingToken} disabled={!tokenReady} onclick={() => document.querySelector<HTMLFormElement>('#token-form')?.requestSubmit()}>Mint token</Button>
+		<Button variant="primary" type="submit" loading={mintingToken} disabled={!tokenReady} onclick={() => document.querySelector<HTMLFormElement>('#token-form')?.requestSubmit()}>Create token</Button>
 	{/snippet}
 </Dialog>
 
@@ -615,7 +619,7 @@
 		gap: 5px;
 		padding: 2px 9px;
 		border-radius: 999px;
-		font-size: 12px;
+		font-size: 13px;
 		font-weight: 500;
 	}
 

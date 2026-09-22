@@ -303,7 +303,7 @@ impl Jar {
         self.cookies.len() != before
     }
 
-    /// Records a `Set-Cookie` header received from `url`; an expired one removes the cookie.
+    /// Records a `Set-Cookie` header received from `url`. An expired one removes the cookie.
     pub fn store_set_cookie(&mut self, header: &str, url: &Url) {
         if let Some(cookie) = Cookie::parse_set_cookie(header, url) {
             if cookie.is_expired(Timestamp::now()) {

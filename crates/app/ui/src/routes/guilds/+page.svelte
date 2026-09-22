@@ -36,9 +36,9 @@
 			await invalidate('app:guilds');
 		} catch (cause) {
 			if (isApiError(cause) && cause.status === 404) {
-				toast.error('Link your Discord account first; there is no Discord grant to fetch guilds with.');
+				toast.error('Link Discord in Account before loading your servers.');
 			} else {
-				toast.error(`Could not fetch your guilds: ${messageOf(cause)}`);
+				toast.error(`Could not fetch your servers: ${messageOf(cause)}`);
 			}
 		} finally {
 			refreshing = false;
@@ -47,10 +47,10 @@
 </script>
 
 <svelte:head>
-	<title>My guilds · DiscoClip</title>
+	<title>Discord servers · DiscoClip</title>
 </svelte:head>
 
-<PageHeader title="My guilds" description="The Discord guilds of your linked Discord account. Managing a guild there lets you edit its watch rules here.">
+<PageHeader title="Discord servers" description="Manage clips in your Discord servers.">
 	{#snippet actions()}
 		{#if data.discordLinked}
 			<Button icon="refresh" loading={refreshing} onclick={refresh}>Fetch again</Button>
@@ -59,15 +59,15 @@
 </PageHeader>
 
 {#if !data.discordLinked}
-	<Empty icon="discord" title="No Discord account linked" description={data.discordOffered ? 'Link your Discord account to see your guilds and edit the rules of the ones you manage.' : 'Discord login is not offered on this server yet. An admin marks a Discord application for login from its page.'}>
+	<Empty icon="discord" title="No Discord account linked" description={data.discordOffered ? 'Link Discord to see your servers and manage their watch rules.' : 'An admin must enable Discord login in Applications.'}>
 		{#if data.discordOffered}
 			<Button variant="primary" icon="link" href={providers.startUrl('discord', 'link')} external>Link Discord</Button>
 		{/if}
 		<Button href="/account#logins">Linked logins</Button>
 	</Empty>
 {:else if data.guilds.length === 0}
-	<Empty icon="server" title="No guilds stored yet" description="Fetch them from Discord to see the guilds your account belongs to.">
-		<Button variant="primary" icon="refresh" loading={refreshing} onclick={refresh}>Fetch guilds</Button>
+	<Empty icon="server" title="No servers stored yet" description="Fetch them from Discord to see the servers your account belongs to.">
+		<Button variant="primary" icon="refresh" loading={refreshing} onclick={refresh}>Fetch servers</Button>
 	</Empty>
 {:else}
 	<div class="stack-lg">
@@ -116,12 +116,12 @@
 		{#if others.length}
 			<section class="stack">
 				<div class="section-title">
-					<h2>Other guilds</h2>
+					<h2>Other servers</h2>
 					<span class="faint small">You are a member but do not manage these on Discord.</span>
 				</div>
 				<div class="table-wrap">
 					<table class="table">
-						<thead><tr><th>Guild</th><th>Id</th><th>Role</th></tr></thead>
+						<thead><tr><th>Server</th><th>Id</th><th>Role</th></tr></thead>
 						<tbody>
 							{#each others as guild (guild.id)}
 								<tr>
@@ -193,7 +193,7 @@
 		align-items: center;
 		gap: 2px;
 		color: var(--accent-text);
-		font-size: 12.5px;
+		font-size: 13px;
 		font-weight: 500;
 	}
 </style>

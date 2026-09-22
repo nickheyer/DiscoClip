@@ -15,10 +15,7 @@ export interface StageProgress {
 
 type Listener = (event: JobEvent) => void;
 
-/**
- * The engine as it runs: the latest counts and load, the jobs seen lately, each running
- * job's progress and log, all kept current by the server's live feed.
- */
+/** Live job counts, progress and logs. */
 class JobFeed {
 	stats = $state<JobStats | null>(null);
 	recent = $state<Record<string, JobSummary>>({});

@@ -1,9 +1,8 @@
-//! A JavaScript interpreter for the scripts platforms guard their media with: the
-//! signature and throttling ciphers a player script computes are run as a browser would
-//! run them, in a sandbox with nothing but the script and bounds on how long it may run.
-//! Small scripts run afresh for every call; a player script of several megabytes stays
-//! loaded in an interpreter on a thread of its own, answering calls until it has been
-//! idle for a while.
+//! Sandboxed JavaScript for player signatures and throttling transforms. Enforce
+//! execution limits.
+//!
+//! Run small scripts per call. Keep large player scripts loaded on a dedicated thread
+//! until idle expiry.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
@@ -84,7 +83,7 @@ impl Script {
     }
 
     /// Calls the global `function` with string arguments and returns what it returns, as a
-    /// string; on the calling thread.
+    /// string. On the calling thread.
     pub fn call_blocking(&self, function: &str, args: &[String]) -> Result<String, JsError> {
         let mut context = Self::context();
         self.load(&mut context)?;
@@ -106,7 +105,7 @@ impl Script {
         stringify(result, &mut context)
     }
 
-    /// Evaluates `expression` once the script has run, as a string; on the calling thread.
+    /// Evaluates `expression` once the script has run, as a string. On the calling thread.
     pub fn eval_blocking(&self, expression: &str) -> Result<String, JsError> {
         let mut context = Self::context();
         self.load(&mut context)?;
@@ -144,7 +143,7 @@ struct Call {
 
 /// A script loaded once into an interpreter on a thread of its own, which evaluates
 /// expressions against it as they come. The thread ends when the handle is dropped or
-/// when no call has come for `idle`; a call after that finds it stopped.
+/// when no call has come for `idle`. A call after that finds it stopped.
 pub struct Resident {
     calls: Mutex<mpsc::Sender<Call>>,
     alive: Arc<AtomicBool>,

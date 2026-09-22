@@ -11,17 +11,17 @@ export function usernameProblem(value: string): string | null {
 	if (value === '') return null;
 	return USERNAME_RE.test(value)
 		? null
-		: `A username is 1 to ${USERNAME_MAX} letters, digits, '.', '_' or '-'.`;
+		: `Use 1 to ${USERNAME_MAX} letters, digits, '.', '_' or '-'.`;
 }
 
 export function passwordProblem(value: string): string | null {
 	if (value === '') return null;
 	return value.length >= PASSWORD_MIN && value.length <= PASSWORD_MAX
 		? null
-		: `A password is ${PASSWORD_MIN} to ${PASSWORD_MAX} characters.`;
+		: `Use ${PASSWORD_MIN} to ${PASSWORD_MAX} characters.`;
 }
 
 export function matchProblem(password: string, confirmation: string): string | null {
 	if (confirmation === '') return null;
-	return password === confirmation ? null : 'The passwords differ.';
+	return password === confirmation ? null : 'Passwords do not match.';
 }

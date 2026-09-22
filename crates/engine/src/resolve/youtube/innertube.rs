@@ -12,7 +12,7 @@ use crate::resolve::{MAX_PAGE, ResolveError, check_status};
 pub const PLATFORM: &str = "youtube";
 pub const ORIGIN: &str = "https://www.youtube.com";
 
-/// An app YouTube's API knows; each is shown somewhat different formats and gates.
+/// An app YouTube's API knows. Each is shown somewhat different formats and gates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Client {
     pub id: &'static str,
@@ -190,7 +190,7 @@ impl InnerTube {
         Ok(value)
     }
 
-    /// The `player` answer for `video_id` as `client`; `sts` is the player script's
+    /// The `player` answer for `video_id` as `client`. `sts` is the player script's
     /// signature timestamp, which apps that need the player must send.
     pub async fn player(
         &self,

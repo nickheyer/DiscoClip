@@ -7,6 +7,7 @@
 	import Icon from './Icon.svelte';
 	import SettingField from './SettingField.svelte';
 	import SettingMap from './SettingMap.svelte';
+	import FormFeedback from './FormFeedback.svelte';
 	import type { SettingValue, SettingsChange, SettingsView } from '$lib/api';
 	import { isBlank, problemOf, sourceOf } from '$lib/settings/model';
 	import { at, sameValue, type SectionSpec } from '$lib/settings/schema';
@@ -16,9 +17,9 @@
 		view: SettingsView;
 		/** Saves the change and resolves once the view has been reloaded. */
 		onsave: (change: SettingsChange) => Promise<void>;
-		/** The key the address named, to draw the eye to. */
+		/** Setting key to highlight. */
 		highlight?: string | null;
-		/** Told whenever the section gains or loses edits that are not saved. */
+		/** Report unsaved changes. */
 		ondirty?: (dirty: boolean) => void;
 	}
 
@@ -37,6 +38,7 @@
 	let versions = $state<Record<string, number>>({});
 	let saving = $state(false);
 	let error = $state<string | null>(null);
+	let submitted = $state(false);
 	let maps = $state<Record<string, SettingMap | undefined>>({});
 
 	function fieldKey(name: string): string {
@@ -67,7 +69,7 @@
 		versions[key] = (versions[key] ?? 0) + 1;
 	}
 
-	/** Drops every edit: the draft is the view again. */
+	/** Restore the saved values. */
 	function reload() {
 		base = fresh();
 		baseEnabled = sectionOn;
@@ -75,6 +77,7 @@
 		enabled = baseEnabled;
 		resets.clear();
 		error = null;
+		submitted = false;
 		for (const key of Object.keys(base)) bump(key);
 	}
 
@@ -91,9 +94,7 @@
 		base = next;
 		baseEnabled = sectionOn;
 	}
-
-	// Only `view` is watched: the rebase writes the draft, the toggle and the versions,
-	// which must not re-run this.
+	// Watch only view. Draft writes must not trigger another rebase.
 	$effect.pre(() => {
 		void view;
 		untrack(rebase);
@@ -118,7 +119,7 @@
 				const value = draft[key];
 				if (field.kind === 'secret') {
 					const set = view.secrets.includes(key) && sectionOn;
-					return set || !isBlank(value) ? null : 'A value is needed.';
+					return set || !isBlank(value) ? null : 'Enter a value.';
 				}
 				return problemOf(field, value);
 			})
@@ -126,7 +127,7 @@
 	});
 	const mapsValid = $derived((spec.maps ?? []).every((map) => maps[map.key]?.valid() ?? true));
 
-	/** What saving would send. */
+	/** Pending API changes. */
 	const change = $derived.by((): SettingsChange => {
 		const set: Record<string, SettingValue> = {};
 		const reset: string[] = [];
@@ -185,7 +186,11 @@
 
 	async function save(event: SubmitEvent) {
 		event.preventDefault();
-		if (!ready) return;
+		submitted = true;
+		if (!ready) {
+			error = 'Check the fields below.';
+			return;
+		}
 		saving = true;
 		error = null;
 		try {
@@ -219,14 +224,12 @@
 <form class={['card', highlighted && 'highlighted']} id={`section-${spec.key}`} onsubmit={save} novalidate tabindex="-1">
 	<div class="card-header">
 		<div class="title">
-			<span class="glyph"><Icon name={spec.icon} size={16} /></span>
 			<div>
 				<h2>{spec.title}</h2>
 				<p class="hint">{spec.description}</p>
 			</div>
 		</div>
 		<div class="row">
-			<code class="small key">{spec.key}</code>
 			{#if spec.optional}
 				{#if sectionOn}
 					<Badge tone={sectionSource.source === 'provisioning' ? 'info' : 'ok'} size="sm" dot>On</Badge>
@@ -238,7 +241,7 @@
 	</div>
 	<div class="card-body">
 		{#if error}
-			<div class="error-box"><Alert tone="danger" message={error} onclose={() => (error = null)} /></div>
+			<div class="error-box"><FormFeedback message={error} /></div>
 		{/if}
 		{#if spec.optional}
 			<label class="checkbox toggle">
@@ -264,6 +267,7 @@
 						updatedAt={source.entry?.updated_at ?? null}
 						secretSet={view.secrets.includes(key) && sectionOn}
 						disabled={saving}
+						showErrors={submitted}
 						dormant={spec.optional !== undefined && !sectionOn}
 						onreset={() => useDefault(key)}
 					/>
@@ -286,17 +290,17 @@
 			{/each}
 		{/if}
 		{#if spec.fields.length === 0 && (spec.maps ?? []).length === 0}
-			<p class="faint small">Everything here lives in the sections below.</p>
+			<p class="faint small">Choose a subsection from the menu.</p>
 		{/if}
 	</div>
 	<div class="card-footer">
 		{#if spec.optional && stored}
-			<Button variant="ghost" onclick={resetSection} disabled={saving}>Use defaults for all of this</Button>
+			<Button variant="ghost" onclick={resetSection} disabled={saving}>Restore defaults</Button>
 		{/if}
 		<span class="grow"></span>
-		{#if fieldProblems.length}<span class="error-text">Fix the highlighted fields.</span>{/if}
-		<Button variant="ghost" onclick={reload} disabled={!dirty || saving}>Discard</Button>
-		<Button type="submit" variant="primary" loading={saving} disabled={!ready}>Save</Button>
+		{#if dirty}<span class="hint" role="status">Unsaved changes</span>{/if}
+		<Button variant="ghost" onclick={reload} disabled={!dirty || saving}>Discard changes</Button>
+		<Button type="submit" variant="primary" loading={saving} disabled={!dirty}>Save changes</Button>
 	</div>
 </form>
 
@@ -319,25 +323,8 @@
 		min-width: 0;
 	}
 
-	.glyph {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 32px;
-		height: 32px;
-		border-radius: 9px;
-		background: var(--accent-soft);
-		color: var(--accent-text);
-		flex: none;
-		margin-top: 2px;
-	}
-
-	.key {
-		color: var(--text-3);
-	}
-
 	.toggle {
-		padding: 4px 0 12px;
+		padding: 4px 0 20px;
 		border-bottom: 1px solid var(--border);
 		margin-bottom: 4px;
 	}
@@ -352,6 +339,10 @@
 
 	.card-footer {
 		justify-content: flex-start;
+		position: sticky;
+		bottom: 0;
+		z-index: 3;
+		flex-wrap: wrap;
 	}
 
 	.highlighted {

@@ -36,7 +36,7 @@ use crate::bots::BotManager;
 use crate::fixtures::{FixtureRunner, FixtureStore};
 use crate::frontends::FrontendStore;
 use crate::oauth::{Endpoints, Kind, Provider, Registry};
-use crate::profiles::ProfileStore;
+use crate::profiles::{PlatformFacts, ProfileStore};
 use crate::rules::RuleStore;
 use crate::secrets::Keyring;
 use crate::settings::{AuthConfig, OAuthClient, OidcClient, Settings, SettingsStore, WebConfig};
@@ -146,8 +146,16 @@ pub async fn app_with_settings(
     let profiles = ProfileStore::new(
         db.clone(),
         vec![
-            ("nothing", &[][..]),
-            ("fixtured", &[Tag::Basic, Tag::Video][..]),
+            PlatformFacts {
+                id: "nothing",
+                tags: &[],
+                hosts: &[SUPPORTED_HOST],
+            },
+            PlatformFacts {
+                id: "fixtured",
+                tags: &[Tag::Basic, Tag::Video],
+                hosts: &[FIXTURE_HOST],
+            },
         ],
     );
     profiles.load().await.unwrap();
@@ -341,7 +349,7 @@ impl Resolver for Fixtured {
     }
 }
 
-/// An engine that accepts links to [`SUPPORTED_HOST`] and never runs them; bots only need
+/// An engine that accepts links to [`SUPPORTED_HOST`] and never runs them. Bots only need
 /// its handle, and the jobs they submit sit in the database. It also carries the fixtured
 /// platform, whose links resolve without the network.
 fn stub_engine(
@@ -1351,7 +1359,7 @@ async fn discord_gateway_bot(
     )
 }
 
-/// A guild the bot has no access to; registering commands there fails as at Discord.
+/// A guild the bot has no access to. Registering commands there fails as at Discord.
 pub const FORBIDDEN_GUILD: &str = "403";
 
 async fn discord_set_guild_commands(
@@ -1626,7 +1634,7 @@ async fn gateway_connection(stream: tokio::net::TcpStream, state: Arc<Mutex<Fake
             incoming = ws.next() => {
                 let Some(Ok(message)) = incoming else { return };
                 if message.is_close() {
-                    // The reply to a close is queued; sending it needs a flush.
+                    // The reply to a close is queued. Sending it needs a flush.
                     let _ = ws.close().await;
                     return;
                 }
@@ -1717,7 +1725,7 @@ async fn gateway_connection(stream: tokio::net::TcpStream, state: Arc<Mutex<Fake
                         }
                     }
                     Some(6) => {
-                        // Resuming is not kept up; the shard identifies again.
+                        // Resuming is not kept up. The shard identifies again.
                         let invalid = json!({"op": 9, "d": false}).to_string();
                         if ws.send(Message::text(invalid)).await.is_err() {
                             return;

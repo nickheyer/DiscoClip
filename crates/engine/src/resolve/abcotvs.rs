@@ -159,7 +159,7 @@ impl Resolver for AbcotvsResolver {
         let mut resolved = Resolved::new(PLATFORM);
         let mut failure = None;
         if let Some(playlist) = util::url_of(&video["m3u8"], None) {
-            // The playlist link carries ad parameters the player fills in; without them
+            // The playlist link carries ad parameters the player fills in. Without them
             // Uplynk serves the plain programme.
             let mut plain = playlist.clone();
             plain.set_query(None);

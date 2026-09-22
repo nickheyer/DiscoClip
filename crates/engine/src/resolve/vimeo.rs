@@ -474,7 +474,7 @@ impl VimeoResolver {
         if matches!(live_status, Some("pending") | Some("active")) {
             let start = live_event["ingest"]["scheduled_start_time"]
                 .as_str()
-                .map(|s| format!("; it is scheduled for {s}"))
+                .map(|s| format!(". Scheduled for {s}"))
                 .unwrap_or_default();
             return Err(ResolveError::unavailable(
                 origin,
@@ -706,10 +706,10 @@ impl VimeoResolver {
                 origin,
                 match (upcoming, start) {
                     (true, Some(start)) => {
-                        format!("the live event has not started; it is scheduled for {start}")
+                        format!("Live event has not started. Scheduled for {start}.")
                     }
                     (false, Some(start)) => {
-                        format!("the live event has nothing to play; it was scheduled for {start}")
+                        format!("Live event unavailable. Scheduled for {start}.")
                     }
                     (_, None) => "the live event has nothing to play yet".to_string(),
                 },

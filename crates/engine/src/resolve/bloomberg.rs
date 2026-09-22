@@ -124,7 +124,7 @@ impl Resolver for BloombergResolver {
                     .and_then(|t| util::join_url(Some(url), &t)),
             )
         };
-        // The bot check's cookies from the page visit get the API refused; a fresh browser
+        // The bot check's cookies from the page visit get the API refused. A fresh browser
         // request without them is answered.
         let api = Url::parse(&format!("{EMBED_API}{id}")).expect("valid");
         let response = self

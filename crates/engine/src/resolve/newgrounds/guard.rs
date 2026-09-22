@@ -153,7 +153,7 @@ impl Challenge {
             Algorithm::Sha256 => (None, vec![0; 32]),
             Algorithm::Argon2id => {
                 let p = self.params.as_ref().ok_or("missing Argon2id parameters")?;
-                // Parameters come from the network; bound each hash as well as the loop.
+                // Parameters come from the network. Bound each hash as well as the loop.
                 if p.memory_size > 64 * 1024
                     || p.iterations > 4
                     || p.parallelism > 4

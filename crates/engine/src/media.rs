@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MediaKind {
-    /// A moving picture, with or without sound; animated GIFs count.
+    /// A moving picture, with or without sound. Animated GIFs count.
     #[default]
     Video,
     /// Sound alone: a track, a podcast episode, a sound bite.

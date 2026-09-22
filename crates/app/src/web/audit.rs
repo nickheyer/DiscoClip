@@ -11,7 +11,7 @@ use super::error::ApiError;
 use crate::audit::{Filter, Page};
 use crate::users::Permission;
 
-/// Every field is optional; see [`Filter`] for what each narrows the listing to.
+/// Every field is optional. See [`Filter`] for what each narrows the listing to.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct ListQuery {

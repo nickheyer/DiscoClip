@@ -17,9 +17,9 @@ pub trait JobStore: Send + Sync {
     async fn list_active(&self) -> Result<Vec<Job>, StoreError>;
     /// The jobs a playlist job expanded into, oldest first.
     async fn children(&self, parent: JobId) -> Result<Vec<Job>, StoreError>;
-    /// Removes a job's record; whether there was one.
+    /// Removes a job's record. Whether there was one.
     async fn delete(&self, id: JobId) -> Result<bool, StoreError>;
-    /// Removes finished jobs of `kinds` created before `before`; the ids removed.
+    /// Removes finished jobs of `kinds` created before `before`. The ids removed.
     async fn purge(
         &self,
         before: Timestamp,
@@ -54,14 +54,14 @@ pub struct JobFilter {
     /// Matched against the link, the title and the submitter, as a substring.
     pub q: Option<String>,
     pub resolver: Option<String>,
-    /// Only jobs of these resolvers; empty means any.
+    /// Only jobs of these resolvers. Empty means any.
     pub resolvers: Vec<String>,
     pub parent: Option<JobId>,
     /// Leave out jobs expanded from playlists.
     pub top_level: bool,
-    /// Only jobs whose origin names one of these guilds; empty means any.
+    /// Only jobs whose origin names one of these guilds. Empty means any.
     pub guilds: Vec<String>,
-    /// Only jobs whose origin names one of these channels; empty means any.
+    /// Only jobs whose origin names one of these channels. Empty means any.
     pub channels: Vec<String>,
     pub media: Option<crate::media::MediaKind>,
     /// Only jobs with an output the web can play or hand out.

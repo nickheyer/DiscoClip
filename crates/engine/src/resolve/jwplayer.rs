@@ -1,7 +1,7 @@
 //! JW Player media, through the delivery API the player itself reads: every MP4 and
 //! WebM rendition with its size and bitrate, the HLS manifest, the caption tracks and the
 //! media's title, poster and time. Player scripts, embed pages, manifests and video files
-//! all name the media; a playlist becomes a playlist of its media.
+//! all name the media. A playlist becomes a playlist of its media.
 
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -204,7 +204,7 @@ fn resolved_of(item: &Value) -> Resolved {
     resolved
 }
 
-/// The delivery API's answer for `url`, read as `platform`; its statuses become the
+/// The delivery API's answer for `url`, read as `platform`. Its statuses become the
 /// resolver errors they mean for `origin`.
 async fn api_json(
     http: &Http,

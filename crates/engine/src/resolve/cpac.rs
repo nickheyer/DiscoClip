@@ -1,6 +1,6 @@
 //! CPAC (cpac.ca), Canada's parliamentary channel: every episode page names its HLS
 //! stream in its player's data attributes, beside the episode's title, length and air
-//! time; the older `episode?id=` links redirect there.
+//! time. The older `episode?id=` links redirect there.
 
 use std::sync::LazyLock;
 
@@ -234,7 +234,7 @@ impl Resolver for CpacResolver {
         if link.kind == Kind::Program {
             return self.resolve_program(&link, url).await;
         }
-        // The episode service describes the episode in both languages; the page
+        // The episode service describes the episode in both languages. The page
         // carries the same player when the service has no record of it.
         match self.resolve_episode_from_service(&link, url).await {
             Ok(resolution) => return Ok(resolution),

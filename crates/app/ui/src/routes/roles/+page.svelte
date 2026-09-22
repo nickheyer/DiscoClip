@@ -17,7 +17,7 @@
 	<title>Roles · DiscoClip</title>
 </svelte:head>
 
-<PageHeader title="Roles" description="What each role allows, and who holds it. A role is given to an account from its page; an API token gets only what its account's role allows.">
+<PageHeader title="Roles" description="Permissions for each account role.">
 	{#snippet actions()}
 		<Button href="/users" icon="users">Accounts</Button>
 	{/snippet}

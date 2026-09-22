@@ -228,7 +228,7 @@ impl ThreadsResolver {
                 } else {
                     ResolveError::unavailable(
                         origin,
-                        "the page carries no post data; the post may be private or gone",
+                        "Post data unavailable. The post may be private or deleted.",
                     )
                 }
             })

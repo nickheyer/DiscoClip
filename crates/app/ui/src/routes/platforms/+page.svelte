@@ -1,4 +1,5 @@
 <script lang="ts">
+	import FormFeedback from '$lib/components/FormFeedback.svelte';
 	import { invalidate } from '$app/navigation';
 	import type { PageData } from './$types';
 	import { MEDIA_KINDS, MEDIA_LABELS, PLATFORM_TAGS, messageOf, platforms } from '$lib/api';
@@ -67,7 +68,7 @@
 			});
 			const state = sessionSummary(outcome);
 			if (outcome.check_error) {
-				toast.info(`Stored ${pluralize(outcome.cookies, 'cookie')} for ${outcome.name}; the session could not be checked: ${outcome.check_error}`);
+				toast.info(`Stored ${pluralize(outcome.cookies, 'cookie')} for ${outcome.name}. Session check failed: ${outcome.check_error}`);
 			} else {
 				toast.ok(`Stored ${pluralize(outcome.cookies, 'cookie')} for ${outcome.name}. ${state.label}.`);
 			}
@@ -210,7 +211,7 @@
 
 <PageHeader
 	title="Platforms"
-	description="What each resolver takes and returns, and whether its fixture links resolve right now."
+	description="Supported sites, media types and connection status."
 >
 	{#snippet actions()}
 		{#if canRun}
@@ -260,15 +261,15 @@
 
 		<div class="row-between">
 			<div class="row">
-				<input class="input search" type="search" placeholder="Filter by name, host, feature, format, media or tag" bind:value={query} aria-label="Filter platforms" />
-				<select class="select" bind:value={kind} aria-label="Filter by media kind">
+				<Field label="Filter platforms" for="control-9098"><input id="control-9098" class="input search" type="search" placeholder="Filter by name, host, feature, format, media or tag" bind:value={query} aria-label="Filter platforms" /></Field>
+				<Field label="Filter by media kind" for="control-9262"><select id="control-9262" class="select" bind:value={kind} aria-label="Filter by media kind">
 					<option value="">Any media</option>
 					{#each MEDIA_KINDS as k (k)}<option value={k}>{MEDIA_LABELS[k]}</option>{/each}
-				</select>
-				<select class="select" bind:value={tag} aria-label="Filter by tag">
+				</select></Field>
+				<Field label="Filter by tag" for="control-9482"><select id="control-9482" class="select" bind:value={tag} aria-label="Filter by tag">
 					<option value="">Any tag</option>
 					{#each PLATFORM_TAGS as t (t)}<option value={t}>{TAG_LABELS[t].label}</option>{/each}
-				</select>
+				</select></Field>
 			</div>
 			<span class="faint small">{pluralize(list.length, 'platform')} shown</span>
 		</div>
@@ -325,19 +326,19 @@
 								<td>
 									<div class="chips">
 										{#each platform.media as m (m)}<span class="chip media" title={MEDIA_HINTS[m]}>{MEDIA_LABELS[m]}</span>{/each}
-										{#if platform.media.length === 0}<span class="faint" title="Its links only lead on to other platforms' resolvers.">—</span>{/if}
+										{#if platform.media.length === 0}<span class="faint" title="Its links only lead on to other platforms' resolvers.">Not available</span>{/if}
 									</div>
 								</td>
 								<td>
 									<div class="chips">
 										{#each platform.tags as t (t)}<span class="chip media" title={TAG_LABELS[t].hint}>{TAG_LABELS[t].label}</span>{/each}
-										{#if platform.tags.length === 0}<span class="faint">—</span>{/if}
+										{#if platform.tags.length === 0}<span class="faint">Not available</span>{/if}
 									</div>
 								</td>
 								<td>
 									<div class="chips">
 										{#each platform.formats as format (format)}<span class="chip">{format}</span>{/each}
-										{#if platform.formats.length === 0}<span class="faint">—</span>{/if}
+										{#if platform.formats.length === 0}<span class="faint">Not available</span>{/if}
 									</div>
 								</td>
 								<td>
@@ -358,8 +359,8 @@
 										{/if}
 									</div>
 								</td>
-								<td><Time value={platform.last_pass_at} empty={platform.fixtures.length ? 'never' : '—'} /></td>
-								<td><Time value={platform.last_run_at} empty={platform.fixtures.length ? 'never' : '—'} /></td>
+								<td><Time value={platform.last_pass_at} empty={platform.fixtures.length ? 'never' : 'Not available'} /></td>
+								<td><Time value={platform.last_run_at} empty={platform.fixtures.length ? 'never' : 'Not available'} /></td>
 								<td class="actions">
 									{#if canRun && platform.fixtures.length > 0}
 										<Button size="sm" variant="ghost" icon="play" loading={starting === platform.id} disabled={platform.running} onclick={() => runOne(platform)}>Run</Button>
@@ -384,19 +385,19 @@
 												<dd>
 													{#if platform.tags.length}
 														<div class="chips">{#each platform.tags as t (t)}<span class="chip media" title={TAG_LABELS[t].hint}>{TAG_LABELS[t].label}</span>{/each}</div>
-													{:else}<span class="faint">—</span>{/if}
+													{:else}<span class="faint">Not available</span>{/if}
 												</dd>
 												<dt>Features</dt>
 												<dd>
 													{#if platform.features.length}
 														<div class="chips">{#each platform.features as feature (feature)}<span class="chip">{feature}</span>{/each}</div>
-													{:else}<span class="faint">—</span>{/if}
+													{:else}<span class="faint">Not available</span>{/if}
 												</dd>
 												<dt>Formats</dt>
 												<dd>
 													{#if platform.formats.length}
 														<div class="chips">{#each platform.formats as format (format)}<span class="chip">{format}</span>{/each}</div>
-													{:else}<span class="faint">—</span>{/if}
+													{:else}<span class="faint">Not available</span>{/if}
 												</dd>
 												{#if platform.last_fail_at}
 													<dt>Last failure</dt>
@@ -456,7 +457,7 @@
 																		{#if fixture.found}<span class="chip media">{describeFound(fixture.found)}</span>{/if}
 																		{#if fixture.title}<span class="truncate-2" title={fixture.title}>{fixture.title}</span>{/if}
 																	{:else}
-																		<span class="faint">—</span>
+																		<span class="faint">Not available</span>
 																	{/if}
 																</td>
 															</tr>
@@ -476,19 +477,19 @@
 	</div>
 {/if}
 
-<Dialog open={importFor !== null} title={importFor ? `Import cookies for ${importFor.name}` : 'Import cookies'} description="Cookies are stored encrypted and sent with every request the platform's resolver makes." busy={importing} onclose={() => (importFor = null)}>
+<Dialog open={importFor !== null} title={importFor ? `Import cookies for ${importFor.name}` : 'Import cookies'} description="Use browser cookies to access media that requires login." busy={importing} onclose={() => (importFor = null)}>
 	<form id="cookies-form" class="stack" onsubmit={runImport} novalidate>
 		{#if importError}
-			<Alert tone="danger" message={importError} onclose={() => (importError = null)} />
+			<FormFeedback message={importError} />
 		{/if}
-		<Field label="Format" for="cookies-format" hint={importFormat === 'netscape' ? 'A cookies.txt as browser extensions and yt-dlp export it.' : 'One Cookie header’s worth, as name=value pairs separated by semicolons, copied from the browser’s developer tools.'}>
+		<Field label="Format" for="cookies-format" hint={importFormat === 'netscape' ? 'A cookies.txt as browser extensions and yt-dlp export it.' : 'Copy a Cookie request header from your browser developer tools.'}>
 			<select id="cookies-format" class="select" bind:value={importFormat} disabled={importing}>
 				<option value="netscape">Netscape cookies.txt</option>
 				<option value="header">Cookie header</option>
 			</select>
 		</Field>
 		{#if importFormat === 'header'}
-			<Field label="Domain" for="cookies-domain" hint="The domain the cookies belong to; subdomains are covered.">
+			<Field label="Domain" for="cookies-domain" hint="Includes subdomains.">
 				<input id="cookies-domain" class="input mono" bind:value={importDomain} placeholder="example.com" autocomplete="off" spellcheck="false" disabled={importing} />
 			</Field>
 		{/if}
@@ -563,7 +564,7 @@
 	}
 
 	.stat-label {
-		font-size: 12.5px;
+		font-size: 13px;
 		color: var(--text-3);
 	}
 

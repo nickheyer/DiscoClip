@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
-/// Requests allowed per second on average, and how many may go at once when idle.
+/// Requests allowed per second on average, and the maximum idle burst.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Rate {
@@ -169,7 +169,7 @@ mod tests {
         assert!((third.as_secs_f64() - 0.5).abs() < 1e-6, "{third:?}");
         let fourth = limiter.reserve("a.test", t0);
         assert!((fourth.as_secs_f64() - 1.0).abs() < 1e-6, "{fourth:?}");
-        // Another host has its own bucket; time refills.
+        // Another host has its own bucket. Time refills.
         assert_eq!(limiter.reserve("b.test", t0), Duration::ZERO);
         assert_eq!(
             limiter.reserve("a.test", t0 + Duration::from_secs(10)),

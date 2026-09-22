@@ -19,7 +19,7 @@ use twilight_model::id::marker::GuildMarker;
 /// is rate limiting the bot, rather than holding the browser.
 pub(super) const REST_WAIT: Duration = Duration::from_secs(8);
 
-/// Runs a REST call under [`REST_WAIT`]; a call that does not come back in time is
+/// Runs a REST call under [`REST_WAIT`]. A call that does not come back in time is
 /// answered with 503 and a retry hint, and the browser is free to try again.
 pub(super) async fn bounded<T, F>(what: &str, call: F) -> Result<T, ApiError>
 where
@@ -34,7 +34,7 @@ where
 {
     tokio::time::timeout(wait, call).await.map_err(|_| {
         ApiError::Unavailable(format!(
-            "Discord is rate limiting the bot; {what} did not come back within {}s, try again shortly",
+            "Discord {what} request timed out after {}s. Try again shortly.",
             wait.as_secs()
         ))
     })
@@ -321,7 +321,7 @@ pub async fn get_member(
         .ok()
         .and_then(Id::new_checked)
         .ok_or_else(|| ApiError::BadRequest(format!("user {user:?} is not a Discord id")))?;
-    // A member the bot has seen speak is known already; anyone else is asked for.
+    // A member the bot has seen speak is known already. Anyone else is asked for.
     if let Some(member) = bot.directory.member(bot.guild, user_id) {
         return Ok(Json(member.into()));
     }

@@ -1,9 +1,8 @@
-//! Who is on the other end of a request. On the wire the peer is whoever opened the TCP
-//! connection; behind a reverse proxy that is the proxy. When the peer is one of the
-//! configured trusted proxies, the headers it adds name the browser's address, the scheme
-//! it spoke and the host it asked for, and those are what sessions, rate limits, the audit
-//! log, the origin check and login callbacks see. A peer that is not trusted keeps its own
-//! address whatever headers it sends.
+//! Resolve the client address, scheme and host. Accept forwarding headers only from
+//! configured trusted proxies.
+//!
+//! Sessions, rate limits, audit entries, origin checks and login callbacks use this
+//! resolved identity.
 
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
@@ -273,7 +272,7 @@ fn parse_forwarded(headers: &HeaderMap) -> Vec<ForwardedElement> {
         .collect()
 }
 
-/// Works out who the request is from and records it for every handler; answers over
+/// Works out who the request is from and records it for every handler. Answers over
 /// HTTPS carry `Strict-Transport-Security`.
 pub async fn resolve(
     State(state): State<AppState>,

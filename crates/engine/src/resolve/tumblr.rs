@@ -23,7 +23,7 @@ use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 pub const PLATFORM: &str = "tumblr";
 const SITE: &str = "https://www.tumblr.com/";
 const API: &str = "https://www.tumblr.com/api/v2/";
-/// The token the web app carries for its own API calls; the page's state names the
+/// The token the web app carries for its own API calls. The page's state names the
 /// current one, and this is what it has been.
 const WEB_TOKEN: &str = "aIcXSOoTtqrzR8L8YEIOmBeW94c3FmbSNSWAUbxsny9KKx5VFh";
 /// The cookie a logged-in tumblr.com session carries.

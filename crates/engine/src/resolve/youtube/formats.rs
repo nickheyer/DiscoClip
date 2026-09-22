@@ -118,7 +118,7 @@ pub fn details(response: &Value, resolved: &mut Resolved) {
 static RE_CODECS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"codecs="([^"]+)""#).unwrap());
 
 /// Every format of the answer as a variant, its URL unlocked with `player` where the app
-/// needs it; with why each format that could not be used was left out.
+/// needs it. With why each format that could not be used was left out.
 pub async fn variants(
     response: &Value,
     client: &Client,

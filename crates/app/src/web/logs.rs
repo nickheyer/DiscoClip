@@ -59,7 +59,7 @@ impl LogQuery {
 #[derive(Debug, Serialize)]
 pub struct LogPage {
     pub lines: Vec<LogLine>,
-    /// Pass as `before` for the page of older lines; nothing when this was the last.
+    /// Pass as `before` for the page of older lines. Nothing when this was the last.
     pub next: Option<u64>,
     /// How many lines the server keeps right now, and at most.
     pub buffered: usize,

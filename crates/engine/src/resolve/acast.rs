@@ -1,5 +1,5 @@
 //! Acast podcasts: an episode page, an embed or a `play.acast.com` link names its show
-//! and episode, which the feeder API answers with the audio file; a show page lists every
+//! and episode, which the feeder API answers with the audio file. A show page lists every
 //! episode.
 
 use std::sync::LazyLock;
@@ -20,7 +20,7 @@ pub const PLATFORM: &str = "acast";
 const API: &str = "https://feeder.acast.com/api/v1/shows/";
 
 /// `/{show}/episodes/{episode}`, `/{show}/{episode}` or `/{show}` on acast.com and its
-/// `www`, `shows` and `embed` hosts; the same under `/s/` on play.acast.com.
+/// `www`, `shows` and `embed` hosts. The same under `/s/` on play.acast.com.
 static RE_PATH: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^/([^/?#]+)(?:/(?:episodes/)?([^/?#]+))?/?$").unwrap());
 

@@ -1,11 +1,8 @@
-//! Medialaan (DPG Media) videos hosted on mychannels.video, through the embed API the
-//! player calls: the player's embed links, the video pages of the group's newspaper and
-//! radio sites, and the players embedded in other pages. VTM hands its mychannels ids to
-//! [`resolve_mychannels`].
+//! Resolve mychannels.video media through the embed API. VTM delegates its player IDs to
+//! resolve_mychannels.
 //!
-//! DPG Media's Akamai front admits the crawlers it knows and rejects a browser user agent
-//! whose connection is not a browser's, so the player page and the embed API are asked
-//! for as the Discord embed crawler; the media CDNs answer any user agent.
+//! Use the Discord crawler user agent for player pages and the embed API. Media CDNs
+//! accept ordinary user agents.
 
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -92,7 +89,7 @@ pub fn embedded_ids(html: &str) -> Vec<String> {
     .collect()
 }
 
-/// The brand the player page's `window.mychannels.brand_config` names; the embed API
+/// The brand the player page's `window.mychannels.brand_config` names. The embed API
 /// answers only to a brand.
 pub fn brand_of(html: &str) -> Option<String> {
     let found = RE_BRAND_CONFIG.find(html)?;

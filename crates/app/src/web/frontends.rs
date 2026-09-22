@@ -108,7 +108,7 @@ pub async fn delete(
 
 #[derive(Debug, Deserialize)]
 pub struct SecretBody {
-    /// The new shared secret; `null` removes it.
+    /// The new shared secret. `null` removes it.
     pub secret: Option<String>,
 }
 

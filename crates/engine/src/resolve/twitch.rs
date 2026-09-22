@@ -20,7 +20,7 @@ use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 pub const PLATFORM: &str = "twitch";
 const GQL: &str = "https://gql.twitch.tv/gql";
 const SITE: &str = "https://www.twitch.tv/";
-/// The client id the web site sent when this was written; the site's current one takes
+/// The client id the web site sent when this was written. The site's current one takes
 /// over as soon as GQL rejects it.
 pub const CLIENT_ID: &str = "kimne78kx3ncx6brgo4mv6wki5h1ko";
 const USHER: &str = "https://usher.ttvnw.net";
@@ -189,7 +189,7 @@ impl TwitchResolver {
         }
     }
 
-    /// The master playlist usher serves for a signed token, expanded; a refusal names
+    /// The master playlist usher serves for a signed token, expanded. A refusal names
     /// subscriber-only content.
     async fn playlists(
         &self,

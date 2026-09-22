@@ -1,9 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { LayoutLoad } from './$types';
 import { front, isApiError } from '$lib/api';
-
-// A front end is public: it runs without the admin session, and asks the server who it is
-// on every page so a login or logout shows at once.
+// Refresh viewer identity on each page to reflect login changes.
 export const load: LayoutLoad = async ({ params, depends }) => {
 	depends(`front:${params.slug}`);
 	try {

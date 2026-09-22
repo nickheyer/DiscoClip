@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Field from '$lib/components/Field.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import type { PageData } from './$types';
@@ -81,7 +82,7 @@
 
 	<section class="filters">
 		<form class="search" onsubmit={search}>
-			<input class="input" type="search" placeholder="Search titles" bind:value={q} aria-label="Search" />
+			<Field label="Search" for="control-2676"><input id="control-2676" class="input" type="search" placeholder="Search titles" bind:value={q} aria-label="Search" /></Field>
 			<Button type="submit" variant="secondary" icon="search">Search</Button>
 		</form>
 		<div class="chips" role="group" aria-label="Kind of media">
@@ -93,12 +94,12 @@
 			{/each}
 		</div>
 		{#if info.platforms.length > 1}
-			<select class="select platform" value={platform ?? ''} onchange={(e) => navigate({ platform: (e.currentTarget as HTMLSelectElement).value || null })} aria-label="Platform">
+			<Field label="Platform" for="control-3342"><select id="control-3342" class="select platform" value={platform ?? ''} onchange={(e) => navigate({ platform: (e.currentTarget as HTMLSelectElement).value || null })} aria-label="Platform">
 				<option value="">Every platform</option>
 				{#each info.platforms as id (id)}
 					<option value={id}>{id}</option>
 				{/each}
-			</select>
+			</select></Field>
 		{/if}
 	</section>
 
@@ -233,7 +234,7 @@
 		border-radius: 4px;
 		background: rgb(0 0 0 / 0.75);
 		color: #fff;
-		font-size: 12px;
+		font-size: 13px;
 		font-variant-numeric: tabular-nums;
 	}
 

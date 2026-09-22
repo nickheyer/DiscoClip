@@ -176,15 +176,12 @@ export interface CommandScope {
 	guilds?: string[];
 }
 
+/** Watch channel, destination and allowed submitters. Profiles define platform access and limits. */
 export interface RuleInput {
 	channel_id: string;
 	post_to?: string | null;
-	allow_hosts?: string[];
 	allow_users?: string[];
 	allow_roles?: string[];
-	max_source_bytes?: number | null;
-	max_duration_secs?: number | null;
-	max_height?: number | null;
 	enabled?: boolean;
 }
 
@@ -358,7 +355,7 @@ export interface ApplicationView {
 	updated_at: string;
 	bot: BotStatus;
 	install_url: string;
-	/** Where Discord sends browsers back to after a login; registered at Discord. */
+	/** Where Discord sends browsers back to after a login. Registered at Discord. */
 	login_callback_url: string;
 }
 
@@ -461,7 +458,7 @@ export type PlatformDefault = 'inherit' | 'enabled' | 'disabled';
 
 export const PLATFORM_DEFAULTS: PlatformDefault[] = ['inherit', 'enabled', 'disabled'];
 
-/** What kind of place a platform is; a profile can turn platforms on by kind. */
+/** What kind of place a platform is. A profile can turn platforms on by kind. */
 export type PlatformTag =
 	| 'basic'
 	| 'nsfw'
@@ -498,21 +495,25 @@ export interface Preset {
 	platforms: string[];
 }
 
-/**
- * Which platforms a profile turns on and off, by resolver id. With `presets` chosen they
- * are the whitelist: every platform in any chosen preset is on and every other off, and
- * `default` is ignored. Overrides win either way.
- */
+/** Presets replace the default with their combined platform list. Explicit overrides take priority. */
 export interface PlatformToggles {
 	default: PlatformDefault;
 	presets: string[];
 	overrides: Record<string, boolean>;
 }
 
+/** Media limits. Null inherits the parent value. Server limits cap every profile. */
+export interface ProfileLimits {
+	max_source_bytes: number | null;
+	max_duration_secs: number | null;
+	max_height: number | null;
+}
+
 export interface ProfileInput {
 	name: string;
 	description: string;
 	platforms: PlatformToggles;
+	limits: ProfileLimits;
 }
 
 export interface Profile extends ProfileInput {
@@ -536,9 +537,11 @@ export interface Assignment {
 	updated_at: string;
 }
 
-/** What the profiles in force at a place add up to. */
+/** Effective settings after applying assignments. */
 export interface EffectiveProfile {
 	platforms: Record<string, boolean>;
+	/** The limits assigned, each from the narrowest profile that names it. */
+	limits: RequestLimits;
 	/** The assignments applied to get there, widest first. */
 	applied: Assignment[];
 }
@@ -554,12 +557,8 @@ export interface Rule {
 	guild_id: string;
 	channel_id: string;
 	post_to: string | null;
-	allow_hosts: string[];
 	allow_users: string[];
 	allow_roles: string[];
-	max_source_bytes: number | null;
-	max_duration_secs: number | null;
-	max_height: number | null;
 	enabled: boolean;
 	created_at: string;
 	updated_at: string;
@@ -599,9 +598,9 @@ export interface Target {
 	name: string | null;
 }
 
-// Front ends
+// Media sites
 
-/** Which jobs a front end shows; both empty means every job. */
+/** Which jobs a media site shows. Both empty means every job. */
 export interface ContentScope {
 	guilds: string[];
 	channels: string[];
@@ -685,7 +684,7 @@ export interface FrontAccess {
 	discord_members: boolean;
 }
 
-/** A front end as its visitors see it. */
+/** A media site as its visitors see it. */
 export interface FrontInfo {
 	slug: string;
 	name: string;
@@ -734,7 +733,7 @@ export interface FrontJobQuery {
 	limit?: number;
 }
 
-/** Why a provider login into a front end came back to its login page. */
+/** Why a provider login into a media site came back to its login page. */
 export type FrontCallbackError =
 	| 'state'
 	| 'denied'
@@ -891,7 +890,7 @@ export type JobEvent = { job: string; at: string; job_summary: JobSummary | null
 	| { kind: 'deleted' }
 );
 
-export type VariantKind = 'file' | 'hls' | 'dash' | 'ism' | 'rtmp' | 'rtsp' | 'whep' | 'browser';
+export type VariantKind = 'file' | 'hls' | 'dash' | 'ism' | 'rtmp' | 'rtsp' | 'rtp' | 'whep' | 'browser';
 
 /** What a piece of media is: a moving picture, sound alone, a still, or any other file. */
 export type MediaKind = 'video' | 'audio' | 'image' | 'file';
@@ -946,7 +945,7 @@ export interface SubtitleTrack {
 
 export interface Resolved {
 	resolver: string;
-	/** What the link is; decides which variant is picked and how it is shrunk and shown. */
+	/** What the link is. Decides which variant is picked and how it is shrunk and shown. */
 	media: MediaKind;
 	id: string | null;
 	title: string | null;
@@ -981,7 +980,7 @@ export interface AudioTrack {
 
 export interface MediaInfo {
 	container: Codec;
-	/** What the probe found the file to be; a still has its picture in `video` with no fps. */
+	/** What the probe found the file to be. A still has its picture in `video` with no fps. */
 	kind: MediaKind;
 	duration: DurationWire | null;
 	video: VideoTrack | null;
@@ -1028,7 +1027,7 @@ export interface Artifacts {
 	output: LocalFile | null;
 	/** Whether the output was handed over or linked to. */
 	delivery: Delivery;
-	/** Why a front end's page was posted instead of the file, when it was. */
+	/** Why a media site's page was posted instead of the file, when it was. */
 	link_reason: string | null;
 	published: Published | null;
 	archived: ArchiveEntry | null;

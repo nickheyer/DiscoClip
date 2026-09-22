@@ -72,7 +72,7 @@ pub type Connected = Arc<dyn Fn(String) + Send + Sync>;
 /// What the gateway tells the bot about the guilds it is in.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GuildEvent {
-    /// The guilds the bot is in at login; each follows with [`GuildEvent::Joined`].
+    /// The guilds the bot is in at login. Each follows with [`GuildEvent::Joined`].
     Ready { guilds: Vec<Id<GuildMarker>> },
     /// The bot is in this guild: at login, or just added.
     Joined {
@@ -131,7 +131,7 @@ struct Acknowledgement {
 }
 
 impl Bot {
-    /// A bot from what every start of it is made from; `runtime.application` is the
+    /// A bot from what every start of it is made from. `runtime.application` is the
     /// server's own id for the Discord application, stamped on every request the bot
     /// submits.
     pub fn new(runtime: &BotRuntime) -> Self {
@@ -224,7 +224,7 @@ impl Bot {
             }
         }
         // The directory stays as the bot last knew things, so the app keeps answering
-        // while the bot is stopped; the next run replaces it whole.
+        // while the bot is stopped. The next run replaces it whole.
         outcome
     }
 }
@@ -239,7 +239,7 @@ async fn shard_loop(
         let item = tokio::select! {
             _ = shutdown.cancelled() => {
                 shard.close(CloseFrame::NORMAL);
-                // Discord answers the close frame with its own; a dropped connection ends
+                // Discord answers the close frame with its own. A dropped connection ends
                 // the drain just as well, since polling on would reconnect.
                 let drain = async {
                     while let Some(item) = shard.next().await {
@@ -321,7 +321,7 @@ async fn handle_event(shared: &Shared, event: Event, shard: u32) {
                 }),
                 // An outage, not a join: Discord says the guild is unavailable.
                 GuildCreate::Unavailable(guild) if guild.unavailable => None,
-                // A guild with nothing but an id; its details are a request away.
+                // A guild with nothing but an id. Its details are a request away.
                 GuildCreate::Unavailable(guild) => {
                     match fetch_guild(&shared.http, guild.id).await {
                         Ok(event) => Some(event),
@@ -449,12 +449,12 @@ async fn clip(shared: &Shared, interaction: &Interaction, url: url::Url) -> Resu
         )
         .await;
     };
-    let disabled = shared.profiles.disabled_platforms(
+    let in_force = shared.profiles.in_force(
         interaction.guild_id,
         Some(channel),
         interaction.author().map(|u| u.id),
     );
-    if let Some(platform) = turned_off(&shared.engine.resolvers_for(&url), &disabled) {
+    if let Some(platform) = turned_off(&shared.engine.resolvers_for(&url), &in_force.disabled) {
         return respond(
             shared,
             interaction,
@@ -481,7 +481,8 @@ async fn clip(shared: &Shared, interaction: &Interaction, url: url::Url) -> Resu
     .to_origin();
     let mut request = Request::new(origin, url.clone());
     request.submitted_by = interaction.author().map(|u| format!("discord:{}", u.id));
-    request.disabled_platforms = disabled;
+    request.disabled_platforms = in_force.disabled;
+    request.limits = in_force.limits;
     match shared.engine.submit(request).await {
         Ok(id) => {
             tracing::info!(job = %id, %url, "queued from /clip");

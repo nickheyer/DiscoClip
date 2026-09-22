@@ -1,9 +1,7 @@
-//! Cloudflare Stream videos, from the manifests the player reads: the HLS master
-//! expanded to its renditions, the DASH manifest, the MP4 download when the video
-//! offers one, and its thumbnail. Watch pages, player iframes, embed scripts,
-//! manifests and thumbnails on cloudflarestream.com, videodelivery.net and
-//! bytehighway.net name the video, by its id or by a signed token, and a customer
-//! subdomain is kept for the manifests.
+//! Resolve Cloudflare Stream HLS, DASH and optional MP4 downloads. Accept video IDs or
+//! signed playback tokens from supported player URLs.
+//!
+//! Preserve customer subdomains when constructing manifest URLs.
 
 use std::sync::LazyLock;
 

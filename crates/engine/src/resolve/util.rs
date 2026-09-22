@@ -21,9 +21,9 @@ use url::Url;
 
 use super::page::balanced_end;
 
-// ---------------------------------------------------------------------------------------
+
 // Numbers and strings in JSON
-// ---------------------------------------------------------------------------------------
+
 
 /// An integer, whether the platform wrote it as a number or as a numeric string.
 pub fn int(value: &Value) -> Option<i64> {
@@ -132,13 +132,13 @@ pub fn time(value: &Value) -> Option<Timestamp> {
     }
 }
 
-/// A link, joined to `base` when relative; `//host/path` links get `https`.
+/// A link, joined to `base` when relative. `//host/path` links get `https`.
 pub fn url_of(value: &Value, base: Option<&Url>) -> Option<Url> {
     join_url(base, value.as_str()?)
 }
 
 /// `href` against `base`: absolute links as they are, scheme-relative ones on `https`,
-/// relative ones joined; only `http` and `https` come back.
+/// relative ones joined. Only `http` and `https` come back.
 pub fn join_url(base: Option<&Url>, href: &str) -> Option<Url> {
     let href = href.trim();
     if href.is_empty() {
@@ -259,13 +259,8 @@ pub fn find_object<'a>(value: &'a Value, accept: &dyn Fn(&Value) -> bool) -> Opt
     }
 }
 
-// ---------------------------------------------------------------------------------------
-// Durations, counts, resolutions, ratings
-// ---------------------------------------------------------------------------------------
-
-/// Durations as platforms write them: `1:02:03`, `62:03`, `1:02:03.5`, `1d 2:03:04`,
-/// `PT1H2M3S`, `1h 2m 3s`, `2 hours 5 minutes`, `90 min`, `1.5 hours`, `45 sec`, `3723`,
-/// `3723.5`, with an optional trailing `Z`. Nothing negative.
+// Parse platform duration formats: clock notation, ISO 8601, unit suffixes and numeric
+// seconds. Accept fractional seconds and an optional trailing Z. Reject negative values.
 pub fn parse_duration(text: &str) -> Option<Duration> {
     let s = text.trim();
     if s.is_empty() {
@@ -281,7 +276,7 @@ pub fn parse_duration(text: &str) -> Option<Duration> {
     None
 }
 
-/// `[[d:]h:]m:s[.ms]` and plain seconds; a last `:NNN` of three or more digits is a
+/// `[[d:]h:]m:s[.ms]` and plain seconds. A last `:NNN` of three or more digits is a
 /// fraction, as `1:02:03:500` names milliseconds.
 fn clock_duration(s: &str) -> Option<f64> {
     let mut parts: Vec<&str> = s.split(':').collect();
@@ -357,7 +352,7 @@ fn unit_duration(s: &str) -> Option<f64> {
         'units: for (names, factor) in units {
             for name in *names {
                 if let Some(after) = rest.strip_prefix(name) {
-                    // A unit ends where a letter does not follow; ISO 8601's `T` between
+                    // A unit ends where a letter does not follow. ISO 8601's `T` between
                     // the date and time parts (`P1DT2H`) counts as an end too.
                     let boundary = match after.chars().next() {
                         None => true,
@@ -519,9 +514,9 @@ pub fn qualities<'a>(order: &'a [&'a str]) -> impl Fn(&str) -> i64 + 'a {
     }
 }
 
-// ---------------------------------------------------------------------------------------
+
 // Dates
-// ---------------------------------------------------------------------------------------
+
 
 const TIMEZONE_NAMES: &[(&str, i32)] = &[
     ("UT", 0),
@@ -690,7 +685,7 @@ fn parse_timestamp_with(text: &str, day_first: bool) -> Option<Timestamp> {
     None
 }
 
-/// A civil date-time in UTC read with `format`; the numeric shapes go through here.
+/// A civil date-time in UTC read with `format`. The numeric shapes go through here.
 fn civil(_shape: &str, normalized: &str) -> Option<Timestamp> {
     for format in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"] {
         if let Some(dt) = strptime(format, normalized) {
@@ -788,14 +783,11 @@ pub fn from_now(secs: i64) -> Timestamp {
         .unwrap_or_else(|_| Timestamp::now())
 }
 
-// ---------------------------------------------------------------------------------------
-// JavaScript object literals
-// ---------------------------------------------------------------------------------------
-
-/// Turns a JavaScript object or array literal into JSON, as yt-dlp's `js_to_json`:
-/// single, double and template quoted strings, unquoted and numeric keys, hex and octal
-/// numbers, `undefined` and `void 0` as null, trailing commas, comments, `!0`/`!1`,
-/// `new Date("…")`, `Array(…)`, `parseInt("…", 10)`, and bare identifiers as strings.
+// Convert JavaScript object and array literals to JSON. Support quoted or bare keys,
+// numeric bases, null-like values, trailing commas and comments.
+//
+// Also handle boolean shorthand, Date, Array and parseInt expressions, and bare
+// identifiers as strings.
 pub fn js_to_json(code: &str) -> String {
     let code = pre_transform(code);
     let bytes = code.as_bytes();
@@ -1077,7 +1069,7 @@ pub fn parse_js(code: &str) -> Option<Value> {
 }
 
 /// The JSON value that follows `prefix`, whichever of `prefixes` is found first in the
-/// text; for pages that name their state under several variables.
+/// text. For pages that name their state under several variables.
 pub fn json_after_any(text: &str, prefixes: &[&str]) -> Option<Value> {
     prefixes
         .iter()
@@ -1102,9 +1094,9 @@ pub fn search_any(patterns: &[&Regex], text: &str) -> Option<String> {
     patterns.iter().find_map(|re| search(re, text))
 }
 
-// ---------------------------------------------------------------------------------------
+
 // HTML
-// ---------------------------------------------------------------------------------------
+
 
 /// `&amp;`, `&#39;`, `&#x27;` and the common named entities, decoded.
 pub fn html_unescape(text: &str) -> String {
@@ -1318,9 +1310,9 @@ pub fn element_by_class(html: &str, class: &str) -> Option<String> {
     Some(html[start..end].to_string())
 }
 
-// ---------------------------------------------------------------------------------------
+
 // XML
-// ---------------------------------------------------------------------------------------
+
 
 /// Parses XML leniently: a byte order mark or leading whitespace is fine.
 pub fn xml(text: &str) -> Option<roxmltree::Document<'_>> {
@@ -1351,9 +1343,9 @@ pub fn xml_find_all<'a>(node: roxmltree::Node<'a, 'a>, name: &str) -> Vec<roxmlt
         .collect()
 }
 
-// ---------------------------------------------------------------------------------------
+
 // Hashes, ciphers, encodings
-// ---------------------------------------------------------------------------------------
+
 
 pub fn md5_hex(data: &[u8]) -> String {
     hex::encode(Md5::digest(data))
@@ -1764,7 +1756,7 @@ const ISO639_CODES: &[(&str, &str)] = &[
 ];
 
 /// The two-letter ISO 639-1 code of a language named by its three-letter ISO 639-2
-/// code, or the code itself when it is already two letters; `None` for anything else.
+/// code, or the code itself when it is already two letters. `None` for anything else.
 pub fn iso639_short(code: &str) -> Option<&'static str> {
     let code = code.trim().to_ascii_lowercase();
     if code.len() == 2 && code.chars().all(|c| c.is_ascii_alphabetic()) {

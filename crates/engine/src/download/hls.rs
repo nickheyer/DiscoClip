@@ -1,7 +1,7 @@
 //! Downloads HLS: media playlists segment by segment, on demand or live with the
 //! playlist reloaded as it grows and the capture cut at the limit or ended when the
-//! stream ends; AES-128 and SAMPLE-AES undone; the stream split where it says it is
-//! discontinuous and the parts joined back; and the subtitle renditions that go with it,
+//! stream ends. AES-128 and SAMPLE-AES undone. The stream split where it says it is
+//! discontinuous and the parts joined back. And the subtitle renditions that go with it,
 //! followed alongside and aligned to the media.
 
 use std::collections::HashMap;
@@ -46,7 +46,7 @@ impl HlsDownloader {
     }
 }
 
-/// How a segment is encrypted, from the `EXT-X-KEY` in force for it.
+/// How a segment is encrypted, from the `EXT-X-KEY` assigned for it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Encryption {
     /// The whole segment, AES-128 in CBC with PKCS#7 padding.
@@ -62,7 +62,7 @@ enum Encryption {
 struct KeySpec {
     method: Encryption,
     url: Url,
-    /// The IV the playlist gave; without one, the media sequence number serves.
+    /// The IV the playlist gave. Without one, the media sequence number serves.
     iv: Option<[u8; 16]>,
 }
 
@@ -294,7 +294,7 @@ fn pieces_of(
     let mut next_offset = 0u64;
     let mut discontinuity = media.discontinuity_sequence;
     for (index, segment) in media.segments.iter().enumerate() {
-        // `#EXT-X-KEY:METHOD=NONE` ends encryption; the parser leaves it among the
+        // `#EXT-X-KEY:METHOD=NONE` ends encryption. The parser leaves it among the
         // unknown tags, as it wants an IV of every key tag but those.
         if segment.unknown_tags.iter().any(|t| {
             t.tag == "X-KEY"
@@ -635,7 +635,7 @@ impl Session<'_> {
                         continue;
                     }
                     self.note(format!(
-                        "{name}: the live playlist could not be reloaded {failures} times ({error}); the stream counts as ended after {:.0} s",
+                        "{name}: reload failed {failures} times ({error}). Recording stopped after {:.0} s.",
                         captured
                     ));
                     return Ok(());
@@ -738,7 +738,7 @@ impl Session<'_> {
             if !live {
                 if was_live == Some(true) {
                     self.note(format!(
-                        "{name}: the live stream ended; {:.0} s captured",
+                        "{name}: stream ended. Recorded {:.0} s.",
                         captured
                     ));
                 }
@@ -1252,7 +1252,7 @@ mod tests {
                 files.push((name.clone(), init));
             } else {
                 let mut segment = mp4::build::encrypt_fragment_cbcs(bytes, &key, &iv, 32);
-                // The index box no longer describes the grown fragment; a packager
+                // The index box no longer describes the grown fragment. A packager
                 // rewrites it, this test drops it.
                 if segment.windows(4).any(|w| w == b"sidx") {
                     rename(&mut segment, &[(b"sidx", 0)], b"free");
@@ -1321,7 +1321,7 @@ mod tests {
         let segments = packaged.segments();
         let site = Site::new();
         packaged.serve(&site, "unused");
-        // The window keeps growing; the capture stops once 2.5 s are in hand.
+        // The window keeps growing. The capture stops once 2.5 s are in hand.
         site.put_series(
             &format!("{BASE}cut.m3u8"),
             vec![
@@ -1381,7 +1381,7 @@ mod tests {
         assert!(downloaded.notes.iter().any(|n| n.contains("could not be reloaded 3 times")), "{:?}", downloaded.notes);
         assert_eq!(site.hits(&format!("{BASE}gone.m3u8")), 4);
 
-        // A missing segment of a live stream is skipped with a note; of a recording it
+        // A missing segment of a live stream is skipped with a note. Of a recording it
         // fails the download.
         let site = Site::new();
         packaged.serve(&site, "unused");
@@ -1484,7 +1484,7 @@ mod tests {
         assert!(info.video.is_some(), "{info:?}");
         assert!(info.audio.is_some(), "{info:?}");
         assert!(near(info.duration.unwrap().as_secs_f64(), 3.0), "{info:?}");
-        // One track: the one the job named, which is also the master's English one;
+        // One track: the one the job named, which is also the master's English one.
         // the German rendition is not the preferred language.
         assert_eq!(downloaded.subtitles.len(), 1, "{:?}", downloaded.subtitles);
         let track = &downloaded.subtitles[0];

@@ -1,5 +1,5 @@
 //! Jixie-hosted videos, through the stream API Jixie's player calls. Jixie's own API
-//! hosts (`apidam.jixie.io`, `stream.jixie.media`) are gone; the player now reads the
+//! hosts (`apidam.jixie.io`, `stream.jixie.media`) are gone. The player now reads the
 //! stream API through the proxy of the publisher whose page it runs on, and Kompas's is
 //! the public one, so every Jixie id is read there. Kompas video pages name their id in
 //! the path.
@@ -90,7 +90,7 @@ fn api_streams(data: &Value) -> Option<Vec<Value>> {
 }
 
 /// The DRM system the API's `drm` field names: a system's name, the systems of a
-/// per-system map, or `drm` when it only says the video is locked; nothing when it says
+/// per-system map, or `drm` when it only says the video is locked. Nothing when it says
 /// the video is free.
 fn drm_system(value: &Value) -> Option<String> {
     match value {
@@ -113,7 +113,7 @@ fn drm_system(value: &Value) -> Option<String> {
 }
 
 /// The largest of the thumbnails the metadata lists, given as `{url, width, height}`
-/// objects or plain links; among equals the last listed, as yt-dlp chooses.
+/// objects or plain links. Among equals the last listed, as yt-dlp chooses.
 fn largest_thumbnail(thumbnails: &Value) -> Option<Url> {
     let mut best: Option<(u64, Url)> = None;
     for entry in thumbnails.as_array()? {

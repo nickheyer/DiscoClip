@@ -1,14 +1,11 @@
-//! MPEG-2 transport streams as HLS segments carry them: the program map, the packetized
-//! elementary streams, Apple's SAMPLE-AES sample encryption undone with the streams
-//! packetized again, and the time a segment starts at.
+//! Parse MPEG-TS segments and decrypt SAMPLE-AES elementary streams.
 //!
-//! SAMPLE-AES leaves the transport stream intact and encrypts inside the elementary
-//! streams: every H.264 slice NAL unit past its first 32 bytes in a pattern of one
-//! encrypted 16-byte block to nine clear ones, and every AAC, AC-3 and E-AC-3 frame past
-//! its first 16 bytes in whole blocks, each NAL unit and frame a CBC chain of its own
-//! started from the segment's IV. Emulation prevention bytes are added to a slice after
-//! it is encrypted, so they come off before it is decrypted and go back on after, which
-//! changes its length; the stream's packets are therefore rebuilt.
+//! H.264 leaves the first 32 bytes clear, then encrypts one 16-byte block in each group
+//! of ten. Audio leaves the first 16 bytes clear. Each unit starts a separate CBC chain
+//! using the segment IV.
+//!
+//! Remove and restore emulation-prevention bytes around decryption. Rebuild transport
+//! packets when payload lengths change.
 
 use std::collections::{HashMap, HashSet};
 
@@ -39,7 +36,7 @@ struct Packet<'a> {
     pid: u16,
     pusi: bool,
     cc: u8,
-    /// The adaptation field with its length byte; empty when there is none.
+    /// The adaptation field with its length byte. Empty when there is none.
     adaptation: &'a [u8],
     payload: &'a [u8],
     has_payload: bool,
@@ -222,7 +219,7 @@ fn kind_of(stream_type: u8) -> Option<Kind> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Direction {
     Decrypt,
-    /// What a packager does; only the tests package.
+    /// What a packager does. Only the tests package.
     #[cfg_attr(not(test), allow(dead_code))]
     Encrypt,
 }
@@ -828,7 +825,7 @@ mod tests {
         let plain: Vec<u8> = (0..400u32).map(|i| i as u8).collect();
         let mut data = plain.clone();
         walk(&mut data, 31, true, &mut Chain::new(&cipher, &iv, Direction::Encrypt));
-        // Bytes 31..47 and 191..207 are encrypted; 47..191 and 207..351 clear; at byte
+        // Bytes 31..47 and 191..207 are encrypted. 47..191 and 207..351 clear. At byte
         // 351 only 49 remain, so one more block, then the rest clear.
         assert_eq!(&data[..31], &plain[..31]);
         assert_ne!(&data[31..47], &plain[31..47]);

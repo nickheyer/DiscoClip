@@ -104,7 +104,7 @@ impl From<tokio_rusqlite::Error<StoreError>> for StoreError {
     }
 }
 
-/// Jobs persisted in a single SQLite file, served from a dedicated database thread; the full
+/// Jobs persisted in a single SQLite file, served from a dedicated database thread. The full
 /// job record is stored as JSON with indexed columns for filtering.
 #[derive(Clone)]
 pub struct SqliteStore {
@@ -119,7 +119,7 @@ impl SqliteStore {
         Self::init(tokio_rusqlite::Connection::open(path).await?).await
     }
 
-    /// A private database that lives only as long as this store; for tests.
+    /// A private database that lives only as long as this store. For tests.
     pub async fn open_in_memory() -> Result<Self, StoreError> {
         Self::init(tokio_rusqlite::Connection::open_in_memory().await?).await
     }
@@ -139,7 +139,7 @@ impl SqliteStore {
         Ok(store)
     }
 
-    /// Brings `scope`'s tables up to `migrations`; other crates that keep tables in this
+    /// Brings `scope`'s tables up to `migrations`. Other crates that keep tables in this
     /// database run their own lists through here.
     pub async fn migrate(
         &self,

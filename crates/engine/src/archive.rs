@@ -32,7 +32,7 @@ pub trait Archiver: Send + Sync {
     fn enabled(&self) -> bool {
         true
     }
-    /// Takes new settings while running; `None` turns archiving off.
+    /// Takes new settings while running. `None` turns archiving off.
     fn reconfigure(&self, _config: Option<ArchiveConfig>) {}
 }
 
@@ -66,7 +66,7 @@ pub enum ArchiveError {
 }
 
 /// Stores media under `dir/YYYY/MM/<job>-<title>.<ext>` next to a JSON record of the job.
-/// Its settings can change while it runs; without any it archives nothing.
+/// Its settings can change while it runs. Without any it archives nothing.
 pub struct FsArchiver {
     config: RwLock<Option<ArchiveConfig>>,
 }

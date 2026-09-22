@@ -120,17 +120,17 @@ impl BotManager {
             .ok_or(ControlError::Gone)
     }
 
-    /// Starts a stopped bot; returns once the supervisor has taken the command.
+    /// Starts a stopped bot. Returns once the supervisor has taken the command.
     pub async fn start(&self, id: ApplicationId) -> Result<(), ControlError> {
         self.control(id).await?.start().await
     }
 
-    /// Stops a running bot; returns once it is down.
+    /// Stops a running bot. Returns once it is down.
     pub async fn stop(&self, id: ApplicationId) -> Result<(), ControlError> {
         self.control(id).await?.stop().await
     }
 
-    /// Stops and starts a bot; returns once it is starting again.
+    /// Stops and starts a bot. Returns once it is starting again.
     pub async fn restart(&self, id: ApplicationId) -> Result<(), ControlError> {
         let control = self.control(id).await?;
         control.stop().await?;
@@ -156,7 +156,7 @@ impl BotManager {
     }
 
     /// Supervises the bot of `application` with `bot_token`, replacing one already
-    /// running; it starts at once unless the application is disabled.
+    /// running. It starts immediately unless the application is disabled.
     pub async fn launch(&self, application: &Application, bot_token: &str) {
         let mut bots = self.bots.lock().await;
         if let Some(previous) = bots.remove(&application.id) {
@@ -204,7 +204,7 @@ impl BotManager {
         );
     }
 
-    /// Stops and forgets the bot of `id`, telling the feed the application is gone;
+    /// Stops and forgets the bot of `id`, telling the feed the application is gone.
     /// whether there was one.
     pub async fn retire(&self, id: ApplicationId) -> bool {
         let running = self.bots.lock().await.remove(&id);
@@ -252,7 +252,7 @@ impl BotManager {
             .collect()
     }
 
-    /// Stops every bot; for shutdown.
+    /// Stops every bot. For shutdown.
     pub async fn stop_all(&self) {
         let bots: Vec<Running> = self.bots.lock().await.drain().map(|(_, r)| r).collect();
         for running in bots {

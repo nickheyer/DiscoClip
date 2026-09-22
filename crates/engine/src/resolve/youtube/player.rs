@@ -1,9 +1,8 @@
-//! The player script: found through the iframe API, fetched once per version, and run
-//! whole in the JavaScript interpreter, where the player's own URL builder applies the
-//! two transforms that unlock format URLs, the signature cipher and the throttling
-//! transform, exactly as it would in a browser. The script is several megabytes of
-//! obfuscated code whose transforms can no longer be cut out of it, so it stays loaded on
-//! a thread of its own between calls and is let go after a while without any.
+//! Fetch and cache each YouTube player script version. Run the complete script to apply
+//! signature and throttling transforms.
+//!
+//! Keep the interpreter on a dedicated thread between calls and release it after idle
+//! expiry.
 
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex};
@@ -332,7 +331,7 @@ impl PlayerCache {
         }
     }
 
-    /// The current player script, loaded; fetched when its version changed.
+    /// The current player script, loaded. Fetched when its version changed.
     pub async fn get(&self, origin: &Url) -> Result<Arc<Player>, ResolveError> {
         let api = Url::parse(IFRAME_API).expect("valid");
         let iframe = fetch_ok(&self.http, &api, PLATFORM, BROWSER_UA, &[], MAX_PAGE).await?;

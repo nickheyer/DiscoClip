@@ -10,12 +10,11 @@ pub enum Plan {
     Transcode(Target),
 }
 
-/// Decides whether the downloaded file can be published as is, for the kind of media
-/// `target` names: a video passes when its container, codecs, size and picture fit the
-/// destination; audio alone when its container and codec are ones the destination plays
-/// and it fits; an image when its format is one the destination shows and it fits; any
-/// other file when the destination takes files and it fits, since nothing else can be
-/// done with it. `info` is what ffprobe found, and is required for anything but a file.
+/// Check whether media can be published without conversion. Validate video and audio
+/// containers, codecs and size, plus video dimensions.
+///
+/// Validate image format and size. Other files require file support and must fit the size
+/// limit. Ffprobe metadata is required except for generic files.
 pub fn plan(
     file: &LocalFile,
     info: Option<&MediaInfo>,
@@ -114,7 +113,7 @@ fn kind_rank(kind: VariantKind) -> u8 {
         VariantKind::Ism => 4,
         VariantKind::Browser => 3,
         VariantKind::Whep => 2,
-        VariantKind::Rtsp => 1,
+        VariantKind::Rtsp | VariantKind::Rtp => 1,
         VariantKind::Rtmp => 0,
     }
 }
@@ -141,14 +140,13 @@ fn capped_height(height: Option<u32>, max_height: u32) -> u32 {
     }
 }
 
-/// Picks the variant to download for the kind of media the link is. For a video: the
-/// largest picture no taller than the configured maximum, then the codec least likely to
-/// need a transcode, then the highest bitrate, preferring plain files over manifests; a
-/// video-only pick is paired with the best audio-only variant. For audio: the best
-/// audio-only variant by codec and bitrate, or failing one the variant with sound whose
-/// picture is smallest, since only the sound is kept. For an image or a file: the
-/// largest under the byte limit. Locked variants are never picked, and a variant over the
-/// byte limit only when nothing under it exists.
+/// Select a downloadable variant. Video prefers resolution within the height limit,
+/// compatible codecs, bitrate and direct files. Pair video-only variants with audio.
+///
+/// Audio prefers audio-only variants, otherwise the smallest video with sound. Images and
+/// files prefer the largest variant under the byte limit.
+///
+/// Exclude locked variants. Exceed the byte limit only when no smaller variant exists.
 pub fn select_variant(
     variants: &[Variant],
     limits: &Limits,

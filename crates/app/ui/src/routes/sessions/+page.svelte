@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Field from '$lib/components/Field.svelte';
 	import { invalidate } from '$app/navigation';
 	import type { PageData } from './$types';
 	import { messageOf, users } from '$lib/api';
@@ -63,7 +64,7 @@
 	<title>Sessions · DiscoClip</title>
 </svelte:head>
 
-<PageHeader title="Sessions" description="Every live browser session of every account. Ending one logs that browser out at once.">
+<PageHeader title="Sessions" description="Active browser sessions across all accounts.">
 	{#snippet actions()}
 		<Button href="/users" icon="users">Accounts</Button>
 	{/snippet}
@@ -71,7 +72,7 @@
 
 <div class="stack">
 	<div class="row-between">
-		<input class="input search" type="search" placeholder="Filter by account, address or client" bind:value={query} aria-label="Filter sessions" />
+		<Field label="Filter sessions" for="control-2296"><input id="control-2296" class="input search" type="search" placeholder="Filter by account, address or client" bind:value={query} aria-label="Filter sessions" /></Field>
 		<span class="faint small">{pluralize(shown.length, 'session')} across {pluralize(accounts, 'account')}</span>
 	</div>
 
@@ -107,7 +108,7 @@
 									{#if view.current}<Badge tone="ok" size="sm">This device</Badge>{/if}
 								</div>
 							</td>
-							<td class="mono">{view.ip ?? '—'}</td>
+							<td class="mono">{view.ip ?? 'Not available'}</td>
 							<td><Time value={view.created_at} /></td>
 							<td><Time value={view.last_seen_at} /></td>
 							<td><Time value={view.expires_at} /></td>

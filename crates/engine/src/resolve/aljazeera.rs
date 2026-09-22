@@ -187,7 +187,7 @@ impl Resolver for AljazeeraResolver {
                 }
             }
             None if source.is_some() => Resolved::new(PLATFORM),
-            // Without a video of its own the post is a page like any other; the
+            // Without a video of its own the post is a page like any other. The
             // generic web resolver reads whatever player it embeds.
             None => return Err(ResolveError::Unsupported(url.clone())),
         };

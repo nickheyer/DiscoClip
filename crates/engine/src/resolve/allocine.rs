@@ -1,6 +1,6 @@
 //! AlloCiné (allocine.fr) videos, articles and film pages: the page's player model names
 //! the video, which the site hosts on Dailymotion today and served as its own files
-//! before; the older media links answer the AcVisiondata service.
+//! before. The older media links answer the AcVisiondata service.
 
 use std::sync::LazyLock;
 
@@ -149,7 +149,7 @@ impl Resolver for AllocineResolver {
             && let Some(video) = model["videos"].as_array().and_then(|list| list.first())
         {
             // The site's own files: the `sources` it once listed by quality, or the one
-            // file its structured data names now; a video it only hosts on Dailymotion is
+            // file its structured data names now. A video it only hosts on Dailymotion is
             // handed on.
             let mut variants: Vec<Variant> = video["sources"]
                 .as_object()

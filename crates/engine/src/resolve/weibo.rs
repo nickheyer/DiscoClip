@@ -419,7 +419,7 @@ impl WeiboResolver {
             .and_then(parse_time_stamp)
             .or_else(|| info["duration"].as_f64().map(Duration::from_secs_f64));
         let headers = vec![("referer".to_string(), SITE.to_string())];
-        // Several labels may name one file; the tallest label is the one it serves.
+        // Several labels may name one file. The tallest label is the one it serves.
         let mut files: Vec<(Url, String, Option<u32>)> = Vec::new();
         for (label, value) in info["urls"].as_object().into_iter().flatten() {
             let Some(url) = value.as_str().and_then(absolute) else {

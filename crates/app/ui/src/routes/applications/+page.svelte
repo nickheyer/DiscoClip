@@ -1,4 +1,5 @@
 <script lang="ts">
+	import FormFeedback from '$lib/components/FormFeedback.svelte';
 	import { goto, invalidate } from '$app/navigation';
 	import type { PageData } from './$types';
 	import { applications, messageOf } from '$lib/api';
@@ -65,7 +66,7 @@
 
 	function commandsLabel(mode: string, guilds: string[]): string {
 		if (mode === 'global') return 'Global commands';
-		if (mode === 'guilds') return `Commands in ${guilds.length} guild${guilds.length === 1 ? '' : 's'}`;
+		if (mode === 'guilds') return `Commands in ${guilds.length} server${guilds.length === 1 ? '' : 's'}`;
 		return 'Commands off';
 	}
 </script>
@@ -74,7 +75,7 @@
 	<title>Applications · DiscoClip</title>
 </svelte:head>
 
-<PageHeader title="Applications" description="Each Discord application runs its own bot. Add one with its bot token.">
+<PageHeader title="Applications" description="Connect and manage Discord bots.">
 	{#snippet actions()}
 		<Button variant="primary" icon="plus" onclick={open}>Add application</Button>
 	{/snippet}
@@ -84,7 +85,7 @@
 	<Empty
 		icon="bot"
 		title="No applications yet"
-		description="Create an application in the Discord Developer Portal, copy its bot token, and add it here. DiscoClip stores the token encrypted and runs the bot."
+		description="Create an application in the Discord Developer Portal, then add its bot token here."
 	>
 		<Button variant="primary" icon="plus" onclick={open}>Add application</Button>
 		<Button href="https://discord.com/developers/applications" newTab icon="external">Developer Portal</Button>
@@ -126,15 +127,15 @@
 <Dialog bind:open={dialog} title="Add a Discord application" busy={creating}>
 	<form id="app-form" class="stack" onsubmit={create} novalidate>
 		{#if error}
-			<Alert tone="danger" message={error} onclose={() => (error = null)} />
+			<FormFeedback message={error} />
 		{/if}
-		<Field label="Bot token" for="app-token" hint="Developer Portal → your application → Bot → Reset Token. Stored encrypted; the bot starts with it right away.">
+		<Field label="Bot token" for="app-token" hint="Discord Developer Portal: Bot → Reset Token. The bot starts after saving.">
 			<PasswordInput id="app-token" bind:value={botToken} mono required />
 		</Field>
 		<Field label="Name" for="app-name" optional hint="How the application is shown here. Defaults to its name on Discord." error={nameProblem}>
 			<input id="app-name" class="input" bind:value={name} maxlength={APPLICATION_NAME_MAX} autocomplete="off" aria-invalid={nameProblem ? 'true' : undefined} />
 		</Field>
-		<Field label="Client secret" for="app-secret" optional hint="Developer Portal → OAuth2 → Client Secret. Needed only to let people log in to DiscoClip with Discord through this application.">
+		<Field label="Client secret" for="app-secret" optional hint="Discord Developer Portal: OAuth2 → Client Secret. Required for Discord login.">
 			<PasswordInput id="app-secret" bind:value={clientSecret} mono />
 		</Field>
 	</form>

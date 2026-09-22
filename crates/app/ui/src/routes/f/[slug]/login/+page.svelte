@@ -102,7 +102,7 @@
 				<Alert tone="warn" message={`Too many attempts. Try again in ${wait}s.`} />
 			{/if}
 			{#if !anyWay}
-				<Alert tone="warn" message="This site is not taking logins right now." />
+				<Alert tone="warn" message="Login is unavailable for this site." />
 			{/if}
 
 			{#if access.secret}
@@ -137,7 +137,7 @@
 					{/each}
 				</div>
 				{#if access.discord_members}
-					<p class="muted small">Signing in with Discord works for members of the server this site belongs to.</p>
+					<p class="muted small">Discord login requires membership in this site’s server.</p>
 				{/if}
 			{/if}
 		</div>

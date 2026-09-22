@@ -97,7 +97,7 @@ impl SessionStore {
         Self { db }
     }
 
-    /// Opens a session for `user`; expired sessions of everyone are dropped on the way.
+    /// Opens a session for `user`. Expired sessions of everyone are dropped on the way.
     pub async fn create(
         &self,
         user: UserId,
@@ -219,7 +219,7 @@ impl SessionStore {
         .await
     }
 
-    /// Ends `id`; whether it existed.
+    /// Ends `id`. Whether it existed.
     pub async fn revoke(&self, id: SessionId) -> Result<bool, StoreError> {
         transact(&self.db, move |tx| {
             Ok(tx.execute(
@@ -230,7 +230,7 @@ impl SessionStore {
         .await
     }
 
-    /// Ends every session of `user` but `keep`; how many ended.
+    /// Ends every session of `user` but `keep`. How many ended.
     pub async fn revoke_all_for(
         &self,
         user: UserId,

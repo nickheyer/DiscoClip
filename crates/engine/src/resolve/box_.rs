@@ -261,7 +261,7 @@ impl Resolver for BoxResolver {
 
         let mut resolved = Resolved::new(PLATFORM);
         let mut failure = None;
-        // The representations are only ever a video's; anything else is known by its
+        // The representations are only ever a video's. Anything else is known by its
         // download.
         for entry in file["representations"]["entries"]
             .as_array()

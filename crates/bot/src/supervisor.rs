@@ -37,13 +37,13 @@ pub enum BotState {
     Connected {
         user: String,
     },
-    /// A transient failure; the bot restarts by itself at `next_attempt_at`.
+    /// A transient failure. The bot restarts by itself at `next_attempt_at`.
     Retrying {
         error: String,
         attempt: u32,
         next_attempt_at: Timestamp,
     },
-    /// Discord rejected the token or the intents; the bot stays down until started again.
+    /// Discord rejected the token or the intents. The bot stays down until started again.
     Failed {
         error: String,
     },
@@ -174,7 +174,7 @@ pub struct BotRuntime {
     pub directories: Directories,
 }
 
-/// Keeps the bot supervised until `shutdown` is cancelled, starting it at once when
+/// Keeps the bot supervised until `shutdown` is cancelled, starting it immediately when
 /// `start` is set and waiting for a start command otherwise.
 pub fn supervise(
     runtime: BotRuntime,

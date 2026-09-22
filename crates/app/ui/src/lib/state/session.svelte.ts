@@ -32,10 +32,7 @@ class SessionState {
 		this.set(null);
 	}
 
-	/**
-	 * Goes to the login page first and forgets the account after, so no page that shows
-	 * the account is left reading one that is gone. `next` is where to return after.
-	 */
+	/** Navigate before clearing the session so mounted pages retain their account data. */
 	async leave(next?: string): Promise<void> {
 		this.ending = true;
 		try {
@@ -49,7 +46,7 @@ class SessionState {
 		}
 	}
 
-	/** Asks the server who the cookie belongs to; nobody when it answers 401. */
+	/** Asks the server who the cookie belongs to. Nobody when it answers 401. */
 	async load(): Promise<WhoAmI | null> {
 		try {
 			this.set(await auth.session());

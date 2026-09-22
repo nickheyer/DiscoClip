@@ -48,6 +48,7 @@ uuid.workspace = true
 wreq.workspace = true
 wreq-util.workspace = true
 zstd.workspace = true
+str0m = { version = "0.23.1", default-features = false, features = ["rust-crypto"] }
 
 [dev-dependencies]
 tracing-subscriber.workspace = true

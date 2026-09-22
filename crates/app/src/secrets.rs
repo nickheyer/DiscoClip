@@ -24,7 +24,7 @@ pub enum SecretError {
     },
     #[error("key file {0} does not hold 32 bytes of hex")]
     Malformed(PathBuf),
-    #[error("a sealed value cannot be opened; it was sealed under another key or moved")]
+    #[error("Cannot decrypt this value. The encryption key or location has changed.")]
     Unsealable,
 }
 

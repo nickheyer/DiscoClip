@@ -1,9 +1,8 @@
-//! Discord attachments: links to files on Discord's CDN, and links to messages, whose
-//! attachments are read through a bot that can see the channel. An attachment is whatever
-//! it is, a video, an image, an audio file or any other file, by the type the CDN serves
-//! it as and then by its name. A message with several attachments becomes a playlist of
-//! them, and a message whose only media is an embed of another platform is handed to
-//! that platform's resolver.
+//! Resolve Discord CDN files and message attachments. Determine media kind from Content-
+//! Type, then filename.
+//!
+//! Multiple attachments form a playlist. Delegate external embeds to their platform
+//! resolvers.
 
 use std::sync::Arc;
 
@@ -167,7 +166,7 @@ impl DiscordResolver {
                     Some(at) if at < Timestamp::now() => ResolveError::unavailable(
                         origin,
                         format!(
-                            "the attachment link expired at {at}; a link to its message resolves through a running bot"
+                            "Attachment link expired at {at}. Submit its message link with a bot running."
                         ),
                     ),
                     _ => ResolveError::NotFound(origin.clone()),
@@ -214,7 +213,7 @@ impl DiscordResolver {
         if tokens.is_empty() {
             return Err(ResolveError::unavailable(
                 origin,
-                "no Discord bot is running to read the message; a link to the attachment itself resolves",
+                "Start a Discord bot to read this message, or submit the attachment URL.",
             ));
         }
         let api =

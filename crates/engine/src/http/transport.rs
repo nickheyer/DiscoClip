@@ -27,7 +27,7 @@ pub struct TransportRequest {
     pub url: Url,
     pub headers: HeaderMap,
     pub body: Option<Bytes>,
-    /// Bound on the whole exchange, body included; `None` for media downloads.
+    /// Bound on the whole exchange, body included. `None` for media downloads.
     pub timeout: Option<Duration>,
     pub proxy: Option<Url>,
     /// Sent as a browser would: with Chrome's TLS and HTTP/2 fingerprint and its default
@@ -53,7 +53,7 @@ pub trait Transport: Send + Sync {
 /// The browser impersonated requests pass for.
 const EMULATION: wreq_util::Profile = wreq_util::Emulation::Chrome142;
 
-/// The network, through reqwest, one client per proxy; impersonated requests go through
+/// The network, through reqwest, one client per proxy. Impersonated requests go through
 /// wreq, which speaks TLS and HTTP/2 the way Chrome does, one client per proxy as well.
 pub struct LiveTransport {
     timeouts: Mutex<(Duration, Duration)>,
@@ -196,7 +196,7 @@ impl Transport for LiveTransport {
         "live"
     }
 
-    /// Clients built with the old timeouts are dropped; the next request builds new ones.
+    /// Clients built with the old timeouts are dropped. The next request builds new ones.
     fn configure(&self, connect_timeout: Duration, read_timeout: Duration) {
         let mut timeouts = self.timeouts.lock().unwrap_or_else(|e| e.into_inner());
         if *timeouts == (connect_timeout, read_timeout) {
@@ -479,7 +479,7 @@ const PASSTHROUGH_LIMIT: usize = 512 * 1024 * 1024;
 const REDACTED: &str = "<redacted>";
 
 /// Forwards to another transport and writes what passed to a fixture file. Cookies and
-/// credentials are redacted; bodies longer than eight megabytes are cut, and marked so.
+/// credentials are redacted. Bodies longer than eight megabytes are cut, and marked so.
 pub struct RecordingTransport {
     inner: Arc<dyn Transport>,
     path: PathBuf,
@@ -650,13 +650,13 @@ pub mod site {
 
     #[derive(Default)]
     pub struct Site {
-        /// Each URL's answers in order; the last one repeats.
+        /// Each URL's answers in order. The last one repeats.
         replies: Mutex<HashMap<String, Vec<Reply>>>,
         hits: Mutex<HashMap<String, usize>>,
         /// Whether ranged requests are honoured.
         ranges: bool,
         /// By URL and the byte a request starts at, how many bytes arrive before the
-        /// connection drops; each entry once.
+        /// connection drops. Each entry once.
         breaks: Mutex<Vec<(String, u64, usize)>>,
         seen: Mutex<Vec<Seen>>,
     }

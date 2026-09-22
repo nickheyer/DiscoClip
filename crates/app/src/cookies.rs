@@ -130,7 +130,7 @@ impl CookieStore {
         .await
     }
 
-    /// Replaces `platform`'s cookies with `jar`, as done by `actor`; `format` names how
+    /// Replaces `platform`'s cookies with `jar`, as done by `actor`. `format` names how
     /// they were given, for the audit log.
     pub async fn replace(
         &self,
@@ -180,7 +180,7 @@ impl CookieStore {
         .await
     }
 
-    /// Removes `platform`'s cookies, as done by `actor`; whether there were any.
+    /// Removes `platform`'s cookies, as done by `actor`. Whether there were any.
     pub async fn clear(&self, actor: &Actor, platform: &str) -> Result<bool, CookieError> {
         let platform = platform.to_string();
         let actor = actor.clone();

@@ -1,5 +1,5 @@
 //! Periscope broadcasts, replays and user pages, through the public API the web player
-//! calls; the base Twitter's broadcasts build on.
+//! calls. The base Twitter's broadcasts build on.
 
 use std::sync::LazyLock;
 

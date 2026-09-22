@@ -48,7 +48,9 @@
 		display: flex;
 		flex-direction: column;
 		gap: 6px;
-		margin-bottom: 24px;
+		margin-bottom: 28px;
+		padding-bottom: 24px;
+		border-bottom: 1px solid var(--border);
 	}
 
 	.crumbs {
@@ -56,7 +58,7 @@
 		align-items: center;
 		flex-wrap: wrap;
 		gap: 6px;
-		font-size: 12.5px;
+		font-size: 13px;
 		color: var(--text-3);
 		overflow-wrap: anywhere;
 	}
@@ -76,9 +78,11 @@
 	.text {
 		display: flex;
 		flex-direction: column;
-		gap: 4px;
+		gap: 8px;
 		min-width: 0;
 	}
+
+	.text p { max-width: 64ch; }
 
 	.text h1 {
 		overflow-wrap: anywhere;

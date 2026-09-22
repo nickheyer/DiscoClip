@@ -286,7 +286,7 @@ impl Resolver for XResolver {
         self.mirror.matches(url)
     }
 
-    /// The API first; when it refuses, the mirror, whose answer stands unless the API's
+    /// The API first. When it refuses, the mirror, whose answer stands unless the API's
     /// refusal was the more telling one.
     async fn resolve(&self, url: &Url) -> Result<Resolution, ResolveError> {
         let id = status_id(url).ok_or_else(|| ResolveError::NotFound(url.clone()))?;
@@ -295,7 +295,7 @@ impl Resolver for XResolver {
             Err(error @ ResolveError::LoginRequired { .. }) => return Err(error),
             Err(error) => error,
         };
-        tracing::debug!(%url, "x api refused: {refusal}; asking the mirror");
+        tracing::debug!(%url, "X API rejected the request: {refusal}. Trying the mirror.");
         match self.mirror.resolve(url).await {
             Ok(resolution) => Ok(resolution),
             Err(mirror) if mirror.is_expected() && refusal.is_expected() => Err(mirror),

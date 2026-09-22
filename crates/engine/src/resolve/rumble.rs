@@ -365,7 +365,7 @@ impl RumbleResolver {
                 if page_number == 1 {
                     return Err(ResolveError::unavailable(
                         origin,
-                        "the page lists its videos only to browsers running scripts; the videos' own links resolve",
+                        "This listing requires JavaScript. Submit individual video links.",
                     ));
                 }
                 break;

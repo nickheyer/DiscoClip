@@ -109,7 +109,7 @@ impl DwResolver {
         Self { http }
     }
 
-    /// An article: its one video or audio is that media; several are a playlist of
+    /// An article: its one video or audio is that media. Several are a playlist of
     /// their pages.
     async fn resolve_article(&self, article: &str, url: &Url) -> Result<Resolution, ResolveError> {
         let fetched = fetch(
@@ -297,7 +297,7 @@ impl Resolver for DwResolver {
         if resolved.variants.is_empty() {
             return Err(failure.unwrap_or_else(|| ResolveError::NotFound(url.clone())));
         }
-        // An audio page offers its MP3 and nothing to watch; a video page its streams.
+        // An audio page offers its MP3 and nothing to watch. A video page its streams.
         if resolved.variants.iter().all(|v| v.audio_only) {
             resolved.media = MediaKind::Audio;
         }

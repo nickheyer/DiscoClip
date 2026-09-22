@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Field from '$lib/components/Field.svelte';
 	import { invalidate } from '$app/navigation';
 	import type { PageData } from './$types';
 	import { messageOf, users } from '$lib/api';
@@ -34,7 +35,7 @@
 	async function revoke(token: AccountTokenView) {
 		const ok = await confirm.ask({
 			title: `Revoke “${token.name}” of ${token.username}?`,
-			message: 'Anything still using this token stops working at once.',
+			message: 'Requests using this token will be rejected.',
 			confirmLabel: 'Revoke',
 			danger: true
 		});
@@ -56,7 +57,7 @@
 	<title>API tokens · DiscoClip</title>
 </svelte:head>
 
-<PageHeader title="API tokens" description="Every live token of every account. Accounts mint their own from their account page; each does only what it was given, within its account's role.">
+<PageHeader title="API tokens" description="Manage tokens across all accounts. Create tokens from Account.">
 	{#snippet actions()}
 		<Button href="/account#tokens" icon="key">Your tokens</Button>
 	{/snippet}
@@ -64,7 +65,7 @@
 
 <div class="stack">
 	<div class="row-between">
-		<input class="input search" type="search" placeholder="Filter by account, name, prefix or scope" bind:value={query} aria-label="Filter tokens" />
+		<Field label="Filter tokens" for="control-2087"><input id="control-2087" class="input search" type="search" placeholder="Filter by account, name, prefix or scope" bind:value={query} aria-label="Filter tokens" /></Field>
 		<span class="faint small">{pluralize(shown.length, 'token')}</span>
 	</div>
 

@@ -429,7 +429,7 @@ mod tests {
             "2026-03-13T17:57:09Z".parse::<jiff::Timestamp>().unwrap()
         );
         assert_eq!(resolved.duration, Some(Duration::from_millis(24300)));
-        // The MP4 and one HLS playlist; the second name of the same playlist is dropped.
+        // The MP4 and one HLS playlist. The second name of the same playlist is dropped.
         assert_eq!(resolved.variants.len(), 2);
         assert_eq!(resolved.variants[0].kind, VariantKind::Hls);
         assert_eq!(resolved.variants[1].kind, VariantKind::File);

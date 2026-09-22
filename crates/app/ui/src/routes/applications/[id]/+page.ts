@@ -16,7 +16,7 @@ export const load: PageLoad = async ({ params, depends, parent }) => {
 		),
 		optional(rules.listAll)
 	]);
-	// How many rules each guild has, for the guild list; `null` when rules may not be read.
+	// How many rules each server has, for the server list; `null` when rules may not be read.
 	const ruleCounts = allRules
 		? new Map<string, number>(
 				guilds.map((guild) => [

@@ -1,12 +1,8 @@
-//! Первый канал (1tv.ru): show episodes and fragments, sport pages, news stories and
-//! news issues, through the video material lists the site's player reads, and the live
-//! channel through the stream API's DASH manifests.
+//! Resolve 1tv.ru episodes, clips, sports and news from player material lists. Live
+//! channels use DASH because HLS links require a player session.
 //!
-//! Show and sport pages name their player's list link (`data-playlist-url`); news
-//! stories inline the video's number in the page's Next.js payload and the player reads
-//! `video_materials.json` by it; a news issue lists its fragments, each a story of its
-//! own. Every material comes with an HLS master and MP4 files by quality. The live
-//! channel's HLS links are bound to a player session, so its DASH manifests are listed.
+//! Show and sports pages supply data-playlist-url. News pages supply material IDs in
+//! Next.js state. Materials include HLS and MP4 variants.
 
 use std::time::Duration;
 
@@ -30,7 +26,7 @@ pub const PLATFORM: &str = "1tv";
 const SITE: &str = "https://www.1tv.ru/";
 const MATERIALS: &str = "https://www.1tv.ru/video_materials.json";
 const LIVE_STREAMS: &str = "https://stream.1tv.ru/api/playlist/1tvch-v1_as_array.json";
-/// The material type of a news story; every other type is a video material.
+/// The material type of a news story. Every other type is a video material.
 const NEWS: u64 = 11;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -193,7 +189,7 @@ fn absolute(src: &str) -> Option<Url> {
 
 /// The MP4 files a material names by quality, `hd`, `sd` and `ld`, with the source
 /// list's MP4 when it is not among them, sized from the HLS renditions of the same
-/// bit rate; a file the HLS master does not serve at that rate is a redirect to a
+/// bit rate. A file the HLS master does not serve at that rate is a redirect to a
 /// lower one and is left out.
 pub fn file_variants(item: &Value, hls: &[Variant]) -> Vec<Variant> {
     let mut files: Vec<(String, Url)> = Vec::new();
@@ -588,7 +584,7 @@ impl FirstTvResolver {
             v.label = Some(format!("DASH, CDN {}", index + 1));
             variants.push(v);
         }
-        // Each CDN's manifest lists the same representations; the first that answers
+        // Each CDN's manifest lists the same representations. The first that answers
         // names their sizes, and the rest stay as whole manifests to fall back to.
         if let Some(first) = variants.first().cloned() {
             let mut subtitles = Vec::new();

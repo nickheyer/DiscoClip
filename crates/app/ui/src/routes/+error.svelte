@@ -68,7 +68,7 @@
 	.code {
 		font-family: var(--font-mono);
 		color: var(--text-3);
-		font-size: 12px;
+		font-size: 13px;
 		letter-spacing: 0.1em;
 	}
 

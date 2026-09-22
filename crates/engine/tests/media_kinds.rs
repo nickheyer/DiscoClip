@@ -79,7 +79,7 @@ impl Resolver for Files {
     }
 }
 
-/// A destination that remembers what was published; `small` origins take little, and
+/// A destination that remembers what was published. `small` origins take little, and
 /// `linked` origins take little but have a page to fall back on.
 struct Memory {
     source: SourceId,

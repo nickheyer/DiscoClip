@@ -90,7 +90,7 @@ impl TokenStore {
         Self { db }
     }
 
-    /// Mints a token; the secret is returned this once and never stored.
+    /// Mints a token. The secret is returned this once and never stored.
     pub async fn create(
         &self,
         user: UserId,

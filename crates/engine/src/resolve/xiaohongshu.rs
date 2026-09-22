@@ -1,9 +1,8 @@
-//! Xiaohongshu (RedNote) video notes, from the state the note page renders, with
-//! `xhslink.com` share links followed to the note they name. The site opens a note to a
-//! visitor through the `xsec_token` its share links carry, for as long as the token
-//! lasts; a link without one, or with one that has run out, is turned away, and the
-//! refusal is reported as such. A note the site cannot serve sends the visitor to its
-//! explore feed with the reason, which is read from there.
+//! Resolve RedNote video notes and xhslink.com redirects. Shared notes require a valid
+//! xsec_token.
+//!
+//! Report missing or expired tokens. If the site redirects to its explore feed, extract
+//! the refusal reason there.
 
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -27,7 +26,7 @@ pub const PLATFORM: &str = "xiaohongshu";
 const SITE: &str = "https://www.xiaohongshu.com/";
 /// The cookie a logged-in xiaohongshu.com session carries.
 const SESSION_COOKIE: &str = "web_session";
-/// The headers a browser sends with a page it navigates to; the site sends a request
+/// The headers a browser sends with a page it navigates to. The site sends a request
 /// without them to its login page. Its edge reads `accept-encoding` too: a request that
 /// does not offer the four encodings Chrome offers, in Chrome's order, is sent to log
 /// in whatever else it carries.
@@ -191,7 +190,7 @@ impl XiaohongshuResolver {
                     origin,
                     PLATFORM,
                     format!(
-                        "{}; the site opens a note to visitors through the xsec_token its share links carry",
+                        "{}. Use a share link with a valid xsec_token.",
                         message.unwrap_or_else(|| "the site turned the visitor away".into())
                     ),
                 )
@@ -380,7 +379,7 @@ impl XiaohongshuResolver {
                 return Err(match status {
                     200..=299 => ResolveError::unavailable(
                         origin,
-                        "the share link leads to no note; share links expire",
+                        "The share link has expired or does not contain a note.",
                     ),
                     404 | 410 => ResolveError::NotFound(origin.clone()),
                     429 => ResolveError::RateLimited(origin.clone()),
@@ -882,7 +881,7 @@ mod tests {
     }
 
     /// A note the site cannot serve sends the visitor to the explore feed with the note
-    /// named; the state there says why, or carries the note after all.
+    /// named. The state there says why, or carries the note after all.
     #[tokio::test]
     async fn notes_the_site_cannot_serve_are_read_from_its_fallback_page() {
         let short = "http://xhslink.com/o/2401ztjrXfq";

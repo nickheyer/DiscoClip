@@ -1,11 +1,8 @@
-//! Brightcove players, through the Playback API the player calls with the policy key its
-//! script carries: every rendition (MP4 and other files, RTMP streams, the HLS and DASH
-//! manifests expanded into their streams, Smooth Streaming), the text tracks and the
-//! video's name, description, length and poster. A video locked with DRM is reported by
-//! its key system. The older players (`c.brightcove.com`, `link.brightcove.com`,
-//! `bcove.me`) name the publisher in their key and are read through the new player.
-//! Players that only answer their own site are asked with that site as referer, which
-//! the generic web resolver names when it finds the player on a page.
+//! Resolve Brightcove through the Playback API using the player policy key. Include file
+//! and manifest renditions, subtitles and metadata.
+//!
+//! Translate legacy player URLs to current IDs. Preserve referring sites for restricted
+//! players and report DRM by key system.
 
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -98,7 +95,7 @@ pub enum Content {
 }
 
 /// A video in an account's player: `videoId` may be an id or `ref:<reference id>`. The
-/// embed is the player's build (`default` for most); the referrer is the page the player
+/// embed is the player's build (`default` for most). The referrer is the page the player
 /// was found on, which players locked to their site are asked with.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Link {
@@ -272,9 +269,9 @@ fn legacy_url(params: &[(&str, &str)]) -> Url {
     url
 }
 
-/// Brightcove's players embedded in a page: iframes of the new player; `<video>` and
+/// Brightcove's players embedded in a page: iframes of the new player. `<video>` and
 /// `<video-js>` elements with their account, player and embed (from their attributes or
-/// the player script beside them); and the legacy players, in a page's metadata, as
+/// the player script beside them). And the legacy players, in a page's metadata, as
 /// objects, as `customBC.createVideo` calls, or as iframes. Each is handed on with the
 /// page as its referrer, for players locked to their site.
 pub fn embeds_in(page: &Page) -> Vec<Url> {
@@ -739,7 +736,7 @@ pub async fn policy_key(
 }
 
 /// The Playback API's answer for `link`'s content, read as `platform` with the player's
-/// policy `key` and, for players locked to their site, the page as referer; its refusals
+/// policy `key` and, for players locked to their site, the page as referer. Its refusals
 /// become the resolver errors they mean for `origin`. A key the API no longer accepts is
 /// read again from the player once.
 async fn playback(

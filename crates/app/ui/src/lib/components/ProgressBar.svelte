@@ -85,7 +85,7 @@
 	}
 
 	.text {
-		font-size: 11.5px;
+		font-size: 13px;
 		color: var(--text-3);
 		white-space: nowrap;
 		min-width: 3.5ch;

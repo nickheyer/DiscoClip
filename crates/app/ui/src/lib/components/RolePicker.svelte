@@ -6,9 +6,9 @@
 	interface Props {
 		id: string;
 		values: string[];
-		/** The guild's roles as the bot lists them, highest first. */
+		/** The server's roles as the bot lists them, highest first. */
 		roles: GuildRole[];
-		/** The guild's id, which is also its @everyone role: never offered. */
+		/** The server's id, which is also its @everyone role: never offered. */
 		guildId: string;
 		disabled?: boolean;
 	}
@@ -39,7 +39,7 @@
 				<span
 					class={['tag', !role && 'unknown']}
 					style={color ? `--role: ${color}` : undefined}
-					title={role ? `Role ${roleId}` : `Role ${roleId} is not a role of this guild any more`}
+					title={role ? `Role ${roleId}` : `Role ${roleId} is not a role of this server any more`}
 				>
 					<span class="dot" aria-hidden="true"></span>
 					<span class="truncate">{role ? role.name : `Role ${roleId}`}</span>
@@ -54,7 +54,7 @@
 	{/if}
 	<select {id} class="select" value="" onchange={onChange} disabled={disabled || offered.length === 0}>
 		<option value="">
-			{offered.length ? 'Add a role…' : values.length ? 'Every role is chosen' : 'The guild has no roles to choose'}
+			{offered.length ? 'Add a role…' : values.length ? 'Every role is chosen' : 'The server has no roles to choose'}
 		</option>
 		{#each offered as role (role.id)}
 			<option value={role.id}>{role.name}{role.managed ? ' (integration)' : ''}</option>
@@ -79,7 +79,7 @@
 		border-radius: 6px;
 		background: var(--surface-3);
 		color: var(--text);
-		font-size: 12.5px;
+		font-size: 13px;
 		line-height: 1.5;
 	}
 
@@ -98,6 +98,10 @@
 
 	.remove {
 		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 28px;
+		min-height: 28px;
 		padding: 2px;
 		border: none;
 		border-radius: 4px;

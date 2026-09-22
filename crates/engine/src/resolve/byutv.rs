@@ -293,7 +293,7 @@ impl ByutvResolver {
                     }
                 }
                 kind if kind.starts_with("dash") => {
-                    // The DASH manifest is served under Widevine (`rmt=wv`); the HLS
+                    // The DASH manifest is served under Widevine (`rmt=wv`). The HLS
                     // rendition of the same asset plays in the clear. A clear manifest
                     // expands into its representations.
                     let mut variant = Variant::dash(asset_url.clone());

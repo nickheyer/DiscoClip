@@ -7,7 +7,7 @@ function read(): ThemeMode {
 		const stored = localStorage.getItem(KEY);
 		if (stored === 'light' || stored === 'dark') return stored;
 	} catch {
-		// Storage can be unavailable; the system setting applies.
+		// Storage can be unavailable. The system setting applies.
 	}
 	return 'system';
 }
@@ -26,7 +26,7 @@ class ThemeState {
 			if (mode === 'system') localStorage.removeItem(KEY);
 			else localStorage.setItem(KEY, mode);
 		} catch {
-			// Storage can be unavailable; the choice lasts for this page.
+			// Storage can be unavailable. The choice lasts for this page.
 		}
 		this.apply();
 	}

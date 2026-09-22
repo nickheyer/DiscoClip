@@ -189,7 +189,7 @@
 	async function remove() {
 		const ok = await confirm.ask({
 			title: 'Delete this job?',
-			message: 'Its record and cached files go away. Anything already posted or archived stays where it is.',
+			message: 'Deletes this job and its cached files. Posted and archived files are kept.',
 			confirmLabel: 'Delete',
 			danger: true
 		});
@@ -215,7 +215,7 @@
 		{ kind: 'source' as const, label: 'Source', file: job.artifacts.source }
 	]);
 
-	/** What the media is: what the probe found the output or source to be, else what the resolver said. */
+	/** Prefer probed media metadata over resolver metadata. */
 	const media = $derived<MediaKind>(
 		job.artifacts.output?.info?.kind ?? job.artifacts.source?.info?.kind ?? job.artifacts.resolved?.media ?? 'video'
 	);
@@ -305,7 +305,7 @@
 						<span class="faint small block mono">{job.request.origin.reference}</span>
 					</dd>
 					<dt>Submitted by</dt>
-					<dd>{job.request.submitted_by ?? '—'}</dd>
+					<dd>{job.request.submitted_by ?? 'Not available'}</dd>
 					{#if job.request.destination}
 						<dt>Posts to</dt>
 						<dd><code>{job.request.destination}</code></dd>
@@ -350,7 +350,7 @@
 						{/if}
 						<dl class="kv">
 							<dt>Title</dt>
-							<dd>{resolved.title ?? '—'}</dd>
+							<dd>{resolved.title ?? 'Not available'}</dd>
 							<dt>Resolver</dt>
 							<dd>{resolved.resolver}{#if resolved.id} · <code>{resolved.id}</code>{/if}</dd>
 							<dt>Kind</dt>
@@ -361,7 +361,7 @@
 							{/if}
 							{#if resolved.uploaded_at}<dt>Uploaded</dt><dd><Time value={resolved.uploaded_at} mode="absolute" /></dd>{/if}
 							<dt>Duration</dt>
-							<dd>{durationSeconds(resolved.duration) != null ? formatClock(durationSeconds(resolved.duration)!) : '—'}{#if resolved.live} <Badge tone="danger" size="sm">live</Badge>{/if}{#if resolved.age_limit} <Badge tone="warn" size="sm">{resolved.age_limit}+</Badge>{/if}</dd>
+							<dd>{durationSeconds(resolved.duration) != null ? formatClock(durationSeconds(resolved.duration)!) : 'Not available'}{#if resolved.live} <Badge tone="danger" size="sm">live</Badge>{/if}{#if resolved.age_limit} <Badge tone="warn" size="sm">{resolved.age_limit}+</Badge>{/if}</dd>
 							{#if resolved.webpage_url}<dt>Page</dt><dd><a href={resolved.webpage_url} target="_blank" rel="noreferrer" class="break">{resolved.webpage_url}</a></dd>{/if}
 							{#if resolved.clip}<dt>Clip</dt><dd>{formatClock(durationSeconds(resolved.clip.start) ?? 0)} → {resolved.clip.end ? formatClock(durationSeconds(resolved.clip.end) ?? 0) : 'end'}</dd>{/if}
 						</dl>
@@ -377,9 +377,9 @@
 										{#each resolved.variants as v, i (i)}
 											<tr>
 												<td><code>{v.kind}</code>{#if v.video_only} <span class="faint small">video only</span>{/if}{#if v.audio_only} <span class="faint small">audio only</span>{/if}</td>
-												<td>{describeVariant(v) || '—'}</td>
-												<td>{v.label ?? v.format_id ?? '—'}</td>
-												<td>{v.drm ?? '—'}</td>
+												<td>{describeVariant(v) || 'Not available'}</td>
+												<td>{v.label ?? v.format_id ?? 'Not available'}</td>
+												<td>{v.drm ?? 'Not available'}</td>
 											</tr>
 										{/each}
 									</tbody>
@@ -414,7 +414,7 @@
 							<img class="preview" src={api.downloadUrl(job.id, 'output', 0, true)} alt={title} loading="lazy" />
 						</a>
 					{:else}
-						<p class="muted">A {MEDIA_LABELS[media].toLowerCase()} is published as it is; download it above to open it.</p>
+						<p class="muted">A {MEDIA_LABELS[media].toLowerCase()} is ready to download.</p>
 					{/if}
 				{/if}
 				<div class="grid-2">
@@ -456,7 +456,7 @@
 						<dl class="kv small">
 							<dt>Where</dt><dd>{#if job.artifacts.published.url}<a href={job.artifacts.published.url} target="_blank" rel="noreferrer" class="break">{job.artifacts.published.url}</a>{:else}<span class="mono break">{job.artifacts.published.reference}</span>{/if}</dd>
 							{#if job.artifacts.delivery === 'link'}
-								<dt>As a link</dt><dd>The message carries the front end's page for this media instead of the file{#if job.artifacts.link_reason}: {job.artifacts.link_reason}{/if}.</dd>
+								<dt>As a link</dt><dd>This Discord message links to the media page.{#if job.artifacts.link_reason}: {job.artifacts.link_reason}{/if}.</dd>
 							{/if}
 							<dt>When</dt><dd><Time value={job.artifacts.published.at} mode="absolute" /></dd>
 						</dl>
@@ -491,7 +491,7 @@
 								<tr>
 									<td><JobStatusBadge status={live.status} size="sm" short /></td>
 									<td class="entry"><a href={`/jobs/${child.id}`} class="row-link truncate entry-title" title={live.url}>{childTitle(live)}</a></td>
-									<td class="nowrap">{live.duration_secs != null ? formatClock(live.duration_secs) : '—'}</td>
+									<td class="nowrap">{live.duration_secs != null ? formatClock(live.duration_secs) : 'Not available'}</td>
 									<td class="nowrap"><Time value={live.finished_at ?? live.created_at} /></td>
 								</tr>
 							{/each}
@@ -511,7 +511,7 @@
 				{#each log as entry, i (`${entry.at}-${i}`)}
 					<li class="line">
 						<span class="faint small mono when" title={formatDateTime(entry.at, true)}>{formatDateTime(entry.at, true)}</span>
-						<span class="faint small stage-tag">{entry.stage ?? '—'}</span>
+						<span class="faint small stage-tag">{entry.stage ?? 'Not available'}</span>
 						<span class="message">{entry.message}</span>
 					</li>
 				{/each}

@@ -49,7 +49,7 @@
 				<dt>{label(key)}</dt>
 				<dd>
 					{#if value === null || value === undefined}
-						<span class="faint">—</span>
+						<span class="faint">Not available</span>
 					{:else if typeof value === 'boolean'}
 						{value ? 'Yes' : 'No'}
 					{:else if typeof value === 'object'}

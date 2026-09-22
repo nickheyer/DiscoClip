@@ -145,7 +145,7 @@ fn player_of(html: &str, base: &Url, origin: &Url) -> Result<Player, ResolveErro
         Some("403") => {
             return Err(ResolveError::unavailable(
                 origin,
-                "the library serves the video only to its own site; the page it is embedded on must name it",
+                "This video requires its original website. Submit the page containing the video.",
             ));
         }
         Some("404") => return Err(ResolveError::NotFound(origin.clone())),

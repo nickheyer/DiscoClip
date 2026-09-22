@@ -1,6 +1,6 @@
 //! Kuaishou videos, from the state the desktop page renders and the state the mobile
 //! share page renders behind it, with `v.kuaishou.com` and `kuaishou.com/f/` short links
-//! unwrapped. The site asks unfamiliar clients to verify themselves; a stored browser
+//! unwrapped. The site asks unfamiliar clients to verify themselves. A stored browser
 //! session passes, and the refusal is reported as such.
 
 use std::sync::LazyLock;
@@ -203,12 +203,12 @@ impl KuaishouResolver {
             ResolveError::login_required(
                 origin,
                 PLATFORM,
-                "Kuaishou asks unfamiliar clients to verify themselves; a browser's session passes",
+                "Kuaishou requires verification. Import browser cookies to continue.",
             )
         }
     }
 
-    /// The desktop page's state for the video; `None` when the page carries no state,
+    /// The desktop page's state for the video. `None` when the page carries no state,
     /// as it does when the site answers with a verification page.
     async fn desktop(&self, id: &str, origin: &Url) -> Result<Option<DetailState>, ResolveError> {
         let url = Url::parse(&format!("{SITE}short-video/{id}")).expect("valid");

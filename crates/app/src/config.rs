@@ -1,5 +1,5 @@
 //! Provisioning input: one config file, then `DISCOCLIP_*` environment variables, the
-//! latter overriding the former. Only keys that are actually set count as provisioned; they
+//! latter overriding the former. Only keys that are actually set count as provisioned. They
 //! seed the settings store at startup through `settings::bootstrap`, and the running server
 //! reads the store, never this. The same file formats carry exported settings back out.
 
@@ -41,7 +41,7 @@ pub enum ConfigError {
     Encode(#[from] serde_json::Error),
     #[error("{0} is provisioned but no setting holds it")]
     Unplaced(String),
-    #[error("{key} is null, which {format} cannot express; export as YAML or JSON instead")]
+    #[error("{format} cannot represent null at {key}. Export as YAML or JSON.")]
     Unrepresentable { key: String, format: Format },
     #[error("could not write {format}: {message}")]
     Render { format: Format, message: String },
@@ -78,7 +78,7 @@ impl Format {
         }
     }
 
-    /// Reads a file in this format as a JSON tree; a file with nothing in it is an
+    /// Reads a file in this format as a JSON tree. A file with nothing in it is an
     /// empty tree.
     pub fn parse(self, text: &str, origin: &str) -> Result<Json, ConfigError> {
         let failed = |e: &dyn std::fmt::Display| ConfigError::Parse {
@@ -294,7 +294,7 @@ impl Provisioning {
 }
 
 /// Loads `explicit` when given, otherwise the first config file found in the search
-/// directories, otherwise nothing; then layers environment overrides on top.
+/// directories, otherwise nothing. Then layers environment overrides on top.
 pub fn load(explicit: Option<&Path>) -> Result<Provisioning, ConfigError> {
     let file = explicit.map(Path::to_path_buf).or_else(discover);
     build(file.as_deref(), provisioning_vars(std::env::vars_os()))
@@ -446,7 +446,7 @@ fn join(prefix: &str, key: &str) -> String {
     }
 }
 
-/// Dotted paths of every value in a JSON tree; objects recurse, arrays and the maps
+/// Dotted paths of every value in a JSON tree. Objects recurse, arrays and the maps
 /// named by [`ATOMIC_KEYS`] are values.
 ///
 /// [`ATOMIC_KEYS`]: crate::settings::ATOMIC_KEYS

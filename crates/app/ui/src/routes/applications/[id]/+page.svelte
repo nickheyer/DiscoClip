@@ -1,4 +1,5 @@
 <script lang="ts">
+	import FormFeedback from '$lib/components/FormFeedback.svelte';
 	import { goto, invalidate } from '$app/navigation';
 	import type { PageData } from './$types';
 	import { applications, messageOf } from '$lib/api';
@@ -13,6 +14,7 @@
 	import Field from '$lib/components/Field.svelte';
 	import GuildIcon from '$lib/components/GuildIcon.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import SectionNav from '$lib/components/SectionNav.svelte';
 	import PasswordInput from '$lib/components/PasswordInput.svelte';
 	import TagInput from '$lib/components/TagInput.svelte';
 	import Time from '$lib/components/Time.svelte';
@@ -117,7 +119,7 @@
 	});
 	let savingName = $state(false);
 	const nameProblem = $derived(
-		name.trim() === '' ? 'A name is needed.' : name.trim().length > APPLICATION_NAME_MAX ? `A name is up to ${APPLICATION_NAME_MAX} characters.` : null
+		name.trim() === '' ? 'Enter a name.' : name.trim().length > APPLICATION_NAME_MAX ? `A name is up to ${APPLICATION_NAME_MAX} characters.` : null
 	);
 
 	async function saveName(event: SubmitEvent) {
@@ -162,7 +164,7 @@
 			const view = await applications.update(app.id, { bot_token: newToken.trim() });
 			bots.put(view.id, view.bot);
 			newToken = '';
-			toast.ok('Bot token replaced; the bot restarts with it.');
+			toast.ok('Bot token replaced. Restarting the bot.');
 			await refresh();
 		} catch (cause) {
 			toast.error(`Could not replace the token: ${messageOf(cause)}`);
@@ -195,7 +197,7 @@
 		const ok = await confirm.ask({
 			title: 'Remove the client secret?',
 			message: app.login
-				? 'Discord login through this application stops working, since it needs the secret.'
+				? 'Discord login will stop working for this application.'
 				: 'It can be set again any time.',
 			confirmLabel: 'Remove',
 			danger: true
@@ -220,7 +222,7 @@
 	async function remove() {
 		const ok = await confirm.ask({
 			title: `Remove ${app.name}?`,
-			message: 'The bot is retired and every watch rule and guild record of this application goes with it. The application itself stays on Discord.',
+			message: 'Stops the bot and deletes its rules and server records from DiscoClip. The Discord application is kept.',
 			confirmLabel: 'Remove application',
 			danger: true,
 			typed: app.name
@@ -252,15 +254,17 @@
 	{/snippet}
 	{#snippet actions()}
 		<BotControls application={app.id} botState={status.state} size="md" onchange={() => refresh()} />
-		<Button href={app.install_url} newTab icon="external">Add to a guild</Button>
+		<Button href={app.install_url} newTab icon="external">Add to server</Button>
 	{/snippet}
 </PageHeader>
 
+<SectionNav items={[{ id: 'bot', label: 'Bot' }, { id: 'install', label: 'Install link' }, { id: 'servers', label: 'Servers' }, { id: 'commands', label: 'Slash commands' }, { id: 'credentials', label: 'Credentials' }]} />
+
 <div class="stack-lg">
-	<section class="card">
+	<section class="card" id="bot" tabindex="-1">
 		<div class="card-header">
 			<h2>Bot</h2>
-			<span class="faint small">{bots.state === 'live' ? 'Updating live' : 'Status stream reconnecting'}</span>
+			<span class="faint small">{bots.state === 'live' ? 'Updating live' : 'Reconnecting'}</span>
 		</div>
 		<div class="card-body stack">
 			<dl class="kv">
@@ -274,39 +278,39 @@
 					<dt>Attempt</dt>
 					<dd>{formatNumber(status.attempt)} · next try in {secondsUntil(status.next_attempt_at, clock.now)}s</dd>
 				{/if}
-				<dt>Meant to run</dt>
-				<dd>{app.enabled ? 'Yes' : 'No, it was stopped from the app and stays stopped until started'}</dd>
+				<dt>Enabled</dt>
+				<dd>{app.enabled ? 'Yes' : 'No'}</dd>
 				<dt>Added</dt>
 				<dd><Time value={app.created_at} mode="absolute" /></dd>
 			</dl>
 			{#if status.state === 'retrying'}
-				<Alert tone="warn" title="A transient failure; the bot restarts by itself" message={status.error} />
+				<Alert tone="warn" title="Connection failed. Retrying automatically." message={status.error} />
 			{:else if status.state === 'failed'}
-				<Alert tone="danger" title="Discord rejected the token or the intents; start the bot again once fixed" message={status.error} />
+				<Alert tone="danger" title="Check the bot token and intents, then restart the bot." message={status.error} />
 			{:else if status.state === 'disabled'}
-				<Alert tone="warn" message="No bot token is configured, so there is nothing to run." />
+				<Alert tone="warn" message="Add a bot token to start this bot." />
 			{/if}
 		</div>
 	</section>
 
-	<section class="card">
+	<section class="card" id="install" tabindex="-1">
 		<div class="card-header">
 			<div>
 				<h2>Install link</h2>
-				<p class="hint">Adds the bot to a guild with the scopes and permissions it needs.</p>
+				<p class="hint">Adds the bot to a server with the scopes and permissions it needs.</p>
 			</div>
 		</div>
 		<div class="card-body stack">
 			{#if install}
 				<div class="install">
-					<input class="input mono" readonly value={install.url} aria-label="Install URL" onfocus={(e) => (e.currentTarget as HTMLInputElement).select()} />
+					<Field label="Install URL" for="control-9751"><input id="control-9751" class="input mono" readonly value={install.url} aria-label="Install URL" onfocus={(e) => (e.currentTarget as HTMLInputElement).select()} /></Field>
 					<CopyButton text={install.url} variant="secondary" size="md" />
 					<Button href={install.url} newTab icon="external" variant="primary">Open</Button>
 				</div>
 				<div class="grid-2">
-					<Field label="Preselect a guild" for="install-guild" optional hint="Discord opens with this guild chosen, for anyone who can manage it.">
+					<Field label="Default server" for="install-guild" optional hint="Preselect a server during installation.">
 						<select id="install-guild" class="select" value={installFor} disabled={loadingInstall} onchange={(e) => pickGuild((e.currentTarget as HTMLSelectElement).value)}>
-							<option value="">Let the person choose</option>
+							<option value="">Choose during installation</option>
 							{#each data.guilds as guild (guild.guild_id)}
 								<option value={guild.guild_id}>{guild.name}{guild.present ? '' : ' (bot removed)'}</option>
 							{/each}
@@ -323,20 +327,20 @@
 		</div>
 	</section>
 
-	<section class="card">
+	<section class="card" id="servers" tabindex="-1">
 		<div class="card-header">
 			<div>
-				<h2>Guilds</h2>
-				<p class="hint">Where the bot is, and where it was removed from.</p>
+				<h2>Servers</h2>
+				<p class="hint">Servers that have installed this bot.</p>
 			</div>
 		</div>
 		{#if data.guilds.length === 0}
-			<div class="card-body"><Empty compact icon="server" title="Not in any guild yet" description="Use the install link above to add the bot to a guild." /></div>
+			<div class="card-body"><Empty compact icon="server" title="No servers yet" description="Use the install link above to add the bot to a guild." /></div>
 		{:else}
 			<div class="table-wrap flush">
 				<table class="table">
 					<thead>
-						<tr><th>Guild</th><th>Members</th><th>Watched channels</th><th>Status</th><th>Joined</th><th></th></tr>
+						<tr><th>Server</th><th>Members</th><th>Watched channels</th><th>Status</th><th>Joined</th><th></th></tr>
 					</thead>
 					<tbody>
 						{#each data.guilds as guild (guild.guild_id)}
@@ -350,8 +354,8 @@
 										</div>
 									</div>
 								</td>
-								<td class="num">{guild.member_count == null ? '—' : formatNumber(guild.member_count)}</td>
-								<td class="num">{data.ruleCounts ? formatNumber(data.ruleCounts.get(guild.guild_id) ?? 0) : '—'}</td>
+								<td class="num">{guild.member_count == null ? 'Not available' : formatNumber(guild.member_count)}</td>
+								<td class="num">{data.ruleCounts ? formatNumber(data.ruleCounts.get(guild.guild_id) ?? 0) : 'Not available'}</td>
 								<td>
 									{#if guild.present}
 										<Badge tone="ok" size="sm" dot>Present</Badge>
@@ -371,7 +375,7 @@
 		{/if}
 	</section>
 
-	<section class="card">
+	<section class="card" id="commands" tabindex="-1">
 		<div class="card-header">
 			<div>
 				<h2>Slash commands</h2>
@@ -386,15 +390,15 @@
 		</div>
 		<form class="card-body stack" onsubmit={saveScope}>
 			{#if scopeError}
-				<Alert tone="danger" message={scopeError} onclose={() => (scopeError = null)} />
+				<FormFeedback message={scopeError} />
 			{/if}
 			{#if data.commands.error}
-				<Alert tone="danger" title="The last registration failed" message={data.commands.error} />
+				<FormFeedback message={data.commands.error} />
 			{/if}
 			<div class="modes">
 				<label class="radio">
 					<input type="radio" name="mode" value="off" bind:group={mode} />
-					<span><span class="strong">Off</span><span class="hint">Nowhere; any earlier registration is removed.</span></span>
+					<span><span class="strong">Off</span><span class="hint">Remove all registered commands.</span></span>
 				</label>
 				<label class="radio">
 					<input type="radio" name="mode" value="global" bind:group={mode} />
@@ -402,12 +406,12 @@
 				</label>
 				<label class="radio">
 					<input type="radio" name="mode" value="guilds" bind:group={mode} />
-					<span><span class="strong">Chosen guilds</span><span class="hint">In the listed guilds only, at once.</span></span>
+					<span><span class="strong">Selected servers</span><span class="hint">Register in the selected servers.</span></span>
 				</label>
 			</div>
 			{#if mode === 'guilds'}
-				<Field label="Guilds" for="scope-guilds" hint="Guild ids. The ones the bot is in are suggested." error={scopeGuilds.length === 0 ? 'Pick at least one guild.' : null}>
-					<TagInput id="scope-guilds" bind:values={scopeGuilds} placeholder="Guild id" validate={(v) => (isSnowflake(v) ? null : `${v} is not a Discord id`)} suggestions={guildSuggestions} />
+				<Field label="Servers" for="scope-guilds" hint="Choose a server or enter its ID." error={scopeGuilds.length === 0 ? 'Pick at least one guild.' : null}>
+					<TagInput id="scope-guilds" bind:values={scopeGuilds} placeholder="Server ID" validate={(v) => (isSnowflake(v) ? null : `${v} is not a Discord id`)} suggestions={guildSuggestions} />
 				</Field>
 			{/if}
 			<div class="row-between">
@@ -421,7 +425,7 @@
 		</form>
 	</section>
 
-	<section class="card">
+	<section class="card" id="credentials" tabindex="-1">
 		<div class="card-header"><h2>Settings</h2></div>
 		<div class="card-body stack-lg">
 			<form class="setting" onsubmit={saveName}>
@@ -435,10 +439,10 @@
 				<label class={['checkbox', !app.has_client_secret && 'disabled']}>
 					<input type="checkbox" checked={app.login} disabled={!app.has_client_secret || savingLogin} onchange={(e) => setLogin((e.currentTarget as HTMLInputElement).checked)} />
 					<span>
-						<span class="strong">Offer Discord login through this application</span>
+						<span class="strong">Enable Discord login</span>
 						<span class="hint">
 							{#if app.has_client_secret}
-								People log in to DiscoClip with Discord, and link their Discord account from their account page. Only one application offers login at a time.
+								Use this application for Discord login. Only one application can provide login.
 							{:else}
 								Set the client secret first.
 							{/if}
@@ -446,14 +450,14 @@
 					</span>
 				</label>
 				<div class="callback">
-					<span class="small strong">Redirect to register at Discord</span>
-					<span class="hint">Discord turns the login away as an invalid OAuth2 URL until this exact URL is listed under OAuth2 → Redirects on the application's page in the Discord Developer Portal. It follows the public URL setting, or the address the app is opened at.</span>
+					<span class="small strong">Login redirect URL</span>
+					<span class="hint">Add this URL under OAuth2 → Redirects in the Discord Developer Portal.</span>
 					<span class="row"><code class="break">{app.login_callback_url}</code><CopyButton text={app.login_callback_url} label="Copy redirect" /></span>
 				</div>
 			</div>
 
 			<form class="setting" onsubmit={replaceToken}>
-				<Field label="Replace bot token" for="app-token" hint="The bot restarts with the new token at once.">
+				<Field label="Replace bot token" for="app-token" hint="The bot restarts after saving.">
 					<PasswordInput id="app-token" bind:value={newToken} mono />
 				</Field>
 				<Button type="submit" loading={savingToken} disabled={newToken.trim() === ''}>Replace</Button>
@@ -476,7 +480,7 @@
 	<section class="card card-danger">
 		<div class="card-header"><h2>Remove application</h2></div>
 		<div class="card-body row-between">
-			<p class="muted">Retires the bot and removes every watch rule and guild record of this application from DiscoClip.</p>
+			<p class="muted">Stops the bot and deletes its rules and server records.</p>
 			<Button variant="danger" icon="trash" loading={deleting} onclick={remove}>Remove application</Button>
 		</div>
 	</section>

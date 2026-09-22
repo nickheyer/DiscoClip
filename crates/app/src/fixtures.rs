@@ -31,7 +31,7 @@ const STARTUP_DELAY: Duration = Duration::from_secs(30);
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct FixtureConfig {
-    /// Every platform's fixtures are run this often; `0` runs them only on request.
+    /// Every platform's fixtures are run this often. `0` runs them only on request.
     pub interval_secs: u64,
     /// The longest one link may take to resolve before it counts as failed.
     pub timeout_secs: u64,
@@ -150,7 +150,7 @@ pub struct PlatformCoverage {
     pub running: bool,
 }
 
-/// What a run of one link found; stored as the link's latest result.
+/// What a run of one link found. Stored as the link's latest result.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Outcome {
     pub url: String,
@@ -569,7 +569,7 @@ impl FixtureRunner {
         Ok(())
     }
 
-    /// Starts a run for every platform with fixtures that is not already running; the
+    /// Starts a run for every platform with fixtures that is not already running. The
     /// ids started.
     pub fn start_all(self: &Arc<Self>) -> Result<Vec<&'static str>, RunError> {
         let platforms: Vec<Platform> = self
@@ -589,7 +589,7 @@ impl FixtureRunner {
     }
 
     /// Starts a run for every platform whose fixtures are due: never run, or run longer
-    /// ago than the interval; the ids started.
+    /// ago than the interval. The ids started.
     pub async fn start_due(self: &Arc<Self>) -> Result<Vec<&'static str>, StoreError> {
         let interval = SignedDuration::from_secs(self.config().interval_secs as i64);
         let stored = self.store.all().await?;
@@ -620,7 +620,7 @@ impl FixtureRunner {
         started
     }
 
-    /// Marks `platform` as running; false when it already was.
+    /// Marks `platform` as running. False when it already was.
     fn claim(&self, platform: &'static str) -> bool {
         self.running
             .lock()
@@ -731,7 +731,7 @@ impl FixtureRunner {
 }
 
 /// What a resolution counts as: media with something playable, or a playlist with
-/// entries; and what it was, for the page to show what the link resolves to.
+/// entries. And what it was, for the page to show what the link resolves to.
 fn judge(url: &str, resolution: Resolution, duration: Duration) -> Outcome {
     let (ok, error, title, found) = match resolution {
         Resolution::Media(resolved) => {

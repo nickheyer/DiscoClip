@@ -1,5 +1,5 @@
 //! BitChute videos, channels and playlists: the site's beta API answers a video's media
-//! link and its details; channel and playlist pages are paged through the old site's
+//! link and its details. Channel and playlist pages are paged through the old site's
 //! `extend` endpoint, which returns the next cards as HTML.
 
 use std::sync::LazyLock;
@@ -165,7 +165,7 @@ impl BitchuteResolver {
         Self { http }
     }
 
-    /// One call of the beta API; a refusal names the caller's location when that is why.
+    /// One call of the beta API. A refusal names the caller's location when that is why.
     async fn api(&self, endpoint: &str, body: Value, origin: &Url) -> Result<Value, ResolveError> {
         let api = Url::parse(&format!("{API}{endpoint}")).expect("valid");
         let response = self
@@ -254,7 +254,7 @@ impl BitchuteResolver {
             resolved.live = expanded.live;
         } else {
             // The seed host the API names often refuses the file while another seed
-            // serves it; the first that answers is the one to fetch.
+            // serves it. The first that answers is the one to fetch.
             let mut served = None;
             let mut refusal = None;
             for candidate in seed_candidates(&media_url) {

@@ -10,12 +10,7 @@ interface Link {
 	close(): void;
 }
 
-/**
- * The server's live feed: the job stats, job events and bot statuses, on one connection
- * for the whole browser, held by a shared worker every tab connects to. A browser without
- * shared workers opens the stream from the tab. The feed's users, the job and bot stores,
- * start and stop it; the connection opens with the first and closes with the last.
- */
+/** Share the live stream through a worker. Fall back to a tab stream without SharedWorker. Open on first subscriber and close on last. */
 class Live {
 	state = $state<FeedState>('idle');
 	private handlers = new Set<Handler>();

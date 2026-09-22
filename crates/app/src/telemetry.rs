@@ -16,7 +16,7 @@ use tracing_subscriber::layer::{Context, SubscriberExt};
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Registry, reload};
 
-/// How many lines the buffer keeps; older ones fall off the end.
+/// How many lines the buffer keeps. Older ones fall off the end.
 pub const LOG_CAPACITY: usize = 5000;
 /// How many lines a slow follower may fall behind before it skips ahead.
 const FEED_CAPACITY: usize = 1024;
@@ -87,7 +87,7 @@ pub struct LogLine {
 }
 
 /// Which lines to read: at `level` or above, whose target contains `target`, and whose
-/// message or fields contain `q`; the `limit` newest ones before line `before`.
+/// message or fields contain `q`. The `limit` newest ones before line `before`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LogFilter {
     pub level: Option<LogLevel>,
@@ -310,7 +310,7 @@ pub fn detached(filter: &str) -> LogHandle {
 }
 
 /// Installs the global tracing subscriber. `RUST_LOG` overrides the configured filter at
-/// startup; a filter set from the app afterwards replaces both. Every line written is
+/// startup. A filter set from the app afterwards replaces both. Every line written is
 /// also kept in the handle's buffer.
 pub fn init(filter: &str) -> LogHandle {
     let filter = EnvFilter::try_from_default_env()

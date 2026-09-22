@@ -1,4 +1,6 @@
 <script lang="ts">
+	import Field from '$lib/components/Field.svelte';
+	import FormFeedback from '$lib/components/FormFeedback.svelte';
 	import { invalidate } from '$app/navigation';
 	import type { PageData } from './$types';
 	import { messageOf, profiles as profilesApi, rules } from '$lib/api';
@@ -14,6 +16,7 @@
 	import GuildIcon from '$lib/components/GuildIcon.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import SectionNav from '$lib/components/SectionNav.svelte';
 	import RuleForm from '$lib/components/RuleForm.svelte';
 	import Time from '$lib/components/Time.svelte';
 	import {
@@ -27,9 +30,9 @@
 		unwatchableReason,
 		watchable
 	} from '$lib/discord';
-	import { describeScope, profileName } from '$lib/profiles';
+	import { describeLimits, describeScope, inForceFor, profileName } from '$lib/profiles';
 	import { pluralize, shortId } from '$lib/format';
-	import { cleanInput, describeFilters, describeLimits, emptyRule, toInput } from '$lib/rules';
+	import { cleanInput, describeWho, emptyRule, toInput } from '$lib/rules';
 	import { bots } from '$lib/state/bots.svelte';
 	import { confirm } from '$lib/state/confirm.svelte';
 	import { session } from '$lib/state/session.svelte';
@@ -42,7 +45,7 @@
 		data.app?.name ??
 			(status?.state === 'connected' ? status.user : `Application ${shortId(data.applicationId)}`)
 	);
-	const guildName = $derived(data.botGuild?.name ?? data.myGuild?.name ?? `Guild ${data.guildId}`);
+	const guildName = $derived(data.botGuild?.name ?? data.myGuild?.name ?? `Server ${data.guildId}`);
 	const guildIcon = $derived(data.botGuild?.icon ?? data.myGuild?.icon ?? null);
 	const present = $derived(data.botGuild?.present ?? false);
 	const channels = $derived(data.directory.channels);
@@ -58,7 +61,7 @@
 				]
 			: session.can('manage_watch_rules')
 				? [{ label: 'Watch rules', href: '/rules' }, { label: guildName }]
-				: [{ label: 'My guilds', href: '/guilds' }, { label: guildName }]
+				: [{ label: 'Discord servers', href: '/guilds' }, { label: guildName }]
 	);
 	const refresh = () => invalidate(`app:guild:${data.applicationId}:${data.guildId}`);
 
@@ -108,7 +111,7 @@
 	async function save(event: SubmitEvent) {
 		event.preventDefault();
 		if (!formRef?.valid()) {
-			error = 'Fix the highlighted fields first.';
+			error = 'Check the fields below.';
 			return;
 		}
 		saving = true;
@@ -153,7 +156,7 @@
 
 	// Profiles
 
-	/** The session may put profiles in force here when the server listed the guild's assignments. */
+	/** Assignment access also grants assignment editing. */
 	const canAssign = $derived(data.assignments !== null);
 	const globalAssignment = $derived(
 		data.assignments?.find((a) => a.scope.kind === 'global') ?? null
@@ -183,10 +186,10 @@
 		assigning = scopeLabel(scope);
 		try {
 			await profilesApi.assign(scope, profile);
-			toast.ok(`${nameOf(profile)} is now in force for ${what}.`);
+			toast.ok(`${nameOf(profile)} assigned to ${what}.`);
 			await refresh();
 		} catch (cause) {
-			toast.error(`Could not put the profile in force: ${messageOf(cause)}`);
+			toast.error(`Could not assign the profile: ${messageOf(cause)}`);
 		} finally {
 			assigning = null;
 		}
@@ -196,10 +199,10 @@
 		assigning = scopeLabel(scope);
 		try {
 			await profilesApi.unassign(scope);
-			toast.ok(`${what} follows the wider scope again.`);
+			toast.ok(`${what} uses the inherited profile.`);
 			await refresh();
 		} catch (cause) {
-			toast.error(`Could not take the profile off: ${messageOf(cause)}`);
+			toast.error(`Could not remove the assignment: ${messageOf(cause)}`);
 		} finally {
 			assigning = null;
 		}
@@ -219,6 +222,20 @@
 	}
 
 	const guildScope = $derived<Scope>({ kind: 'guild', guild_id: data.guildId });
+
+	/** Assignments for unwatched channels. Watched channels use the rules table. */
+	const otherChannelAssignments = $derived(channelAssignments.filter((a) => !rulesByChannel.has(a.scope.channel_id)));
+
+	async function setChannelProfile(channel: string, profile: string) {
+		const scope: Scope = { kind: 'channel', guild_id: data.guildId, channel_id: channel };
+		const current = inForceFor(data.assignments, channel);
+		if (profile === '') {
+			if (current?.scope.kind === 'channel') await takeOff(scope, describeScope(scope, channels));
+			return;
+		}
+		if (current?.scope.kind === 'channel' && current.profile_id === profile) return;
+		await putInForce(scope, profile, describeScope(scope, channels));
+	}
 
 	async function saveGuildProfile() {
 		if (!guildChoice) return;
@@ -243,7 +260,7 @@
 		userProfile = '';
 	}
 
-	// What is in force for a channel, and a member in it
+	// What is assigned to a channel, and a member in it
 
 	let checkChannel = $state('');
 	let checkUser = $state<string[]>([]);
@@ -332,6 +349,8 @@
 	{/snippet}
 </PageHeader>
 
+<SectionNav items={[{ id: 'channels', label: 'Channels' }, { id: 'rules', label: 'Rules' }, { id: 'profiles', label: 'Profiles' }]} />
+
 <div class="stack-lg">
 	{#if removed || notJoined || notConnected}
 		<div class="stack">
@@ -341,21 +360,21 @@
 				<Alert tone="info" title="The bot has not joined this guild" message="Use the install link to add it. Rules can be prepared now." />
 			{/if}
 			{#if notConnected}
-				<Alert tone="info" message="Listing channels and adding or changing a rule go through the bot, so the bot must be connected." />
+				<Alert tone="info" message="Connect the bot to load channels and edit rules." />
 			{/if}
 		</div>
 	{/if}
 
-	<section class="card">
+	<section class="card" id="channels" tabindex="-1">
 		<div class="card-header">
 			<div>
 				<h2>Channels</h2>
-				<p class="hint">The channels the bot sees in this guild. Watch one to add a rule for it.</p>
+				<p class="hint">Choose a channel to start watching its links.</p>
 			</div>
 			{#if channels}
 				<div class="row">
 					<span class="faint small">{watchedCount} of {pluralize(messageChannels.length, 'message channel')} watched</span>
-					<input class="input filter" type="search" placeholder="Filter channels" bind:value={channelFilter} aria-label="Filter channels" />
+					<Field label="Filter channels" for="control-12741"><input id="control-12741" class="input filter" type="search" placeholder="Filter channels" bind:value={channelFilter} aria-label="Filter channels" /></Field>
 				</div>
 			{/if}
 		</div>
@@ -410,22 +429,22 @@
 		{:else}
 			<div class="card-body stack-sm">
 				<Alert tone="warn" title="The bot could not list the channels" message={data.directory.channelsError ?? ''} />
-				<p class="hint">Listing the channels needs the bot connected and in the guild, and so does saving a rule. Rules below are shown by channel id.</p>
+				<p class="hint">Connect the bot to load channel names and edit rules.</p>
 			</div>
 		{/if}
 	</section>
 
-	<section class="card">
+	<section class="card" id="rules" tabindex="-1">
 		<div class="card-header">
 			<div>
 				<h2>Rules</h2>
-				<p class="hint">Where results go, whose links count and how big a video may be, per watched channel.</p>
+				<p class="hint">Watched channels, destinations and allowed members.</p>
 			</div>
 			<span class="faint small">{pluralize(data.rules.length, 'rule')}</span>
 		</div>
 		{#if data.rules.length === 0}
 			<div class="card-body">
-				<Empty compact icon="rules" title="No rules for this guild" description="A rule names a channel to watch, where results go, whose links count and how big a video may be.">
+				<Empty compact icon="rules" title="No rules for this guild" description="Choose a channel to create a watch rule.">
 					<Button variant="primary" icon="plus" onclick={() => openAdd()}>Add the first rule</Button>
 				</Empty>
 			</div>
@@ -436,8 +455,8 @@
 						<tr>
 							<th>Watched channel</th>
 							<th>Posts to</th>
-							<th>Who and where from</th>
-							<th>Limits</th>
+							<th>Who may post</th>
+							<th>Platforms and limits</th>
 							<th>Status</th>
 							<th>Updated</th>
 							<th></th>
@@ -448,8 +467,31 @@
 							<tr class={[!rule.enabled && 'off']}>
 								<td>{@render channelRef(rule.channel_id, `/rules/${rule.id}`)}</td>
 								<td>{#if rule.post_to}{@render channelRef(rule.post_to)}{:else}<span class="faint">same channel</span>{/if}</td>
-								<td>{describeFilters(rule)}</td>
-								<td>{describeLimits(rule)}</td>
+								<td>{describeWho(rule)}</td>
+								<td>
+									{#if data.assignments}
+										{@const inForce = inForceFor(data.assignments, rule.channel_id)}
+										{@const own = inForce?.scope.kind === 'channel'}
+										{@const profile = inForce ? data.profiles.find((p) => p.id === inForce.profile_id) ?? null : null}
+										<div class="stack-sm" style="gap:4px">
+											{#if inForce}
+												<span class="row">
+													<a href={`/profiles/${inForce.profile_id}`}>{nameOf(inForce.profile_id)}</a>
+													<span class="faint small">{own ? 'own' : inForce.scope.kind === 'guild' ? "the server's" : "the server's"}</span>
+												</span>
+												{#if profile}<span class="faint small">{describeLimits(profile.limits, 'no limits of its own')}</span>{/if}
+											{/if}
+											<select class="select compact" value={own ? inForce!.profile_id : ''} aria-label={`Profile for ${channelName(channels, rule.channel_id)}`} disabled={assigning !== null} onchange={(e) => setChannelProfile(rule.channel_id, (e.currentTarget as HTMLSelectElement).value)}>
+												<option value="">{inForce && !own ? `Follow ${inForce.scope.kind === 'guild' ? "the server's" : "the server's"}` : "Use server profile"}</option>
+												{#each data.profiles as profile (profile.id)}
+													<option value={profile.id}>{profile.name}</option>
+												{/each}
+											</select>
+										</div>
+									{:else}
+										<span class="faint small">Set on this page by whoever manages the guild.</span>
+									{/if}
+								</td>
 								<td>
 									{#if rule.enabled}<Badge tone="ok" size="sm" dot>Enabled</Badge>{:else}<Badge size="sm">Disabled</Badge>{/if}
 								</td>
@@ -467,11 +509,11 @@
 		{/if}
 	</section>
 
-	<section class="card">
+	<section class="card" id="profiles" tabindex="-1">
 		<div class="card-header">
 			<div>
 				<h2>Profiles</h2>
-				<p class="hint">Which platforms are on here. A profile for the guild sits under the server's; a channel's or a member's sits under the guild's, and the narrowest wins. <a href="/profiles">See the profiles.</a></p>
+				<p class="hint">Assign platform access and media limits to this server, its channels or its members. <a href="/profiles">See the profiles.</a></p>
 			</div>
 			{#if canAssign}
 				<span class="faint small">{pluralize(channelAssignments.length, 'channel')} · {pluralize(userAssignments.length, 'member')} with one of their own</span>
@@ -482,22 +524,22 @@
 				<div class="scope-text">
 					<span class="strong">This guild</span>
 					{#if guildAssignment}
-						<span class="muted">{nameOf(guildAssignment.profile_id)} is in force, on top of the server's {globalAssignment ? nameOf(globalAssignment.profile_id) : 'profile'}.</span>
+						<span class="muted">{nameOf(guildAssignment.profile_id)} is assigned, on top of the server's {globalAssignment ? nameOf(globalAssignment.profile_id) : 'profile'}.</span>
 					{:else}
 						<span class="muted">Follows the server's {globalAssignment ? nameOf(globalAssignment.profile_id) : 'profile'}.</span>
 					{/if}
 				</div>
 				{#if canAssign}
 					<div class="row">
-						<select class="select" bind:value={guildChoice} aria-label="Profile for this guild" disabled={assigning !== null}>
+						<Field label="Profile for this guild" for="control-19710"><select id="control-19710" class="select" bind:value={guildChoice} aria-label="Profile for this guild" disabled={assigning !== null}>
 							<option value="" disabled>Choose a profile</option>
 							{#each data.profiles as profile (profile.id)}
 								<option value={profile.id}>{profile.name}</option>
 							{/each}
-						</select>
-						<Button size="sm" variant="primary" loading={assigning === scopeLabel(guildScope)} disabled={!guildChoice || guildChoice === (guildAssignment?.profile_id ?? '')} onclick={saveGuildProfile}>Put in force</Button>
+						</select></Field>
+						<Button size="sm" variant="primary" loading={assigning === scopeLabel(guildScope)} disabled={!guildChoice || guildChoice === (guildAssignment?.profile_id ?? '')} onclick={saveGuildProfile}>Assign profile</Button>
 						{#if guildAssignment}
-							<Button size="sm" variant="ghost" icon="x" disabled={assigning !== null} onclick={() => takeOff(guildScope, 'This guild')}>Take off</Button>
+							<Button size="sm" variant="ghost" icon="x" disabled={assigning !== null} onclick={() => takeOff(guildScope, 'This guild')}>Remove assignment</Button>
 						{/if}
 					</div>
 				{/if}
@@ -506,12 +548,13 @@
 			{#if canAssign}
 				<div class="grid-2">
 					<div class="stack-sm">
-						<span class="strong">Channels</span>
-						{#if channelAssignments.length === 0}
-							<span class="faint small">No channel has a profile of its own.</span>
+						<span class="strong">Other channels</span>
+						<span class="hint">Use the rules above for watched channels. For other channels using <code>/clip</code> and links the web app sees there, here.</span>
+						{#if otherChannelAssignments.length === 0}
+							<span class="faint small">No other channel has a profile of its own.</span>
 						{:else}
 							<ul class="plain assignments">
-								{#each channelAssignments as assignment (scopeLabel(assignment.scope))}
+								{#each otherChannelAssignments as assignment (scopeLabel(assignment.scope))}
 									<li class="row-between">
 										<span class="row"><span>{describeScope(assignment.scope, channels)}</span><span class="faint small">→ {nameOf(assignment.profile_id)}</span></span>
 										<Button size="sm" variant="ghost" icon="x" title="Take the profile off this channel" square disabled={assigning !== null} onclick={() => takeOff(assignment.scope, describeScope(assignment.scope, channels))} />
@@ -521,14 +564,14 @@
 						{/if}
 						{#if channels}
 							<div class="row">
-								<ChannelSelect id="pf-channel" bind:value={channelChoice} {channels} disabled={assigning !== null} />
-								<select class="select" bind:value={channelProfile} aria-label="Profile for the channel" disabled={assigning !== null}>
+								<ChannelSelect id="pf-channel" bind:value={channelChoice} {channels} taken={new Set(rulesByChannel.keys())} disabled={assigning !== null} />
+								<Field label="Profile for the channel" for="control-21695"><select id="control-21695" class="select" bind:value={channelProfile} aria-label="Profile for the channel" disabled={assigning !== null}>
 									<option value="" disabled>Choose a profile</option>
 									{#each data.profiles as profile (profile.id)}
 										<option value={profile.id}>{profile.name}</option>
 									{/each}
-								</select>
-								<Button size="sm" icon="plus" disabled={!channelChoice || !channelProfile || assigning !== null} onclick={addChannelAssignment}>Put in force</Button>
+								</select></Field>
+								<Button size="sm" icon="plus" disabled={!channelChoice || !channelProfile || assigning !== null} onclick={addChannelAssignment}>Assign profile</Button>
 							</div>
 						{:else}
 							<span class="faint small">Channels are picked by name once the bot can list them.</span>
@@ -550,25 +593,25 @@
 						{/if}
 						<MemberPicker id="pf-user" bind:values={userChoice} search={memberSearch(data.directory)} lookup={memberLookup(data.directory)} disabled={assigning !== null} />
 						<div class="row">
-							<select class="select" bind:value={userProfile} aria-label="Profile for the members" disabled={assigning !== null}>
+							<Field label="Profile for the members" for="control-23295"><select id="control-23295" class="select" bind:value={userProfile} aria-label="Profile for the members" disabled={assigning !== null}>
 								<option value="" disabled>Choose a profile</option>
 								{#each data.profiles as profile (profile.id)}
 									<option value={profile.id}>{profile.name}</option>
 								{/each}
-							</select>
-							<Button size="sm" icon="plus" disabled={userChoice.length === 0 || !userProfile || assigning !== null} onclick={addUserAssignments}>Put in force</Button>
+							</select></Field>
+							<Button size="sm" icon="plus" disabled={userChoice.length === 0 || !userProfile || assigning !== null} onclick={addUserAssignments}>Assign profile</Button>
 						</div>
 					</div>
 				</div>
 
 				<div class="check stack-sm">
-					<span class="strong">What is in force</span>
-					<span class="hint">Pick a channel and, if you like, a member, to see which platforms are off there and which profiles made it so.</span>
+					<span class="strong">What is assigned</span>
+					<span class="hint">Choose a channel or member to see the profiles and limits that apply.</span>
 					<div class="row">
 						{#if channels}
 							<ChannelSelect id="pf-check-channel" bind:value={checkChannel} {channels} emptyLabel="Anywhere in the guild" disabled={checking} />
 						{:else}
-							<input class="input" bind:value={checkChannel} placeholder="Channel id" aria-label="Channel id" disabled={checking} />
+							<Field label="Channel id" for="control-24206"><input id="control-24206" class="input" bind:value={checkChannel} placeholder="Channel id" aria-label="Channel id" disabled={checking} /></Field>
 						{/if}
 						<Button size="sm" icon="search" loading={checking} onclick={runCheck}>Check</Button>
 					</div>
@@ -583,6 +626,7 @@
 							{#if checkedOff.length}
 								<div class="chips">{#each checkedOff as id (id)}<span class="chip">{id}</span>{/each}</div>
 							{/if}
+							<span class="small">Limits: {describeLimits(checked.limits, "the server's own")}.</span>
 							<span class="faint small">
 								Applied: {checked.applied.map((a) => `${nameOf(a.profile_id)} for ${describeScope(a.scope, channels)}`).join(', then ')}.
 							</span>
@@ -602,7 +646,7 @@
 >
 	<form id="rule-form" class="stack" onsubmit={save} novalidate>
 		{#if error}
-			<Alert tone="danger" message={error} onclose={() => (error = null)} />
+			<FormFeedback message={error} />
 		{/if}
 		<RuleForm id="rule" bind:value={form} bind:this={formRef} disabled={saving} directory={data.directory} {taken} />
 	</form>
@@ -639,7 +683,7 @@
 		align-items: center;
 		gap: 6px;
 		padding: 12px 20px 4px;
-		font-size: 11.5px;
+		font-size: 13px;
 		font-weight: 600;
 		letter-spacing: 0.05em;
 		text-transform: uppercase;
@@ -695,6 +739,13 @@
 
 	tr.off td {
 		color: var(--text-3);
+	}
+
+	.select.compact {
+		max-width: 220px;
+		padding-top: 3px;
+		padding-bottom: 3px;
+		font-size: 13px;
 	}
 
 	.scope {

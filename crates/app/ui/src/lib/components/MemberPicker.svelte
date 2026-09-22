@@ -10,9 +10,9 @@
 	interface Props {
 		id: string;
 		values: string[];
-		/** Members whose name starts with the text, through the guild's bot. */
+		/** Members whose name starts with the text, through the server's bot. */
 		search: (q: string) => Promise<GuildMember[]>;
-		/** One member by id; `null` when the id is not a member of the guild. */
+		/** One member by ID. `null` when the id is not a member of the guild. */
 		lookup: (userId: string) => Promise<GuildMember | null>;
 		disabled?: boolean;
 	}
@@ -241,7 +241,7 @@
 		border-radius: 6px;
 		background: var(--accent-soft);
 		color: var(--accent-text);
-		font-size: 12.5px;
+		font-size: 13px;
 		line-height: 1.5;
 	}
 
@@ -255,13 +255,17 @@
 		padding: 0 5px;
 		border-radius: 4px;
 		background: color-mix(in srgb, currentColor 12%, transparent);
-		font-size: 10.5px;
+		font-size: 13px;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 	}
 
 	.remove {
 		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 28px;
+		min-height: 28px;
 		padding: 2px;
 		border: none;
 		border-radius: 4px;

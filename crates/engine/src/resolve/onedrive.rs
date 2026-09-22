@@ -25,7 +25,7 @@ const TOKEN_API: &str = "https://api-badgerp.svc.ms/v1.0/token";
 /// The web app's own id, which the token service issues anonymous tokens to.
 const APP_ID: &str = "5cbed6ac-a083-4e14-b191-b4ba07653de2";
 const SHARES_API: &str = "https://my.microsoftpersonalcontent.com/_api/v2.0/shares/";
-/// Tokens last a week; one is asked for again well before that.
+/// Tokens last a week. One is asked for again well before that.
 const TOKEN_LIFETIME: Duration = Duration::from_secs(5 * 24 * 60 * 60);
 
 /// A share link, and the item within it a playlist entry names.
@@ -237,7 +237,7 @@ impl OnedriveResolver {
         let mut fresh = false;
         loop {
             let token = self.token(origin, fresh).await?;
-            // The share is redeemed for the token on its first use; without asking for
+            // The share is redeemed for the token on its first use. Without asking for
             // that the API refuses the link.
             let headers = [
                 ("authorization".to_string(), format!("Badger {token}")),

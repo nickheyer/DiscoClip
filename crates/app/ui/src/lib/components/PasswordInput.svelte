@@ -52,9 +52,8 @@
 		type="button"
 		class="toggle"
 		onclick={() => (shown = !shown)}
-		aria-label={shown ? 'Hide' : 'Show'}
+		aria-label={shown ? 'Hide password' : 'Show password'}
 		aria-pressed={shown}
-		tabindex="-1"
 		{disabled}
 	>
 		<Icon name={shown ? 'eye-off' : 'eye'} size={15} />
@@ -67,15 +66,19 @@
 	}
 
 	.wrap :global(.input) {
-		padding-right: 38px;
+		padding-right: 48px;
 	}
 
 	.toggle {
 		position: absolute;
 		top: 50%;
-		right: 6px;
+		right: 1px;
 		transform: translateY(-50%);
 		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 42px;
+		height: 42px;
 		padding: 5px;
 		border: none;
 		border-radius: 4px;

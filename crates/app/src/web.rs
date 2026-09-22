@@ -127,7 +127,7 @@ pub struct AppState {
     pub tokens: TokenStore,
     pub guilds: GuildStore,
     pub limits: Arc<Limits>,
-    /// Set while no account exists; the setup page must present it.
+    /// Set while no account exists. The setup page must present it.
     pub setup_token: Arc<Mutex<Option<String>>>,
     pub oauth: Arc<OAuthService>,
     /// `web.public_url`, as it stands.
@@ -136,7 +136,7 @@ pub struct AppState {
     pub bots: Arc<BotManager>,
     pub bot_guilds: BotGuildStore,
     pub rules: RuleStore,
-    /// Which platforms are on where: profiles and where they are in force.
+    /// Which platforms are on where: profiles and where they are assigned.
     pub profiles: ProfileStore,
     /// The public sites the server hosts over its media.
     pub frontends: FrontendStore,
@@ -153,7 +153,7 @@ pub struct AppState {
     pub settings: SettingsStore,
     /// Where settings changes are applied.
     pub live: Arc<Live>,
-    /// Where the database lives; provisioned, never a setting.
+    /// Where the database lives. Provisioned, never a setting.
     pub data_dir: PathBuf,
     /// The provisioning file read at startup, when one was.
     pub provisioning_file: Option<PathBuf>,
@@ -234,7 +234,7 @@ fn oauth_http() -> Result<reqwest::Client, reqwest::Error> {
 
 impl WebApp {
     /// `providers` are the login providers offered at first, joined by Discord when an
-    /// application is marked for login; the `auth` settings replace them whenever they
+    /// application is marked for login. The `auth` settings replace them whenever they
     /// change.
     pub async fn new(
         settings: &Settings,
@@ -360,11 +360,11 @@ impl WebApp {
         self.run(listener, shutdown).await
     }
 
-    /// Serves on `listener` until `shutdown`: over TLS when `web.tls` names a certificate,
-    /// plain HTTP otherwise. When `web.bind` changes, the new address is listened on before
-    /// the old one is given up, so an address that cannot be taken after all leaves the app
-    /// where it was; when `web.tls` changes, the same address is listened on again with the
-    /// new files. Open connections get a moment to finish at each change and at shutdown.
+    /// Serve HTTP or configured TLS until shutdown. Bind a new address before releasing
+    /// the old listener. Rebind TLS when its settings change.
+    ///
+    /// If binding fails, retain the old listener. Allow active connections to finish
+    /// during changes and shutdown.
     pub async fn run(
         mut self,
         listener: TcpListener,
@@ -430,7 +430,7 @@ impl WebApp {
             let Some((next, fresh)) = next else {
                 return Ok(());
             };
-            tracing::info!("web app listener closed; the new address or certificate takes over");
+            tracing::info!("Closed the previous web listener.");
             config = next;
             listener = fresh;
         }
@@ -447,7 +447,7 @@ async fn rebind(addr: SocketAddr, shutdown: &CancellationToken) -> Result<TcpLis
         match bind(addr).await {
             Ok(listener) => return Ok(listener),
             Err(error) if attempt < ATTEMPTS && !shutdown.is_cancelled() => {
-                tracing::warn!(attempt, "{error}; asking again");
+                tracing::warn!(attempt, "{error}. Retrying.");
                 tokio::time::sleep(Duration::from_millis(200)).await;
             }
             Err(error) => return Err(error),

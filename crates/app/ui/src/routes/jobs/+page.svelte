@@ -1,4 +1,5 @@
 <script lang="ts">
+	import FormFeedback from '$lib/components/FormFeedback.svelte';
 	import { goto, invalidate } from '$app/navigation';
 	import { SvelteSet } from 'svelte/reactivity';
 	import type { PageData } from './$types';
@@ -126,7 +127,7 @@
 		if (action === 'delete') {
 			const ok = await confirm.ask({
 				title: `Delete ${pluralize(ids.length, 'job')}?`,
-				message: 'Their records and cached files go away. Jobs still running are skipped; cancel them first.',
+				message: 'Deletes records and cached files. Running jobs are skipped.',
 				confirmLabel: 'Delete',
 				danger: true
 			});
@@ -305,7 +306,7 @@
 	<title>Jobs · DiscoClip</title>
 </svelte:head>
 
-<PageHeader title="Jobs" description="Every link the engine has taken on, filtered, with what came of each.">
+<PageHeader title="Jobs" description="Track downloads and manage submitted links.">
 	{#snippet actions()}
 		{#if canManage}
 			<Button variant="primary" icon="plus" onclick={openSubmit}>Submit a link</Button>
@@ -388,7 +389,7 @@
 	{/if}
 
 	{#if rows.length === 0}
-		<Empty icon="video" title={filtered ? 'Nothing matches' : 'No jobs yet'} description={filtered ? 'No job matches these filters.' : 'Links posted in watched channels, sent with /clip, or submitted here show up as they run.'}>
+		<Empty icon="video" title={filtered ? 'Nothing matches' : 'No jobs yet'} description={filtered ? 'No job matches these filters.' : 'Submit a link to create your first job.'}>
 			{#if filtered}<Button onclick={clear}>Clear filters</Button>{/if}
 			{#if canManage && !filtered}<Button variant="primary" icon="plus" onclick={openSubmit}>Submit a link</Button>{/if}
 		</Empty>
@@ -433,7 +434,7 @@
 								{#if submitter(job)}<span class="faint small block">{submitter(job)}</span>{/if}
 							</td>
 							<td>
-								<span>{job.resolver ?? '—'}</span>
+								<span>{job.resolver ?? 'Not available'}</span>
 								{#if job.resolver && job.media !== 'video'}<span class="faint small block">{MEDIA_LABELS[job.media]}</span>{/if}
 							</td>
 							<td class="nowrap">
@@ -470,14 +471,15 @@
 	{/if}
 </div>
 
-<Dialog bind:open={dialog} title="Submit a link" description="The engine resolves it, downloads the video, transcodes it to fit, and writes it to the server's local directory." busy={submitting}>
+<Dialog bind:open={dialog} title="Submit a link" description="Download a clip to the server." busy={submitting}>
 	<form id="submit-form" class="stack" onsubmit={submit} novalidate>
 		{#if submitError}
-			<Alert tone="danger" message={submitError} onclose={() => (submitError = null)} />
+			<FormFeedback message={submitError} />
 		{/if}
 		<Field label="Link" for="s-url" error={urlProblem} hint="A video page, a playlist, or a direct media or manifest URL.">
 			<input id="s-url" class="input" type="url" bind:value={url} placeholder="https://" required aria-invalid={urlProblem ? 'true' : undefined} />
 		</Field>
+		<details><summary>Trim clip</summary>
 		<div class="grid-2">
 			<Field label="Clip from" for="s-start" optional hint="90, 1:30 or 1m30s." error={clipStartProblem}>
 				<input id="s-start" class="input mono" bind:value={clipStart} placeholder="Start" aria-invalid={clipStartProblem ? 'true' : undefined} />
@@ -486,34 +488,39 @@
 				<input id="s-end" class="input mono" bind:value={clipEnd} placeholder="End" aria-invalid={clipEndProblem ? 'true' : undefined} />
 			</Field>
 		</div>
+		</details>
+		<details><summary>Subtitles</summary>
 		<div class="grid-2">
 			<Field label="Subtitles" for="s-subs">
 				<select id="s-subs" class="select" bind:value={subtitles}>
-					<option value="keep">Keep beside the video</option>
-					<option value="burn">Burn into the picture</option>
-					<option value="skip">Ignore</option>
+					<option value="keep">Save subtitle file</option>
+					<option value="burn">Embed in video</option>
+					<option value="skip">Skip subtitles</option>
 				</select>
 			</Field>
-			<Field label="Subtitle language" for="s-lang" optional hint="Such as en or de; every language when empty.">
+			<Field label="Subtitle language" for="s-lang" optional hint="Language code, such as en or de. Leave blank for all languages.">
 				<input id="s-lang" class="input" bind:value={subtitleLanguage} placeholder="en" maxlength="16" />
 			</Field>
 		</div>
-		<div class="grid-3">
-			<Field label="Tallest output" for="s-height" optional error={heightProblem}>
+		</details>
+		<details><summary>Media limits</summary>
+		<div class="form-stack">
+			<Field label="Maximum height (px)" for="s-height" optional error={heightProblem}>
 				<input id="s-height" class="input" type="number" min="0" step="1" value={maxHeight} oninput={(e) => (maxHeight = (e.currentTarget as HTMLInputElement).value)} placeholder="px" aria-invalid={heightProblem ? 'true' : undefined} />
 			</Field>
-			<Field label="Longest video" for="s-minutes" optional error={minutesProblem}>
+			<Field label="Maximum duration (minutes)" for="s-minutes" optional error={minutesProblem}>
 				<input id="s-minutes" class="input" type="number" min="0" step="any" value={maxMinutes} oninput={(e) => (maxMinutes = (e.currentTarget as HTMLInputElement).value)} placeholder="min" aria-invalid={minutesProblem ? 'true' : undefined} />
 			</Field>
-			<Field label="Largest source" for="s-mb" optional error={mbProblem}>
+			<Field label="Maximum size (MiB)" for="s-mb" optional error={mbProblem}>
 				<input id="s-mb" class="input" type="number" min="0" step="any" value={maxMb} oninput={(e) => (maxMb = (e.currentTarget as HTMLInputElement).value)} placeholder="MB" aria-invalid={mbProblem ? 'true' : undefined} />
 			</Field>
 		</div>
-		<p class="hint">Limits tighten the server's own; they never loosen them.</p>
+		<p class="hint">These limits cannot exceed the server limits.</p>
+		</details>
 	</form>
 	{#snippet footer()}
 		<Button variant="ghost" onclick={() => (dialog = false)} disabled={submitting}>Cancel</Button>
-		<Button variant="primary" loading={submitting} disabled={!ready} onclick={() => document.querySelector<HTMLFormElement>('#submit-form')?.requestSubmit()}>Queue it</Button>
+		<Button variant="primary" loading={submitting} disabled={!ready} onclick={() => document.querySelector<HTMLFormElement>('#submit-form')?.requestSubmit()}>Download clip</Button>
 	{/snippet}
 </Dialog>
 

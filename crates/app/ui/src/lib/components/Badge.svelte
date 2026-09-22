@@ -26,7 +26,7 @@
 		gap: 6px;
 		padding: 2px 9px;
 		border-radius: 999px;
-		font-size: 12px;
+		font-size: 13px;
 		font-weight: 500;
 		line-height: 1.6;
 		white-space: nowrap;
@@ -35,7 +35,7 @@
 
 	.badge-sm {
 		padding: 0 7px;
-		font-size: 11.5px;
+		font-size: 13px;
 	}
 
 	.dot {

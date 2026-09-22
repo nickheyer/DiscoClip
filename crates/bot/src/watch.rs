@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use discoclip_engine::detect::find_urls;
-use discoclip_engine::job::{Request, RequestLimits};
+use discoclip_engine::job::Request;
 use twilight_model::channel::Message;
 use twilight_model::id::Id;
 use twilight_model::id::marker::ChannelMarker;
@@ -17,7 +17,9 @@ pub trait RuleSource: Send + Sync {
 }
 
 /// Turns messages in watched channels into engine requests. A channel without a rule is
-/// not watched, and a link that only turned-off platforms would take is left alone.
+/// not watched. The profile assigned for the channel and the author says which platforms
+/// count and how big a video may be, and a link that only turned-off platforms would
+/// take is left alone.
 pub struct Watcher {
     application: Uuid,
     rules: Arc<dyn RuleSource>,
@@ -50,11 +52,13 @@ impl Watcher {
         if !author_allowed(&rule, message) {
             return Vec::new();
         }
-        let disabled = self.profiles.disabled_platforms(
+        let in_force = self.profiles.in_force(
             message.guild_id,
             Some(message.channel_id),
             Some(message.author.id),
         );
+        let disabled = in_force.disabled;
+        let limits = in_force.limits;
         let origin = DiscordOrigin {
             application: self.application,
             guild: message.guild_id,
@@ -64,18 +68,9 @@ impl Watcher {
         }
         .to_origin();
         let destination = rule.post_to.map(|channel| channel.to_string());
-        let limits = RequestLimits {
-            max_source_bytes: rule.max_source_bytes,
-            max_duration_secs: rule.max_duration_secs,
-            max_height: rule.max_height,
-        };
         let submitted_by = Some(format!("discord:{}", message.author.id));
         find_urls(&message.content)
             .into_iter()
-            .filter(|url| {
-                url.host_str()
-                    .is_some_and(|h| host_allowed(&rule.allow_hosts, h))
-            })
             .filter(|url| {
                 match turned_off(&self.platforms.resolvers_for(url), &disabled) {
                     Some(platform) => {
@@ -97,7 +92,7 @@ impl Watcher {
     }
 }
 
-/// Whether the message's author is one of the rule's users or holds one of its roles; a
+/// Whether the message's author is one of the rule's users or holds one of its roles. A
 /// rule naming neither takes messages from everyone.
 pub fn author_allowed(rule: &WatchRule, message: &Message) -> bool {
     if rule.allow_users.is_empty() && rule.allow_roles.is_empty() {
@@ -114,19 +109,6 @@ pub fn author_allowed(rule: &WatchRule, message: &Message) -> bool {
     })
 }
 
-/// Whether `host` matches one of `allowed`, or any host when `allowed` is empty. Entries
-/// match themselves and their subdomains; a leading `*.` is accepted and ignored.
-pub fn host_allowed(allowed: &[String], host: &str) -> bool {
-    if allowed.is_empty() {
-        return true;
-    }
-    let host = host.to_ascii_lowercase();
-    allowed.iter().any(|entry| {
-        let entry = entry.trim_start_matches("*.").to_ascii_lowercase();
-        host == entry || host.ends_with(&format!(".{entry}"))
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -136,7 +118,10 @@ mod tests {
     use twilight_model::user::User;
     use twilight_model::util::Timestamp;
 
+    use discoclip_engine::job::RequestLimits;
+
     use super::*;
+    use crate::profile::InForce;
 
     struct Rules(HashMap<u64, WatchRule>);
 
@@ -146,17 +131,20 @@ mod tests {
         }
     }
 
-    /// Platforms turned off everywhere, whatever the scope.
-    struct Off(Vec<String>);
+    /// Platforms turned off and limits assigned everywhere, whatever the scope.
+    struct Off(Vec<String>, RequestLimits);
 
     impl ProfileSource for Off {
-        fn disabled_platforms(
+        fn in_force(
             &self,
             _: Option<Id<twilight_model::id::marker::GuildMarker>>,
             _: Option<Id<ChannelMarker>>,
             _: Option<Id<twilight_model::id::marker::UserMarker>>,
-        ) -> Vec<String> {
-            self.0.clone()
+        ) -> InForce {
+            InForce {
+                disabled: self.0.clone(),
+                limits: self.1,
+            }
         }
     }
 
@@ -177,10 +165,8 @@ mod tests {
         }
     }
 
-    fn rule(channel: u64, hosts: &[&str]) -> WatchRule {
-        let mut rule = WatchRule::for_channel(Id::new(channel));
-        rule.allow_hosts = hosts.iter().map(|h| h.to_string()).collect();
-        rule
+    fn rule(channel: u64) -> WatchRule {
+        WatchRule::for_channel(Id::new(channel))
     }
 
     fn message(channel: u64, author: u64, roles: &[u64], content: &str) -> Message {
@@ -227,23 +213,23 @@ mod tests {
     }
 
     fn watcher(rules: Vec<WatchRule>) -> Watcher {
-        watcher_with(rules, Vec::new())
+        watcher_with(rules, Vec::new(), RequestLimits::default())
     }
 
-    fn watcher_with(rules: Vec<WatchRule>, off: Vec<&str>) -> Watcher {
+    fn watcher_with(rules: Vec<WatchRule>, off: Vec<&str>, limits: RequestLimits) -> Watcher {
         Watcher::new(
             Uuid::from_u128(1),
             Arc::new(Rules(
                 rules.into_iter().map(|r| (r.channel.get(), r)).collect(),
             )),
-            Arc::new(Off(off.into_iter().map(String::from).collect())),
+            Arc::new(Off(off.into_iter().map(String::from).collect(), limits)),
             Arc::new(ByHost),
         )
     }
 
     #[test]
     fn links_only_turned_off_platforms_take_are_left_alone() {
-        let watcher = watcher_with(vec![rule(1, &[])], vec!["youtube", "web"]);
+        let watcher = watcher_with(vec![rule(1)], vec!["youtube", "web"], RequestLimits::default());
         let picked = watcher.requests(&message(
             1,
             9,
@@ -260,7 +246,7 @@ mod tests {
 
     #[test]
     fn only_channels_with_rules_are_watched() {
-        let watcher = watcher(vec![rule(1, &["reddit.com"]), rule(2, &[])]);
+        let watcher = watcher(vec![rule(1), rule(2)]);
         assert!(
             watcher
                 .requests(&message(3, 9, &[], "https://reddit.com/x"))
@@ -272,7 +258,7 @@ mod tests {
             &[],
             "see https://old.reddit.com/r/v and https://youtube.com/w",
         ));
-        assert_eq!(picked.len(), 1);
+        assert_eq!(picked.len(), 2);
         assert_eq!(picked[0].url.as_str(), "https://old.reddit.com/r/v");
         assert!(picked[0].destination.is_none());
         assert_eq!(picked[0].limits, RequestLimits::default());
@@ -289,29 +275,27 @@ mod tests {
                 .len(),
             1
         );
-        assert!(host_allowed(&["*.redd.it".to_string()], "v.redd.it"));
-        assert!(!host_allowed(&["reddit.com".to_string()], "notreddit.com"));
     }
 
     #[test]
-    fn rules_carry_destination_and_limits() {
-        let mut with_limits = rule(1, &[]);
-        with_limits.post_to = Some(Id::new(50));
-        with_limits.max_source_bytes = Some(1000);
-        with_limits.max_duration_secs = Some(30);
-        with_limits.max_height = Some(720);
-        let watcher = watcher(vec![with_limits]);
+    fn rules_carry_the_destination_and_profiles_the_limits() {
+        let mut with_destination = rule(1);
+        with_destination.post_to = Some(Id::new(50));
+        let limits = RequestLimits {
+            max_source_bytes: Some(1000),
+            max_duration_secs: Some(30),
+            max_height: Some(720),
+        };
+        let watcher = watcher_with(vec![with_destination], Vec::new(), limits);
         let picked = watcher.requests(&message(1, 9, &[], "https://a.example/v"));
         assert_eq!(picked[0].destination.as_deref(), Some("50"));
-        assert_eq!(picked[0].limits.max_source_bytes, Some(1000));
-        assert_eq!(picked[0].limits.max_duration_secs, Some(30));
-        assert_eq!(picked[0].limits.max_height, Some(720));
+        assert_eq!(picked[0].limits, limits);
         assert_eq!(picked[0].submitted_by.as_deref(), Some("discord:9"));
     }
 
     #[test]
     fn users_and_roles_limit_who_is_heard() {
-        let mut restricted = rule(1, &[]);
+        let mut restricted = rule(1);
         restricted.allow_users = vec![Id::new(9)];
         restricted.allow_roles = vec![Id::new(500)];
         let watcher = watcher(vec![restricted]);
@@ -324,7 +308,7 @@ mod tests {
 
     #[test]
     fn bots_are_ignored() {
-        let watcher = watcher(vec![rule(1, &[])]);
+        let watcher = watcher(vec![rule(1)]);
         let mut from_bot = message(1, 9, &[], "https://a.example/v");
         from_bot.author.bot = true;
         assert!(watcher.requests(&from_bot).is_empty());

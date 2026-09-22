@@ -1,4 +1,5 @@
 <script lang="ts">
+	import FormFeedback from '$lib/components/FormFeedback.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import type { PageData } from './$types';
@@ -67,7 +68,7 @@
 		{/if}
 		<form class="stack" onsubmit={submit} novalidate>
 			{#if error}
-				<Alert tone="danger" message={error} onclose={() => (error = null)} />
+				<FormFeedback message={error} />
 			{/if}
 			{#if wait > 0}
 				<Alert tone="warn" message={`Too many wrong passwords. Try again in ${wait}s.`} />
@@ -112,7 +113,7 @@
 		align-items: center;
 		gap: 12px;
 		color: var(--text-3);
-		font-size: 12.5px;
+		font-size: 13px;
 	}
 
 	.divider::before,

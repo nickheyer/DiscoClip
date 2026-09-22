@@ -7,7 +7,7 @@
 		title: string;
 		description?: string;
 		size?: 'sm' | 'md' | 'lg';
-		/** Keeps the dialog up while work is in flight. */
+		/** Prevent closing during a request. */
 		busy?: boolean;
 		onclose?: () => void;
 		children: Snippet;
@@ -26,14 +26,15 @@
 	}: Props = $props();
 
 	let element: HTMLDialogElement | undefined = $state();
+	const uid = $props.id();
 
 	$effect(() => {
 		if (!element) return;
 		if (open && !element.open) {
 			element.showModal();
-			// The first field, not the close button, is where typing should start.
+			// Focus the first editable field.
 			element
-				.querySelector<HTMLElement>('.body input:not([type=hidden]), .body select, .body textarea')
+				.querySelector<HTMLElement>('.body input:not([type=hidden]):not(:disabled), .body select:not(:disabled), .body textarea:not(:disabled)')
 				?.focus();
 		} else if (!open && element.open) {
 			element.close();
@@ -61,13 +62,14 @@
 	class={['dialog', `dialog-${size}`]}
 	oncancel={onCancel}
 	onclick={onBackdrop}
-	aria-labelledby="dialog-title"
+	aria-labelledby={`${uid}-title`}
+	aria-describedby={description ? `${uid}-description` : undefined}
 >
 	<div class="panel">
 		<header class="head">
 			<div class="head-text">
-				<h2 id="dialog-title">{title}</h2>
-				{#if description}<p class="muted small">{description}</p>{/if}
+				<h2 id={`${uid}-title`}>{title}</h2>
+				{#if description}<p id={`${uid}-description`} class="muted small">{description}</p>{/if}
 			</div>
 			<button type="button" class="close" onclick={close} aria-label="Close" disabled={busy}>
 				<Icon name="x" size={16} />
@@ -111,7 +113,7 @@
 		color: var(--text);
 		display: flex;
 		flex-direction: column;
-		max-height: calc(100vh - 48px);
+		max-height: calc(100dvh - 32px);
 	}
 
 	.head {
@@ -133,6 +135,10 @@
 
 	.close {
 		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 44px;
+		min-height: 44px;
 		padding: 6px;
 		border: none;
 		border-radius: 6px;
@@ -148,7 +154,7 @@
 	}
 
 	.body {
-		padding: 4px 20px 20px;
+		padding: 12px 24px 24px;
 		overflow: auto;
 	}
 

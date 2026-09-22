@@ -1,8 +1,7 @@
-//! Vidyard players, through the player API the embed reads: every MP4 rendition by its
-//! profile, the HLS master expanded to its renditions, the captions, and the video's
-//! name, description, length and thumbnail, all behind the player referer the CDN
-//! wants. Watch pages, share links, player links, embed scripts and inline embeds name
-//! the player; a player of several chapters becomes a playlist, one chapter per link.
+//! Resolve Vidyard players through the player API. Include MP4, expanded HLS, captions
+//! and metadata. Use the player referer for CDN requests.
+//!
+//! Players with multiple chapters become playlists.
 
 use std::sync::LazyLock;
 use std::time::Duration;

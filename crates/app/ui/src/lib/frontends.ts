@@ -1,4 +1,4 @@
-// What the front end pages say about front ends: labels, summaries and an empty form.
+// Media site labels and defaults.
 
 import type {
 	Frontend,
@@ -11,27 +11,27 @@ import type {
 import { formatBytes, pluralize } from './format';
 
 export const SECRET_LABELS: Record<SecretKind, { label: string; prompt: string; hint: string }> = {
-	pin: { label: 'PIN', prompt: 'Enter the PIN', hint: 'A short code of digits to remember.' },
+	pin: { label: 'PIN', prompt: 'Enter the PIN', hint: 'A shared numeric code.' },
 	password: {
 		label: 'Password',
 		prompt: 'Enter the password',
-		hint: 'A password shared with everyone who may look.'
+		hint: 'A shared password.'
 	},
 	token: {
 		label: 'Access token',
 		prompt: 'Paste the access token',
-		hint: 'A long string handed out and pasted rather than remembered.'
+		hint: 'A shared access token.'
 	}
 };
 
 export const FRONT_CALLBACK_ERRORS: Record<FrontCallbackError, string> = {
-	state: 'That login attempt expired or was already used. Start again.',
-	denied: 'You cancelled at the provider, so nothing was changed.',
-	provider: 'The provider refused the request, or this site does not log people in through it.',
-	exchange: 'The provider could not be reached to finish the login.',
-	identity: 'The provider did not send back a usable identity.',
-	frontend: 'This site is not taking logins right now.',
-	not_listed: 'Your Discord account is not on the list of people who may look.',
+	state: 'Login expired. Try again.',
+	denied: 'Login cancelled.',
+	provider: 'This login provider is unavailable.',
+	exchange: 'Could not reach the login provider. Try again.',
+	identity: 'Could not identify your account. Try again.',
+	frontend: 'Login is unavailable for this site.',
+	not_listed: 'Your Discord account does not have access to this site.',
 	not_member: 'You are not a member of the Discord server this site belongs to.',
 	guilds: 'Discord did not say which servers you belong to. Try again.'
 };
@@ -97,16 +97,16 @@ export function toInput(frontend: Frontend): FrontendInput {
 	};
 }
 
-/** Which jobs the front end shows, in words. */
+/** Summarize included media. */
 export function scopeSummary(frontend: Pick<Frontend, 'scope'>): string {
 	const parts: string[] = [];
-	if (frontend.scope.guilds.length) parts.push(pluralize(frontend.scope.guilds.length, 'guild'));
+	if (frontend.scope.guilds.length) parts.push(pluralize(frontend.scope.guilds.length, 'server'));
 	if (frontend.scope.channels.length)
 		parts.push(pluralize(frontend.scope.channels.length, 'channel'));
 	return parts.length ? parts.join(' and ') : 'everything';
 }
 
-/** Who the front end lets in, in words. */
+/** Summarize site access. */
 export function accessSummary(
 	frontend: Pick<Frontend, 'access' | 'has_secret'>,
 	providers: FrontProvider[] = []
@@ -115,14 +115,14 @@ export function accessSummary(
 	const ways: string[] = [];
 	if (frontend.has_secret && frontend.access.secret_kind)
 		ways.push(SECRET_LABELS[frontend.access.secret_kind].label.toLowerCase());
-	if (frontend.access.accounts) ways.push('own accounts');
+	if (frontend.access.accounts) ways.push('Site accounts');
 	for (const id of frontend.access.providers) {
 		const name = providers.find((p) => p.id === id)?.name ?? id;
 		ways.push(
 			id === 'discord' && frontend.access.discord_members ? `${name} members` : name
 		);
 	}
-	return ways.length ? ways.join(', ') : 'nobody: no way in is set up';
+	return ways.length ? ways.join(', ') : 'No access method';
 }
 
 export function linkSummary(frontend: Pick<Frontend, 'links'>): string {
@@ -130,11 +130,11 @@ export function linkSummary(frontend: Pick<Frontend, 'links'>): string {
 	return `links under ${frontend.links.min_height}p or ${Math.round(frontend.links.min_bitrate / 1000)} kb/s, page up to ${formatBytes(frontend.links.max_bytes)}`;
 }
 
-/** The slug rule the server applies, so the form can say so before sending. */
+/** Validate site URLs before submission. */
 export function slugProblem(slug: string): string | null {
-	if (slug.length < 2 || slug.length > 40) return 'A slug is 2 to 40 characters.';
+	if (slug.length < 2 || slug.length > 40) return 'Use 2 to 40 characters.';
 	if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug))
-		return 'Lower-case letters, digits and dashes, not starting or ending with a dash.';
+		return 'Use lowercase letters, numbers and hyphens. Start and end with a letter or number.';
 	if (['api', 'login', 'logout', 'setup', 'static', '_app'].includes(slug))
 		return `${slug} is reserved.`;
 	return null;

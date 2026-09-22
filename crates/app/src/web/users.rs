@@ -1,4 +1,4 @@
-//! Accounts and roles, administered by admins; passwords, changed by their owners too.
+//! Accounts and roles, administered by admins. Passwords, changed by their owners too.
 
 use axum::Json;
 use axum::extract::{Path, State};
@@ -85,7 +85,7 @@ pub async fn list_all_sessions(
     ))
 }
 
-/// Ends one session of an account, for admins; the cookie is cleared when it is their own.
+/// Ends one session of an account, for admins. The cookie is cleared when it is their own.
 pub async fn revoke_session(
     State(state): State<AppState>,
     Auth(identity): Auth,
@@ -135,7 +135,7 @@ pub async fn create(
     Ok((StatusCode::CREATED, Json(user)))
 }
 
-/// Any account for admins; one's own for everyone.
+/// Any account for admins. One's own for everyone.
 pub async fn get(
     State(state): State<AppState>,
     Auth(identity): Auth,
@@ -195,7 +195,7 @@ pub struct PasswordRequest {
 }
 
 /// Sets a password. An account changing its own must give the current one, and keeps only
-/// the session asking; an admin resetting another's ends all of that account's sessions.
+/// the session asking. An admin resetting another's ends all of that account's sessions.
 pub async fn set_password(
     State(state): State<AppState>,
     Auth(identity): Auth,
@@ -265,7 +265,7 @@ pub async fn list_sessions(
     ))
 }
 
-/// Ends every session of an account, for admins; their own included when it is theirs.
+/// Ends every session of an account, for admins. Their own included when it is theirs.
 pub async fn revoke_sessions(
     State(state): State<AppState>,
     Auth(identity): Auth,
@@ -594,7 +594,7 @@ mod tests {
             StatusCode::FORBIDDEN
         );
 
-        // One session of another account; the wrong account or id is not found.
+        // One session of another account. The wrong account or id is not found.
         let (status, _) = admin
             .delete(&format!("/api/users/{viewer_id}/sessions/{own_id}"))
             .await;

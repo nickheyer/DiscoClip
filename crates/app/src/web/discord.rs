@@ -23,7 +23,7 @@ pub async fn sync_guilds(state: &AppState, user: UserId) -> Result<Vec<Guild>, A
     Ok(state.guilds.replace(user, &guilds).await?)
 }
 
-/// The guilds as last fetched; manageable ones first.
+/// The guilds as last fetched. Manageable ones first.
 pub async fn list_guilds(
     State(state): State<AppState>,
     Auth(identity): Auth,

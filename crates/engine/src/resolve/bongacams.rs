@@ -1,5 +1,5 @@
 //! BongaCams live rooms and listings. A room goes through the AMF endpoint the room page
-//! calls for the room's video server, then the room's HLS playlist; a listing page (the
+//! calls for the room's video server, then the room's HLS playlist. A listing page (the
 //! front page, a gender tab or a category) carries the rooms online in its state. The
 //! site answers anything but a browser's TLS fingerprint with a bot check, so its pages
 //! and endpoints are read as Chrome.
@@ -33,7 +33,7 @@ static RE_STATE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#""stateData"\s*
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Link {
     pub host: String,
-    /// The path segment; `None` for the front page, which lists every room online.
+    /// The path segment. `None` for the front page, which lists every room online.
     pub name: Option<String>,
 }
 

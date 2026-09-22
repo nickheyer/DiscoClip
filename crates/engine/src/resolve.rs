@@ -265,7 +265,7 @@ pub const MAX_PAGE: usize = 8 * 1024 * 1024;
 pub enum SessionSupport {
     /// The platform is read without an account.
     None,
-    /// Public links work without one; a session unlocks age-gated, private or higher
+    /// Public links work without one. A session unlocks age-gated, private or higher
     /// quality media.
     Optional,
     /// Nothing resolves without a logged-in session.
@@ -279,7 +279,7 @@ pub enum SessionSupport {
 pub enum Tag {
     /// The mainstream platforms most links in a chat point at.
     Basic,
-    /// Adult content, or a site that carries it as a matter of course.
+    /// Adult content, or a site that carries it by default.
     Nsfw,
     /// News outlets and broadcasters' news programmes.
     News,
@@ -679,9 +679,12 @@ pub enum VariantKind {
     Ism,
     Rtmp,
     Rtsp,
+    /// An RTP session: one an SDP document describes, or a bare `rtp://`, `udp://` or
+    /// `srt://` address.
+    Rtp,
     /// WebRTC through a WHEP endpoint.
     Whep,
-    /// A page whose player feeds a media source extension; captured in a headless browser.
+    /// A page whose player feeds a media source extension. Captured in a headless browser.
     Browser,
 }
 
@@ -694,6 +697,7 @@ impl VariantKind {
             VariantKind::Ism => "ism",
             VariantKind::Rtmp => "rtmp",
             VariantKind::Rtsp => "rtsp",
+            VariantKind::Rtp => "rtp",
             VariantKind::Whep => "whep",
             VariantKind::Browser => "browser",
         }
@@ -765,7 +769,7 @@ pub struct Variant {
     pub audio_only: bool,
     #[serde(default)]
     pub live: bool,
-    /// The DRM system the stream is locked with; such variants cannot be downloaded.
+    /// The DRM system the stream is locked with. Such variants cannot be downloaded.
     #[serde(default)]
     pub drm: Option<String>,
     /// How the bytes are decrypted as they are fetched, when the host stores them
@@ -832,7 +836,7 @@ impl Variant {
     }
 
     /// `url` with the variant's query parameters added, for the requests the variant's
-    /// playlists, segments and keys are fetched with; a parameter the link already
+    /// playlists, segments and keys are fetched with. A parameter the link already
     /// carries is left as it is.
     pub fn signed(&self, url: &Url) -> Url {
         signed_url(url, &self.query)
@@ -883,11 +887,11 @@ pub enum ResolveError {
         platform: &'static str,
         reason: Box<str>,
     },
-    #[error("{0} is rate limiting requests; try again later")]
+    #[error("{0} is rate limiting requests. Try again later.")]
     RateLimited(Url),
     #[error("{url} needs a headless browser, which is not available: {reason}")]
     BrowserUnavailable { url: Url, reason: String },
-    /// The only resolvers that take the link are turned off by the profile in force.
+    /// The only resolvers that take the link are turned off by the profile assigned.
     #[error("{platform} links are turned off here: {url}")]
     Disabled { url: Url, platform: &'static str },
 }

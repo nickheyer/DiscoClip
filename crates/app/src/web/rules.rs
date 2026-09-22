@@ -186,7 +186,8 @@ mod tests {
     use crate::users::Role;
     use crate::web::WebApp;
     use crate::web::testing::{
-        Client, FakeDiscord, SUPPORTED_HOST, app_with_discord_db, message_create, wait_for,
+        Client, FIXTURE_HOST, FakeDiscord, SUPPORTED_HOST, app_with_discord_db, message_create,
+        wait_for,
     };
 
     async fn setup() -> (
@@ -249,9 +250,8 @@ mod tests {
         let guild_rules = format!("/api/discord/applications/{id}/guilds/100/rules");
 
         let rule = json!({
-            "channel_id": "10", "post_to": "11", "allow_hosts": ["reddit.com"],
-            "allow_users": ["9"], "allow_roles": ["500"],
-            "max_source_bytes": 1000, "max_duration_secs": 30, "max_height": 720
+            "channel_id": "10", "post_to": "11",
+            "allow_users": ["9"], "allow_roles": ["500"]
         });
         let (status, body) = admin.post(&guild_rules, rule.clone()).await;
         assert_eq!(status, StatusCode::CREATED, "{body}");
@@ -259,8 +259,9 @@ mod tests {
         assert_eq!(body["channel_id"], "10");
         assert_eq!(body["post_to"], "11");
         assert_eq!(body["enabled"], true);
-        assert_eq!(body["max_duration_secs"], 30);
-        assert_eq!(body["max_height"], 720);
+        assert_eq!(body["allow_users"], json!(["9"]));
+        assert!(body.get("allow_hosts").is_none());
+        assert!(body.get("max_height").is_none());
         let rule_id = body["id"].as_str().unwrap().to_string();
 
         let (status, body) = admin.post(&guild_rules, json!({"channel_id": "20"})).await;
@@ -271,20 +272,19 @@ mod tests {
         let (status, body) = admin.post(&guild_rules, json!({"channel_id": "10"})).await;
         assert_eq!(status, StatusCode::CONFLICT, "{body}");
         let (status, _) = admin
-            .post(
-                &guild_rules,
-                json!({"channel_id": "11", "max_source_bytes": 0}),
-            )
+            .post(&guild_rules, json!({"channel_id": "11", "allow_users": ["x"]}))
             .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
-        let (status, _) = admin
-            .post(&guild_rules, json!({"channel_id": "11", "max_height": 0}))
-            .await;
-        assert_eq!(status, StatusCode::BAD_REQUEST);
-        let (status, _) = admin
-            .post(&guild_rules, json!({"channel_id": "11", "bogus": 1}))
-            .await;
-        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        // What profiles carry now is not a rule's to say.
+        for gone in [
+            json!({"channel_id": "11", "allow_hosts": ["reddit.com"]}),
+            json!({"channel_id": "11", "max_source_bytes": 1000}),
+            json!({"channel_id": "11", "max_height": 720}),
+            json!({"channel_id": "11", "bogus": 1}),
+        ] {
+            let (status, _) = admin.post(&guild_rules, gone).await;
+            assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        }
 
         let (status, body) = admin.get(&guild_rules).await;
         assert_eq!(status, StatusCode::OK);
@@ -343,17 +343,17 @@ mod tests {
             .send(
                 Method::PUT,
                 &format!("/api/discord/rules/{rule_id}"),
-                Some(json!({"channel_id": "10", "allow_hosts": ["v.redd.it"]})),
+                Some(json!({"channel_id": "10", "allow_roles": ["501"]})),
             )
             .await;
         assert_eq!(status, StatusCode::OK, "{body}");
-        assert_eq!(body["allow_hosts"], json!(["v.redd.it"]));
+        assert_eq!(body["allow_roles"], json!(["501"]));
         assert!(body["post_to"].is_null());
         let (status, body) = op.get(&format!("/api/discord/rules/{rule_id}")).await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(body["allow_hosts"], json!(["v.redd.it"]));
+        assert_eq!(body["allow_roles"], json!(["501"]));
 
-        // A token needs the scope; a manager's token does not inherit the guild path.
+        // A token needs the scope. A manager's token does not inherit the guild path.
         let (_, body) = manager.post("/api/tokens", json!({"name": "t"})).await;
         let mut token = Client::new(&app);
         token.bearer = Some(body["secret"].as_str().unwrap().to_string());
@@ -382,22 +382,39 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rules_decide_what_the_bot_picks_up() {
+    async fn rules_decide_what_the_bot_picks_up_and_profiles_what_it_may_be() {
         let (discord, _app, db, mut admin, id) = setup().await;
         wait_connected(&mut admin, &id).await;
         let guild_rules = format!("/api/discord/applications/{id}/guilds/100/rules");
         let (status, body) = admin
             .post(
                 &guild_rules,
-                json!({
-                    "channel_id": "10", "post_to": "11", "allow_hosts": [SUPPORTED_HOST],
-                    "allow_users": ["9"], "max_source_bytes": 5000, "max_duration_secs": 20,
-                    "max_height": 480
-                }),
+                json!({"channel_id": "10", "post_to": "11", "allow_users": ["9"]}),
             )
             .await;
         assert_eq!(status, StatusCode::CREATED, "{body}");
         let rule_id = body["id"].as_str().unwrap().to_string();
+        // The channel's profile: only the supported platform, and tight limits.
+        let (status, body) = admin
+            .post(
+                "/api/profiles",
+                json!({
+                    "name": "Small clips",
+                    "platforms": {"default": "disabled", "overrides": {"nothing": true}},
+                    "limits": {"max_source_bytes": 5000, "max_duration_secs": 20, "max_height": 480}
+                }),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+        let profile_id = body["id"].as_str().unwrap().to_string();
+        let (status, body) = admin
+            .send(
+                Method::PUT,
+                "/api/profiles/assignments/channel:100:10",
+                Some(json!({"profile_id": profile_id})),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
 
         let link = format!("https://{SUPPORTED_HOST}/clip");
         discord.emit(message_create("10", "100", "9", &[], &link));
@@ -419,7 +436,8 @@ mod tests {
         assert!(request.origin.reference.starts_with(&id));
         assert!(request.origin.reference.contains(":100:10:900:9"));
 
-        // Not from an allowed user, not in a watched channel, not an allowed host.
+        // Not from an allowed user, not in a watched channel, not a platform the profile
+        // turns on.
         discord.emit(message_create("10", "100", "8", &[], &link));
         discord.emit(message_create("11", "100", "9", &[], &link));
         discord.emit(message_create(
@@ -427,7 +445,7 @@ mod tests {
             "100",
             "9",
             &[],
-            "https://other.test/clip",
+            &format!("https://{FIXTURE_HOST}/clip"),
         ));
         // Then the rule is turned off, and a message that would have counted no longer does.
         let (status, _) = admin

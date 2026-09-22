@@ -21,17 +21,17 @@ export const ACTION_LABELS: Record<Action, string> = {
 	'profile.create': 'Profile added',
 	'profile.update': 'Profile changed',
 	'profile.delete': 'Profile removed',
-	'profile.assign': 'Profile put in force',
+	'profile.assign': 'Profile put assigned',
 	'profile.unassign': 'Profile taken off',
-	'frontend.create': 'Front end added',
-	'frontend.update': 'Front end changed',
-	'frontend.delete': 'Front end removed',
-	'frontend.secret.set': 'Front end secret set',
-	'frontend.secret.clear': 'Front end secret cleared',
-	'frontend.user.create': 'Front end account added',
-	'frontend.user.password': 'Front end account password reset',
-	'frontend.user.delete': 'Front end account removed',
-	'frontend.sessions.revoke': 'Front end sessions ended'
+	'frontend.create': 'Media site added',
+	'frontend.update': 'Media site changed',
+	'frontend.delete': 'Media site removed',
+	'frontend.secret.set': 'Media site secret set',
+	'frontend.secret.clear': 'Media site secret cleared',
+	'frontend.user.create': 'Media site account added',
+	'frontend.user.password': 'Media site account password reset',
+	'frontend.user.delete': 'Media site account removed',
+	'frontend.sessions.revoke': 'Media site sessions ended'
 };
 
 export function actionTone(
@@ -65,7 +65,7 @@ export function targetHref(target: Target): string | null {
 		case 'platform':
 			return '/platforms';
 		case 'profile':
-			return '/profiles';
+			return `/profiles/${encodeURIComponent(target.id)}`;
 		case 'frontend':
 			return '/frontends';
 		default:
@@ -79,10 +79,10 @@ export const TARGET_KIND_LABELS = {
 	rule: 'Rule',
 	platform: 'Platform',
 	profile: 'Profile',
-	frontend: 'Front end'
+	frontend: 'Media site'
 } as const;
 
-/** The account a front end account entry names, when its details carry one. */
+/** The account a media site account entry names, when its details carry one. */
 export function auditUsername(details: Record<string, unknown> | null | undefined): string | null {
 	const username = details?.username;
 	return typeof username === 'string' && username ? username : null;
@@ -97,11 +97,11 @@ export function auditScope(details: Record<string, unknown> | null | undefined):
 		case 'global':
 			return 'the whole server';
 		case 'guild':
-			return `guild ${s.guild_id}`;
+			return `server ${s.guild_id}`;
 		case 'channel':
-			return `channel ${s.channel_id} of guild ${s.guild_id}`;
+			return `channel ${s.channel_id} of server ${s.guild_id}`;
 		case 'user':
-			return `user ${s.user_id} in guild ${s.guild_id}`;
+			return `user ${s.user_id} in server ${s.guild_id}`;
 		default:
 			return null;
 	}

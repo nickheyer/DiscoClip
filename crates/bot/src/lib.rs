@@ -17,9 +17,9 @@ pub use config::{DiscordConfig, DiscordEndpoints, WatchRule};
 pub use directory::{ChannelInfo, Directories, Directory, GuildInfo, MemberInfo, RoleInfo};
 pub use link::{LinkTargets, MediaLink, NoLinks};
 pub use origin::{DiscordOrigin, SOURCE_ID};
-pub use profile::{PlatformLookup, ProfileSource, turned_off};
+pub use profile::{InForce, PlatformLookup, ProfileSource, turned_off};
 pub use publish::{Clients, DiscordPublisher};
 pub use supervisor::{
     BotCommand, BotControl, BotRuntime, BotState, BotStatus, ControlError, supervise,
 };
-pub use watch::{RuleSource, Watcher, host_allowed};
+pub use watch::{RuleSource, Watcher};

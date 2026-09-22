@@ -1,7 +1,5 @@
 import { auth } from '$lib/api';
-
-// Whether the first admin still has to be created. Once it exists it never has to again,
-// so the answer is asked for only until it is `false`.
+// Cache setup completion once the first admin exists.
 let needed: boolean | null = null;
 
 export async function setupNeeded(): Promise<boolean> {

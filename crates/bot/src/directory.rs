@@ -124,7 +124,7 @@ impl Directory {
         })
     }
 
-    /// The guild's channels, threads included; `None` until the guild has loaded.
+    /// The guild's channels, threads included. `None` until the guild has loaded.
     pub fn channels(&self, guild: Id<GuildMarker>) -> Option<Vec<ChannelInfo>> {
         if !self.has_guild(guild) {
             return None;
@@ -149,7 +149,7 @@ impl Directory {
         })
     }
 
-    /// The guild's roles; `None` until the guild has loaded.
+    /// The guild's roles. `None` until the guild has loaded.
     pub fn roles(&self, guild: Id<GuildMarker>) -> Option<Vec<RoleInfo>> {
         if !self.has_guild(guild) {
             return None;
@@ -190,6 +190,6 @@ impl Directory {
     }
 }
 
-/// The directories of the running applications, by the server's id for each; shared
+/// The directories of the running applications, by the server's id for each. Shared
 /// with whatever starts and stops the bots.
 pub type Directories = Arc<RwLock<HashMap<Uuid, Arc<Directory>>>>;

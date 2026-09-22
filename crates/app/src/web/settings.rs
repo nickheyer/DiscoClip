@@ -1,7 +1,7 @@
 //! The server's settings, for admins: read with the defaults beside them, changed key by
-//! key or several at once, reset to their defaults, and carried in and out as
+//! one or more keys, reset to their defaults, and carried in and out as
 //! provisioning files. Every change is stored, logged and applied to the running server
-//! in that order; a change the running server cannot take is refused before anything is
+//! in that order. A change the running server cannot take is refused before anything is
 //! stored.
 
 use axum::Json;
@@ -48,7 +48,7 @@ impl From<LiveError> for ApiError {
 pub struct SettingsView {
     #[serde(flatten)]
     pub view: View,
-    /// Where the database lives; read from the provisioning file and the environment only.
+    /// Where the database lives. Read from the provisioning file and the environment only.
     pub data_dir: String,
     /// The provisioning file read at startup, when one was.
     pub provisioning_file: Option<String>,
@@ -89,7 +89,7 @@ async fn change(
     let next = state.settings.preview(change).await?;
     if next.web.public_url.is_none() && state.frontends.cache().any_posting_links() {
         return Err(ApiError::Conflict(
-            "web.public_url cannot be cleared while a front end posts links; turn its links off first"
+            "Disable Discord links on media sites before clearing the public URL."
                 .into(),
         ));
     }

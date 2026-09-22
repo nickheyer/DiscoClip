@@ -9,7 +9,7 @@ use crate::media::{AudioCodec, Container, LocalFile, MediaKind, VideoCodec};
 #[async_trait]
 pub trait Publisher: Send + Sync {
     fn source(&self) -> &SourceId;
-    /// What the destination of `job` takes; the job is resolved by then, so the platform
+    /// What the destination of `job` takes. The job is resolved by then, so the platform
     /// and the media are known.
     async fn constraints(&self, job: &Job) -> Result<Constraints, PublishError>;
     /// Delivers `file`, or a link to it when the job's delivery is a link.
@@ -37,8 +37,8 @@ pub struct Fallback {
 }
 
 /// What a destination takes: the byte limit, and for each kind of media the formats it
-/// plays as they are. Video is described by container and codecs; audio alone and images
-/// by the containers they may arrive in; other files by whether they are taken at all.
+/// plays as they are. Video is described by container and codecs. Audio alone and images
+/// by the containers they may arrive in. Other files by whether they are taken at all.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Constraints {
     pub max_bytes: u64,
@@ -48,11 +48,11 @@ pub struct Constraints {
     /// A picture height the destination caps at, below the engine's own limit.
     #[serde(default)]
     pub max_height: Option<u32>,
-    /// The containers audio-only media is published in as it is; empty when the
+    /// The containers audio-only media is published in as it is. Empty when the
     /// destination takes no audio.
     #[serde(default)]
     pub audio_containers: Vec<Container>,
-    /// The formats still images are published in as they are; empty when the destination
+    /// The formats still images are published in as they are. Empty when the destination
     /// takes no images.
     #[serde(default)]
     pub image_containers: Vec<Container>,

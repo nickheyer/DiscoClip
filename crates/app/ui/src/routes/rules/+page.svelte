@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Field from '$lib/components/Field.svelte';
 	import type { PageData } from './$types';
 	import type { GuildChannel, Rule } from '$lib/api';
 	import Badge from '$lib/components/Badge.svelte';
@@ -10,7 +11,7 @@
 	import Time from '$lib/components/Time.svelte';
 	import { channelName, groupKey } from '$lib/discord';
 	import { pluralize, shortId } from '$lib/format';
-	import { describeFilters, describeLimits } from '$lib/rules';
+	import { describeWho } from '$lib/rules';
 	import { bots } from '$lib/state/bots.svelte';
 	import { session } from '$lib/state/session.svelte';
 
@@ -25,7 +26,7 @@
 		appName: string;
 		guildName: string;
 		guildIcon: string | null;
-		/** The guild's channels, or `null` with `channelsError` when the bot could not list them. */
+		/** The server's channels, or `null` with `channelsError` when the bot could not list them. */
 		channels: GuildChannel[] | null;
 		channelsError: string | null;
 		rules: Rule[];
@@ -56,7 +57,7 @@
 					applicationId: rule.application_id,
 					guildId: rule.guild_id,
 					appName: appName(rule.application_id),
-					guildName: guild?.name ?? `Guild ${rule.guild_id}`,
+					guildName: guild?.name ?? `Server ${rule.guild_id}`,
 					guildIcon: guild?.icon ?? null,
 					channels: data.channelsByGuild.get(key) ?? null,
 					channelsError: data.channelErrors.get(key) ?? null,
@@ -83,8 +84,7 @@
 							(r) =>
 								r.channel_id.includes(needle) ||
 								channelName(group.channels, r.channel_id).toLowerCase().includes(needle) ||
-								(r.post_to ?? '').includes(needle) ||
-								r.allow_hosts.some((h) => h.includes(needle))
+								(r.post_to ?? '').includes(needle)
 						);
 				return { ...group, rules };
 			})
@@ -109,7 +109,7 @@
 	{/if}
 {/snippet}
 
-<PageHeader title="Watch rules" description="Every channel a bot watches, by application and guild.">
+<PageHeader title="Watch rules" description="Choose which Discord channels to watch and where to post clips.">
 	{#snippet actions()}
 		{#if session.can('manage_applications')}
 			<Button href="/applications" icon="bot">Applications</Button>
@@ -118,16 +118,16 @@
 </PageHeader>
 
 {#if data.rules.length === 0}
-	<Empty icon="rules" title="No watch rules yet" description="Rules are added per guild from an application's guild list, or from your guilds page for guilds you manage on Discord.">
+	<Empty icon="rules" title="No watch rules yet" description="Open a Discord server to add a rule.">
 		{#if session.can('manage_applications')}
 			<Button variant="primary" href="/applications">Go to applications</Button>
 		{/if}
-		<Button href="/guilds">My guilds</Button>
+		<Button href="/guilds">Discord servers</Button>
 	</Empty>
 {:else}
 	<div class="stack">
 		<div class="row-between">
-			<input class="input search" type="search" placeholder="Filter by guild, application, channel or host" bind:value={query} aria-label="Filter rules" />
+			<Field label="Filter rules" for="control-4260"><input id="control-4260" class="input search" type="search" placeholder="Filter by guild, application or channel" bind:value={query} aria-label="Filter rules" /></Field>
 			<span class="faint small">{pluralize(data.rules.length, 'rule')} in {pluralize(groups.length, 'guild')}</span>
 		</div>
 
@@ -149,20 +149,19 @@
 					<Button size="sm" variant="ghost" href={`/applications/${group.applicationId}/guilds/${group.guildId}`} iconRight="chevron-right">Manage</Button>
 				</div>
 				{#if group.channelsError}
-					<p class="hint listing">Shown by channel id: the bot could not list the guild's channels ({group.channelsError}).</p>
+					<p class="hint listing">Shown by channel id: the bot could not list the server's channels ({group.channelsError}).</p>
 				{/if}
 				<div class="table-wrap flush">
 					<table class="table">
 						<thead>
-							<tr><th>Channel</th><th>Posts to</th><th>Who and where from</th><th>Limits</th><th>Status</th><th>Updated</th><th></th></tr>
+							<tr><th>Channel</th><th>Posts to</th><th>Who may post</th><th>Status</th><th>Updated</th><th></th></tr>
 						</thead>
 						<tbody>
 							{#each group.rules as rule (rule.id)}
 								<tr class={[!rule.enabled && 'off']}>
 									<td>{@render channelRef(group.channels, rule.channel_id, `/rules/${rule.id}`)}</td>
 									<td>{#if rule.post_to}{@render channelRef(group.channels, rule.post_to)}{:else}<span class="faint">same channel</span>{/if}</td>
-									<td>{describeFilters(rule)}</td>
-									<td>{describeLimits(rule)}</td>
+									<td>{describeWho(rule)}</td>
 									<td>{#if rule.enabled}<Badge tone="ok" size="sm" dot>Enabled</Badge>{:else}<Badge size="sm">Disabled</Badge>{/if}</td>
 									<td><Time value={rule.updated_at} /></td>
 									<td class="actions"><Button size="sm" variant="ghost" href={`/rules/${rule.id}`} icon="pencil">Edit</Button></td>

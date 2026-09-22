@@ -173,7 +173,7 @@ pub enum TranscodeError {
     AudioBudgetUnreachable { max_bytes: u64, duration_secs: u64 },
     #[error("cannot fit the picture under {max_bytes} bytes")]
     ImageBudgetUnreachable { max_bytes: u64 },
-    #[error("file is {size} bytes and cannot be made smaller; destination allows {max_bytes}")]
+    #[error("File size is {size} bytes. The destination allows {max_bytes} bytes. This file cannot be reduced.")]
     CannotShrink { size: u64, max_bytes: u64 },
     #[error("destination does not take {0} files")]
     NotAccepted(MediaKind),
@@ -588,7 +588,7 @@ const AUDIO_ONLY_BPS: [u64; 8] = [
 ];
 /// The long edges an image is scaled down to, in turn, when it is over budget.
 const IMAGE_EDGES: [u32; 10] = [4096, 3072, 2048, 1600, 1280, 1024, 800, 640, 480, 320];
-/// JPEG `-q:v` levels, best first; WebP quality falls with them.
+/// JPEG `-q:v` levels, best first. WebP quality falls with them.
 const JPEG_QUALITIES: [u32; 5] = [2, 4, 7, 12, 20];
 
 fn audio_encoder(target: &AudioTarget) -> Result<&'static str, TranscodeError> {
@@ -801,7 +801,7 @@ impl FfmpegTranscoder {
                 }
                 match encoder.quality {
                     Some("-quality") => {
-                        // libwebp takes 0..100, best last; map the JPEG scale onto it.
+                        // libwebp takes 0..100, best last. Map the JPEG scale onto it.
                         let quality = 100u32.saturating_sub(q * 4);
                         args.extend(["-quality".into(), quality.to_string().into()]);
                     }

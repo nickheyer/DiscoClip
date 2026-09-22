@@ -272,7 +272,7 @@ impl SeventeenLiveResolver {
             return Err(ResolveError::unavailable(
                 link,
                 match unix(&data["endTime"]) {
-                    Some(ended) => format!("{who} is not live; the last stream ended at {ended}"),
+                    Some(ended) => format!("{who} is offline. Last stream ended at {ended}."),
                     None => format!("{who} is not live"),
                 },
             ));

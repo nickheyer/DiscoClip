@@ -1,9 +1,7 @@
-//! Discovery's network sites, read through the Discovery API (`disco-api`) their players
-//! call: dplay and discovery+ in Europe, discovery+ in India, the US channels' watch sites
-//! (Discovery, TLC, HGTV, Food Network, Travel Channel and their siblings) and the German
-//! TLC, DMAX and HGTV sites. An episode is its record plus the manifests its playback
-//! answer names; a discovery+ Italy or India show page is a playlist of every episode of
-//! every season.
+//! Resolve Discovery network episodes through disco-api. Combine episode metadata with
+//! playback manifests.
+//!
+//! Discovery+ Italy and India show pages become playlists containing all seasons.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, LazyLock, Mutex};
@@ -650,7 +648,7 @@ impl DiscoApi {
     }
 
     /// Forgets the anonymous token minted for `realm` at `base`, and the `st` cookie the
-    /// token endpoint set it as, so the next call mints afresh; a session the jar held
+    /// token endpoint set it as, so the next call mints afresh. A session the jar held
     /// before (a login) stays.
     fn forget_token(&self, base: &Url, realm: &str) {
         let forgotten = self
@@ -678,7 +676,7 @@ impl DiscoApi {
         });
     }
 
-    /// Sends `request` as the platform and reads the JSON it answers; a refusal becomes
+    /// Sends `request` as the platform and reads the JSON it answers. A refusal becomes
     /// the failure the API's error record explains.
     async fn call(
         &self,
@@ -714,7 +712,7 @@ impl DiscoApi {
             .unwrap_or(Value::Null);
         // A `not.found` whose detail says the video "was filtered by validator" is the
         // catalogue withholding a video it has: reason 9 is the caller's region, as the
-        // Indian catalogue answers a caller outside India; reason 1 is a video whose
+        // Indian catalogue answers a caller outside India. Reason 1 is a video whose
         // availability window has closed, which is gone for everyone.
         let validator_reason = error["code"]
             .as_str()
@@ -743,7 +741,7 @@ impl DiscoApi {
                     TokenSource::Cookie => Failure::Error(ResolveError::login_required(
                         origin,
                         self.platform,
-                        "the stored session token was rejected; log in to the site again",
+                        "Session expired. Log in again and import new cookies.",
                     )),
                     TokenSource::Minted => Failure::Error(ResolveError::login_required(
                         origin,
@@ -808,7 +806,7 @@ impl DiscoApi {
             .cloned();
         if let Some(cookie) = self.session_cookie(base) {
             // The anonymous token the API set as the `st` cookie is the one being
-            // retried with a faked address; only a session the jar held before (a
+            // retried with a faked address. Only a session the jar held before (a
             // login) is kept through that retry. The cookie goes before the fresh mint,
             // or the endpoint hands the same token back.
             let minted_here = remembered.as_deref() == Some(cookie.value.as_str());
@@ -878,7 +876,7 @@ impl DiscoApi {
     /// with every stream its playback answer names, as yt-dlp's `_get_disco_api_info`
     /// reads it. A region refusal, or a 404 (which the Indian catalogue answers callers
     /// outside India with), is retried once with a faked caller address in the site's
-    /// country; a remembered token the API rejects is minted afresh once.
+    /// country. A remembered token the API rejects is minted afresh once.
     pub async fn video(
         &self,
         url: &Url,
@@ -1062,7 +1060,7 @@ impl DiscoApi {
                 variants.push(variant);
             }
         }
-        // The faked caller address is for the API and its manifests; the media is fetched
+        // The faked caller address is for the API and its manifests. The media is fetched
         // as the user is.
         strip_forwarded_for(&mut variants, &mut subtitles);
         if variants.is_empty() {
@@ -2541,7 +2539,7 @@ mod tests {
     }
 
     /// The Indian catalogue answers callers outside India with a 404 whose detail says
-    /// the video "was filtered by validator"; the token the first call minted was set as
+    /// the video "was filtered by validator". The token the first call minted was set as
     /// the `st` cookie, and the retry with a faked address must mint a fresh one rather
     /// than send that cookie again.
     #[tokio::test]

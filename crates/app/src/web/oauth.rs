@@ -316,7 +316,7 @@ async fn front_login(
 }
 
 /// Stores the guilds a fresh Discord grant can see. A login or link that succeeded is not
-/// undone when this fails; the guilds page offers a refresh that reports the error.
+/// undone when this fails. The guilds page offers a refresh that reports the error.
 async fn sync_discord(state: &AppState, user: crate::users::UserId, provider: &str) {
     if provider != "discord" {
         return;
@@ -360,7 +360,7 @@ pub async fn identities(
     Ok(Json(state.oauth.store.list_for(identity.user.id).await?))
 }
 
-/// Fetches the linked profile again, renewing the provider's tokens when they expired;
+/// Fetches the linked profile again, renewing the provider's tokens when they expired.
 /// for Discord, the guilds too.
 pub async fn refresh_identity(
     State(state): State<AppState>,
@@ -524,7 +524,7 @@ mod tests {
         assert_eq!(identities[0]["has_refresh_token"], true);
         assert!(identities[0].get("access_token").is_none());
 
-        // The same identity logs into the same account; another gets its own name.
+        // The same identity logs into the same account. Another gets its own name.
         fake.grant("code-2", "sub-1", oidc_profile("sub-1", "Octo Cat"));
         let mut again = Client::new(&app);
         run_flow(&mut again, &fake, "oidc", "login", "code-2").await;

@@ -1,4 +1,4 @@
-// Discord bits shared by the guild and rule pages.
+// Discord bits shared by the server and rule pages.
 
 import { channels as channelsApi, isApiError } from './api';
 import type { ChannelKind, GuildChannel, GuildMember, GuildRole, Rule } from './api/types';
@@ -26,7 +26,7 @@ export function unwatchableReason(kind: ChannelKind): string {
 	switch (kind) {
 		case 'forum':
 		case 'media':
-			return 'Posts here are threads; watch a thread by its id';
+			return 'Watch individual threads by their channel ID.';
 		case 'category':
 			return 'A category holds channels';
 		default:
@@ -100,7 +100,7 @@ export function channelName(channels: GuildChannel[] | null | undefined, id: str
 	return channel ? channelLabel(channel) : id;
 }
 
-/** The key an application and a guild make, for grouping rules by guild. */
+/** The key an application and a server make, for grouping rules by guild. */
 export function groupKey(applicationId: string, guildId: string): string {
 	return `${applicationId}/${guildId}`;
 }
@@ -119,10 +119,7 @@ export function memberLabel(member: GuildMember): string {
 	return name === member.username ? name : `${name} (${member.username})`;
 }
 
-/**
- * A guild's channels and roles as its bot lists them, for naming what a rule says.
- * Either list is `null` with the error beside it when the bot could not list it.
- */
+/** Channel and role lists, with separate errors when either request fails. */
 export interface GuildDirectory {
 	applicationId: string;
 	guildId: string;
@@ -132,7 +129,7 @@ export interface GuildDirectory {
 	rolesError: string | null;
 }
 
-/** Lists a guild's channels and roles; a list the bot cannot give leaves its error, not the page. */
+/** Load channels and roles without failing the entire page. */
 export async function loadDirectory(applicationId: string, guildId: string): Promise<GuildDirectory> {
 	const [channels, roles] = await Promise.all([
 		settle(() => channelsApi.list(applicationId, guildId)),
@@ -148,12 +145,12 @@ export async function loadDirectory(applicationId: string, guildId: string): Pro
 	};
 }
 
-/** Members of the guild whose name starts with `q`, through its bot. */
+/** Members of the server whose name starts with `q`, through its bot. */
 export function memberSearch(directory: GuildDirectory): (q: string) => Promise<GuildMember[]> {
 	return (q) => channelsApi.members(directory.applicationId, directory.guildId, q);
 }
 
-/** One member of the guild by id through its bot; `null` when the id is not a member. */
+/** One member of the server by id through its bot; `null` when the id is not a member. */
 export function memberLookup(directory: GuildDirectory): (userId: string) => Promise<GuildMember | null> {
 	return async (userId) => {
 		try {

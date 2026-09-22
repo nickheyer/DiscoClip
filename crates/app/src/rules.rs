@@ -1,5 +1,6 @@
-//! Watch rules: which channels each application's bot listens in, where results go, whose
-//! links count, and how big they may be. Edited in the app, read by the bots as they run
+//! Watch rules: which channels each application's bot listens in, where results go and
+//! whose links count. Which platforms are taken and how big a video may be are the
+//! profiles assigned, not the rule's. Edited in the app, read by the bots as they run
 //! through a cache the store keeps up. Every change is written to the audit log in the
 //! same transaction.
 
@@ -44,24 +45,14 @@ impl std::str::FromStr for RuleId {
 #[serde(deny_unknown_fields)]
 pub struct RuleInput {
     pub channel_id: String,
-    /// Where results go; the watched channel when absent.
+    /// Where results go. The watched channel when absent.
     #[serde(default)]
     pub post_to: Option<String>,
-    /// Link hosts picked up; every supported host when empty.
-    #[serde(default)]
-    pub allow_hosts: Vec<String>,
-    /// Users whose links count; everyone when this and `allow_roles` are empty.
+    /// Users whose links count. Everyone when this and `allow_roles` are empty.
     #[serde(default)]
     pub allow_users: Vec<String>,
     #[serde(default)]
     pub allow_roles: Vec<String>,
-    #[serde(default)]
-    pub max_source_bytes: Option<u64>,
-    #[serde(default)]
-    pub max_duration_secs: Option<u64>,
-    /// The tallest output accepted, in pixels; tightens the engine's own.
-    #[serde(default)]
-    pub max_height: Option<u32>,
     #[serde(default = "yes")]
     pub enabled: bool,
 }
@@ -92,7 +83,6 @@ impl Rule {
                 .as_deref()
                 .and_then(|id| id.parse().ok())
                 .and_then(Id::new_checked),
-            allow_hosts: self.input.allow_hosts.clone(),
             allow_users: self
                 .input
                 .allow_users
@@ -107,9 +97,6 @@ impl Rule {
                 .filter_map(|id| id.parse().ok())
                 .filter_map(Id::new_checked)
                 .collect(),
-            max_source_bytes: self.input.max_source_bytes,
-            max_duration_secs: self.input.max_duration_secs,
-            max_height: self.input.max_height,
         }
     }
 }
@@ -151,22 +138,6 @@ fn check(input: &RuleInput) -> Result<(), RuleError> {
     for role in &input.allow_roles {
         snowflake("role", role)?;
     }
-    if input.allow_hosts.iter().any(|host| host.trim().is_empty()) {
-        return Err(RuleError::Invalid("a host cannot be empty".into()));
-    }
-    if input.max_source_bytes == Some(0) {
-        return Err(RuleError::Invalid(
-            "max_source_bytes must be above zero".into(),
-        ));
-    }
-    if input.max_duration_secs == Some(0) {
-        return Err(RuleError::Invalid(
-            "max_duration_secs must be above zero".into(),
-        ));
-    }
-    if input.max_height == Some(0) {
-        return Err(RuleError::Invalid("max_height must be above zero".into()));
-    }
     Ok(())
 }
 
@@ -192,11 +163,11 @@ pub struct RuleStore {
     cache: RuleCache,
 }
 
-const SELECT: &str = "SELECT id, application_id, guild_id, channel_id, post_to, allow_hosts, allow_users, \
-     allow_roles, max_source_bytes, max_duration_secs, max_height, enabled, created_at, updated_at";
+const SELECT: &str = "SELECT id, application_id, guild_id, channel_id, post_to, allow_users, \
+     allow_roles, enabled, created_at, updated_at";
 
 impl RuleStore {
-    /// Over a database the application's migrations have been applied to; `load` fills the
+    /// Over a database the application's migrations have been applied to. `load` fills the
     /// cache before any bot reads it.
     pub fn new(db: SqliteStore) -> Self {
         Self {
@@ -233,22 +204,17 @@ impl RuleStore {
             let id = RuleId(Uuid::now_v7());
             let now = Timestamp::now();
             let inserted = tx.execute(
-                "INSERT INTO watch_rules (id, application_id, guild_id, channel_id, post_to, allow_hosts, \
-                 allow_users, allow_roles, max_source_bytes, max_duration_secs, max_height, enabled, \
-                 created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13)",
+                "INSERT INTO watch_rules (id, application_id, guild_id, channel_id, post_to, \
+                 allow_users, allow_roles, enabled, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
                 params![
                     id.to_string(),
                     application.to_string(),
                     guild_id,
                     input.channel_id,
                     input.post_to,
-                    encode(&input.allow_hosts)?,
                     encode(&input.allow_users)?,
                     encode(&input.allow_roles)?,
-                    input.max_source_bytes.map(|n| n as i64),
-                    input.max_duration_secs.map(|n| n as i64),
-                    input.max_height.map(i64::from),
                     input.enabled,
                     nanos(now),
                 ],
@@ -294,20 +260,15 @@ impl RuleStore {
             let previous = get_in(tx, id)?.ok_or(RuleError::NotFound(id))?;
             let now = Timestamp::now();
             let updated = tx.execute(
-                "UPDATE watch_rules SET channel_id = ?2, post_to = ?3, allow_hosts = ?4, allow_users = ?5, \
-                 allow_roles = ?6, max_source_bytes = ?7, max_duration_secs = ?8, max_height = ?9, \
-                 enabled = ?10, updated_at = ?11 \
+                "UPDATE watch_rules SET channel_id = ?2, post_to = ?3, allow_users = ?4, \
+                 allow_roles = ?5, enabled = ?6, updated_at = ?7 \
                  WHERE id = ?1",
                 params![
                     id.to_string(),
                     input.channel_id,
                     input.post_to,
-                    encode(&input.allow_hosts)?,
                     encode(&input.allow_users)?,
                     encode(&input.allow_roles)?,
-                    input.max_source_bytes.map(|n| n as i64),
-                    input.max_duration_secs.map(|n| n as i64),
-                    input.max_height.map(i64::from),
                     input.enabled,
                     nanos(now),
                 ],
@@ -453,9 +414,6 @@ fn row_to_rule(row: &rusqlite::Row<'_>) -> rusqlite::Result<Rule> {
         let text: String = row.get(index)?;
         serde_json::from_str(&text).map_err(|e| corrupt(format!("rule {id} list: {e}")))
     };
-    let max_source_bytes: Option<i64> = row.get(8)?;
-    let max_duration_secs: Option<i64> = row.get(9)?;
-    let max_height: Option<i64> = row.get(10)?;
     Ok(Rule {
         id: id
             .parse()
@@ -467,17 +425,13 @@ fn row_to_rule(row: &rusqlite::Row<'_>) -> rusqlite::Result<Rule> {
         input: RuleInput {
             channel_id: row.get(3)?,
             post_to: row.get(4)?,
-            allow_hosts: list(5)?,
-            allow_users: list(6)?,
-            allow_roles: list(7)?,
-            max_source_bytes: max_source_bytes.map(|n| n.max(0) as u64),
-            max_duration_secs: max_duration_secs.map(|n| n.max(0) as u64),
-            max_height: max_height.map(|n| u32::try_from(n.max(0)).unwrap_or(u32::MAX)),
-            enabled: row.get(11)?,
+            allow_users: list(5)?,
+            allow_roles: list(6)?,
+            enabled: row.get(7)?,
         },
-        created_at: timestamp("watch_rules.created_at", row.get(12)?)
+        created_at: timestamp("watch_rules.created_at", row.get(8)?)
             .map_err(|e| corrupt(e.to_string()))?,
-        updated_at: timestamp("watch_rules.updated_at", row.get(13)?)
+        updated_at: timestamp("watch_rules.updated_at", row.get(9)?)
             .map_err(|e| corrupt(e.to_string()))?,
     })
 }
@@ -519,12 +473,8 @@ mod tests {
         RuleInput {
             channel_id: channel.into(),
             post_to: None,
-            allow_hosts: Vec::new(),
             allow_users: Vec::new(),
             allow_roles: Vec::new(),
-            max_source_bytes: None,
-            max_duration_secs: None,
-            max_height: None,
             enabled: true,
         }
     }
@@ -537,12 +487,8 @@ mod tests {
 
         let mut full = input("10");
         full.post_to = Some("11".into());
-        full.allow_hosts = vec!["reddit.com".into()];
         full.allow_users = vec!["9".into()];
         full.allow_roles = vec!["500".into()];
-        full.max_source_bytes = Some(1000);
-        full.max_duration_secs = Some(30);
-        full.max_height = Some(720);
         let rule = store
             .create(&actor(), a, "100", full.clone())
             .await
@@ -553,9 +499,6 @@ mod tests {
         assert_eq!(cached.post_to, Some(Id::new(11)));
         assert_eq!(cached.allow_users, vec![Id::new(9)]);
         assert_eq!(cached.allow_roles, vec![Id::new(500)]);
-        assert_eq!(cached.max_source_bytes, Some(1000));
-        assert_eq!(cached.max_duration_secs, Some(30));
-        assert_eq!(cached.max_height, Some(720));
         assert!(cache.rule(b.0, Id::new(10)).is_none());
 
         assert!(matches!(
@@ -576,19 +519,7 @@ mod tests {
                 ..input("12")
             },
             RuleInput {
-                allow_hosts: vec![" ".into()],
-                ..input("12")
-            },
-            RuleInput {
-                max_source_bytes: Some(0),
-                ..input("12")
-            },
-            RuleInput {
-                max_duration_secs: Some(0),
-                ..input("12")
-            },
-            RuleInput {
-                max_height: Some(0),
+                allow_roles: vec!["x".into()],
                 ..input("12")
             },
         ] {
@@ -649,7 +580,7 @@ mod tests {
             Err(RuleError::NotFound(_))
         ));
 
-        // Removing an application removes its rules; a fresh load notices.
+        // Removing an application removes its rules. A fresh load notices.
         applications.delete(&actor(), b).await.unwrap();
         assert!(store.list_all().await.unwrap().is_empty());
         assert_eq!(store.load().await.unwrap(), 0);

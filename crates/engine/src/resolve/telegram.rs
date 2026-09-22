@@ -289,7 +289,7 @@ impl TelegramResolver {
             } else if lower.contains("private") || lower.contains("restricted") {
                 ResolveError::unavailable(
                     origin,
-                    format!("{error}; the channel's posts are not public"),
+                    format!("{error}. The channel is private."),
                 )
             } else {
                 ResolveError::unavailable(origin, error.clone())
@@ -298,7 +298,7 @@ impl TelegramResolver {
         if !embed.has_message {
             return Err(ResolveError::unavailable(
                 origin,
-                "the embed shows no post; the channel may be private or restricted",
+                "Post unavailable. The channel may be private or restricted.",
             ));
         }
         Ok(embed)

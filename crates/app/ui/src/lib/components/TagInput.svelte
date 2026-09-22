@@ -5,7 +5,7 @@
 		id: string;
 		values: string[];
 		placeholder?: string;
-		/** A message when a value is not acceptable; nothing when it is. */
+		/** A message when a value is not acceptable. Nothing when it is. */
 		validate?: (value: string) => string | null;
 		normalize?: (value: string) => string;
 		mono?: boolean;
@@ -69,7 +69,16 @@
 		const text = event.clipboardData?.getData('text') ?? '';
 		if (!/[\s,]/.test(text.trim())) return;
 		event.preventDefault();
-		for (const part of text.split(/[\s,]+/)) commit(part);
+		const invalid: string[] = [];
+		let firstError: string | null = null;
+		for (const part of text.trim().split(/[\s,]+/)) {
+			if (!commit(part)) {
+				invalid.push(part);
+				firstError ??= problem;
+			}
+		}
+		draft = invalid.join(', ');
+		problem = firstError;
 	}
 
 	function remove(value: string) {
@@ -111,6 +120,7 @@
 		aria-invalid={problem ? 'true' : undefined}
 		aria-describedby={problem ? `${id}-problem` : undefined}
 	/>
+	<button class="add" type="button" onclick={commitDraft} disabled={disabled || !draft.trim()}>Add</button>
 	{#if suggestions.length}
 		<datalist id={listId}>
 			{#each suggestions as s (s.value)}
@@ -129,7 +139,7 @@
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 6px;
-		min-height: 36px;
+		min-height: 44px;
 		padding: 4px 6px;
 		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-sm);
@@ -156,12 +166,16 @@
 		border-radius: 6px;
 		background: var(--accent-soft);
 		color: var(--accent-text);
-		font-size: 12.5px;
+		font-size: 13px;
 		line-height: 1.5;
 	}
 
 	.remove {
 		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 28px;
+		min-height: 28px;
 		padding: 2px;
 		border: none;
 		border-radius: 4px;
@@ -188,4 +202,6 @@
 	.draft::placeholder {
 		color: var(--text-3);
 	}
+	.add { min-height: 36px; padding: 6px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); cursor: pointer; }
+	.add:disabled { opacity: 0.5; cursor: default; }
 </style>

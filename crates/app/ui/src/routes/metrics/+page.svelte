@@ -77,7 +77,7 @@
 				</div>
 			{:else}
 				<div class="tile">
-					<span class="tile-value">—</span>
+					<span class="tile-value">Not available</span>
 					<span class="tile-label">process</span>
 					<span class="tile-sub">the operating system does not list this process</span>
 				</div>
@@ -236,12 +236,12 @@
 	}
 
 	.tile-label {
-		font-size: 12.5px;
+		font-size: 13px;
 		color: var(--text-3);
 	}
 
 	.tile-sub {
-		font-size: 12px;
+		font-size: 13px;
 		color: var(--text-3);
 		overflow-wrap: anywhere;
 	}

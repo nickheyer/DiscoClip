@@ -1,5 +1,5 @@
 //! Versioned schema migrations. Each scope, such as the engine's own tables or the
-//! application's, keeps its own ordered list; a database records which versions of each
+//! application's, keeps its own ordered list. A database records which versions of each
 //! scope it has, and opening applies the rest inside one transaction per migration.
 
 use jiff::Timestamp;

@@ -49,7 +49,7 @@ const MAX_ENTRIES: usize = 500;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Link {
-    /// A post; `attachment` names one of its media when the post holds several.
+    /// A post. `attachment` names one of its media when the post holds several.
     Post {
         id: String,
         attachment: Option<String>,
@@ -368,7 +368,7 @@ pub fn variants_of(
     Ok(variants)
 }
 
-/// The caption format a text track's link ends in; the site's player is an HTML5
+/// The caption format a text track's link ends in. The site's player is an HTML5
 /// `<track>`, which plays WebVTT, so tracks without an extension are WebVTT.
 fn subtitle_format(url: &Url) -> Option<SubtitleFormat> {
     match path_extension(url).as_deref() {
@@ -380,7 +380,7 @@ fn subtitle_format(url: &Url) -> Option<SubtitleFormat> {
     }
 }
 
-/// The subtitle tracks a media's metadata lists; generated ones are automatic captions.
+/// The subtitle tracks a media's metadata lists. Generated ones are automatic captions.
 pub fn subtitles_of(metadata: &Value) -> Vec<SubtitleTrack> {
     metadata["textTracks"]
         .as_array()

@@ -48,7 +48,7 @@ impl ApiError {
             ApiError::TooManyRequests(retry) => (
                 StatusCode::TOO_MANY_REQUESTS,
                 format!(
-                    "too many attempts; try again in {} seconds",
+                    "Too many attempts. Try again in {} seconds.",
                     retry_secs(*retry)
                 ),
             ),

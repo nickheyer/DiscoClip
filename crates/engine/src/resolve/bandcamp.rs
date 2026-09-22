@@ -1,6 +1,6 @@
 //! Bandcamp tracks and albums: every page carries the release in its `data-tralbum`
 //! attribute, with each track's streaming MP3, and a track offered as a free download
-//! lists its lossless and high-bitrate files on its download page; an album page lists
+//! lists its lossless and high-bitrate files on its download page. An album page lists
 //! its tracks, each a page of its own, an artist's page lists their discography, and
 //! the Bandcamp Weekly radio shows stream through the player API.
 
@@ -418,7 +418,7 @@ impl BandcampResolver {
         let html = self.page(url).await?;
         let release = tralbum(&html).ok_or_else(|| ResolveError::NotFound(url.clone()))?;
         let base = url.clone();
-        // Only tracks with a length have a song to play; the rest are placeholders.
+        // Only tracks with a length have a song to play. The rest are placeholders.
         let entries: Vec<PlaylistEntry> = release["trackinfo"]
             .as_array()
             .into_iter()

@@ -1,6 +1,6 @@
 //! SMIL manifests as yt-dlp reads them: every `video`, `audio` and `media` entry becomes
 //! a variant (RTMP, HLS, DASH, Smooth Streaming or a plain file, by its source) and every
-//! `textstream` a subtitle track. thePlatform and Turner both publish SMIL.
+//! `textstream` a subtitle track. ThePlatform and Turner both publish SMIL.
 
 use std::sync::LazyLock;
 
@@ -43,7 +43,7 @@ struct TextStream {
     language: String,
 }
 
-/// Fetches the SMIL at `url` as `platform` and expands it; `headers` go with that
+/// Fetches the SMIL at `url` as `platform` and expands it. `headers` go with that
 /// request. `rtmp_play_path_prefix` goes before RTMP play paths (thePlatform's `mp4:`).
 pub async fn expand(
     http: &Http,
@@ -143,7 +143,7 @@ pub async fn parse(
             }
         } else if matches!(src_url.scheme(), "http" | "https") {
             // A file the SMIL links in full is asked for first, as yt-dlp does, and dropped
-            // when its host refuses it; one named under the base is taken as it is.
+            // when its host refuses it. One named under the base is taken as it is.
             let probed = if medium.src.trim().starts_with("http") {
                 match probe_file(http, &src_url, platform, BROWSER_UA, &[]).await {
                     Ok(probed) if probed.status.is_success() => Some(probed),
@@ -421,7 +421,7 @@ pub fn mime_extension(mime: &str) -> Option<String> {
         .or_else(|| (!subtype.is_empty()).then(|| subtype.replace('+', ".")))
 }
 
-/// The subtitle format an extension names; formats the downloader has no reader for
+/// The subtitle format an extension names. Formats the downloader has no reader for
 /// give `None`.
 pub fn subtitle_format(ext: &str) -> Option<SubtitleFormat> {
     Some(match ext.trim().to_ascii_lowercase().as_str() {

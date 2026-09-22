@@ -43,9 +43,7 @@
 					: {}
 		}));
 	}
-
-	// The rows are set once from the value the map is created with; the section recreates
-	// the map whenever the draft is replaced.
+	// The parent recreates this component when replacing the draft.
 	let rows = $state<Row[]>(rowsOf(value));
 
 	function commit() {
@@ -74,7 +72,7 @@
 
 	function keyProblem(key: string): string | null {
 		const text = key.trim();
-		if (!text) return 'A name is needed.';
+		if (!text) return 'Enter a name.';
 		if (spec.keyLabel === 'Host' && !HOST_RE.test(text)) return `${text} is not a host name`;
 		if (rows.filter((r) => r.key.trim() === text).length > 1) return `${text} is listed twice`;
 		return null;
@@ -253,6 +251,6 @@
 		align-items: center;
 		gap: 10px;
 		flex-wrap: wrap;
-		font-size: 12.5px;
+		font-size: 13px;
 	}
 </style>

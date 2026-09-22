@@ -1,17 +1,8 @@
-//! Reddit posts and v.redd.it videos.
+//! Resolve Reddit posts and v.redd.it videos. Try the JSON API first, using saved
+//! reddit_session cookies when available.
 //!
-//! A post is read one of two ways. The JSON API, `www.reddit.com/comments/{id}/.json`, is
-//! asked first: it names the post's video with its duration, the parents of a crosspost,
-//! the over-18 flag and the thumbnail, and a stored `reddit_session` cookie makes it
-//! answer on every network. For anonymous callers on many networks Reddit walls the API
-//! off, answering a block page, a redirect to its login page or a 429; there the post's
-//! Atom feed, `www.reddit.com/comments/{id}/.rss`, is read instead. Its post entry
-//! carries the title, author, subreddit, permalink, published time, thumbnail and link,
-//! and the link leads to the v.redd.it video, to media hosted elsewhere, or to the post a
-//! crosspost was taken from, which is read through its own feed. The feed says nothing
-//! about the over-18 flag, so before a video read this way is returned, the post's embed
-//! page at `embed.reddit.com`, which states the flag, settles it and supplies the poster
-//! of a post whose feed entry shows no thumbnail.
+//! On anonymous access blocks, read the post Atom feed for metadata, media links and
+//! crossposts. Use embed.reddit.com to check age restrictions and missing thumbnails.
 
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -211,7 +202,7 @@ impl RedditResolver {
                 tracing::debug!(
                     post = post_id,
                     reason,
-                    "the Reddit API is walled off here; reading the post's feed"
+                    "Reddit API blocked. Trying the post feed."
                 );
                 self.resolve_feed_post(post_id, origin, 0).await
             }
@@ -383,7 +374,7 @@ impl RedditResolver {
         Ok(())
     }
 
-    /// A post read through its feed; `hops` counts the crossposts followed to reach it.
+    /// A post read through its feed. `hops` counts the crossposts followed to reach it.
     async fn resolve_feed_post(
         &self,
         post_id: &str,

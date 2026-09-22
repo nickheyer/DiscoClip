@@ -24,10 +24,10 @@ pub async fn list(
 #[derive(Debug, Deserialize)]
 pub struct CreateRequest {
     pub name: String,
-    /// What the token may do; each must be something the account's role allows.
+    /// What the token may do. Each must be something the account's role allows.
     #[serde(default)]
     pub scopes: Vec<Permission>,
-    /// Days until the token stops working; forever when absent.
+    /// Days until the token stops working. Forever when absent.
     pub expires_in_days: Option<u32>,
 }
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Field from '$lib/components/Field.svelte';
 	import { onMount, tick, untrack } from 'svelte';
 	import type { PageData } from './$types';
 	import { logs, messageOf } from '$lib/api';
@@ -40,9 +41,7 @@
 	let level = $state<LogLevel | ''>('');
 	let target = $state('');
 	let q = $state('');
-
-	// The page's load seeds the lines once; from then on the page keeps them itself, oldest
-	// first, so the newest sit at the bottom like a terminal.
+	// Initialize once, then append live entries in chronological order.
 	const first = untrack(() => data.first);
 	let lines = $state<LogLine[]>([...first.lines].reverse());
 	let next = $state<number | null>(first.next);
@@ -169,7 +168,7 @@
 	<title>Log · DiscoClip</title>
 </svelte:head>
 
-<PageHeader title="Log" description="What the server writes to its log, as it is written. The filter set in settings decides what is written at all.">
+<PageHeader title="Log" description="Server activity. Change the log level in Settings.">
 	{#snippet meta()}
 		<Badge tone={following && feed === 'live' ? 'ok' : following ? 'warn' : 'neutral'} size="sm" dot pulse={following && feed !== 'live'}>{feedLabel}</Badge>
 		<span class="faint small">{formatNumber(buffered)} of {formatNumber(capacity)} lines kept on the server</span>
@@ -185,21 +184,21 @@
 
 <div class="stack">
 	<div class="filters">
-		<select class="select level" bind:value={level} onchange={applyFilters} aria-label="Lowest level">
+		<Field label="Lowest level" for="control-5445"><select id="control-5445" class="select level" bind:value={level} onchange={applyFilters} aria-label="Lowest level">
 			<option value="">Every level</option>
 			{#each LOG_LEVELS as l (l)}
 				<option value={l}>{LEVEL_LABELS[l]} and above</option>
 			{/each}
-		</select>
-		<input class="input" type="search" placeholder="Target, such as discoclip_engine" bind:value={target} oninput={onFilterInput} aria-label="Target" />
-		<input class="input" type="search" placeholder="Search messages and fields" bind:value={q} oninput={onFilterInput} aria-label="Search" />
+		</select></Field>
+		<Field label="Target" for="control-5700"><input id="control-5700" class="input" type="search" placeholder="Target, such as discoclip_engine" bind:value={target} oninput={onFilterInput} aria-label="Target" /></Field>
+		<Field label="Search" for="control-5851"><input id="control-5851" class="input" type="search" placeholder="Search messages and fields" bind:value={q} oninput={onFilterInput} aria-label="Search" /></Field>
 	</div>
 
 	{#if error}
 		<Alert tone="danger" message={error} onclose={() => (error = null)} />
 	{/if}
 	{#if skipped > 0}
-		<Alert tone="warn" message={`${formatNumber(skipped)} lines were written faster than this page could read them and are not shown; reload to see what the server kept.`} />
+		<Alert tone="warn" message={`${formatNumber(skipped)} lines were skipped. Reload to retrieve saved entries.`} />
 	{/if}
 
 	<div class="viewer card">
@@ -265,7 +264,7 @@
 		overflow: auto;
 		padding: 6px 0;
 		font-family: var(--font-mono);
-		font-size: 12.5px;
+		font-size: 13px;
 		line-height: 1.5;
 	}
 
@@ -323,7 +322,7 @@
 		border-radius: 999px;
 		background: var(--surface);
 		box-shadow: var(--shadow);
-		font-size: 12.5px;
+		font-size: 13px;
 		cursor: pointer;
 	}
 

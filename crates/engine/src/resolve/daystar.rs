@@ -1,5 +1,5 @@
 //! Daystar clips: the player page frames a Lightcast player, whose frame names the
-//! configuration script signed for the visit; the script lists the clip with its HLS
+//! configuration script signed for the visit. The script lists the clip with its HLS
 //! playlist, captions and poster.
 
 use std::sync::LazyLock;

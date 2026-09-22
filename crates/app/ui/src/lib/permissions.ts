@@ -1,6 +1,6 @@
 import type { Permission, Role } from './api/types';
 
-/** The roles table in API.md. */
+/** Permissions by account role. */
 export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
 	admin: [
 		'manage_users',
@@ -24,7 +24,7 @@ export const ROLE_LABELS: Record<Role, { label: string; description: string }> =
 	admin: {
 		label: 'Admin',
 		description:
-			'Everything: accounts, Discord applications, settings, rules, bots, the audit log and the server log.'
+			'Full access to accounts, settings, bots and jobs.'
 	},
 	operator: {
 		label: 'Operator',
@@ -32,18 +32,18 @@ export const ROLE_LABELS: Record<Role, { label: string; description: string }> =
 	},
 	viewer: {
 		label: 'Viewer',
-		description: 'Read only, plus the rules of guilds they manage on Discord.'
+		description: 'Read only, plus the rules of servers they manage on Discord.'
 	}
 };
 
 export const PERMISSION_LABELS: Record<Permission, { label: string; description: string }> = {
 	manage_users: {
 		label: 'Manage accounts',
-		description: 'Create accounts, assign roles, reset passwords and end anyone’s sessions.'
+		description: 'Create accounts, assign roles, reset passwords and end sessions.'
 	},
 	manage_applications: {
 		label: 'Manage applications',
-		description: 'Add, change and remove the Discord applications the server runs bots for.'
+		description: 'Add, edit and remove Discord applications.'
 	},
 	manage_watch_rules: {
 		label: 'Manage watch rules',

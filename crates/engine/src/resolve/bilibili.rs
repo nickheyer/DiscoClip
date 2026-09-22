@@ -623,7 +623,7 @@ impl BilibiliResolver {
             return Err(if self.logged_in() {
                 ResolveError::unavailable(
                     origin,
-                    "only a preview is served; the video is for paying members",
+                    "Only a preview is available. The full video requires a paid membership.",
                 )
             } else {
                 ResolveError::login_required(
@@ -694,7 +694,7 @@ impl BilibiliResolver {
                 };
                 variants = variants_of(data, duration);
             }
-            // A quality stored as several segments plays only in sequence; when a
+            // A quality stored as several segments plays only in sequence. When a
             // quality served whole exists, the segmented ones are left out.
             let whole: Vec<Variant> = variants
                 .iter()
@@ -713,7 +713,7 @@ impl BilibiliResolver {
             return Err(ResolveError::unavailable(
                 origin,
                 format!(
-                    "the video is stored as {} segments that play only in sequence; no single file is served",
+                    "This video has {} sequential segments. No single file is available.",
                     variants.len()
                 ),
             ));
@@ -936,7 +936,7 @@ impl BilibiliResolver {
             .ok_or_else(|| {
                 ResolveError::malformed(origin, "the interactive video names no graph")
             })?;
-        // Every edge names its own cid; edges of the same cid are one part.
+        // Every edge names its own cid. Edges of the same cid are one part.
         let mut parts: Vec<(u64, String)> = Vec::new();
         let mut pending: Vec<u64> = vec![1];
         let mut seen: Vec<u64> = Vec::new();
@@ -1841,7 +1841,7 @@ impl BilibiliResolver {
 
     /// An episode's streams from the v2 play URL, whose answer comes in several shapes
     /// (`result`, `raw.data`, or `data.result` around the `video_info`), with the
-    /// region lock and membership gate it reports; the v1 play URL stands behind it.
+    /// region lock and membership gate it reports. The v1 play URL stands behind it.
     async fn episode_streams(
         &self,
         ep: u64,

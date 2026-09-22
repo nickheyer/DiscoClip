@@ -79,7 +79,7 @@ import type {
 
 const id = encodeURIComponent;
 
-/** The live feed of job stats, job events and bot statuses; a plain URL for an EventSource. */
+/** The live feed of job stats, job events and bot statuses. A plain URL for an EventSource. */
 export const LIVE_EVENTS_URL = '/api/events';
 
 export const auth = {
@@ -124,7 +124,7 @@ export const tokens = {
 
 export const providers = {
 	list: () => get<ProviderInfo[]>('/auth/providers'),
-	/** The browser is sent here with a full page load; the server answers with a redirect. */
+	/** The browser is sent here with a full page load. The server answers with a redirect. */
 	startUrl: (provider: string, intent: Intent) =>
 		`/api/auth/${id(provider)}/start?intent=${intent}`,
 	identities: () => get<Identity[]>('/auth/identities'),
@@ -207,7 +207,7 @@ export const profiles = {
 	create: (body: ProfileInput) => post<Profile>('/profiles', body),
 	update: (profile: string, body: ProfileInput) => put<Profile>(`/profiles/${id(profile)}`, body),
 	remove: (profile: string) => del<void>(`/profiles/${id(profile)}`),
-	/** The whole server's assignment and, with a guild, that guild's; every guild's without. */
+	/** Global default's assignment and, with a guild, that server's. Every server's without. */
 	assignments: (guild?: string) =>
 		get<Assignment[]>('/profiles/assignments', guild ? { guild } : {}),
 	assign: (scope: Scope, profile: string) =>
@@ -245,13 +245,13 @@ export const frontends = {
 		del<void>(`/frontends/${id(frontend)}/sessions/${id(session)}`)
 };
 
-/** A front end as its visitors reach it: no admin session, no admin CSRF token. */
+/** A media site as its visitors reach it: no admin session, no admin CSRF token. */
 export const front = {
 	info: (slug: string) => publicRequest<FrontInfo>('GET', `/f/${id(slug)}`),
 	login: (slug: string, body: FrontLogin) =>
 		publicRequest<FrontInfo>('POST', `/f/${id(slug)}/login`, { body }),
 	logout: (slug: string) => publicRequest<void>('POST', `/f/${id(slug)}/logout`),
-	/** The browser is sent here with a full page load; the server answers with a redirect. */
+	/** The browser is sent here with a full page load. The server answers with a redirect. */
 	startUrl: (slug: string, provider: string) => `/api/f/${id(slug)}/auth/${id(provider)}/start`,
 	jobs: (slug: string, query: FrontJobQuery = {}) =>
 		publicRequest<FrontPage>('GET', `/f/${id(slug)}/jobs`, { query: { ...query } }),
@@ -279,7 +279,7 @@ export const metrics = {
 
 export const logs = {
 	list: (query: LogQuery = {}) => get<LogPage>('/logs', { ...query }),
-	/** Where the browser follows new lines; a plain URL for an EventSource, not an API call. */
+	/** Where the browser follows new lines. A plain URL for an EventSource, not an API call. */
 	eventsUrl: (query: Pick<LogQuery, 'level' | 'target' | 'q'>) => {
 		const params = new URLSearchParams();
 		for (const [key, value] of Object.entries(query)) {
@@ -310,7 +310,7 @@ export const settings = {
 	reset: (key: string) => del<SettingsView>(`/settings/${id(key)}`),
 	import: (body: SettingsImportRequest) => post<SettingsView>('/settings/import', body),
 	exportText: (format: SettingsFormat) => text(`/settings/export?format=${format}`),
-	/** Where the browser downloads the settings as a file; a plain link, not an API call. */
+	/** Where the browser downloads the settings as a file. A plain link, not an API call. */
 	exportUrl: (format: SettingsFormat) => `/api/settings/export?format=${format}`
 };
 
@@ -324,7 +324,7 @@ export const jobs = {
 	cancel: (job: string) => post<void>(`/jobs/${id(job)}/cancel`),
 	remove: (job: string) => del<void>(`/jobs/${id(job)}`),
 	bulk: (body: BulkRequest) => post<BulkResponse>('/jobs/bulk', body),
-	/** Where the browser fetches or plays an artifact; a plain link, not an API call. */
+	/** Where the browser fetches or plays an artifact. A plain link, not an API call. */
 	downloadUrl: (job: string, artifact: Artifact = 'output', index = 0, inline = false) =>
 		`/api/jobs/${id(job)}/download?artifact=${artifact}&index=${index}${inline ? '&inline=true' : ''}`,
 	eventsUrl: '/api/jobs/events'

@@ -36,7 +36,7 @@ pub enum Link {
     Video {
         id: String,
     },
-    /// A bangumi episode; `ac` picks a highlight clip of the page instead.
+    /// A bangumi episode. `ac` picks a highlight clip of the page instead.
     Bangumi {
         id: String,
         ac: Option<String>,

@@ -1,6 +1,6 @@
 //! ARD: Mediathek videos and live streams, its shows, series seasons and collections,
-//! through the page-gateway API the web player reads; Audiothek episodes and shows
-//! through the Audiothek GraphQL API; and the media-collection player JSON regional
+//! through the page-gateway API the web player reads. Audiothek episodes and shows
+//! through the Audiothek GraphQL API. And the media-collection player JSON regional
 //! broadcasters still serve, which SR Mediathek builds on.
 
 use std::sync::LazyLock;
@@ -23,7 +23,7 @@ pub const PLATFORM: &str = "ard";
 /// The SSO endpoint that turns the `ams` cookie into the id token the API wants for
 /// age-rated videos.
 pub const TOKEN_URL: &str = "https://sso.ardmediathek.de/sso/token";
-/// The countries the Mediathek plays in; a refused video is retried once with an
+/// The countries the Mediathek plays in. A refused video is retried once with an
 /// address from the first.
 pub const GEO_COUNTRIES: &[&str] = &["DE"];
 const PAGE_GATEWAY: &str = "https://api.ardmediathek.de/page-gateway";
@@ -128,12 +128,8 @@ pub fn parse_link(url: &Url) -> Option<Link> {
     }
 }
 
-// ---------------------------------------------------------------------------------------
-// The media-collection player JSON (`_mediaArray`), shared with SR Mediathek
-// ---------------------------------------------------------------------------------------
-
-/// What a media-collection player JSON describes: the streams, the subtitles ARD
-/// publishes as EBU-TT and WebVTT, and the clip's length, poster and liveness.
+// Parse media-collection player JSON shared by ARD and SR Mediathek: streams, EBU-TT and
+// WebVTT subtitles, duration, poster and live status.
 #[derive(Debug, Clone)]
 pub struct MediaInfo {
     pub duration: Option<Duration>,
@@ -144,7 +140,7 @@ pub struct MediaInfo {
 }
 
 /// Reads the player JSON at `media_info_url` as `platform` and turns it into streams,
-/// the way `ARDMediathekBaseIE._extract_media_info` does; `webpage` is the page that
+/// the way `ARDMediathekBaseIE._extract_media_info` does. `webpage` is the page that
 /// named the JSON, whose `"fsk"` marker means the clip is held back until the evening.
 /// A clip the broadcaster refuses by region is retried once from a German address.
 pub async fn extract_media_info(
@@ -183,7 +179,7 @@ pub async fn extract_media_info(
 }
 
 /// Turns a player JSON already read into streams, the way
-/// `ARDMediathekBaseIE._parse_media_info` does; `fsk` says the page carried the
+/// `ARDMediathekBaseIE._parse_media_info` does. `fsk` says the page carried the
 /// evening-only marker, `base` resolves relative links in it.
 pub async fn parse_media_info(
     http: &Http,
@@ -310,7 +306,7 @@ pub async fn media_info_variants(
                 .as_str()
                 .filter(|server| server.starts_with("rtmp"));
             for raw in stream_urls {
-                // Streams are links as they stand, never joined with the player page; an
+                // Streams are links as they stand, never joined with the player page. An
                 // RTMP server's play path is joined with the server.
                 let stream_url = match rtmp {
                     Some(server) => {
@@ -411,9 +407,9 @@ fn audio_codec(name: &str) -> Option<AudioCodec> {
     }
 }
 
-// ---------------------------------------------------------------------------------------
+
 // Age verification through the SSO cookie
-// ---------------------------------------------------------------------------------------
+
 
 /// The signed-in viewer the `ams` SSO cookie stands for: the id token the page gateway
 /// wants and who it names.
@@ -432,7 +428,7 @@ pub fn jwt_payload(token: &str) -> Option<Value> {
     serde_json::from_slice(&bytes).ok()
 }
 
-/// Asks the SSO for the id token of the `ams` cookie in `platform`'s jar; `None` when
+/// Asks the SSO for the id token of the `ams` cookie in `platform`'s jar. `None` when
 /// there is no cookie, or the SSO does not name a user for it.
 pub async fn age_token(http: &Http, platform: &str) -> Result<Option<AgeToken>, ResolveError> {
     if http.jar(platform).get("ams").is_none() {
@@ -463,9 +459,9 @@ pub async fn age_token(http: &Http, platform: &str) -> Result<Option<AgeToken>, 
     }))
 }
 
-// ---------------------------------------------------------------------------------------
+
 // Episode numbering in Mediathek titles
-// ---------------------------------------------------------------------------------------
+
 
 /// What a Mediathek title says about the episode, such as `(S06/E07)` or `Folge 25/42:`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -529,9 +525,9 @@ pub fn episode_info(title: &str) -> EpisodeInfo {
     }
 }
 
-// ---------------------------------------------------------------------------------------
+
 // The resolver
-// ---------------------------------------------------------------------------------------
+
 
 pub struct ArdResolver {
     http: Http,
@@ -608,7 +604,7 @@ impl ArdResolver {
                 if token.age_rating != Some(18) {
                     tracing::warn!(
                         platform = PLATFORM,
-                        "the account is not verified as 18+; the video may be unavailable"
+                        "This account is not verified as 18+. The video may be unavailable."
                     );
                 }
             }
@@ -616,7 +612,7 @@ impl ArdResolver {
                 if self.http.jar(PLATFORM).get("ams").is_some() {
                     tracing::warn!(
                         platform = PLATFORM,
-                        "the SSO named no user for the ams cookie; continuing without it"
+                        "SSO returned no user for the ams cookie. Continuing without it."
                     );
                 }
             }
@@ -624,7 +620,7 @@ impl ArdResolver {
                 tracing::warn!(
                     platform = PLATFORM,
                     %error,
-                    "the age verification token could not be fetched; continuing without it"
+                    "Age verification token unavailable. Continuing without it."
                 );
             }
         }
@@ -1608,7 +1604,7 @@ mod tests {
             "{error}"
         );
 
-        // A geo-blocked page is asked again from a German address; still empty, it is refused.
+        // A geo-blocked page is asked again from a German address. Still empty, it is refused.
         let mut fixture = Fixture::new(PLATFORM, None);
         fixture.exchanges.push(get(
             ITEM_URL,

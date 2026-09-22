@@ -114,7 +114,7 @@
 	<title>Audit log · DiscoClip</title>
 </svelte:head>
 
-<PageHeader title="Audit log" description="Every settings change and Discord management action, newest first, with who did it and what changed." />
+<PageHeader title="Audit log" description="Account and configuration changes, newest first." />
 
 <div class="stack">
 	<form class="card filters" onsubmit={apply}>
@@ -167,7 +167,7 @@
 	</form>
 
 	{#if entries.length === 0}
-		<Empty icon="audit" title={filtered ? 'Nothing matches' : 'Nothing has been recorded yet'} description={filtered ? 'No entry matches these filters.' : 'Settings changes and Discord management actions show up here as they happen.'}>
+		<Empty icon="audit" title={filtered ? 'Nothing matches' : 'Nothing has been recorded yet'} description={filtered ? 'No entry matches these filters.' : 'Changes appear here when they are saved.'}>
 			{#if filtered}<Button onclick={clear}>Clear filters</Button>{/if}
 		</Empty>
 	{:else}

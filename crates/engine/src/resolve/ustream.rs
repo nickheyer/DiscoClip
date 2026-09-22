@@ -1,8 +1,8 @@
-//! Ustream, now IBM Video Streaming (video.ibm.com, where ustream.tv links redirect):
-//! recordings, channels live and off air, and the player embeds of both. Records come
-//! from the videos and channels API; streams come from the UMS media server through the
-//! viewer handshake the player makes, which names the HLS playlist of a recording, or of
-//! a channel while it broadcasts. An off-air channel is the list of its recordings.
+//! Resolve IBM Video Streaming recordings and channels, including ustream.tv redirects.
+//! Read metadata from video and channel APIs.
+//!
+//! Use the UMS viewer handshake to obtain HLS URLs. Offline channels become recording
+//! playlists.
 
 use std::sync::LazyLock;
 use std::time::Duration;

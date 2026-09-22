@@ -1,8 +1,7 @@
-//! BuzzFeed (buzzfeed.com) posts: the videos a post embeds, read from the post data its
-//! page hands Next.js (`__NEXT_DATA__`): the `video` sub-buzzes (a YouTube video by its
-//! id, other players by the link the post was given) and the `embed` sub-buzzes that frame
-//! a Facebook post, an Instagram reel, a TikTok, YouTube or Vimeo video. A post with one
-//! video is handed to the video's host; a post with several is a playlist of them.
+//! Resolve videos embedded in BuzzFeed Next.js post data. Handle video and embed sub-
+//! buzzes.
+//!
+//! Delegate a single video to its platform. Return multiple videos as a playlist.
 
 use async_trait::async_trait;
 use serde_json::Value;
@@ -42,7 +41,7 @@ pub struct Embedded {
     pub title: Option<String>,
 }
 
-/// The post (`props.pageProps.buzz`) in the page's Next.js data; `None` when the page is
+/// The post (`props.pageProps.buzz`) in the page's Next.js data. `None` when the page is
 /// not a post.
 pub fn post_data(next_data: &str) -> Option<Value> {
     let data: Value = serde_json::from_str(next_data).ok()?;

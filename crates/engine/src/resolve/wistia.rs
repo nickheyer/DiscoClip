@@ -1,7 +1,7 @@
 //! Wistia media, through the embed API the player reads: every MP4 asset with its
 //! dimensions, bitrate and size, the original upload, the HLS manifest of media the
 //! account streams, and the captions in every language. Media pages, player iframes,
-//! embed scripts and `wvideo` links name the media; playlists and channels become
+//! embed scripts and `wvideo` links name the media. Playlists and channels become
 //! playlists of theirs.
 
 use std::sync::LazyLock;

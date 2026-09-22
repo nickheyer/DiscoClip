@@ -1,7 +1,7 @@
 //! Mux Video playback ids, from the HLS master the player reads, expanded to its
 //! renditions, with every static MP4 rendition the asset offers found by asking the
 //! CDN for its first byte, and the asset's thumbnail. Stream, player and image links
-//! name the playback id; a signed playback id carries its token through to the
+//! name the playback id. A signed playback id carries its token through to the
 //! manifests and files.
 
 use std::sync::LazyLock;

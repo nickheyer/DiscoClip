@@ -82,7 +82,7 @@ fn content_url(origin: &Url, tail: &str) -> Result<Url, ResolveError> {
 /// Reads the content at `path` (an asset id, or `ext/{owner}/{external id}`): the HLS
 /// master at content.uplynk.com, joined by playback session `session` when one is open,
 /// and the asset record beside it. `headers` (the referer or origin an embedding site
-/// sends) go with the playlist requests and stay on the variants for the download;
+/// sends) go with the playlist requests and stay on the variants for the download.
 /// `origin` is the link named in errors.
 pub async fn resolve_content(
     http: &Http,

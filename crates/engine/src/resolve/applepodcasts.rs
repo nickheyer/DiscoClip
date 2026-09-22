@@ -1,5 +1,5 @@
 //! Apple Podcasts episodes: the episode page carries the episode's stream link in its
-//! serialized server data; when a page comes without it, the catalogue API answers
+//! serialized server data. When a page comes without it, the catalogue API answers
 //! with the token the page's script bundle carries.
 
 use std::sync::LazyLock;
@@ -232,7 +232,7 @@ impl Resolver for ApplePodcastsResolver {
 
     async fn resolve(&self, url: &Url) -> Result<Resolution, ResolveError> {
         let link = parse_link(url).ok_or_else(|| ResolveError::NotFound(url.clone()))?;
-        // The page is read as linked; the site answers HTTP 500 for some episodes and
+        // The page is read as linked. The site answers HTTP 500 for some episodes and
         // still carries the script bundle the catalogue API is read with.
         let page_url = url.clone();
         let fetched = fetch(

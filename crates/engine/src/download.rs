@@ -22,10 +22,13 @@ use crate::resolve::{Cipher, ClipRange, SubtitleFormat, SubtitleTrack, Variant, 
 
 pub mod dash;
 pub mod hls;
+pub mod ism;
 pub mod mp4;
 pub mod mpegts;
 pub mod segments;
+pub mod stream;
 pub mod subtitles;
+pub mod whep;
 
 /// Which subtitles the job wants beside the media: the tracks the resolver listed, after
 /// the job's language preference, and that preference for renditions a downloader finds
@@ -41,20 +44,20 @@ pub struct SubtitleChoice {
 pub struct DownloadContext {
     /// Bytes the source may occupy on disk.
     pub max_bytes: u64,
-    /// The tallest picture worth fetching; manifests offering several pick by this.
+    /// The tallest picture worth fetching. Manifests offering several pick by this.
     pub max_height: u32,
     /// How long a live stream is captured before it is cut and treated as a recording.
     pub max_live: Duration,
-    /// The portion wanted; downloaders that can seek fetch only it.
+    /// The portion wanted. Downloaders that can seek fetch only it.
     pub clip: Option<ClipRange>,
     /// Whose cookies and proxy the requests use.
     pub platform: String,
     /// How many connections fetch one file, how much each asks for, and how often a
     /// broken transfer is picked up again.
     pub download: DownloadConfig,
-    /// The subtitles wanted beside the media; `None` when the job skips them. A
+    /// The subtitles wanted beside the media. `None` when the job skips them. A
     /// downloader fetches the tracks it knows how to follow with the media, such as HLS
-    /// renditions, and reports them; the pipeline fetches the rest.
+    /// renditions, and reports them. The pipeline fetches the rest.
     pub subtitles: Option<SubtitleChoice>,
 }
 
@@ -175,15 +178,15 @@ pub fn extension_for(variant: &Variant, content_type: Option<&str>) -> String {
 
 /// Fetches media files over HTTP into the job directory: one file, or a video-only file
 /// and its separate audio, muxed together with the embedded ffmpeg. A host that serves
-/// byte ranges is asked for the file in chunks over several connections at once; a
-/// transfer that breaks is picked up from the byte it stopped at; a file that changes
+/// byte ranges is asked for the file in chunks over concurrent connections. A
+/// transfer that breaks is picked up from the byte it stopped at. A file that changes
 /// while it is fetched is fetched again from its first byte.
 pub struct HttpDownloader {
     http: Http,
     ffmpeg: Ffmpeg,
 }
 
-/// Bytes fetched so far across the files of one download, for the progress shown; shared
+/// Bytes fetched so far across the files of one download, for the progress shown. Shared
 /// by the connections fetching one file at the same time.
 struct Tally<'a> {
     progress: &'a ProgressSender,
@@ -221,7 +224,7 @@ impl<'a> Tally<'a> {
         self.send();
     }
 
-    /// Takes `size` as the length of the file being fetched when no total is known yet;
+    /// Takes `size` as the length of the file being fetched when no total is known yet.
     /// whether it was taken.
     fn learn(&self, size: u64) -> bool {
         let total = self.done.load(Ordering::Relaxed) + size;
@@ -397,7 +400,7 @@ struct Transfer<'a> {
 
 impl Transfer<'_> {
     /// Fetches the whole file, starting over when a pass finds the file changed under
-    /// it; the bytes written and the content type served.
+    /// it. The bytes written and the content type served.
     async fn fetch(&self) -> Result<(u64, Option<String>), DownloadError> {
         loop {
             match self.pass().await {
@@ -444,7 +447,7 @@ impl Transfer<'_> {
         }
     }
 
-    /// Spends one resume, pausing before it as the HTTP retry policy would; fails with
+    /// Spends one resume, pausing before it as the HTTP retry policy would. Fails with
     /// `why` once they are used up.
     async fn resume(&self, why: String) -> Result<(), DownloadError> {
         let used = self.resumes.fetch_add(1, Ordering::Relaxed) + 1;
@@ -614,7 +617,7 @@ impl Transfer<'_> {
                         return Ok(());
                     }
                     if written == promised && broke.is_none() {
-                        // The host serves shorter ranges than asked for; the rest follows.
+                        // The host serves shorter ranges than asked for. The rest follows.
                         continue;
                     }
                     self.resume(short(broke, at, self.url)).await?;
@@ -644,7 +647,7 @@ impl Transfer<'_> {
     }
 
     /// Streams from byte `from` to the end of the file, however long it turns out to be,
-    /// picking up from wherever a broken transfer stopped; `response` is an answer already
+    /// picking up from wherever a broken transfer stopped. `response` is an answer already
     /// in hand for `from`, and `total` the length when known. A host that answers the
     /// pick-up with the whole file gets the file started over from its first byte. The
     /// file's length.
@@ -787,7 +790,7 @@ impl HttpDownloader {
     }
 
     /// Fetches `url` into `path`, decrypting with `cipher` when the host stores the file
-    /// encrypted, failing once it is longer than `max_bytes`; the bytes written and the
+    /// encrypted, failing once it is longer than `max_bytes`. The bytes written and the
     /// content type served. Nothing is left at `path` when it fails.
     #[allow(clippy::too_many_arguments)]
     async fn fetch(
@@ -1107,7 +1110,7 @@ mod tests {
         assert_eq!(tokio::fs::read(&downloaded.file.path).await.unwrap(), body);
         assert_eq!(progress.done, 50_000);
         assert_eq!(progress.total, Some(50_000));
-        // The whole file came back to the first request; the pick-up was asked for as a
+        // The whole file came back to the first request. The pick-up was asked for as a
         // range, answered with the whole file again, and taken from the start.
         assert_eq!(
             site.ranges_seen(FILE),

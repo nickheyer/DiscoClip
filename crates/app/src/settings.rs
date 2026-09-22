@@ -1,13 +1,9 @@
-//! Settings live in the database and are what the server runs on. Provisioning seeds them
-//! at startup; the web app changes them afterwards, and a value changed in the app is never
-//! overwritten by provisioning again.
+//! Database settings. Startup provisioning seeds values without replacing app edits.
 //!
-//! Each row holds one dotted path such as `engine.limits.max_height` with a JSON value.
-//! Sections are not rows: they are implied by the paths beneath them. Arrays are single
-//! values. A path that is not stored takes the default from its setting type.
+//! Rows store JSON values at dotted paths. Missing paths use defaults, sections derive
+//! from child paths, and arrays remain single values.
 //!
-//! Every change is written to the audit log in the same transaction: what each key held
-//! before and after, and what was removed around or beneath it.
+//! Changes and their audit entries share a transaction.
 
 use std::collections::BTreeMap;
 use std::net::{Ipv4Addr, SocketAddr};
@@ -299,10 +295,10 @@ impl Default for LocalConfig {
 #[serde(default, deny_unknown_fields)]
 pub struct WebConfig {
     pub bind: SocketAddr,
-    /// How browsers reach the app, such as `https://clips.example.com`; login providers
+    /// How browsers reach the app, such as `https://clips.example.com`. Login providers
     /// send them back here. Without it the address a request arrived at is used.
     pub public_url: Option<Url>,
-    /// Serve HTTPS from these PEM files; without them the app speaks plain HTTP, as it
+    /// Serve HTTPS from these PEM files. Without them the app speaks plain HTTP, as it
     /// does behind a reverse proxy that terminates TLS.
     pub tls: Option<TlsConfig>,
     /// Addresses and networks of reverse proxies in front of the app. A request that
@@ -505,7 +501,7 @@ pub struct View {
     pub settings: Json,
     pub defaults: Json,
     pub entries: Vec<EntryView>,
-    /// Secret keys that hold a value; their values are withheld from `settings`.
+    /// Secret keys that hold a value. Their values are withheld from `settings`.
     pub secrets: Vec<String>,
 }
 
@@ -586,7 +582,7 @@ impl SettingsStore {
         self.apply(actor, Action::SettingsImport, &change).await
     }
 
-    /// The change an import of `provisioning` amounts to, over what is stored.
+    /// The change an import of `provisioning` produces, over what is stored.
     pub async fn import_change(
         &self,
         provisioning: &Provisioning,
@@ -665,8 +661,8 @@ impl SettingsStore {
 
     /// Stores `change` as done by `actor` in one transaction, logged as `action`: every
     /// key set is written as the leaves beneath it, replacing whatever was stored at, around
-    /// or beneath it; every key reset is removed with everything beneath it. Nothing is
-    /// written unless the settings as a whole stay valid; the new settings are returned.
+    /// or beneath it. Every key reset is removed with everything beneath it. Nothing is
+    /// written unless the settings as a whole stay valid. The new settings are returned.
     pub async fn apply(
         &self,
         actor: &Actor,
@@ -776,7 +772,7 @@ fn at_path<'a>(tree: &'a Json, path: &str) -> Option<&'a Json> {
         .try_fold(tree, |node, segment| node.get(segment))
 }
 
-/// The values stored around or beneath `key` before that are gone after; `key` itself
+/// The values stored around or beneath `key` before that are gone after. `key` itself
 /// too when `including_key`.
 fn removed_around(
     key: &str,
@@ -861,7 +857,7 @@ fn read_entries(conn: &Connection) -> Result<Vec<Entry>, SettingsError> {
     Ok(entries)
 }
 
-/// Removes `key` and every row beneath it; the keys removed.
+/// Removes `key` and every row beneath it. The keys removed.
 fn remove(conn: &Connection, key: &str) -> Result<Vec<String>, SettingsError> {
     let mut stmt = conn.prepare(
         "DELETE FROM settings WHERE key = ?1 OR substr(key, 1, length(?1) + 1) = ?1 || '.' RETURNING key",
@@ -871,7 +867,7 @@ fn remove(conn: &Connection, key: &str) -> Result<Vec<String>, SettingsError> {
 }
 
 /// Stores `value` at `key` as the leaves beneath it, removing any value stored at a section
-/// around it or a path beneath it; the leaf keys written.
+/// around it or a path beneath it. The leaf keys written.
 fn write(
     conn: &Connection,
     key: &str,

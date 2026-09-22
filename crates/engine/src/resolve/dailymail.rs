@@ -1,6 +1,6 @@
 //! Daily Mail videos (dailymail.com, formerly dailymail.co.uk): the video page's player
 //! options name the video and its sources feed, which lists every rendition, HLS and
-//! MP4; the options also name the player's own MP4.
+//! MP4. The options also name the player's own MP4.
 
 use std::sync::LazyLock;
 

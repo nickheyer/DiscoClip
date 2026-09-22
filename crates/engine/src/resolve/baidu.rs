@@ -1,5 +1,5 @@
 //! Baidu Video (百度视频) series pages: the episode list, through the JSON API the
-//! site's app reads; every episode links to the player of the site that hosts it.
+//! site's app reads. Every episode links to the player of the site that hosts it.
 
 use std::sync::LazyLock;
 
@@ -43,7 +43,7 @@ pub fn parse_link(url: &Url) -> Option<Link> {
 }
 
 /// The `worktype` the API wants for a page category: `show` pages are TV shows and `tv`
-/// pages TV plays; the other categories keep their name.
+/// pages TV plays. The other categories keep their name.
 pub fn work_type(category: &str) -> String {
     let category = match category {
         "show" => "tvshow",

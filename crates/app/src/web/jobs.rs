@@ -33,7 +33,7 @@ use super::auth::{Auth, Identity, parse_id};
 use super::error::ApiError;
 use crate::local::SOURCE_ID as LOCAL_SOURCE;
 use crate::users::Permission;
-use discoclip_bot::{DiscordOrigin, turned_off};
+use discoclip_bot::{DiscordOrigin, InForce, turned_off};
 
 /// The most jobs one bulk request acts on.
 const BULK_MAX: usize = 500;
@@ -323,7 +323,7 @@ pub(super) async fn job_events(
                         .json_data(&feed)
                         .expect("job events serialize")))
                 }
-                // A slow reader missed some events; the next stats event catches it up.
+                // A slow reader missed some events. The next stats event catches it up.
                 Err(BroadcastStreamRecvError::Lagged(_)) => None,
             }
         }
@@ -381,9 +381,10 @@ fn local_origin(identity: &Identity) -> Origin {
     }
 }
 
-/// The platforms turned off where a request's link was seen: the profiles of the guild,
-/// channel and author for a Discord origin, the whole server's for anything else.
-fn disabled_for(state: &AppState, origin: &Origin) -> Vec<String> {
+/// What the profiles say where a request's link was seen, the platforms turned off and
+/// the limits assigned: the profiles of the guild, channel and author for a Discord
+/// origin, the whole server's for anything else.
+fn in_force_for(state: &AppState, origin: &Origin) -> InForce {
     match DiscordOrigin::parse(origin) {
         Some(discord) => {
             let guild = discord.guild.map(|id| id.to_string());
@@ -392,9 +393,9 @@ fn disabled_for(state: &AppState, origin: &Origin) -> Vec<String> {
             state
                 .profiles
                 .effective(guild.as_deref(), Some(&channel), author.as_deref())
-                .disabled()
+                .in_force()
         }
-        None => state.profiles.effective(None, None, None).disabled(),
+        None => state.profiles.effective(None, None, None).in_force(),
     }
 }
 
@@ -412,27 +413,34 @@ pub async fn submit(
         )));
     }
     let mut job = Request::new(local_origin(&identity), request.url.clone());
-    let disabled = disabled_for(&state, &job.origin);
-    if let Some(platform) = turned_off(&state.engine.resolvers_for(&request.url), &disabled) {
+    let in_force = in_force_for(&state, &job.origin);
+    if let Some(platform) = turned_off(&state.engine.resolvers_for(&request.url), &in_force.disabled) {
         return Err(ApiError::BadRequest(format!(
-            "{platform} links are turned off by the profile in force"
+            "The assigned profile disables {platform} links."
         )));
     }
-    job.limits = request.limits;
+    // The submitter's own limits tighten the profile's. Neither loosens the other.
+    job.limits = request.limits.tightened(in_force.limits);
     job.options = request.options;
     job.submitted_by = Some(identity.user.username.clone());
-    job.disabled_platforms = disabled;
+    job.disabled_platforms = in_force.disabled;
     let id = state.engine.submit(job).await?;
     tracing::info!(by = identity.user.username, job = %id, url = %request.url, "link submitted");
     Ok((StatusCode::ACCEPTED, Json(Submitted { id })))
 }
 
 /// Queues a fresh job with the same request as a finished one, under the profiles in
-/// force where its link was seen as they stand now.
+/// force where its link was seen as they stand now. A job submitted from the web app
+/// keeps the limits its submitter chose, tightening the profile's as they did at first.
 async fn retry_job(state: &AppState, id: JobId) -> Result<JobId, ApiError> {
     let job = state.engine.get(id).await?.ok_or(ApiError::NotFound)?;
-    let disabled = disabled_for(state, &job.request.origin);
-    Ok(state.engine.retry(id, disabled).await?)
+    let in_force = in_force_for(state, &job.request.origin);
+    let limits = if DiscordOrigin::parse(&job.request.origin).is_some() {
+        in_force.limits
+    } else {
+        job.request.limits.tightened(in_force.limits)
+    };
+    Ok(state.engine.retry(id, in_force.disabled, limits).await?)
 }
 
 /// Queues a fresh job with the same request as a finished one.
@@ -507,7 +515,7 @@ pub struct BulkResponse {
     pub failed: usize,
 }
 
-/// Retries, cancels or deletes several jobs; each is reported on its own.
+/// Retries, cancels or deletes several jobs. Each is reported on its own.
 pub async fn bulk(
     State(state): State<AppState>,
     Auth(identity): Auth,
@@ -694,7 +702,7 @@ pub(super) async fn locate(
     }
     let path = first_present(candidates).await.ok_or_else(|| {
         ApiError::Conflict(
-            "the file is no longer in the cache or the archive; retention removed it".into(),
+            "This file was deleted by retention cleanup.".into(),
         )
     })?;
     let ext = path
@@ -870,7 +878,7 @@ mod tests {
         assert_eq!(job["request"]["options"]["subtitles"], "burn");
         assert_eq!(job["request"]["options"]["clip"]["start"]["secs"], 5);
 
-        // Not finished: no retry, no delete; cancel works and then the others do.
+        // Not finished: no retry, no delete. Cancel works and then the others do.
         let (status, _) = admin
             .send(Method::POST, &format!("/api/jobs/{id}/retry"), None)
             .await;

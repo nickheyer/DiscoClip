@@ -10,6 +10,9 @@ use discoclip_engine::archive::FsArchiver;
 use discoclip_engine::download::HttpDownloader;
 use discoclip_engine::download::dash::DashDownloader;
 use discoclip_engine::download::hls::HlsDownloader;
+use discoclip_engine::download::ism::IsmDownloader;
+use discoclip_engine::download::stream::StreamDownloader;
+use discoclip_engine::download::whep::WhepDownloader;
 use discoclip_engine::ffmpeg::Ffmpeg;
 use discoclip_engine::resolve::{Resolver, standard_resolvers};
 use discoclip_engine::store::sqlite::SqliteStore;
@@ -29,7 +32,7 @@ use crate::frontends::FrontendStore;
 use crate::local::{LocalPublisher, SharedLocalConfig};
 use crate::migrations;
 use crate::oauth::Registry;
-use crate::profiles::ProfileStore;
+use crate::profiles::{PlatformFacts, ProfileStore};
 use crate::rules::RuleStore;
 use crate::secrets::{KEY_FILE, Keyring, SecretError};
 use crate::settings::{self, Settings, SettingsStore};
@@ -78,7 +81,7 @@ pub fn run(args: Args) -> ExitCode {
         }
     };
     let result = runtime.block_on(async {
-        // Provisioning names where the database lives; everything else the server runs on
+        // Provisioning names where the database lives. Everything else the server runs on
         // is read from that database after provisioning has been written into it.
         let provisioning = config::load(args.config.as_deref())?;
         let data_dir = provisioning.data_dir()?;
@@ -92,7 +95,7 @@ pub fn run(args: Args) -> ExitCode {
         }
         match &provisioning.file {
             Some(path) => tracing::info!(file = %path.display(), "provisioning file applied"),
-            None => tracing::info!("no provisioning file found; settings read from the database"),
+            None => tracing::info!("No config file found. Using database settings."),
         }
         for key in &boot.kept {
             tracing::warn!(
@@ -138,6 +141,9 @@ async fn builder(
         .downloader(HttpDownloader::new(http.clone(), ffmpeg.clone()))
         .downloader(HlsDownloader::new(http.clone(), ffmpeg.clone()))
         .downloader(DashDownloader::new(http.clone(), ffmpeg.clone()))
+        .downloader(IsmDownloader::new(http.clone(), ffmpeg.clone()))
+        .downloader(StreamDownloader::new(http.clone(), ffmpeg.clone()))
+        .downloader(WhepDownloader::new(http.clone(), ffmpeg.clone()))
         .transcoder(FfmpegTranscoder::new(ffmpeg.clone()));
     for resolver in resolvers(&http) {
         builder = builder.resolver_arc(resolver);
@@ -164,7 +170,7 @@ fn cancel_on_signal(token: CancellationToken) -> std::io::Result<()> {
                 _ = interrupt.recv() => 130,
                 _ = terminate.recv() => 143,
             };
-            tracing::warn!("second shutdown signal received; forcing exit");
+            tracing::warn!("Second shutdown signal received. Forcing exit.");
             std::process::exit(code);
         });
     }
@@ -176,7 +182,7 @@ fn cancel_on_signal(token: CancellationToken) -> std::io::Result<()> {
             tracing::info!("shutdown requested");
             token.cancel();
             ctrl_c.recv().await;
-            tracing::warn!("second shutdown signal received; forcing exit");
+            tracing::warn!("Second shutdown signal received. Forcing exit.");
             std::process::exit(130);
         });
     }
@@ -194,7 +200,7 @@ struct Startup {
 }
 
 /// Runs the server: the engine and the web app are the process, and end it when they fail.
-/// The Discord bot is supervised beside them; its failures show up in the web app, never as
+/// The Discord bot is supervised beside them. Its failures show up in the web app, never as
 /// an exit.
 async fn serve(startup: Startup) -> Result<ExitCode, Error> {
     let started_at = jiff::Timestamp::now();
@@ -220,7 +226,11 @@ async fn serve(startup: Startup) -> Result<ExitCode, Error> {
         builder
             .platforms()
             .into_iter()
-            .map(|p| (p.id, p.tags))
+            .map(|p| PlatformFacts {
+                id: p.id,
+                tags: p.tags,
+                hosts: p.hosts,
+            })
             .collect(),
     );
     let loaded = profiles.load().await?;

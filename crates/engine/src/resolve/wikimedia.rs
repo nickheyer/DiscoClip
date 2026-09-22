@@ -224,7 +224,7 @@ pub fn variants_of(info: &Value, kind: MediaKind, name: &str) -> Vec<Variant> {
             let mime_type = derivative["type"].as_str().unwrap_or_default();
             let mime = essence(Some(mime_type));
             let is_audio = mime.starts_with("audio/");
-            // A video's sound-only transcodes are left out; they are its alternates, not it.
+            // A video's sound-only transcodes are left out. They are its alternates, not it.
             if is_audio != (kind == MediaKind::Audio) {
                 continue;
             }

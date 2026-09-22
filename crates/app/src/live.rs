@@ -1,5 +1,5 @@
 //! Settings taking effect while the server runs. Every part of the server that a setting
-//! shapes is reached from here, so a change stored in the app is applied at once: the
+//! shapes is reached from here, so a change stored in the app is applied immediately: the
 //! log filter, the engine, the HTTP client the resolvers use, local publishing, the
 //! fixture schedule, the web listener, the trusted proxies, the public URL and the login
 //! providers.
@@ -54,7 +54,7 @@ pub struct Live {
     pub oauth: Arc<OAuthService>,
     pub public_url: Arc<RwLock<Option<Url>>>,
     pub proxies: Arc<RwLock<Proxies>>,
-    /// The listener's settings; the web app rebinds when the address or TLS files change.
+    /// The listener's settings. The web app rebinds when the address or TLS files change.
     pub web: watch::Sender<WebConfig>,
 }
 

@@ -1,8 +1,7 @@
-//! Kaltura entries, through the API the HTML5 player calls with the widget session it
-//! starts: every ready flavor as a file by its dimensions, bitrate and size, the HLS
-//! manifest, the caption assets, and the entry's name, description, length and
-//! thumbnail. Players, previews, manifests and thumbnails on kaltura.com name the partner
-//! and entry, by id or by reference id; a flavor locked with Widevine is reported as such.
+//! Resolve Kaltura entries through a widget session. Include ready file renditions, HLS,
+//! captions and metadata.
+//!
+//! Support entry and reference IDs. Report Widevine-protected variants as DRM.
 
 use std::sync::LazyLock;
 use std::time::Duration;

@@ -1,7 +1,7 @@
 //! DR TV (dr.dk): episodes and programmes, live channels, seasons and series. Episodes
 //! are read through the Massive catalogue API the site's player calls with an anonymous
-//! token; live channels through the catalogue's channel items, whose custom fields carry
-//! the live HLS masters the player opens; seasons and series through the catalogue's
+//! token. Live channels through the catalogue's channel items, whose custom fields carry
+//! the live HLS masters the player opens. Seasons and series through the catalogue's
 //! page API.
 
 use std::sync::{LazyLock, Mutex};
@@ -127,7 +127,7 @@ pub fn page_item(data: &Value) -> Option<&Value> {
         })
 }
 
-/// The subtitle format a track's MIME type names; a track without one is WebVTT.
+/// The subtitle format a track's MIME type names. A track without one is WebVTT.
 pub fn subtitle_format(mime: Option<&str>) -> Option<SubtitleFormat> {
     let essence = mime
         .unwrap_or("")

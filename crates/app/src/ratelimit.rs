@@ -22,7 +22,7 @@ impl RateLimiter {
         }
     }
 
-    /// Whether `key` may proceed; when it may not, how long until it may.
+    /// Whether `key` may proceed. When it may not, how long until it may.
     pub fn check(&self, key: &str) -> Result<(), Duration> {
         self.check_at(key, Instant::now())
     }

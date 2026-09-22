@@ -183,7 +183,7 @@ impl GiphyResolver {
         Self { http }
     }
 
-    /// The GIF's page, whose data names every rendition; the media file itself when the
+    /// The GIF's page, whose data names every rendition. The media file itself when the
     /// page has none, as an embed of a removed GIF still serves.
     async fn page_media(
         &self,

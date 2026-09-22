@@ -1,9 +1,7 @@
-//! MEGA files and folders. Files are stored encrypted with a key that only the link
-//! carries: the download link comes from the API, the file's name from its attributes
-//! decrypted with that key, and the bytes are decrypted with AES-128 in counter mode as
-//! they are fetched. A file of any kind resolves as what its name says it is. A folder
-//! link lists its nodes, each node's key decrypted with the folder's, and its files become
-//! a playlist whose entries name their node.
+//! Resolve MEGA files and folders using keys from shared links. Decrypt attributes for
+//! filenames and use AES-128 CTR during download.
+//!
+//! Folder keys decrypt node keys. Return folder files as a playlist of node links.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 

@@ -1,7 +1,7 @@
 //! ABC (Australia): news, BTN and Listen pages on abc.net.au, whose Next.js data carries
 //! the media's renditions, and ABC iview, whose catalogue API lists shows and series and
 //! whose programs API names an episode's HLS streams, played with the token the apps
-//! sign for. iview streams only inside Australia and, for most episodes, to an account.
+//! sign for. Iview streams only inside Australia and, for most episodes, to an account.
 
 use std::sync::LazyLock;
 
@@ -429,7 +429,7 @@ impl AbcResolver {
         let live = entry["type"].as_str() == Some("livestream")
             || entry["livestream"].as_str() == Some("1");
 
-        // The token the streams are played with; the signing endpoint says why it refuses.
+        // The token the streams are played with. The signing endpoint says why it refuses.
         let sign_url = Url::parse(&format!(
             "{IVIEW_SITE}{}",
             sign_path(&house_number, jiff::Timestamp::now().as_second())

@@ -53,11 +53,11 @@ pub enum OAuthError {
     },
     #[error("that {0} identity is linked to another account")]
     AlreadyLinked(String),
-    #[error("this account is linked to a different {0} identity; unlink it first")]
+    #[error("Unlink the current {0} account before linking another.")]
     ProviderLinked(String),
     #[error("no {0} identity is linked to this account")]
     NotLinked(String),
-    #[error("this identity is the account's only way to log in; set a password first")]
+    #[error("Set a password before removing the only linked login.")]
     LastLogin,
     #[error("{0} issued no refresh token, so its access token cannot be renewed")]
     NoRefreshToken(String),
@@ -384,7 +384,7 @@ impl Provider {
         .await
     }
 
-    /// Trades a refresh token for new tokens; the old refresh token stays when the
+    /// Trades a refresh token for new tokens. The old refresh token stays when the
     /// provider sends no new one.
     pub async fn refresh(
         &self,
@@ -433,7 +433,7 @@ impl Provider {
                     .await
             }
             Kind::Discord | Kind::Oidc => {
-                // Revoking the refresh token ends the whole grant; without one, the access
+                // Revoking the refresh token ends the whole grant. Without one, the access
                 // token is all there is to revoke.
                 let (token, hint) = match &tokens.refresh_token {
                     Some(refresh) => (refresh.as_str(), "refresh_token"),
@@ -465,7 +465,7 @@ impl Provider {
         }
     }
 
-    /// Where Discord lists the user's guilds; None for other kinds.
+    /// Where Discord lists the user's guilds. None for other kinds.
     pub async fn discord_guilds_url(
         &self,
         http: &reqwest::Client,
@@ -561,7 +561,7 @@ pub struct ProviderInfo {
 }
 
 impl Registry {
-    /// The providers the `auth` settings name; Discord joins through [`set_discord`]
+    /// The providers the `auth` settings name. Discord joins through [`set_discord`]
     /// once an application is marked for login.
     ///
     /// [`set_discord`]: Registry::set_discord
@@ -592,7 +592,7 @@ impl Registry {
     }
 
     /// Offers Discord login through an application's `provider`, taking Discord over from
-    /// whatever was there; `None` withdraws an application's provider and leaves any other.
+    /// whatever was there. `None` withdraws an application's provider and leaves any other.
     pub fn set_discord(&mut self, provider: Option<Provider>) {
         match provider {
             Some(provider) => {
@@ -680,7 +680,7 @@ const STATE_LIFETIME: Duration = Duration::from_secs(10 * 60);
 const STATE_CAPACITY: usize = 10_000;
 
 impl PendingStates {
-    /// Records a flow and returns its state; None when too many are already waiting.
+    /// Records a flow and returns its state. None when too many are already waiting.
     pub fn begin(
         &self,
         provider: &str,
@@ -1199,7 +1199,7 @@ impl OAuthService {
     }
 
     /// `user`'s tokens at `provider_id`, renewed first when the access token is about to
-    /// expire; whether they were renewed.
+    /// expire. Whether they were renewed.
     pub async fn tokens(
         &self,
         user: UserId,
@@ -1241,7 +1241,7 @@ impl OAuthService {
         self.store.update(identity.id, Some(&remote), None).await
     }
 
-    /// Removes the link and tells the provider to forget the grant; whether the provider
+    /// Removes the link and tells the provider to forget the grant. Whether the provider
     /// confirmed that.
     pub async fn unlink(
         &self,

@@ -1,5 +1,4 @@
-// Every setting the server has, as the settings page edits it: its dotted key, what it
-// holds, and how it is shown. The keys mirror the `Settings` type on the server one for one.
+// Editable settings. Dotted keys match the backend Settings type.
 
 import type { SettingValue } from '$lib/api';
 
@@ -52,7 +51,7 @@ export interface MapSpec {
 }
 
 export interface SectionSpec {
-	/** The dotted key of the section; fields live under it. */
+	/** The dotted key of the section. Fields live under it. */
 	key: string;
 	title: string;
 	description: string;
@@ -62,10 +61,7 @@ export interface SectionSpec {
 	sections?: SectionSpec[];
 	/** Maps beneath this one. */
 	maps?: MapSpec[];
-	/**
-	 * The section is one optional object: absent as a whole when off, and every field
-	 * present when on.
-	 */
+	/** Optional sections are either null or complete objects. */
 	optional?: {
 		label: string;
 		hint: string;
@@ -86,14 +82,14 @@ export const SECTIONS: SectionSpec[] = [
 	{
 		key: 'log',
 		title: 'Logging',
-		description: 'What the server writes to its log.',
+		description: 'Log level and filters.',
 		icon: 'file-text',
 		fields: [
 			{
 				name: 'level',
 				label: 'Filter',
 				kind: 'text',
-				hint: 'A tracing filter: a level such as info, or per-crate directives such as info,discoclip_engine=debug. Applies at once.',
+				hint: 'Use a level such as info, or a filter such as info,discoclip_engine=debug.',
 				placeholder: 'info'
 			}
 		]
@@ -101,20 +97,20 @@ export const SECTIONS: SectionSpec[] = [
 	{
 		key: 'engine',
 		title: 'Engine',
-		description: 'How jobs are run: where files go, how many run at once, and what is refused.',
+		description: 'Storage and job processing.',
 		icon: 'zap',
 		fields: [
 			{
 				name: 'cache_dir',
 				label: 'Cache directory',
 				kind: 'path',
-				hint: 'Where ffmpeg is unpacked and in-flight downloads and finished outputs are kept. Jobs from now on use a new directory; running ones finish where they started.'
+				hint: 'Stores downloads, outputs and ffmpeg. A new path applies to new jobs.'
 			},
 			{
 				name: 'workers',
 				label: 'Workers',
 				kind: 'integer',
-				hint: 'Jobs processed at the same time. The pool grows at once and shrinks as running jobs finish.',
+				hint: 'Number of concurrent jobs.',
 				min: 1
 			}
 		],
@@ -122,30 +118,30 @@ export const SECTIONS: SectionSpec[] = [
 			{
 				key: 'engine.limits',
 				title: 'Limits',
-				description: 'What a link is refused for. Watch rules and submissions can tighten these, never loosen them.',
+				description: 'Maximum limits for all jobs.',
 				icon: 'shield',
 				fields: [
 					{
 						name: 'max_source_bytes',
-						label: 'Largest source',
+						label: 'Maximum download size',
 						kind: 'bytes',
 						hint: 'The biggest download accepted.',
 						min: 1
 					},
 					{
 						name: 'max_duration_secs',
-						label: 'Longest video',
+						label: 'Maximum video duration',
 						kind: 'seconds',
-						hint: 'Videos longer than this are refused. Empty means no limit; zero refuses live streams and accepts nothing else.',
+						hint: 'Leave blank for no limit. Zero rejects all videos, including live streams.',
 						nullable: true,
 						nullLabel: 'No limit',
 						min: 0
 					},
 					{
 						name: 'max_height',
-						label: 'Tallest output',
+						label: 'Maximum output height',
 						kind: 'integer',
-						hint: 'In pixels; taller sources are downscaled.',
+						hint: 'Larger videos are resized to this height in pixels.',
 						min: 1
 					}
 				]
@@ -153,28 +149,28 @@ export const SECTIONS: SectionSpec[] = [
 			{
 				key: 'engine.archive',
 				title: 'Archive',
-				description: 'Keep a copy of every finished video beside a record of its job.',
+				description: 'Save completed clips outside the cache.',
 				icon: 'download',
 				optional: {
 					label: 'Archive finished videos',
-					hint: 'Off, nothing is kept beyond the cache and what was posted.'
+					hint: 'Retain a separate copy of each completed clip.'
 				},
 				fields: [
 					{
 						name: 'dir',
 						label: 'Archive directory',
 						kind: 'path',
-						hint: 'Files go under year and month folders here.',
+						hint: 'Files are grouped by year and month.',
 						placeholder: 'archive'
 					},
 					{
 						name: 'keep',
 						label: 'Keep',
 						kind: 'enum',
-						hint: 'Which files are copied into the archive.',
+						hint: 'Choose the files to archive.',
 						options: [
-							{ value: 'output', label: 'The output' },
-							{ value: 'source', label: 'The source' },
+							{ value: 'output', label: 'Processed file' },
+							{ value: 'source', label: 'Original file' },
 							{ value: 'both', label: 'Both' }
 						]
 					}
@@ -183,20 +179,20 @@ export const SECTIONS: SectionSpec[] = [
 			{
 				key: 'engine.playlists',
 				title: 'Playlists',
-				description: 'Links to playlists and channels expand into one job per entry.',
+				description: 'Create one job for each playlist entry.',
 				icon: 'rules',
 				fields: [
 					{
 						name: 'enabled',
 						label: 'Expand playlists',
 						kind: 'boolean',
-						hint: 'Off, a playlist link fails as one.'
+						hint: 'Accept playlist links.'
 					},
 					{
 						name: 'max_entries',
-						label: 'Most entries',
+						label: 'Maximum entries',
 						kind: 'integer',
-						hint: 'The most entries one playlist link expands into.',
+						hint: 'Maximum jobs per playlist.',
 						min: 1
 					}
 				]
@@ -204,14 +200,14 @@ export const SECTIONS: SectionSpec[] = [
 			{
 				key: 'engine.live',
 				title: 'Live streams',
-				description: 'A live stream is captured from the moment the link is seen.',
+				description: 'Record streams from the time the link is submitted.',
 				icon: 'activity',
 				fields: [
 					{
 						name: 'max_capture_secs',
-						label: 'Longest capture',
+						label: 'Maximum recording duration',
 						kind: 'seconds',
-						hint: 'How long a live stream is recorded before it is cut and treated as a recording.',
+						hint: 'Stop recording after this duration.',
 						min: 0
 					}
 				]
@@ -220,28 +216,28 @@ export const SECTIONS: SectionSpec[] = [
 				key: 'engine.download',
 				title: 'Downloads',
 				description:
-					'How files served over plain HTTP are fetched. A host that serves byte ranges is asked for the file in chunks over several connections at once; a transfer that breaks is picked up from the byte it stopped at.',
+					'Parallel connections and recovery for HTTP downloads.',
 				icon: 'download',
 				fields: [
 					{
 						name: 'connections',
 						label: 'Connections per file',
 						kind: 'integer',
-						hint: 'How many connections fetch one file at the same time, when the host serves byte ranges.',
+						hint: 'Used when the source supports partial downloads.',
 						min: 1
 					},
 					{
 						name: 'chunk_bytes',
 						label: 'Chunk size',
 						kind: 'bytes',
-						hint: 'How much each ranged request asks for; at least 64 KiB.',
+						hint: 'Bytes per request. Minimum 64 KiB.',
 						min: 65536
 					},
 					{
 						name: 'resume_attempts',
-						label: 'Resumes',
+						label: 'Retry attempts',
 						kind: 'integer',
-						hint: 'How many times a transfer that breaks is picked up from where it stopped before the download fails; zero fails at the first break.',
+						hint: 'Retries after an interrupted download. Zero disables retries.',
 						min: 0
 					}
 				]
@@ -256,26 +252,26 @@ export const SECTIONS: SectionSpec[] = [
 						name: 'jobs_days',
 						label: 'Finished jobs',
 						kind: 'days',
-						hint: 'Finished jobs older than this are removed; zero keeps them forever.',
+						hint: 'Delete completed jobs after this many days. Zero keeps them.',
 						min: 0
 					},
 					{
 						name: 'failed_jobs_days',
 						label: 'Failed and cancelled jobs',
 						kind: 'days',
-						hint: 'Failed and cancelled jobs older than this are removed; zero keeps them forever.',
+						hint: 'Delete failed and cancelled jobs after this many days. Zero keeps them.',
 						min: 0
 					},
 					{
 						name: 'cache_max_bytes',
 						label: 'Cache size',
 						kind: 'bytes',
-						hint: 'The cache directory is trimmed back under this, oldest jobs first; zero never trims.',
+						hint: 'Delete the oldest cached files above this limit. Zero disables cleanup.',
 						min: 0
 					},
 					{
 						name: 'sweep_interval_secs',
-						label: 'Sweep every',
+						label: 'Cleanup interval',
 						kind: 'seconds',
 						hint: 'How often retention runs.',
 						min: 1
@@ -287,41 +283,41 @@ export const SECTIONS: SectionSpec[] = [
 	{
 		key: 'http',
 		title: 'HTTP',
-		description: 'How resolvers and downloaders reach the platforms.',
+		description: 'Outgoing connections to media platforms.',
 		icon: 'globe',
 		fields: [
 			{
 				name: 'user_agent',
 				label: 'User agent',
 				kind: 'text',
-				hint: 'Sent when a request names no other user agent.'
+				hint: 'Default user agent for outgoing requests.'
 			},
 			{
 				name: 'connect_timeout_secs',
 				label: 'Connect timeout',
 				kind: 'seconds',
-				hint: 'How long to wait for a connection to a host.',
+				hint: 'Time allowed to connect to a host.',
 				min: 1
 			},
 			{
 				name: 'request_timeout_secs',
 				label: 'Request timeout',
 				kind: 'seconds',
-				hint: 'Bound on a whole page or API request; media downloads have none.',
+				hint: 'Time limit for page and API requests. Excludes media downloads.',
 				min: 1
 			},
 			{
 				name: 'read_timeout_secs',
 				label: 'Read timeout',
 				kind: 'seconds',
-				hint: 'Longest pause between two chunks of a body.',
+				hint: 'Maximum delay between two chunks of a body.',
 				min: 1
 			},
 			{
 				name: 'max_redirects',
 				label: 'Redirects followed',
 				kind: 'integer',
-				hint: 'How many redirects a request follows before giving up.',
+				hint: 'Maximum redirects per request.',
 				min: 0
 			}
 		],
@@ -329,7 +325,7 @@ export const SECTIONS: SectionSpec[] = [
 			{
 				key: 'http.retry',
 				title: 'Retries',
-				description: 'Requests that fail for reasons that pass are asked again with exponential backoff.',
+				description: 'Retry failed requests with increasing delays.',
 				icon: 'restart',
 				fields: [
 					{
@@ -341,16 +337,16 @@ export const SECTIONS: SectionSpec[] = [
 					},
 					{
 						name: 'base_ms',
-						label: 'First pause',
+						label: 'Initial delay',
 						kind: 'millis',
-						hint: 'The pause before the first retry; each retry doubles it.',
+						hint: 'Delay before the first retry. Doubles with each retry.',
 						min: 0
 					},
 					{
 						name: 'max_ms',
-						label: 'Longest pause',
+						label: 'Maximum delay',
 						kind: 'millis',
-						hint: 'The pause is capped here.',
+						hint: 'Maximum delay between retries.',
 						min: 0
 					}
 				]
@@ -358,28 +354,28 @@ export const SECTIONS: SectionSpec[] = [
 			{
 				key: 'http.rate_limits',
 				title: 'Rate limits',
-				description: 'Requests to one host are paced so a burst of links does not get the server throttled or banned there.',
+				description: 'Limit requests to each host.',
 				icon: 'clock',
 				fields: [],
 				sections: [
 					{
 						key: 'http.rate_limits.default',
 						title: 'Default rate',
-						description: 'For every host without a rate of its own. Zero per second means no limit.',
+						description: 'Applies to hosts without a custom rate.',
 						icon: 'clock',
 						fields: [
 							{
 								name: 'per_second',
 								label: 'Requests per second',
 								kind: 'number',
-								hint: 'On average; zero means no limit.',
+								hint: 'Average request rate. Zero disables the limit.',
 								min: 0
 							},
 							{
 								name: 'burst',
 								label: 'Burst',
 								kind: 'integer',
-								hint: 'How many may go at once when the host has been idle.',
+								hint: 'Maximum requests in a burst.',
 								min: 0
 							}
 						]
@@ -389,7 +385,7 @@ export const SECTIONS: SectionSpec[] = [
 					{
 						key: 'http.rate_limits.hosts',
 						label: 'Per host',
-						hint: 'Rates by host suffix: youtube.com covers www.youtube.com. The longest matching suffix wins.',
+						hint: 'Host rules include subdomains. The most specific match applies.',
 						keyLabel: 'Host',
 						keyPlaceholder: 'youtube.com',
 						scalar: false,
@@ -409,14 +405,14 @@ export const SECTIONS: SectionSpec[] = [
 			{
 				key: 'http.proxies',
 				title: 'Proxies',
-				description: 'HTTP and SOCKS proxies, by platform and by host suffix, over a default; bypassed hosts go direct.',
+				description: 'HTTP and SOCKS proxies for outgoing requests.',
 				icon: 'server',
 				fields: [
 					{
 						name: 'default',
 						label: 'Default proxy',
 						kind: 'url',
-						hint: 'http://, https://, socks5://, socks5h://, socks4:// or socks4a://. Empty means direct.',
+						hint: 'HTTP or SOCKS proxy URL. Leave blank for a direct connection.',
 						nullable: true,
 						nullLabel: 'Direct',
 						placeholder: 'socks5h://proxy:1080'
@@ -434,7 +430,7 @@ export const SECTIONS: SectionSpec[] = [
 					{
 						key: 'http.proxies.platforms',
 						label: 'By platform',
-						hint: 'A proxy for every request a platform’s resolver makes, such as tiktok or youtube.',
+						hint: 'Use the platform ID, such as tiktok or youtube.',
 						keyLabel: 'Platform',
 						keyPlaceholder: 'tiktok',
 						scalar: true,
@@ -451,7 +447,7 @@ export const SECTIONS: SectionSpec[] = [
 					{
 						key: 'http.proxies.hosts',
 						label: 'By host',
-						hint: 'A proxy by host suffix; the longest matching suffix wins.',
+						hint: 'Includes subdomains. The most specific match applies.',
 						keyLabel: 'Host',
 						keyPlaceholder: 'googlevideo.com',
 						scalar: true,
@@ -472,43 +468,43 @@ export const SECTIONS: SectionSpec[] = [
 	{
 		key: 'local',
 		title: 'Local publishing',
-		description: 'Where jobs submitted from this web app are written.',
+		description: 'Output files from web submissions.',
 		icon: 'download',
 		fields: [
 			{
 				name: 'dir',
 				label: 'Directory',
 				kind: 'path',
-				hint: 'Finished videos of jobs submitted here are copied into this directory.'
+				hint: 'Stores clips submitted through the web app.'
 			},
 			{
 				name: 'max_bytes',
-				label: 'Largest output',
+				label: 'Maximum output size',
 				kind: 'bytes',
-				hint: 'The size budget a submitted job is transcoded to fit.',
+				hint: 'Maximum file size for web submissions.',
 				min: 1
 			}
 		]
 	},
 	{
 		key: 'fixtures',
-		title: 'Platform fixtures',
+		title: 'Platform checks',
 		description:
-			'Every platform names public links its fixtures resolve, so the platforms page shows what works and when each platform last passed in full.',
+			'Scheduled checks of supported platforms.',
 		icon: 'check-circle',
 		fields: [
 			{
 				name: 'interval_secs',
-				label: 'Run every',
+				label: 'Check interval',
 				kind: 'seconds',
-				hint: 'How often every platform’s fixtures run on their own. Zero runs them only from the platforms page.',
+				hint: 'Zero disables scheduled checks.',
 				min: 0
 			},
 			{
 				name: 'timeout_secs',
 				label: 'Link timeout',
 				kind: 'seconds',
-				hint: 'The longest one link may take to resolve before it counts as failed.',
+				hint: 'Time limit for each test link.',
 				min: 1
 			}
 		]
@@ -516,21 +512,21 @@ export const SECTIONS: SectionSpec[] = [
 	{
 		key: 'web',
 		title: 'Web app',
-		description: 'How this app is reached.',
+		description: 'Address, HTTPS and reverse proxies.',
 		icon: 'monitor',
 		fields: [
 			{
 				name: 'bind',
 				label: 'Listen on',
 				kind: 'socket',
-				hint: 'Address and port, such as 127.0.0.1:8080 or [::]:8080. The app listens again on the new address at once; this page follows.',
+				hint: 'IP address and port, such as 127.0.0.1:8080. Changes apply immediately.',
 				placeholder: '127.0.0.1:8080'
 			},
 			{
 				name: 'public_url',
 				label: 'Public URL',
 				kind: 'url',
-				hint: 'How browsers reach the app; login providers send them back here. Empty, the address a request arrived at is used.',
+				hint: 'Public address used for login redirects and shared links. Leave blank to use the request address.',
 				nullable: true,
 				nullLabel: 'From each request',
 				placeholder: 'https://clips.example.com'
@@ -539,7 +535,7 @@ export const SECTIONS: SectionSpec[] = [
 				name: 'trusted_proxies',
 				label: 'Trusted proxies',
 				kind: 'list',
-				hint: 'Addresses and networks whose Forwarded and X-Forwarded-* headers are believed.',
+				hint: 'IP addresses or CIDR networks allowed to set forwarding headers.',
 				validate: networkProblem,
 				placeholder: '10.0.0.0/8'
 			}
@@ -548,11 +544,11 @@ export const SECTIONS: SectionSpec[] = [
 			{
 				key: 'web.tls',
 				title: 'HTTPS',
-				description: 'Serve HTTPS from the binary. The files are read again when they change, so a renewed certificate needs nothing here.',
+				description: 'Certificates reload automatically when their files change.',
 				icon: 'lock',
 				optional: {
 					label: 'Serve HTTPS',
-					hint: 'Off, the app speaks plain HTTP, as it does behind a reverse proxy that terminates TLS.'
+					hint: 'Turn off when a reverse proxy handles HTTPS.'
 				},
 				fields: [
 					{
@@ -576,14 +572,14 @@ export const SECTIONS: SectionSpec[] = [
 	{
 		key: 'auth',
 		title: 'Login providers',
-		description: 'Ways to log in besides a password. Register an application at the provider with the callback /api/auth/<provider>/callback under the public URL. Discord login is offered by the Discord application marked for it.',
+		description: 'Configure external login providers. Discord login is configured under Applications.',
 		icon: 'key',
 		fields: [
 			{
 				name: 'oauth_signup',
-				label: 'Sign-up through providers',
+				label: 'Allow account registration',
 				kind: 'boolean',
-				hint: 'Create a viewer account for a provider identity nobody has linked, at its first login.'
+				hint: 'Create a viewer account at the first login.'
 			}
 		],
 		sections: [
@@ -592,7 +588,7 @@ export const SECTIONS: SectionSpec[] = [
 				title: 'GitHub',
 				description: 'An OAuth app registered at GitHub.',
 				icon: 'github',
-				optional: { label: 'Offer GitHub login', hint: '' },
+				optional: { label: 'Enable GitHub login', hint: '' },
 				fields: [
 					{ name: 'client_id', label: 'Client ID', kind: 'text', hint: '' },
 					{ name: 'client_secret', label: 'Client secret', kind: 'secret', hint: '' }
@@ -603,7 +599,7 @@ export const SECTIONS: SectionSpec[] = [
 				title: 'Google',
 				description: 'An OAuth client registered in Google Cloud.',
 				icon: 'google',
-				optional: { label: 'Offer Google login', hint: '' },
+				optional: { label: 'Enable Google login', hint: '' },
 				fields: [
 					{ name: 'client_id', label: 'Client ID', kind: 'text', hint: '' },
 					{ name: 'client_secret', label: 'Client secret', kind: 'secret', hint: '' }
@@ -614,20 +610,20 @@ export const SECTIONS: SectionSpec[] = [
 				title: 'OpenID Connect',
 				description: 'Any OpenID Connect issuer, found through its discovery document.',
 				icon: 'key',
-				optional: { label: 'Offer single sign-on', hint: '' },
+				optional: { label: 'Enable single sign-on', hint: '' },
 				fields: [
 					{
 						name: 'name',
 						label: 'Button label',
 						kind: 'text',
-						hint: 'What the login button says.',
+						hint: 'Name shown on the login button.',
 						placeholder: 'Single sign-on'
 					},
 					{
 						name: 'issuer',
 						label: 'Issuer',
 						kind: 'url',
-						hint: 'The issuer URL; /.well-known/openid-configuration is read beneath it.',
+						hint: 'Base URL used for OpenID Connect discovery.',
 						placeholder: 'https://login.example.com/realms/main'
 					},
 					{ name: 'client_id', label: 'Client ID', kind: 'text', hint: '' },
@@ -636,7 +632,7 @@ export const SECTIONS: SectionSpec[] = [
 						name: 'scopes',
 						label: 'Scopes',
 						kind: 'list',
-						hint: 'Asked for at login; openid is needed.',
+						hint: 'Include openid.',
 						validate: scopeProblem,
 						placeholder: 'openid'
 					}

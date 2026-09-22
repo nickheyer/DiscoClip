@@ -1,5 +1,5 @@
 # Copy to discoclip.toml, or set any key through the environment as
-# DISCOCLIP_<SECTION>__<KEY>, for example DISCOCLIP_DISCORD__TOKEN. Environment variables
+# DISCOCLIP_<SECTION>__<KEY>, for example DISCOCLIP_ENGINE__WORKERS. Environment variables
 # override the file. YAML and JSON files work the same way.
 
 data_dir = "data"              # database and secret key
@@ -9,12 +9,12 @@ data_dir = "data"              # database and secret key
 level = "info"
 
 [engine]
-cache_dir = "cache"            # ffmpeg and in-flight downloads
-workers = 2                    # jobs processed at the same time
+cache_dir = "cache"            # ffmpeg and active downloads
+workers = 2                    # concurrent jobs
 
 [engine.limits]
-max_source_bytes = 2147483648  # largest source download accepted
-max_duration_secs = 10800      # longest video accepted
+max_source_bytes = 2147483648  # maximum download size
+max_duration_secs = 10800      # maximum duration in seconds
 max_height = 1080              # taller sources are downscaled
 
 # Uncomment to keep a copy of every finished video.
@@ -23,49 +23,47 @@ max_height = 1080              # taller sources are downscaled
 # keep = "output"              # "output", "source" or "both"
 
 [engine.playlists]
-enabled = true                 # a playlist link becomes one job per entry
-max_entries = 50               # the most entries one link expands into
+enabled = true                 # create one job per entry
+max_entries = 50               # maximum entries per playlist
 
 [engine.live]
-max_capture_secs = 10800       # how long a live stream is recorded before it is cut
+max_capture_secs = 10800       # maximum recording duration in seconds
 
-# Files served over plain HTTP. A host that serves byte ranges is asked for the file in
-# chunks over several connections at once; a transfer that breaks is picked up from the
-# byte it stopped at.
+# HTTP downloads use parallel byte ranges and resume interrupted transfers.
 [engine.download]
-connections = 4                # connections fetching one file at the same time
-chunk_bytes = 8388608          # bytes each ranged request asks for; at least 65536
-resume_attempts = 5            # times a broken transfer is picked up before the download fails
+connections = 4                # parallel connections per file
+chunk_bytes = 8388608          # bytes per request. Minimum 65536
+resume_attempts = 5            # retry attempts per download
 
 [engine.retention]
-jobs_days = 90                 # finished jobs older than this are removed; 0 keeps them
-failed_jobs_days = 30          # failed and cancelled jobs older than this are removed; 0 keeps them
-cache_max_bytes = 21474836480  # the cache is trimmed back under this, oldest first; 0 never trims
-sweep_interval_secs = 3600     # how often retention runs
+jobs_days = 90                 # completed job retention in days. 0 keeps all
+failed_jobs_days = 30          # failed job retention in days. 0 keeps all
+cache_max_bytes = 21474836480  # maximum cache bytes. 0 disables cleanup
+sweep_interval_secs = 3600     # cleanup interval in seconds
 
-# How resolvers and downloaders reach the platforms.
+# Outgoing HTTP requests.
 [http]
-user_agent = "DiscoClip/0.1.0" # sent when a request names no other user agent
+user_agent = "DiscoClip/0.1.0" # default request user agent
 connect_timeout_secs = 15
-request_timeout_secs = 90      # bound on a page or API request; media downloads have none
-read_timeout_secs = 60         # longest pause between two chunks of a body
+request_timeout_secs = 90      # page and API timeout. Excludes media downloads
+read_timeout_secs = 60         # maximum wait for response data
 max_redirects = 10
 
 [http.retry]
 attempts = 3                   # total attempts, including the first
-base_ms = 500                  # the pause before the first retry; each retry doubles it
-max_ms = 10000                 # the pause is capped here
+base_ms = 500                  # initial retry delay. Doubles per retry
+max_ms = 10000                 # maximum retry delay
 
 [http.rate_limits.default]
-per_second = 4.0               # requests per host on average; 0 means no limit
-burst = 8                      # how many may go at once when the host has been idle
+per_second = 4.0               # average requests per second. 0 disables the limit
+burst = 8                      # maximum requests in a burst
 
 # Rates by host suffix: youtube.com covers www.youtube.com.
 # [http.rate_limits.hosts."youtube.com"]
 # per_second = 1.0
 # burst = 2
 
-# Proxies by platform and by host suffix, over a default; bypassed hosts go direct.
+# Platform and host proxy overrides. Bypassed hosts connect directly.
 # [http.proxies]
 # default = "socks5h://proxy:1080"
 # bypass = ["internal.example"]
@@ -74,41 +72,36 @@ burst = 8                      # how many may go at once when the host has been 
 # [http.proxies.hosts]
 # "googlevideo.com" = "http://proxy:3128"
 
-# Discord applications, with their bot tokens and client secrets, are added in the web app,
-# where they are kept encrypted, and so are the rules for which channels each bot watches
-# and where its slash commands are registered.
+# Add Discord applications, credentials, rules and commands through the web app.
 
 [local]
-dir = "data/local"             # where jobs submitted from the web app are written
+dir = "data/local"             # web submission output directory
 max_bytes = 104857600          # size budget for web app submissions
 
-# Every platform names public links its fixtures resolve; the platforms page shows what
-# each run found and when every link of a platform last passed.
+# Scheduled platform checks. Results appear on the Platforms page.
 [fixtures]
-interval_secs = 86400          # how often every platform's fixtures run; 0 runs them only on request
-timeout_secs = 60              # how long one link may take to resolve before it counts as failed
+interval_secs = 86400          # check interval in seconds. 0 disables scheduled checks
+timeout_secs = 60              # timeout per test link
 
 [web]
 bind = "127.0.0.1:8080"        # address the web app listens on
-# public_url = "https://clips.example.com"  # how browsers reach the app; login providers send them back here
+# public_url = "https://clips.example.com"  # public address for login and media links
 
-# Reverse proxies whose X-Forwarded-For, X-Forwarded-Proto, X-Forwarded-Host and
-# Forwarded headers are believed, as addresses or networks. Requests from anywhere else
-# keep the address they arrived from.
+# Trusted proxy IP addresses or CIDR networks. Forwarded headers from other hosts
+# are ignored.
 # trusted_proxies = ["127.0.0.1", "10.0.0.0/8", "::1"]
 
-# Serve HTTPS straight from the binary. Both files are PEM; they are read again when
-# they change, so a renewed certificate needs no restart.
+# HTTPS certificate and key in PEM format. Changed files reload automatically.
 # [web.tls]
 # cert = "/etc/discoclip/fullchain.pem"
 # key = "/etc/discoclip/privkey.pem"
 
-# Logging in with an OAuth provider instead of a password. Register an application at
-# the provider with the callback https://<public_url>/api/auth/<provider>/callback,
-# where <provider> is github, google, oidc, or discord for the application marked for login.
+# OAuth login. Register the callback at the provider:
+# https://<public_url>/api/auth/<provider>/callback
+# Provider IDs: github, google, oidc and discord.
 [auth]
-oauth_signup = false           # create a viewer account for a provider identity nobody has linked
-# Discord login is offered by the Discord application marked for it in the web app.
+oauth_signup = false           # allow new accounts through login providers
+# Configure Discord login in Applications.
 # [auth.github]
 # client_id = ""
 # client_secret = ""
@@ -116,7 +109,7 @@ oauth_signup = false           # create a viewer account for a provider identity
 # client_id = ""
 # client_secret = ""
 # [auth.oidc]                  # any OpenID Connect issuer
-# name = "Single sign-on"      # what the login button says
+# name = "Single sign-on"      # login button label
 # issuer = "https://login.example.com/realms/main"
 # client_id = ""
 # client_secret = ""

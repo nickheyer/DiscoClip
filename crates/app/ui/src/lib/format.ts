@@ -89,7 +89,7 @@ export function isSnowflake(value: string): boolean {
 	return SNOWFLAKE.test(value.trim());
 }
 
-/** A guild's icon on Discord's CDN, animated ones as GIFs. */
+/** A server's icon on Discord's CDN, animated ones as GIFs. */
 export function guildIconUrl(guildId: string, icon: string | null, size = 64): string | null {
 	if (!icon) return null;
 	const ext = icon.startsWith('a_') ? 'gif' : 'png';
@@ -161,7 +161,7 @@ export function formatClock(totalSeconds: number): string {
 	return `${h > 0 ? `${h}:` : ''}${mm}:${String(s).padStart(2, '0')}`;
 }
 
-/** `1.5`, `90`, `1:30`, `1m30s` or `1h2m3s` as seconds; null when it is none of those. */
+/** `1.5`, `90`, `1:30`, `1m30s` or `1h2m3s` as seconds. Null when it is none of those. */
 export function parseTimeStamp(text: string): number | null {
 	const value = text.trim();
 	if (!value) return null;

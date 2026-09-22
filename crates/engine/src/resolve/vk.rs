@@ -239,7 +239,7 @@ impl VkResolver {
     }
 }
 
-/// The characters Windows-1251 puts at 0x80 through 0xBF; the rest of the upper half is
+/// The characters Windows-1251 puts at 0x80 through 0xBF. The rest of the upper half is
 /// the Cyrillic block in order.
 const CP1251_HIGH: [char; 64] = [
     '\u{0402}', '\u{0403}', '\u{201A}', '\u{0453}', '\u{201E}', '\u{2026}', '\u{2020}', '\u{2021}',
@@ -376,7 +376,7 @@ impl Resolver for VkResolver {
         self.visit().await?;
         let mut payload = self.player(&video, url).await?;
         if refusal(&payload).is_some_and(|m| m.to_ascii_lowercase().contains("unknown error")) {
-            // The visitor cookies were not taken; visit again and ask once more.
+            // The visitor cookies were not taken. Visit again and ask once more.
             self.http.with_jar(PLATFORM, |jar| {
                 let doomed: Vec<(String, String)> = jar
                     .cookies()

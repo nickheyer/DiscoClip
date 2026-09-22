@@ -5,9 +5,9 @@
 	interface Props {
 		id: string;
 		value: string;
-		/** The guild's channels as the bot lists them; only message channels are offered. */
+		/** The server's channels as the bot lists them. Only message channels are offered. */
 		channels: GuildChannel[];
-		/** What choosing nothing means; without it a channel has to be chosen. */
+		/** What choosing nothing means. Without it a channel has to be chosen. */
 		emptyLabel?: string;
 		/** Channels listed but not offered, since a rule already watches each. */
 		taken?: Set<string>;
@@ -68,6 +68,6 @@
 
 {#snippet option(channel: GuildChannel)}
 	<option value={channel.id} disabled={taken.has(channel.id)}>
-		{channelOptionLabel(channel)}{taken.has(channel.id) ? ' — already watched' : ''}
+		{channelOptionLabel(channel)}{taken.has(channel.id) ? '(already watched)' : ''}
 	</option>
 {/snippet}

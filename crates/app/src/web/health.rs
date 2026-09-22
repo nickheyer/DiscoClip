@@ -14,7 +14,7 @@ use super::AppState;
 use super::auth::Auth;
 use super::error::ApiError;
 
-/// How a part is doing; the worst of them is the server's status.
+/// How a part is doing. The worst of them is the server's status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Status {
@@ -115,7 +115,7 @@ async fn database(db: &SqliteStore) -> Check {
             name: "database",
             label: "Database",
             status: Status::Ok,
-            detail: format!("SQLite answers; {} on disk", human_bytes(bytes)),
+            detail: format!("SQLite available. {} on disk.", human_bytes(bytes)),
         },
         Err(error) => Check {
             name: "database",

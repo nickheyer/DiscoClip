@@ -1,7 +1,13 @@
 import tailwindcss from '@tailwindcss/vite';
-import { defineConfig } from 'vitest/config';
 import adapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
+import { defineConfig } from 'vite';
+
+/// Where the built app goes. `crates/app/build.rs` sets it to a directory it then embeds.
+const out = process.env.DISCOCLIP_UI_OUT ?? 'build';
+
+/// The backend the dev server forwards `/api` to.
+const api = process.env.DISCOCLIP_API ?? 'http://127.0.0.1:8080';
 
 export default defineConfig({
 	plugins: [
@@ -12,21 +18,14 @@ export default defineConfig({
 				runes: ({ filename }) =>
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
-			adapter: adapter()
+			adapter: adapter({ pages: out, assets: out, fallback: 'index.html' })
 		})
 	],
-	test: {
-		expect: { requireAssertions: true },
-		projects: [
-			{
-				extends: './vite.config.ts',
-				test: {
-					name: 'server',
-					environment: 'node',
-					include: ['src/**/*.{test,spec}.{js,ts}'],
-					exclude: ['src/**/*.svelte.{test,spec}.{js,ts}']
-				}
-			}
-		]
+	server: {
+		proxy: {
+			// The Host header stays the dev server's, so the backend's Origin check passes.
+			// Event streams pass through without buffering.
+			'/api': { target: api, changeOrigin: false }
+		}
 	}
 });

@@ -1,9 +1,28 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="discoclip">
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<meta name="text-scale" content="scale" />
+		<link rel="icon" href="%sveltekit.assets%/favicon.svg" type="image/svg+xml" />
+		<link rel="icon" href="%sveltekit.assets%/favicon.ico" sizes="48x48" />
+		<link rel="apple-touch-icon" href="%sveltekit.assets%/apple-touch-icon.png" />
+		<link rel="manifest" href="%sveltekit.assets%/site.webmanifest" />
+		<meta name="theme-color" media="(prefers-color-scheme: light)" content="#f7f7f8" />
+		<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0b0b0e" />
+		<script>
+			(function () {
+				var mode = null;
+				try {
+					mode = localStorage.getItem('discoclip.mode');
+				} catch (error) {
+					mode = null;
+				}
+				if (mode !== 'light' && mode !== 'dark') {
+					mode = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+				}
+				document.documentElement.dataset.mode = mode;
+			})();
+		</script>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

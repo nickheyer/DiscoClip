@@ -56,7 +56,7 @@
 |---|---|---|---|
 | Wrong password or wrong current password per username | 5 | 15 minutes | `429` |
 | Wrong password or unknown bearer per address | 20 | 15 minutes | `429` |
-| Wrong setup token per address | 5 | 15 minutes | `429` |
+| Wrong recovery key per address | 5 | 15 minutes | `429` |
 | Pending provider flows per server | 10000 | 10 minutes | `429` |
 
 #### Roles and permissions
@@ -120,7 +120,7 @@ Reports whether an admin account needs to be created.
 
 #### POST /api/setup
 
-Creates the first admin account using the setup token and starts a session.
+Creates the first admin account and starts a session. Refused once any account exists.
 
 | Field | Value |
 |---|---|
@@ -129,7 +129,20 @@ Creates the first admin account using the setup token and starts a session.
 | Query | None |
 | Body | `SetupRequest` |
 | Response | `200` `WhoAmI` + `Set-Cookie` |
-| Errors | `400` `403` `409` `429` |
+| Errors | `400` `409` |
+
+#### POST /api/recover
+
+Sets a new password for an account with the recovery key printed on the server console, ends the account's sessions and its login lockout, and starts a session. The key is replaced and printed again.
+
+| Field | Value |
+|---|---|
+| Auth | none |
+| Path | None |
+| Query | None |
+| Body | `RecoverRequest` |
+| Response | `200` `WhoAmI` + `Set-Cookie` |
+| Errors | `400` `403` `404` `429` |
 
 #### POST /api/login
 
@@ -1049,9 +1062,9 @@ Returns effective settings for `channel`, `guild` and `user`. Without `guild`, r
 | Response | `200` `EffectiveView` |
 | Errors | `400` `401` |
 
-### Media sites
+### Content views
 
-Media sites share completed media at `/f/<slug>`. Admin routes manage sites. Viewer routes use `/api/f/<slug>` and separate sessions. See `Frontend`, `FrontendInput`, `FrontInfo` and `FrontJob`.
+Content views share completed media at `/f/<slug>`. The API calls a view a frontend. Admin routes manage views. Viewer routes use `/api/f/<slug>` and separate sessions. See `Frontend`, `FrontendInput`, `FrontInfo` and `FrontJob`.
 
 #### GET /api/frontends
 
@@ -1063,7 +1076,7 @@ Media sites share completed media at `/f/<slug>`. Admin routes manage sites. Vie
 
 #### POST /api/frontends
 
-Creates a media site. Discord links require `web.public_url`.
+Creates a content view. Discord links require `web.public_url`.
 
 | Field | Value |
 |---|---|
@@ -1093,7 +1106,7 @@ Creates a media site. Discord links require `web.public_url`.
 
 #### DELETE /api/frontends/{id}
 
-Deletes a media site, its accounts and sessions.
+Deletes a content view, its accounts and sessions.
 
 | Field | Value |
 |---|---|
@@ -1165,7 +1178,7 @@ Removes an account and its sessions.
 
 #### DELETE /api/frontends/{id}/sessions
 
-Ends all viewer sessions for the site.
+Ends all viewer sessions of the view.
 
 | Field | Value |
 |---|---|
@@ -1183,13 +1196,13 @@ Ends all viewer sessions for the site.
 | Response | `204` |
 | Errors | `401` `403` `404` |
 
-### Media site visitors
+### Content view visitors
 
-Viewer routes use the `dcf_<slug>` session cookie. Media routes return `401` when login is required and `404` for missing or disabled sites.
+Viewer routes use the `dcf_<slug>` session cookie. Media routes return `401` when login is required and `404` for missing or disabled views.
 
 #### GET /api/f/{slug}
 
-Returns site details and available login methods.
+Returns the view's details and available login methods.
 
 | Field | Value |
 |---|---|
@@ -1200,7 +1213,7 @@ Returns site details and available login methods.
 
 #### POST /api/f/{slug}/login
 
-Authenticates a shared secret or site account and sets a session cookie. Failed attempts are rate limited by address.
+Authenticates a shared secret or view account and sets a session cookie. Failed attempts are rate limited by address.
 
 | Field | Value |
 |---|---|
@@ -1232,7 +1245,7 @@ Redirects to a configured login provider. Success returns to `/f/<slug>`. Failur
 
 #### GET /api/f/{slug}/jobs
 
-Lists site media, newest first.
+Lists the view's media, newest first.
 
 | Field | Value |
 |---|---|
@@ -1265,7 +1278,7 @@ Streams the output with byte-range support. The signed `t` token in `FrontJob.me
 
 #### GET /api/f/{slug}/jobs/{id}/download
 
-Downloads the output as an attachment when site downloads are enabled.
+Downloads the output as an attachment when the view allows downloads.
 
 | Field | Value |
 |---|---|
@@ -1675,7 +1688,14 @@ Rejects a command name the bot does not define.
 |---|---|---|
 | `username` | `string` | yes |
 | `password` | `string` | yes |
-| `token` | `string` | yes |
+
+#### RecoverRequest
+
+| Field | Type | Required |
+|---|---|---|
+| `username` | `string` | yes |
+| `key` | `string`: the recovery key from the server console | yes |
+| `password` | `string`: the new password | yes |
 
 #### LoginRequest
 
@@ -1821,7 +1841,7 @@ Includes jobs from any listed server or channel. Both lists empty includes all j
 |---|---|---|
 | `open` | `bool`: everyone gets in | no |
 | `secret_kind` | `"pin" \| "password" \| "token" \| null`: how the shared secret is asked for | no |
-| `accounts` | `bool`: the media site's own accounts may log in | no |
+| `accounts` | `bool`: the view's own accounts may log in | no |
 | `providers` | `string[]`: login provider ids | no |
 | `discord_members` | `bool`: a Discord login must belong to every guild in the scope | no |
 | `discord_users` | `snowflake[]`: a Discord login must be one of these | no |
@@ -2526,7 +2546,7 @@ Includes jobs from any listed server or channel. Both lists empty includes all j
 | `resolved` | `Resolved \| null` |
 | `source` | `LocalFile \| null` |
 | `output` | `LocalFile \| null` |
-| `delivery` | `"upload" \| "link"`: whether the output was handed over or a media site's page was posted |
+| `delivery` | `"upload" \| "link"`: whether the output was handed over or a view's page was posted |
 | `link_reason` | `string \| null`: why a link was posted rather than the file |
 | `published` | `Published \| null` |
 | `archived` | `ArchiveEntry \| null` |

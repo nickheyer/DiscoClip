@@ -1,5 +1,5 @@
 //! Who is asking: the session cookie, the CSRF token it must echo, first-run setup, login,
-//! logout, and the sessions an account can see and end.
+//! recovery of a locked-out account, logout, and the sessions an account can see and end.
 
 use std::net::IpAddr;
 
@@ -18,7 +18,7 @@ use super::AppState;
 use super::error::ApiError;
 use super::proxy::{ClientInfo, Scheme};
 use crate::audit::{self, Actor};
-use crate::sessions::{ABSOLUTE_LIFETIME, Session, SessionId};
+use crate::sessions::{ABSOLUTE_LIFETIME, Session, SessionId, random_token};
 use crate::tokens::ApiToken;
 use crate::users::{Permission, User};
 
@@ -385,11 +385,9 @@ pub async fn setup_status(State(state): State<AppState>) -> Result<Json<SetupSta
 pub struct SetupRequest {
     pub username: String,
     pub password: String,
-    /// The token the server printed when it started without accounts.
-    pub token: String,
 }
 
-/// Creates the first account, an admin, and logs it in.
+/// Creates the first account, an admin, and logs it in. Refused once any account exists.
 pub async fn setup(
     State(state): State<AppState>,
     super::proxy::Client(client): super::proxy::Client,
@@ -397,29 +395,76 @@ pub async fn setup(
     headers: HeaderMap,
     Json(request): Json<SetupRequest>,
 ) -> Result<(CookieJar, Json<WhoAmI>), ApiError> {
-    let ip = client.ip;
-    let ip_key = ip.to_string();
-    state
-        .limits
-        .setup
-        .check(&ip_key)
-        .map_err(ApiError::TooManyRequests)?;
-    let expected = state
-        .setup_token
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone()
-        .ok_or_else(|| ApiError::Conflict(crate::users::UserError::AlreadySetUp.to_string()))?;
-    if !bool::from(request.token.as_bytes().ct_eq(expected.as_bytes())) {
-        state.limits.setup.strike(&ip_key);
-        return Err(ApiError::Forbidden("wrong setup token".into()));
-    }
     let user = state
         .users
         .set_up(&request.username, &request.password)
         .await?;
-    *state.setup_token.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    tracing::info!(username = user.username, "first account created");
+    tracing::info!(username = user.username, ip = %client.ip, "first account created");
+    open_session(&state, user, jar, &headers, &client).await
+}
+
+/// Prints the recovery key on the console, set apart so it is found. It goes to standard
+/// output straight rather than through the log, so the Logs page never shows it.
+pub fn announce_recovery_key(key: &str, recover_url: Option<&str>) {
+    let rule = "=".repeat(72);
+    let open = match recover_url {
+        Some(url) => format!("Open {url}"),
+        None => "Open /recover on the web app".to_string(),
+    };
+    println!(
+        "\n{rule}\n  DISCOCLIP RECOVERY KEY\n\n      {key}\n\n  Locked out of an account? {open} and enter this key with\n  the username to set a new password. The key changes each time the server\n  starts and each time it is used.\n{rule}\n"
+    );
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RecoverRequest {
+    pub username: String,
+    /// The recovery key the server printed on its console.
+    pub key: String,
+    pub password: String,
+}
+
+/// Sets a new password for a locked-out account with the recovery key, ends the account's
+/// sessions and the lockout, and logs it in. The key is replaced and printed again.
+pub async fn recover(
+    State(state): State<AppState>,
+    super::proxy::Client(client): super::proxy::Client,
+    jar: CookieJar,
+    headers: HeaderMap,
+    Json(request): Json<RecoverRequest>,
+) -> Result<(CookieJar, Json<WhoAmI>), ApiError> {
+    let ip_key = client.ip.to_string();
+    state
+        .limits
+        .recovery
+        .check(&ip_key)
+        .map_err(ApiError::TooManyRequests)?;
+    let expected = state
+        .recovery_key
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    if !bool::from(request.key.trim().as_bytes().ct_eq(expected.as_bytes())) {
+        state.limits.recovery.strike(&ip_key);
+        tracing::warn!(ip = %client.ip, "wrong recovery key");
+        return Err(ApiError::Forbidden("wrong recovery key".into()));
+    }
+    let user = state
+        .users
+        .find(&request.username)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    let user = state.users.set_password(user.id, &request.password).await?;
+    state.sessions.revoke_all_for(user.id, None).await?;
+    state
+        .limits
+        .login_user
+        .clear(&user.username.to_ascii_lowercase());
+    state.limits.login_ip.clear(&ip_key);
+    let fresh = random_token();
+    *state.recovery_key.lock().unwrap_or_else(|e| e.into_inner()) = fresh.clone();
+    announce_recovery_key(&fresh, None);
+    tracing::warn!(username = user.username, ip = %client.ip, "password reset with the recovery key");
     open_session(&state, user, jar, &headers, &client).await
 }
 

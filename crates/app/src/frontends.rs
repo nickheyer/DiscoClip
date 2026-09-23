@@ -1,7 +1,8 @@
-//! Media sites expose completed jobs through scoped, profile-filtered pages. Access can
-//! be public or require a shared secret, site account or login provider.
+//! Front ends expose completed jobs through scoped, profile-filtered pages. Access can
+//! be public or require a shared secret, an account of the front end's own or a login
+//! provider.
 //!
-//! Discord membership restrictions are optional. Bots can post site links when uploads
+//! Discord membership restrictions are optional. Bots can post front end links when uploads
 //! exceed size or quality limits.
 //!
 //! Bots and viewer routes read a shared cache. Changes are audited transactionally.
@@ -252,11 +253,11 @@ const RESERVED_SLUGS: &[&str] = &["api", "login", "logout", "setup", "static", "
 pub enum FrontendError {
     #[error(transparent)]
     Store(#[from] StoreError),
-    #[error("front end {0} not found")]
+    #[error("content view {0} not found")]
     NotFound(FrontendId),
     #[error("{0}")]
     Invalid(String),
-    #[error("a front end already uses the slug {0}")]
+    #[error("a content view already uses the slug {0}")]
     DuplicateSlug(String),
     #[error("{0} already has an account called {1}")]
     DuplicateUser(String, String),
@@ -323,11 +324,11 @@ pub struct Known {
 fn check(input: &FrontendInput, known: &Known) -> Result<FrontendInput, FrontendError> {
     let name = input.name.trim().to_string();
     if name.is_empty() {
-        return Err(FrontendError::Invalid("a front end needs a name".into()));
+        return Err(FrontendError::Invalid("a content view needs a name".into()));
     }
     if name.chars().count() > NAME_MAX {
         return Err(FrontendError::Invalid(format!(
-            "a front end's name is at most {NAME_MAX} characters"
+            "a content view's name is at most {NAME_MAX} characters"
         )));
     }
     let slug = input.slug.trim().to_string();
@@ -335,7 +336,7 @@ fn check(input: &FrontendInput, known: &Known) -> Result<FrontendInput, Frontend
     let description = input.description.trim().to_string();
     if description.chars().count() > DESCRIPTION_MAX {
         return Err(FrontendError::Invalid(format!(
-            "a front end's description is at most {DESCRIPTION_MAX} characters"
+            "a content view's description is at most {DESCRIPTION_MAX} characters"
         )));
     }
     if !known.profiles.has(input.profile_id) {
@@ -359,13 +360,13 @@ fn check(input: &FrontendInput, known: &Known) -> Result<FrontendInput, Frontend
         && !input.access.providers.iter().any(|p| p == "discord")
     {
         return Err(FrontendError::Invalid(
-            "Discord membership checks need the discord provider among the front end's providers"
+            "Discord membership checks need the discord provider among the view's providers"
                 .into(),
         ));
     }
     if input.access.discord_members && input.scope.guilds.is_empty() {
         return Err(FrontendError::Invalid(
-            "requiring Discord membership needs a guild in the front end's scope".into(),
+            "requiring Discord membership needs a guild in the view's scope".into(),
         ));
     }
     if input.links.enabled {

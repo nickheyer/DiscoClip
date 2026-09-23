@@ -2,6 +2,7 @@
 
 Complete items in order. Remove an item only after finishing it.
 
+10. COMPLETE UI.md
 11. Download: MSE-only players through a headless browser.
 12. Transcode: every container and codec ffmpeg decodes as input. HDR tone-mapping. Interlacing. VFR. 360°. Audio-only over a still. Subtitle burn-in.
 13. Transcode: per-destination targets, Discord tier and Nitro limits, hardware encoders, per-guild overrides.

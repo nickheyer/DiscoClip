@@ -72,7 +72,7 @@ pub async fn start(
         Intent::Link => Some(identity.ok_or(ApiError::Unauthorized)?.user.id),
         Intent::Frontend(_) => {
             return Err(ApiError::BadRequest(
-                "front end logins start from the front end's own route".into(),
+                "content view logins start from the view's own route".into(),
             ));
         }
     };

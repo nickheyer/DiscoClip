@@ -105,8 +105,8 @@ pub struct Limits {
     pub login_user: RateLimiter,
     /// Wrong passwords and unknown API tokens per client address.
     pub login_ip: RateLimiter,
-    /// Wrong setup tokens per client address.
-    pub setup: RateLimiter,
+    /// Wrong recovery keys per client address.
+    pub recovery: RateLimiter,
 }
 
 impl Default for Limits {
@@ -115,7 +115,7 @@ impl Default for Limits {
         Self {
             login_user: RateLimiter::new(5, quarter_hour),
             login_ip: RateLimiter::new(20, quarter_hour),
-            setup: RateLimiter::new(5, quarter_hour),
+            recovery: RateLimiter::new(5, quarter_hour),
         }
     }
 }
@@ -127,8 +127,9 @@ pub struct AppState {
     pub tokens: TokenStore,
     pub guilds: GuildStore,
     pub limits: Arc<Limits>,
-    /// Set while no account exists. The setup page must present it.
-    pub setup_token: Arc<Mutex<Option<String>>>,
+    /// Lets a locked-out account set a new password. Printed on the console at startup,
+    /// never logged, and replaced each time it is used.
+    pub recovery_key: Arc<Mutex<String>>,
     pub oauth: Arc<OAuthService>,
     /// `web.public_url`, as it stands.
     pub public_url: Arc<RwLock<Option<Url>>>,
@@ -138,7 +139,7 @@ pub struct AppState {
     pub rules: RuleStore,
     /// Which platforms are on where: profiles and where they are assigned.
     pub profiles: ProfileStore,
-    /// The public sites the server hosts over its media.
+    /// The front ends the server hosts over its media.
     pub frontends: FrontendStore,
     pub discord: DiscordEndpoints,
     pub audit: AuditStore,
@@ -288,7 +289,7 @@ impl WebApp {
             tokens: TokenStore::new(store.clone()),
             guilds: GuildStore::new(store.clone()),
             limits: Arc::new(Limits::default()),
-            setup_token: Arc::new(Mutex::new(None)),
+            recovery_key: Arc::new(Mutex::new(random_token())),
             oauth,
             public_url,
             applications: ApplicationStore::new(store.clone(), keyring.clone()),
@@ -314,20 +315,6 @@ impl WebApp {
         };
         state.refresh_discord_login().await?;
         Ok(Self { state })
-    }
-
-    /// While no account exists, arms the setup page with a fresh token and returns it.
-    pub async fn arm_setup(&self) -> Result<Option<String>, WebError> {
-        if self.state.users.is_set_up().await? {
-            return Ok(None);
-        }
-        let token = random_token();
-        *self
-            .state
-            .setup_token
-            .lock()
-            .unwrap_or_else(|e| e.into_inner()) = Some(token.clone());
-        Ok(Some(token))
     }
 
     /// The API under `/api`, and the browser app everywhere else. Every request first
@@ -385,11 +372,16 @@ impl WebApp {
                 "http"
             };
             tracing::info!(%addr, scheme, "web app listening");
-            if let Some(token) = self.arm_setup().await? {
-                tracing::warn!(
-                    "no accounts yet: open {scheme}://{addr}/setup and enter setup token {token}"
-                );
+            if !self.state.users.is_set_up().await? {
+                tracing::warn!("no accounts yet: open {scheme}://{addr}/setup to create the admin");
             }
+            let key = self
+                .state
+                .recovery_key
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone();
+            auth::announce_recovery_key(&key, Some(&format!("{scheme}://{addr}/recover")));
             let stop = shutdown.child_token();
             self.state.shutdown = stop.clone();
             let server = tokio::spawn(serve_on(
@@ -500,6 +492,7 @@ async fn serve_on(
 fn api(state: AppState) -> Router {
     Router::new()
         .route("/setup", get(auth::setup_status).post(auth::setup))
+        .route("/recover", post(auth::recover))
         .route("/login", post(auth::login))
         .route("/logout", post(auth::logout))
         .route("/session", get(auth::current_session))
@@ -1003,36 +996,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn first_run_setup_needs_the_token_and_happens_once() {
+    async fn first_run_setup_happens_once() {
         let app = app().await;
-        let token = app.arm_setup().await.unwrap().unwrap();
         let mut client = Client::new(&app);
         let (status, body) = client.get("/api/setup").await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body, json!({"needed": true}));
 
-        let (status, _) = client
-            .post(
-                "/api/setup",
-                json!({"username": "nick", "password": "correct horse", "token": "wrong"}),
-            )
+        let (status, body) = client
+            .post("/api/setup", json!({"username": "nick", "password": "short"}))
             .await;
-        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
         assert!(client.cookie.is_none());
 
         let (status, body) = client
-            .post(
-                "/api/setup",
-                json!({"username": "nick", "password": "short", "token": token}),
-            )
-            .await;
-        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
-
-        let (status, body) = client
-            .post(
-                "/api/setup",
-                json!({"username": "nick", "password": "correct horse", "token": token}),
-            )
+            .post("/api/setup", json!({"username": "nick", "password": "correct horse"}))
             .await;
         assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(body["user"]["username"], "nick");
@@ -1043,36 +1021,100 @@ mod tests {
         let (_, body) = client.get("/api/setup").await;
         assert_eq!(body, json!({"needed": false}));
         let (status, _) = client
-            .post(
-                "/api/setup",
-                json!({"username": "other", "password": "correct horse", "token": token}),
-            )
+            .post("/api/setup", json!({"username": "other", "password": "correct horse"}))
             .await;
         assert_eq!(status, StatusCode::CONFLICT);
         let (status, body) = client.get("/api/session").await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["user"]["username"], "nick");
-        assert!(app.arm_setup().await.unwrap().is_none());
     }
 
     #[tokio::test]
-    async fn wrong_setup_tokens_are_rate_limited() {
-        let app = app().await;
-        app.arm_setup().await.unwrap();
+    async fn the_recovery_key_resets_a_password_and_is_replaced() {
+        let app = app_with_admin().await;
+        let mut admin = Client::new(&app);
+        let (status, _) = admin.login("nick", "correct horse").await;
+        assert_eq!(status, StatusCode::OK);
+
+        // Five wrong passwords lock the account out, the right one included.
+        let mut locked = Client::new(&app);
+        for _ in 0..5 {
+            let (status, _) = locked.login("nick", "wrong horse").await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED);
+        }
+        let (status, _) = locked.login("nick", "correct horse").await;
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+
+        let key = app.state.recovery_key.lock().unwrap().clone();
+        let (status, _) = locked
+            .post(
+                "/api/recover",
+                json!({"username": "nick", "key": "wrong", "password": "new horse"}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert!(locked.cookie.is_none());
+        let (status, _) = locked
+            .post(
+                "/api/recover",
+                json!({"username": "nobody", "key": key, "password": "new horse"}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        let (status, body) = locked
+            .post(
+                "/api/recover",
+                json!({"username": "NICK", "key": key, "password": "short"}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        let (status, body) = locked
+            .post(
+                "/api/recover",
+                json!({"username": "NICK", "key": key, "password": "new horse"}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["user"]["username"], "nick");
+        assert!(locked.cookie.is_some());
+
+        // The old sessions and the old password are gone, and so is the lockout.
+        let (status, _) = admin.get("/api/session").await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        let mut fresh = Client::new(&app);
+        let (status, _) = fresh.login("nick", "correct horse").await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        let (status, _) = fresh.login("nick", "new horse").await;
+        assert_eq!(status, StatusCode::OK);
+
+        // A used key is replaced.
+        assert_ne!(*app.state.recovery_key.lock().unwrap(), key);
+        let (status, _) = fresh
+            .post(
+                "/api/recover",
+                json!({"username": "nick", "key": key, "password": "newer horse"}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn wrong_recovery_keys_are_rate_limited() {
+        let app = app_with_admin().await;
         let mut client = Client::new(&app);
         for _ in 0..5 {
             let (status, _) = client
                 .post(
-                    "/api/setup",
-                    json!({"username": "nick", "password": "correct horse", "token": "wrong"}),
+                    "/api/recover",
+                    json!({"username": "nick", "key": "wrong", "password": "new horse"}),
                 )
                 .await;
             assert_eq!(status, StatusCode::FORBIDDEN);
         }
         let (status, _) = client
             .post(
-                "/api/setup",
-                json!({"username": "nick", "password": "correct horse", "token": "wrong"}),
+                "/api/recover",
+                json!({"username": "nick", "key": "wrong", "password": "new horse"}),
             )
             .await;
         assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);

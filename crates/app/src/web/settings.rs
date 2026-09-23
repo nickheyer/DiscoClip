@@ -89,7 +89,7 @@ async fn change(
     let next = state.settings.preview(change).await?;
     if next.web.public_url.is_none() && state.frontends.cache().any_posting_links() {
         return Err(ApiError::Conflict(
-            "Disable Discord links on media sites before clearing the public URL."
+            "Disable Discord links on content views before clearing the public URL."
                 .into(),
         ));
     }

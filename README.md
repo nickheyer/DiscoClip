@@ -14,8 +14,7 @@ discoclip --config discoclip.toml
 You can also set `DISCOCLIP_CONFIG=discoclip.toml`. See
 [the example config](discoclip.example.toml) for available settings.
 
-On first startup, the server prints a setup token. Open `/setup`, enter the token
-and create an admin account.
+On first startup, open `/setup` and create the admin account.
 
 ## Build
 
@@ -23,10 +22,10 @@ and create an admin account.
 cargo build --release
 ```
 
-The build requires Node.js and npm. Cargo builds the SvelteKit frontend in
+The build requires Node.js and npm. Cargo builds the SvelteKit web UI in
 `crates/app/ui` and embeds it in the binary.
 
-For frontend development, run the backend, then:
+For web UI development, run the backend, then:
 
 ```sh
 cd crates/app/ui
@@ -35,7 +34,7 @@ npm run dev
 
 Vite proxies `/api` to `127.0.0.1:8080`. Set `DISCOCLIP_API` to use another address.
 
-Frontend checks:
+Web UI checks:
 
 ```sh
 npm run check
@@ -85,30 +84,30 @@ Jobs retain the limits and platform restrictions used when submitted. Retries us
 current profiles. Playlist entries inherit the parent job settings. Older watch
 rules with their own limits are migrated to channel profiles.
 
-## Media sites
+## Content views
 
-Create a site under **Media sites** to share completed media at `/f/<slug>`.
-Choose a profile, included Discord servers or channels, and whether downloads are
-allowed. Empty server and channel lists include all media.
+Create a view under **Content views** to share completed media at `/f/<slug>`.
+Pick a profile, the Discord servers or single channels it shows, and whether
+downloads are allowed. With no server or channel picked it shows all media.
 
-Sites support these access methods:
+A view lets people in by any of these:
 
 - Public access without login
 - A shared PIN, password or access token
-- Separate site accounts
+- View accounts, which exist only on that view
 - Configured login providers
 
 Discord login can require membership in all selected servers or restrict access
-to listed users. Viewer sessions last 30 days. Admins can manage site accounts
-and end sessions from the site list.
+to listed users. Viewer sessions last 30 days. Admins manage view accounts
+and end sessions on the view's page.
 
 Enable **Discord links** to post a media page when an upload exceeds the size
 limit or falls below the configured quality thresholds. These links require
 `web.public_url`. The media page includes preview metadata for Discord.
 
 Signed media links work without login until they expire, after 30 days by default.
-Anyone with the link can access that file until expiry. When several sites match,
-a channel match takes priority over a server match, followed by unrestricted sites.
+Anyone with the link can access that file until expiry. When several views match,
+a channel match takes priority over a server match, followed by unrestricted views.
 Slug order breaks ties.
 
 ## Platforms and downloads
@@ -152,6 +151,11 @@ to their selected scopes and the account role. See [the API reference](API.md).
 
 GitHub, Google and OpenID Connect are configured in Settings. Discord login uses
 an application with a client secret and login enabled.
+
+Locked out of an account? The server prints a recovery key on its console, set
+apart from the log, each time it starts. Open `/recover` and enter the key, the
+username and a new password. That ends the account's sessions and the lockout
+and logs you in. The key changes each time it is used.
 
 ## Settings and hosting
 

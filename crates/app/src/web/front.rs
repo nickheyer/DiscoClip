@@ -205,7 +205,7 @@ pub async fn login(
         (Some(secret), None, None) => {
             if !(frontend.has_secret && access.secret_kind.is_some()) {
                 return Err(ApiError::BadRequest(
-                    "this front end does not take a shared secret".into(),
+                    "this view does not take a shared secret".into(),
                 ));
             }
             if !state.frontends.verify_secret(frontend.id, &secret).await? {
@@ -221,7 +221,7 @@ pub async fn login(
         (None, Some(username), Some(password)) => {
             if !access.accounts {
                 return Err(ApiError::BadRequest(
-                    "this front end has no accounts of its own".into(),
+                    "this view has no accounts of its own".into(),
                 ));
             }
             let Some(user) = state
@@ -520,7 +520,7 @@ pub async fn download(
     admitted(&state, &frontend, &jar).await?;
     if !frontend.input.downloads {
         return Err(ApiError::Forbidden(
-            "this front end does not hand its media out".into(),
+            "this view does not hand its media out".into(),
         ));
     }
     let id: JobId = super::auth::parse_id(&id)?;
@@ -1043,7 +1043,7 @@ mod tests {
                 .unwrap()
                 .contains(r#"<meta property="og:url" content="https://clips.example/f/five/j/"#)
         );
-        // Deleting the front end ends the site.
+        // Deleting the front end closes its pages.
         assert_eq!(
             admin.delete(&format!("/api/frontends/{id}")).await.0,
             StatusCode::NO_CONTENT

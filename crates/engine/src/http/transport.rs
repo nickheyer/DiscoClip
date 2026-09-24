@@ -17,7 +17,7 @@ use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use super::HttpError;
+use super::{Browser, HttpError};
 
 pub type BodyStream = Pin<Box<dyn Stream<Item = Result<Bytes, HttpError>> + Send>>;
 
@@ -30,9 +30,9 @@ pub struct TransportRequest {
     /// Bound on the whole exchange, body included. `None` for media downloads.
     pub timeout: Option<Duration>,
     pub proxy: Option<Url>,
-    /// Sent as a browser would: with Chrome's TLS and HTTP/2 fingerprint and its default
+    /// Sent as this browser would: with its TLS and HTTP/2 fingerprint and its default
     /// headers, for hosts that refuse any other client.
-    pub impersonate: bool,
+    pub impersonate: Option<Browser>,
 }
 
 pub struct TransportResponse {
@@ -50,15 +50,22 @@ pub trait Transport: Send + Sync {
     fn configure(&self, _connect_timeout: Duration, _read_timeout: Duration) {}
 }
 
-/// The browser impersonated requests pass for.
-const EMULATION: wreq_util::Profile = wreq_util::Emulation::Chrome142;
+/// The fingerprint and default headers an impersonated request passes with.
+fn profile_of(browser: Browser) -> wreq_util::Profile {
+    match browser {
+        Browser::Chrome => wreq_util::Emulation::Chrome142,
+        Browser::Firefox => wreq_util::Emulation::Firefox151,
+        Browser::Safari => wreq_util::Emulation::Safari26_4,
+    }
+}
 
 /// The network, through reqwest, one client per proxy. Impersonated requests go through
-/// wreq, which speaks TLS and HTTP/2 the way Chrome does, one client per proxy as well.
+/// wreq, which speaks TLS and HTTP/2 the way the chosen browser does, one client per
+/// browser and proxy.
 pub struct LiveTransport {
     timeouts: Mutex<(Duration, Duration)>,
     clients: Mutex<HashMap<String, reqwest::Client>>,
-    browsers: Mutex<HashMap<String, wreq::Client>>,
+    browsers: Mutex<HashMap<(String, Browser), wreq::Client>>,
 }
 
 impl LiveTransport {
@@ -70,15 +77,15 @@ impl LiveTransport {
         }
     }
 
-    fn browser(&self, proxy: Option<&Url>) -> Result<wreq::Client, HttpError> {
-        let key = proxy.map(|p| p.to_string()).unwrap_or_default();
+    fn browser(&self, proxy: Option<&Url>, browser: Browser) -> Result<wreq::Client, HttpError> {
+        let key = (proxy.map(|p| p.to_string()).unwrap_or_default(), browser);
         let (connect_timeout, read_timeout) = self.timeouts();
         let mut browsers = self.browsers.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(client) = browsers.get(&key) {
             return Ok(client.clone());
         }
         let mut builder = wreq::Client::builder()
-            .emulation(EMULATION)
+            .emulation(profile_of(browser))
             .redirect(wreq::redirect::Policy::none())
             .connect_timeout(connect_timeout)
             .read_timeout(read_timeout);
@@ -98,8 +105,9 @@ impl LiveTransport {
     async fn send_as_browser(
         &self,
         request: TransportRequest,
+        browser: Browser,
     ) -> Result<TransportResponse, HttpError> {
-        let client = self.browser(request.proxy.as_ref())?;
+        let client = self.browser(request.proxy.as_ref(), browser)?;
         let url = request.url.clone();
         let mut builder = client
             .request(request.method, request.url.as_str())
@@ -160,8 +168,8 @@ impl LiveTransport {
 #[async_trait]
 impl Transport for LiveTransport {
     async fn send(&self, request: TransportRequest) -> Result<TransportResponse, HttpError> {
-        if request.impersonate {
-            return self.send_as_browser(request).await;
+        if let Some(browser) = request.impersonate {
+            return self.send_as_browser(request, browser).await;
         }
         let client = self.client(request.proxy.as_ref())?;
         let url = request.url.clone();
@@ -876,7 +884,7 @@ mod tests {
                 body: None,
                 timeout: None,
                 proxy: None,
-                impersonate: false,
+                impersonate: None,
             })
             .await
             .unwrap();
@@ -930,7 +938,7 @@ mod tests {
                 body: None,
                 timeout: None,
                 proxy: None,
-                impersonate: false,
+                impersonate: None,
             })
             .await;
         assert!(matches!(missing, Err(HttpError::NoFixture { .. })));

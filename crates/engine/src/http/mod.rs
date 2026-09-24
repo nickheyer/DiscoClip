@@ -416,7 +416,7 @@ impl Http {
             cookies: true,
             retry: true,
             rate_limit: true,
-            impersonate: false,
+            impersonate: None,
             error: None,
         }
     }
@@ -498,6 +498,17 @@ enum Timeout {
     Some(Duration),
 }
 
+/// The browser an impersonated request passes for: its TLS and HTTP/2 fingerprint and
+/// its default headers. A bot check that challenges one browser's fingerprint lets
+/// another's through.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum Browser {
+    #[default]
+    Chrome,
+    Firefox,
+    Safari,
+}
+
 /// One request being put together. `send` runs it.
 pub struct RequestBuilder {
     http: Http,
@@ -511,7 +522,7 @@ pub struct RequestBuilder {
     cookies: bool,
     retry: bool,
     rate_limit: bool,
-    impersonate: bool,
+    impersonate: Option<Browser>,
     error: Option<HttpError>,
 }
 
@@ -621,7 +632,14 @@ impl RequestBuilder {
     /// headers, user agent included, for hosts that refuse any other client. Headers set
     /// on the request still win over the browser's.
     pub fn impersonate(mut self) -> Self {
-        self.impersonate = true;
+        self.impersonate = Some(Browser::Chrome);
+        self
+    }
+
+    /// [`impersonate`](Self::impersonate) as `browser` rather than Chrome, for hosts
+    /// whose bot check challenges Chrome's fingerprint and lets another browser's through.
+    pub fn impersonate_as(mut self, browser: Browser) -> Self {
+        self.impersonate = Some(browser);
         self
     }
 
@@ -649,7 +667,7 @@ impl RequestBuilder {
         for _hop in 0..=config.max_redirects {
             let host = url.host_str().unwrap_or("").to_string();
             let mut headers = self.headers.clone();
-            if !self.impersonate && !headers.contains_key(header::USER_AGENT) {
+            if self.impersonate.is_none() && !headers.contains_key(header::USER_AGENT) {
                 headers.insert(
                     header::USER_AGENT,
                     HeaderValue::from_str(&config.user_agent)

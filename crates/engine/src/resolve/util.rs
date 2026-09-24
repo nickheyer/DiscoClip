@@ -1752,13 +1752,13 @@ pub fn iso639_short(code: &str) -> Option<&'static str> {
     if code.len() == 2 && code.chars().all(|c| c.is_ascii_alphabetic()) {
         return ISO639_CODES
             .iter()
-            .find(|(_, short)| *short == code)
-            .map(|(_, short)| *short);
+            .find(|(short, _)| *short == code)
+            .map(|(short, _)| *short);
     }
     ISO639_CODES
         .iter()
-        .find(|(long, _)| *long == code)
-        .map(|(_, short)| *short)
+        .find(|(_, long)| *long == code)
+        .map(|(short, _)| *short)
 }
 
 /// English names of languages and their ISO 639-1 codes, for players that label
@@ -1839,6 +1839,20 @@ pub fn language_code(label: &str) -> Option<String> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn language_codes_shorten_from_either_form_and_from_names() {
+        assert_eq!(iso639_short("eng"), Some("en"));
+        assert_eq!(iso639_short("de"), Some("de"));
+        assert_eq!(iso639_short(" VIE "), Some("vi"));
+        assert_eq!(iso639_short("xx"), None);
+        assert_eq!(iso639_short("klingon"), None);
+        assert_eq!(language_code("en-US"), Some("en".into()));
+        assert_eq!(language_code("deu"), Some("de".into()));
+        assert_eq!(language_code("German"), Some("de".into()));
+        assert_eq!(language_code("Spanish (Latin America)"), Some("es".into()));
+        assert_eq!(language_code("Klingon"), None);
+    }
 
     #[test]
     fn numbers_come_from_numbers_and_strings() {

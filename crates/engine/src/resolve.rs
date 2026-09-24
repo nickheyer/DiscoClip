@@ -10,7 +10,7 @@ use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::http::{Cookie, Http, HttpError, Response, StatusCode};
+use crate::http::{Browser, Cookie, Http, HttpError, Response, StatusCode};
 use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub use page::Page;
@@ -28,6 +28,7 @@ pub mod applepodcasts;
 pub mod archive_org;
 pub mod ard;
 pub mod audioboom;
+pub mod audiomack;
 pub mod baidu;
 pub mod banbye;
 pub mod bandcamp;
@@ -63,11 +64,16 @@ pub mod dropbox;
 pub mod drtv;
 pub mod dumpert;
 pub mod dw;
+pub mod dzen;
+pub mod eporner;
+pub mod erome;
 pub mod facebook;
 pub mod firsttv;
 pub mod floatplane;
+pub mod francetv;
 pub mod geo;
 pub mod giphy;
+pub mod gofile;
 pub mod google_drive;
 pub mod hls;
 pub mod ifunny;
@@ -83,31 +89,50 @@ pub mod linkedin;
 pub mod loom;
 pub mod manifests;
 pub mod mastodon;
+pub mod medal;
+pub mod mediafire;
 pub mod medialaan;
 pub mod mega;
+pub mod mixcloud;
 pub mod mux;
+pub mod navertv;
 pub mod newgrounds;
 pub mod nexx;
 pub mod niconico;
 pub mod ninegag;
 pub mod odysee;
+pub mod okru;
 pub mod onedrive;
 pub mod onenewsnz;
 pub mod page;
+pub mod patreon;
+pub mod peertube;
 pub mod periscope;
 pub mod pinterest;
+pub mod pixeldrain;
+pub mod pornhub;
+pub mod raiplay;
 pub mod reddit;
 pub mod redgifs;
 pub mod rumble;
+pub mod rutube;
 pub mod seventeenlive;
 pub mod smil;
 pub mod snapchat;
+pub mod soop;
+pub mod soundcloud;
+pub mod spankbang;
+pub mod spotify;
+pub mod steam;
 pub mod streamable;
+pub mod stripchat;
+pub mod ted;
 pub mod telegram;
 pub mod tenor;
 pub mod threads;
 pub mod tiktok;
 pub mod tumblr;
+pub mod tver;
 pub mod twentymin;
 pub mod twitch;
 pub mod twitter;
@@ -122,8 +147,12 @@ pub mod weibo;
 pub mod wikimedia;
 pub mod wistia;
 pub mod x;
+pub mod xhamster;
 pub mod xiaohongshu;
+pub mod xnxx;
+pub mod xvideos;
 pub mod youtube;
+pub mod zdf;
 
 pub fn builtin_resolvers(http: &Http) -> Vec<Arc<dyn Resolver>> {
     vec![
@@ -226,15 +255,44 @@ pub fn builtin_resolvers(http: &Http) -> Vec<Arc<dyn Resolver>> {
         Arc::new(drtv::DrtvResolver::new(http.clone())),
         Arc::new(dumpert::DumpertResolver::new(http.clone())),
         Arc::new(dw::DwResolver::new(http.clone())),
+        Arc::new(soundcloud::SoundcloudResolver::new(http.clone())),
+        Arc::new(pornhub::PornhubResolver::new(http.clone())),
+        Arc::new(xhamster::XhamsterResolver::new(http.clone())),
+        Arc::new(xvideos::XvideosResolver::new(http.clone())),
+        Arc::new(xnxx::XnxxResolver::new(http.clone())),
+        Arc::new(rutube::RutubeResolver::new(http.clone())),
+        Arc::new(okru::OkruResolver::new(http.clone())),
+        Arc::new(navertv::NaverTvResolver::new(http.clone())),
+        Arc::new(soop::SoopResolver::new(http.clone())),
+        Arc::new(medal::MedalResolver::new(http.clone())),
+        Arc::new(steam::SteamResolver::new(http.clone())),
+        Arc::new(patreon::PatreonResolver::new(http.clone())),
+        Arc::new(spotify::SpotifyResolver::new(http.clone())),
+        Arc::new(mixcloud::MixcloudResolver::new(http.clone())),
+        Arc::new(audiomack::AudiomackResolver::new(http.clone())),
+        Arc::new(eporner::EpornerResolver::new(http.clone())),
+        Arc::new(spankbang::SpankbangResolver::new(http.clone())),
+        Arc::new(erome::EromeResolver::new(http.clone())),
+        Arc::new(stripchat::StripchatResolver::new(http.clone())),
+        Arc::new(dzen::DzenResolver::new(http.clone())),
+        Arc::new(mediafire::MediafireResolver::new(http.clone())),
+        Arc::new(pixeldrain::PixeldrainResolver::new(http.clone())),
+        Arc::new(gofile::GofileResolver::new(http.clone())),
+        Arc::new(ted::TedResolver::new(http.clone())),
+        Arc::new(zdf::ZdfResolver::new(http.clone())),
+        Arc::new(francetv::FrancetvResolver::new(http.clone())),
+        Arc::new(raiplay::RaiplayResolver::new(http.clone())),
+        Arc::new(tver::TverResolver::new(http.clone())),
     ]
 }
 
-/// The resolvers that come last, whatever else is registered: Mastodon, which matches
-/// links on any host by their shape and passes the rest on, and the generic web resolver,
+/// The resolvers that come last, whatever else is registered: PeerTube and Mastodon, which
+/// match links on any host by their shape and pass the rest on, and the generic web resolver,
 /// which takes whatever is left and hands a page whose player one of `players` knows to
 /// that player's resolver.
 pub fn tail_resolvers(http: &Http, players: &[Arc<dyn Resolver>]) -> Vec<Arc<dyn Resolver>> {
     vec![
+        Arc::new(peertube::PeertubeResolver::new(http.clone())),
         Arc::new(mastodon::MastodonResolver::new(http.clone())),
         Arc::new(web::WebResolver::new(http.clone(), players.to_vec())),
     ]
@@ -1078,6 +1136,35 @@ pub async fn fetch_as_browser(
     })
 }
 
+/// [`fetch_as_browser`] passing for `browser` rather than Chrome, for hosts whose bot
+/// check challenges Chrome's fingerprint and lets another browser's through.
+pub async fn fetch_as_browser_of(
+    http: &Http,
+    url: &Url,
+    platform: &str,
+    browser: Browser,
+    headers: &[(String, String)],
+    limit: usize,
+) -> Result<Fetched, ResolveError> {
+    let response = http
+        .get(url.clone())
+        .platform(platform)
+        .headers(headers)
+        .impersonate_as(browser)
+        .send()
+        .await?;
+    let status = response.status;
+    let final_url = response.url.clone();
+    let content_type = response.content_type().map(str::to_owned);
+    let (body, _) = response.bytes_up_to(limit).await?;
+    Ok(Fetched {
+        url: final_url,
+        status,
+        content_type,
+        body,
+    })
+}
+
 /// [`fetch_as_browser`], failing unless the answer is 2xx.
 pub async fn fetch_ok_as_browser(
     http: &Http,
@@ -1456,5 +1543,60 @@ mod tests {
         ));
         assert!(ResolveError::NotFound(url.clone()).is_expected());
         assert!(!ResolveError::Unsupported(url).is_expected());
+    }
+
+    /// Every resolver declares what the coverage page and the profiles read, and every
+    /// example link it names is one it takes, on a host it declares, before any other
+    /// resolver is offered it.
+    #[test]
+    fn platforms_declare_their_coverage_and_take_their_own_examples() {
+        let http = Http::replay(crate::http::transport::Fixture::new("platforms", None));
+        let registry = ResolverRegistry::new(standard_resolvers(&http));
+        let mut problems = Vec::new();
+        for resolver in registry.resolvers() {
+            let platform = resolver.platform();
+            let id = platform.id;
+            if id != resolver.id() {
+                problems.push(format!("{id}: the resolver calls itself {}", resolver.id()));
+            }
+            // Formats are left to the platforms that serve media themselves: a resolver
+            // that only lists links hosted elsewhere, as Baidu Video does, has none.
+            for (field, empty) in [
+                ("hosts", platform.hosts.is_empty()),
+                ("features", platform.features.is_empty()),
+                ("media", platform.media.is_empty()),
+                ("tags", platform.tags.is_empty()),
+            ] {
+                if empty {
+                    problems.push(format!("{id}: declares no {field}"));
+                }
+            }
+            for example in platform.examples {
+                let Ok(url) = Url::parse(example) else {
+                    problems.push(format!("{id}: {example} is not a URL"));
+                    continue;
+                };
+                if !resolver.matches(&url) {
+                    problems.push(format!("{id}: does not take its example {example}"));
+                }
+                // A link of the platform's own scheme, such as `nexx:741:1269984`, has
+                // no host to check.
+                if let Some(host) = url.host_str() {
+                    let declared = platform.hosts.iter().any(|declared| {
+                        *declared == "*"
+                            || host == *declared
+                            || host.ends_with(&format!(".{declared}"))
+                    });
+                    if !declared {
+                        problems.push(format!("{id}: {host} is not among its hosts"));
+                    }
+                }
+                let first = registry.matching(&url).into_iter().next();
+                if first != Some(id) {
+                    problems.push(format!("{id}: {example} is taken first by {first:?}"));
+                }
+            }
+        }
+        assert!(problems.is_empty(), "\n{}", problems.join("\n"));
     }
 }

@@ -27,7 +27,9 @@ use super::{
 use crate::event::{Progress, ProgressSender};
 use crate::ffmpeg::Ffmpeg;
 use crate::http::{BROWSER_UA, Http};
-use crate::resolve::{Keepalive, SubtitleFormat, SubtitleTrack, Variant, VariantKind, signed_url};
+use crate::resolve::{
+    Keepalive, SubtitleFormat, SubtitleTrack, Variant, VariantKind, signed_url, stripchat,
+};
 
 const MAX_PLAYLIST: usize = 8 * 1024 * 1024;
 const CONCURRENCY: usize = 4;
@@ -133,6 +135,36 @@ fn choose_stream(master: &MasterPlaylist, max_height: u32) -> Option<&m3u8_rs::V
         })
 }
 
+/// The tag before each placeholder segment line of a Stripchat media playlist, naming
+/// the segment with an encrypted name part.
+const MOUFLON_TAG: &str = "#EXT-X-MOUFLON:URI:";
+
+/// A media playlist with its segment addresses as they are fetched. Stripchat serves
+/// every segment line as a placeholder advert and names the real segment in the
+/// `EXT-X-MOUFLON:URI` tag before it, its name part encrypted under the key id the
+/// playlist link was asked with (`pkey`): those addresses are restored with that key.
+/// Any other playlist is returned as it came.
+fn restore_keyed_segments(url: &Url, text: String) -> Result<String, DownloadError> {
+    if !text.contains(MOUFLON_TAG) {
+        return Ok(text);
+    }
+    let key_id = url
+        .query_pairs()
+        .find(|(name, _)| name == "pkey")
+        .map(|(_, value)| value.into_owned())
+        .ok_or_else(|| {
+            DownloadError::Manifest(
+                "the segment names are encrypted and the playlist link names no key".into(),
+            )
+        })?;
+    let secret = stripchat::mouflon_secret(&key_id).ok_or_else(|| {
+        DownloadError::Manifest(format!(
+            "the segment names are encrypted under the unknown key {key_id}"
+        ))
+    })?;
+    Ok(stripchat::restore_media_playlist(&text, secret))
+}
+
 async fn load_media_playlist(
     http: &Http,
     url: &Url,
@@ -144,6 +176,7 @@ async fn load_media_playlist(
 ) -> Result<Loaded, DownloadError> {
     let url = &signed_url(url, query);
     let (final_url, text) = fetch_text(http, url, platform, headers, MAX_PLAYLIST).await?;
+    let text = restore_keyed_segments(url, text)?;
     match m3u8_rs::parse_playlist_res(text.as_bytes()) {
         Ok(Playlist::MediaPlaylist(media)) => Ok(Loaded {
             base: final_url,
@@ -960,6 +993,52 @@ mod tests {
     fn rejects_wrong_length_or_non_hex() {
         assert_eq!(parse_iv("0x0001"), None);
         assert_eq!(parse_iv("0xzz0102030405060708090a0b0c0d0e0f"), None);
+    }
+
+    #[test]
+    fn keyed_segment_names_are_restored_before_parsing() {
+        let playlist = "#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:686\n\
+            #EXT-X-MOUFLON:URI:https://media-hls.doppiocdn.com/b-hls-08/266549456/266549456_240p_h264_686_Qvcn595Ezx+q9lSg6i9v0z_1790271449.mp4\n\
+            #EXTINF:1.999,\nmedia.mp4\n\
+            #EXT-X-MOUFLON:URI:https://media-hls.doppiocdn.com/b-hls-08/266549456/266549456_240p_h264_687_g+c+Noj8AoszsvGxpvD3Vx_1790271451.mp4\n\
+            #EXTINF:2.0,\nmedia.mp4\n";
+        let keyed = Url::parse(
+            "https://edge-hls.doppiocdn.com/hls/266549456/master/266549456_240p.m3u8?psch=v2&pkey=Ook7quaiNgiyuhai",
+        )
+        .unwrap();
+        let restored = restore_keyed_segments(&keyed, playlist.to_string()).unwrap();
+        let Playlist::MediaPlaylist(media) =
+            m3u8_rs::parse_playlist_res(restored.as_bytes()).unwrap()
+        else {
+            panic!("a media playlist");
+        };
+        assert_eq!(media.segments.len(), 2);
+        assert_eq!(
+            media.segments[0].uri,
+            "https://media-hls.doppiocdn.com/b-hls-08/266549456/266549456_240p_h264_686_aZwVGcbQe2xUd1rp_1790271449.mp4"
+        );
+        assert_eq!(
+            media.segments[1].uri,
+            "https://media-hls.doppiocdn.com/b-hls-08/266549456/266549456_240p_h264_687_kLIcs7KG7UFO3w27_1790271451.mp4"
+        );
+        let plain = "#EXTM3U\n#EXTINF:2.0,\ns0.ts\n".to_string();
+        assert_eq!(
+            restore_keyed_segments(&keyed, plain.clone()).unwrap(),
+            plain
+        );
+        let unkeyed =
+            Url::parse("https://edge-hls.doppiocdn.com/hls/1/master/1_240p.m3u8").unwrap();
+        assert!(matches!(
+            restore_keyed_segments(&unkeyed, playlist.to_string()).unwrap_err(),
+            DownloadError::Manifest(reason) if reason.contains("names no key")
+        ));
+        let unknown =
+            Url::parse("https://edge-hls.doppiocdn.com/hls/1/master/1_240p.m3u8?psch=v2&pkey=nope")
+                .unwrap();
+        assert!(matches!(
+            restore_keyed_segments(&unknown, playlist.to_string()).unwrap_err(),
+            DownloadError::Manifest(reason) if reason.contains("unknown key nope")
+        ));
     }
 
     #[test]

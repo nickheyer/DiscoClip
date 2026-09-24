@@ -332,7 +332,7 @@ mod tests {
         );
         assert_eq!(resolved.subtitles.len(), 2);
         assert_eq!(resolved.subtitles[0].language, "en-US");
-        assert_eq!(resolved.subtitles[1].language, "deu");
+        assert_eq!(resolved.subtitles[1].language, "de");
         assert_eq!(
             resolved.subtitles[1].url.as_str(),
             "https://video.tv.adobe.com/vc/x/deu.vtt"

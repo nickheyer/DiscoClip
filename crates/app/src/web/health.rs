@@ -115,7 +115,7 @@ async fn database(db: &SqliteStore) -> Check {
             name: "database",
             label: "Database",
             status: Status::Ok,
-            detail: format!("SQLite available. {} on disk.", human_bytes(bytes)),
+            detail: format!("SQLite answers. {} on disk.", human_bytes(bytes)),
         },
         Err(error) => Check {
             name: "database",

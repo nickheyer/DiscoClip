@@ -186,7 +186,9 @@ pub fn part_extension(bytes: &[u8]) -> &'static str {
         "mp4"
     } else if bytes.starts_with(&[0x1a, 0x45, 0xdf, 0xa3]) {
         "webm"
-    } else if bytes.starts_with(b"ID3") || (bytes.len() > 1 && bytes[0] == 0xff && bytes[1] & 0xf6 == 0xf0) {
+    } else if bytes.starts_with(b"ID3")
+        || (bytes.len() > 1 && bytes[0] == 0xff && bytes[1] & 0xf6 == 0xf0)
+    {
         "aac"
     } else {
         "bin"
@@ -358,12 +360,7 @@ pub async fn mux_parts(
     match audio {
         Some(audio) => {
             args.extend(input_args(audio, &dir.join("audio.parts.txt")).await?);
-            args.extend([
-                "-map".into(),
-                "0:v:0".into(),
-                "-map".into(),
-                "1:a:0".into(),
-            ]);
+            args.extend(["-map".into(), "0:v:0".into(), "-map".into(), "1:a:0".into()]);
         }
         None => {
             args.extend([

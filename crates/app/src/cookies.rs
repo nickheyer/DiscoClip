@@ -309,7 +309,10 @@ mod tests {
         assert!(store.clear(&Actor::test(), "reddit").await.unwrap());
         assert!(!store.clear(&Actor::test(), "reddit").await.unwrap());
         assert!(store.jars().await.unwrap().is_empty());
-        assert_eq!(store.summaries().await.unwrap()["reddit"].cookies, 0);
+        // Clearing changes the saved cookies as much as an import does, and is dated too.
+        let summaries = store.summaries().await.unwrap();
+        assert_eq!(summaries["reddit"].cookies, 0);
+        assert!(summaries["reddit"].updated_at.unwrap() >= stored.updated_at.unwrap());
 
         // The audit log names the platform and counts, never a cookie.
         let entries = audit

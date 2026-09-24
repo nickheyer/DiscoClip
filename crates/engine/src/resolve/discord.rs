@@ -806,7 +806,7 @@ mod tests {
             .await
             .unwrap_err();
         assert!(
-            matches!(&error, ResolveError::Unavailable { reason, .. } if reason.contains("no Discord bot")),
+            matches!(&error, ResolveError::Unavailable { reason, .. } if reason.contains("Start a Discord bot")),
             "{error}"
         );
     }

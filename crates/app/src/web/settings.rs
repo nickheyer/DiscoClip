@@ -89,8 +89,7 @@ async fn change(
     let next = state.settings.preview(change).await?;
     if next.web.public_url.is_none() && state.frontends.cache().any_posting_links() {
         return Err(ApiError::Conflict(
-            "Disable Discord links on content views before clearing the public URL."
-                .into(),
+            "Disable Discord links on content views before clearing the public URL.".into(),
         ));
     }
     state.live.check(&current, &next).await?;
@@ -279,6 +278,22 @@ mod tests {
         );
         assert_eq!(body["secrets"], json!(["auth.github.client_secret"]));
         assert!(!body.to_string().contains("gh-secret"));
+        assert_eq!(
+            body["exemplar"]["auth"]["oidc"]["issuer"],
+            "https://example.invalid/"
+        );
+        assert_eq!(
+            body["exemplar"]["auth"]["oidc"]["client_secret"],
+            Json::Null
+        );
+        assert_eq!(
+            body["secret_keys"],
+            json!([
+                "auth.github.client_secret",
+                "auth.google.client_secret",
+                "auth.oidc.client_secret"
+            ])
+        );
         assert_eq!(body["data_dir"], "data");
         assert!(body["provisioning_file"].is_null());
         let entries = body["entries"].as_array().unwrap();
@@ -442,6 +457,17 @@ mod tests {
                 .iter()
                 .any(|e| e["key"] == "engine.workers")
         );
+        // Editing a section with its secret withheld, as the app sends it back, keeps the secret.
+        let (status, body) = admin
+            .send(
+                Method::PUT,
+                "/api/settings/auth.github",
+                Some(json!({"value": {"client_id": "gh-id-2", "client_secret": null}})),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["settings"]["auth"]["github"]["client_id"], "gh-id-2");
+        assert_eq!(body["secrets"], json!(["auth.github.client_secret"]));
         // Turning a section off.
         let (status, body) = admin
             .send(

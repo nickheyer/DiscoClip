@@ -229,7 +229,11 @@ mod tests {
 
     #[test]
     fn links_only_turned_off_platforms_take_are_left_alone() {
-        let watcher = watcher_with(vec![rule(1)], vec!["youtube", "web"], RequestLimits::default());
+        let watcher = watcher_with(
+            vec![rule(1)],
+            vec!["youtube", "web"],
+            RequestLimits::default(),
+        );
         let picked = watcher.requests(&message(
             1,
             9,

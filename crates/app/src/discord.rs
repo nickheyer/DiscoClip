@@ -414,6 +414,20 @@ impl BotGuildStore {
         })
         .await
     }
+
+    /// Every application's record of `guild_id`, the bots still in it first.
+    pub async fn list_for_guild(&self, guild_id: &str) -> Result<Vec<BotGuild>, StoreError> {
+        let guild_id = guild_id.to_string();
+        transact(&self.db, move |tx| {
+            let mut stmt = tx.prepare(&format!(
+                "{BOT_GUILD_SELECT} FROM bot_guilds WHERE guild_id = ?1 \
+                 ORDER BY left_at IS NOT NULL, application_id"
+            ))?;
+            let rows = stmt.query_map(params![guild_id], row_to_bot_guild)?;
+            Ok::<_, StoreError>(rows.collect::<Result<Vec<_>, _>>()?)
+        })
+        .await
+    }
 }
 
 fn get_bot_guild(

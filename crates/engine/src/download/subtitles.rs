@@ -218,7 +218,9 @@ pub fn hls_vtt_cues(text: &str, media_start: Option<f64>) -> String {
                 in_header = false;
                 continue;
             }
-            if let (Some(media_start), Some(map)) = (media_start, line.trim().strip_prefix("X-TIMESTAMP-MAP=")) {
+            if let (Some(media_start), Some(map)) =
+                (media_start, line.trim().strip_prefix("X-TIMESTAMP-MAP="))
+            {
                 let mut mpegts = None;
                 let mut local = None;
                 for field in map.split(',') {
@@ -393,7 +395,9 @@ fn ttml_body(document: &str) -> Option<(usize, usize)> {
         let before = lower[..at].chars().next_back();
         let tag_start = lower[..at].rfind('<')?;
         let between = &lower[tag_start + 1..at];
-        if before != Some('/') && (between.is_empty() || (between.ends_with(':') && !between.contains(' '))) {
+        if before != Some('/')
+            && (between.is_empty() || (between.ends_with(':') && !between.contains(' ')))
+        {
             break at;
         }
         search = at + 4;
@@ -467,7 +471,7 @@ pub fn shift_ttml(document: &str, shift: f64) -> String {
     }
     let mut out = String::with_capacity(document.len());
     let mut rest = document;
-    while let Some(at) = rest.find(|c: char| c == 'b' || c == 'e') {
+    while let Some(at) = rest.find(['b', 'e']) {
         out.push_str(&rest[..at]);
         let tail = &rest[at..];
         let attribute = ["begin=\"", "end=\""]
@@ -687,7 +691,10 @@ mod tests {
         assert_eq!(ttml_body(prefixed), Some((53, 67)));
         assert_eq!(merge_ttml(&[a.to_string()]), a);
         assert_eq!(
-            shift_ttml("<p begin=\"1.5s\" end=\"00:00:03.000\" dur=\"1s\">A</p><p begin=\"10f\">B</p>", -1.0),
+            shift_ttml(
+                "<p begin=\"1.5s\" end=\"00:00:03.000\" dur=\"1s\">A</p><p begin=\"10f\">B</p>",
+                -1.0
+            ),
             "<p begin=\"00:00:00.500\" end=\"00:00:02.000\" dur=\"1s\">A</p><p begin=\"10f\">B</p>"
         );
         assert_eq!(parse_ttml_time("1500ms"), Some(1.5));

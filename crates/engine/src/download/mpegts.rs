@@ -27,9 +27,7 @@ fn bad(message: impl Into<String>) -> DownloadError {
 
 /// Whether `bytes` are a transport stream: sync bytes at the start of the first packets.
 pub fn is_transport_stream(bytes: &[u8]) -> bool {
-    bytes.len() >= PACKET
-        && bytes[0] == SYNC
-        && (bytes.len() < 2 * PACKET || bytes[PACKET] == SYNC)
+    bytes.len() >= PACKET && bytes[0] == SYNC && (bytes.len() < 2 * PACKET || bytes[PACKET] == SYNC)
 }
 
 struct Packet<'a> {
@@ -62,7 +60,9 @@ fn packets(data: &[u8]) -> Result<Vec<Packet<'_>>, DownloadError> {
         let adaptation: &[u8] = if afc & 2 != 0 {
             let len = usize::from(chunk[4]);
             if 5 + len > PACKET {
-                return Err(bad(format!("packet {index} has an adaptation field of {len} bytes")));
+                return Err(bad(format!(
+                    "packet {index} has an adaptation field of {len} bytes"
+                )));
             }
             pos = 5 + len;
             &chunk[4..pos]
@@ -117,7 +117,8 @@ fn sections(packets: &[Packet<'_>], pid: u16) -> Vec<Section> {
         if let Some(section) = open.as_ref()
             && section.bytes.len() >= 3
         {
-            let length = 3 + (usize::from(section.bytes[1] & 0x0f) << 8 | usize::from(section.bytes[2]));
+            let length =
+                3 + (usize::from(section.bytes[1] & 0x0f) << 8 | usize::from(section.bytes[2]));
             if section.bytes.len() >= length {
                 let mut section = open.take().unwrap();
                 section.bytes.truncate(length);
@@ -171,7 +172,8 @@ fn program_maps(packets: &[Packet<'_>]) -> Vec<ProgramMap> {
             let mut streams = Vec::new();
             while pos + 5 <= end {
                 let stream_type = bytes[pos];
-                let elementary = (u16::from(bytes[pos + 1] & 0x1f) << 8) | u16::from(bytes[pos + 2]);
+                let elementary =
+                    (u16::from(bytes[pos + 1] & 0x1f) << 8) | u16::from(bytes[pos + 2]);
                 let es_info = usize::from(bytes[pos + 3] & 0x0f) << 8 | usize::from(bytes[pos + 4]);
                 streams.push((stream_type, elementary, pos));
                 pos += 5 + es_info;
@@ -378,7 +380,9 @@ fn adts_frames(es: &[u8]) -> Result<Vec<(usize, usize, usize)>, DownloadError> {
     let mut pos = 0;
     while pos + 7 <= es.len() {
         if es[pos] != 0xff || es[pos + 1] & 0xf0 != 0xf0 {
-            return Err(bad(format!("ADTS frame expected at byte {pos} of the audio stream")));
+            return Err(bad(format!(
+                "ADTS frame expected at byte {pos} of the audio stream"
+            )));
         }
         let header = if es[pos + 1] & 1 == 0 { 9 } else { 7 };
         let length = (usize::from(es[pos + 3] & 3) << 11)
@@ -399,19 +403,19 @@ fn adts_frames(es: &[u8]) -> Result<Vec<(usize, usize, usize)>, DownloadError> {
 /// AC-3 syncframe sizes in 16-bit words by sample rate code and frame size code.
 const AC3_WORDS: [[u16; 38]; 3] = [
     [
-        64, 64, 80, 80, 96, 96, 112, 112, 128, 128, 160, 160, 192, 192, 224, 224, 256, 256,
-        320, 320, 384, 384, 448, 448, 512, 512, 640, 640, 768, 768, 896, 896, 1024, 1024,
-        1152, 1152, 1280, 1280,
+        64, 64, 80, 80, 96, 96, 112, 112, 128, 128, 160, 160, 192, 192, 224, 224, 256, 256, 320,
+        320, 384, 384, 448, 448, 512, 512, 640, 640, 768, 768, 896, 896, 1024, 1024, 1152, 1152,
+        1280, 1280,
     ],
     [
-        69, 70, 87, 88, 104, 105, 121, 122, 139, 140, 174, 175, 208, 209, 243, 244, 278, 279,
-        348, 349, 417, 418, 487, 488, 557, 558, 696, 697, 835, 836, 975, 976, 1114, 1115,
-        1253, 1254, 1393, 1394,
+        69, 70, 87, 88, 104, 105, 121, 122, 139, 140, 174, 175, 208, 209, 243, 244, 278, 279, 348,
+        349, 417, 418, 487, 488, 557, 558, 696, 697, 835, 836, 975, 976, 1114, 1115, 1253, 1254,
+        1393, 1394,
     ],
     [
-        96, 96, 120, 120, 144, 144, 168, 168, 192, 192, 240, 240, 288, 288, 336, 336, 384,
-        384, 480, 480, 576, 576, 672, 672, 768, 768, 960, 960, 1152, 1152, 1344, 1344, 1536,
-        1536, 1728, 1728, 1920, 1920,
+        96, 96, 120, 120, 144, 144, 168, 168, 192, 192, 240, 240, 288, 288, 336, 336, 384, 384,
+        480, 480, 576, 576, 672, 672, 768, 768, 960, 960, 1152, 1152, 1344, 1344, 1536, 1536, 1728,
+        1728, 1920, 1920,
     ],
 ];
 
@@ -421,7 +425,9 @@ fn dolby_frames(es: &[u8]) -> Result<Vec<(usize, usize)>, DownloadError> {
     let mut pos = 0;
     while pos + 6 <= es.len() {
         if es[pos] != 0x0b || es[pos + 1] != 0x77 {
-            return Err(bad(format!("AC-3 syncframe expected at byte {pos} of the audio stream")));
+            return Err(bad(format!(
+                "AC-3 syncframe expected at byte {pos} of the audio stream"
+            )));
         }
         let bsid = es[pos + 5] >> 3;
         let length = if bsid > 10 {
@@ -460,7 +466,12 @@ fn transform_audio(
         Kind::Aac => {
             for (start, header, length) in adts_frames(es)? {
                 let mut chain = Chain::new(cipher, iv, direction);
-                walk(&mut out[start + header..start + length], 16, false, &mut chain);
+                walk(
+                    &mut out[start + header..start + length],
+                    16,
+                    false,
+                    &mut chain,
+                );
             }
         }
         Kind::Dolby => {
@@ -684,7 +695,14 @@ fn transform(
         let mut payload = vec![0u8];
         payload.extend_from_slice(section);
         let mut out = Vec::with_capacity(PACKET * 2);
-        packetize(first.pid, &mut cc, first.adaptation, &payload, true, &mut out);
+        packetize(
+            first.pid,
+            &mut cc,
+            first.adaptation,
+            &payload,
+            true,
+            &mut out,
+        );
         replaced.insert(indices[0], out);
         consumed.extend(indices.iter().skip(1).copied());
     }
@@ -824,7 +842,12 @@ mod tests {
         let cipher = Aes128::new(&key.into());
         let plain: Vec<u8> = (0..400u32).map(|i| i as u8).collect();
         let mut data = plain.clone();
-        walk(&mut data, 31, true, &mut Chain::new(&cipher, &iv, Direction::Encrypt));
+        walk(
+            &mut data,
+            31,
+            true,
+            &mut Chain::new(&cipher, &iv, Direction::Encrypt),
+        );
         // Bytes 31..47 and 191..207 are encrypted. 47..191 and 207..351 clear. At byte
         // 351 only 49 remain, so one more block, then the rest clear.
         assert_eq!(&data[..31], &plain[..31]);
@@ -834,22 +857,42 @@ mod tests {
         assert_eq!(&data[207..351], &plain[207..351]);
         assert_ne!(&data[351..367], &plain[351..367]);
         assert_eq!(&data[367..], &plain[367..]);
-        walk(&mut data, 31, true, &mut Chain::new(&cipher, &iv, Direction::Decrypt));
+        walk(
+            &mut data,
+            31,
+            true,
+            &mut Chain::new(&cipher, &iv, Direction::Decrypt),
+        );
         assert_eq!(data, plain);
 
         // A frame shorter than its leader is left alone.
         let mut short = vec![1u8; 10];
-        walk(&mut short, 16, false, &mut Chain::new(&cipher, &iv, Direction::Encrypt));
+        walk(
+            &mut short,
+            16,
+            false,
+            &mut Chain::new(&cipher, &iv, Direction::Encrypt),
+        );
         assert_eq!(short, vec![1u8; 10]);
 
         // Audio: whole blocks past 16 bytes, the trailing partial block clear.
         let plain: Vec<u8> = (0..50u32).map(|i| i as u8).collect();
         let mut data = plain.clone();
-        walk(&mut data, 16, false, &mut Chain::new(&cipher, &iv, Direction::Encrypt));
+        walk(
+            &mut data,
+            16,
+            false,
+            &mut Chain::new(&cipher, &iv, Direction::Encrypt),
+        );
         assert_eq!(&data[..16], &plain[..16]);
         assert_ne!(&data[16..48], &plain[16..48]);
         assert_eq!(&data[48..], &plain[48..]);
-        walk(&mut data, 16, false, &mut Chain::new(&cipher, &iv, Direction::Decrypt));
+        walk(
+            &mut data,
+            16,
+            false,
+            &mut Chain::new(&cipher, &iv, Direction::Decrypt),
+        );
         assert_eq!(data, plain);
     }
 
@@ -863,12 +906,33 @@ mod tests {
         use std::ffi::OsString;
         let dir = std::env::temp_dir().join(format!("discoclip-saes-{}", uuid::Uuid::now_v7()));
         tokio::fs::create_dir_all(&dir).await.unwrap();
-        let ffmpeg = crate::ffmpeg::Ffmpeg::provision(&dir.join("tools")).await.unwrap();
+        let ffmpeg = crate::ffmpeg::Ffmpeg::provision(&dir.join("tools"))
+            .await
+            .unwrap();
         let plain_path = dir.join("plain.ts");
         let args: Vec<OsString> = [
-            "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=64x64:rate=10:duration=2",
-            "-f", "lavfi", "-i", "sine=frequency=440:duration=2", "-c:v", "libx264", "-preset",
-            "ultrafast", "-pix_fmt", "yuv420p", "-g", "10", "-c:a", "aac", "-f", "mpegts",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=64x64:rate=10:duration=2",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=2",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-pix_fmt",
+            "yuv420p",
+            "-g",
+            "10",
+            "-c:a",
+            "aac",
+            "-f",
+            "mpegts",
         ]
         .iter()
         .map(OsString::from)

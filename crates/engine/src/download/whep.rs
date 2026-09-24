@@ -73,7 +73,11 @@ async fn local_ip_for(endpoint: &Url) -> IpAddr {
         .ok()
         .and_then(|mut addrs| addrs.next());
     if let Some(target) = target
-        && let Ok(probe) = std::net::UdpSocket::bind(if target.is_ipv4() { "0.0.0.0:0" } else { "[::]:0" })
+        && let Ok(probe) = std::net::UdpSocket::bind(if target.is_ipv4() {
+            "0.0.0.0:0"
+        } else {
+            "[::]:0"
+        })
         && probe.connect(target).is_ok()
         && let Ok(local) = probe.local_addr()
     {
@@ -121,7 +125,9 @@ struct Feed {
 
 /// The session description ffmpeg reads the loopback RTP session from.
 fn session_description(feeds: &[Feed]) -> String {
-    let mut sdp = String::from("v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=whep\r\nc=IN IP4 127.0.0.1\r\nt=0 0\r\n");
+    let mut sdp = String::from(
+        "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=whep\r\nc=IN IP4 127.0.0.1\r\nt=0 0\r\n",
+    );
     for feed in feeds {
         let spec = feed.params.spec();
         let pt = *feed.params.pt();
@@ -136,7 +142,10 @@ fn session_description(feeds: &[Feed]) -> String {
             _ => String::new(),
         };
         sdp.push_str(&format!("m={media} {} RTP/AVP {pt}\r\n", feed.port));
-        sdp.push_str(&format!("a=rtpmap:{pt} {name}/{}{channels}\r\n", spec.clock_rate.get()));
+        sdp.push_str(&format!(
+            "a=rtpmap:{pt} {name}/{}{channels}\r\n",
+            spec.clock_rate.get()
+        ));
         let fmtp = spec.format.to_string();
         if !fmtp.is_empty() {
             sdp.push_str(&format!("a=fmtp:{pt} {fmtp}\r\n"));
@@ -211,7 +220,11 @@ impl Downloader for WhepDownloader {
         }
         let local_ip = local_ip_for(endpoint).await;
         let socket = UdpSocket::bind(SocketAddr::new(
-            if local_ip.is_ipv4() { IpAddr::V4(Ipv4Addr::UNSPECIFIED) } else { "::".parse().unwrap() },
+            if local_ip.is_ipv4() {
+                IpAddr::V4(Ipv4Addr::UNSPECIFIED)
+            } else {
+                "::".parse().unwrap()
+            },
             0,
         ))
         .await?;
@@ -230,7 +243,8 @@ impl Downloader for WhepDownloader {
             .enable_pcma(true)
             .build(Instant::now());
         rtc.add_local_candidate(
-            Candidate::host(local_addr, "udp").map_err(|e| process(format!("local candidate: {e}")))?,
+            Candidate::host(local_addr, "udp")
+                .map_err(|e| process(format!("local candidate: {e}")))?,
         );
         let mut api = rtc.sdp_api();
         let video_mid = api.add_media(MediaKind::Video, Direction::RecvOnly, None, None, None);
@@ -310,7 +324,10 @@ impl Downloader for WhepDownloader {
         'session: loop {
             // Drain the engine.
             let timeout = loop {
-                match rtc.poll_output().map_err(|e| process(format!("WebRTC: {e}")))? {
+                match rtc
+                    .poll_output()
+                    .map_err(|e| process(format!("WebRTC: {e}")))?
+                {
                     Output::Timeout(t) => break t,
                     Output::Transmit(t) => {
                         let _ = socket.send_to(&t.contents, t.destination).await;
@@ -330,36 +347,56 @@ impl Downloader for WhepDownloader {
                                 MediaKind::Video
                             } else if mid == Some(audio_mid) {
                                 MediaKind::Audio
-                            } else if let Some(feed) = feeds.iter().find(|f| *f.params.pt() == *packet.header.payload_type) {
+                            } else if let Some(feed) = feeds
+                                .iter()
+                                .find(|f| *f.params.pt() == *packet.header.payload_type)
+                            {
                                 feed.kind
                             } else if audio_active && !video_active {
                                 MediaKind::Audio
-                            } else if let Some(params) = params_for(&rtc, *packet.header.payload_type) {
+                            } else if let Some(params) =
+                                params_for(&rtc, *packet.header.payload_type)
+                            {
                                 params.spec().codec.kind()
                             } else {
                                 continue;
                             };
                             last_media = Instant::now();
-                            let incoming = if kind == MediaKind::Video { &mut video } else { &mut audio };
-                            if recorder.is_none() && !feeds.iter().any(|f| f.kind == kind)
+                            let incoming = if kind == MediaKind::Video {
+                                &mut video
+                            } else {
+                                &mut audio
+                            };
+                            if recorder.is_none()
+                                && !feeds.iter().any(|f| f.kind == kind)
                                 && let Some(params) = params_for(&rtc, *packet.header.payload_type)
                                 && rtpmap_name(params.spec().codec).is_some()
                             {
                                 feeds.push(Feed {
                                     kind,
-                                    port: if kind == MediaKind::Video { video_port } else { audio_port },
+                                    port: if kind == MediaKind::Video {
+                                        video_port
+                                    } else {
+                                        audio_port
+                                    },
                                     params,
                                 });
                             }
                             let bytes = rtp_bytes(&packet);
-                            let report = packet.last_sender_info.as_ref().filter(|info| incoming.reported != Some(info.ntp_time)).map(sender_report);
+                            let report = packet
+                                .last_sender_info
+                                .as_ref()
+                                .filter(|info| incoming.reported != Some(info.ntp_time))
+                                .map(sender_report);
                             if let Some(info) = &packet.last_sender_info {
                                 incoming.reported = Some(info.ntp_time);
                             }
                             match feeds.iter().find(|f| f.kind == kind) {
                                 Some(feed) if recorder.is_some() => {
                                     if let Some(report) = report {
-                                        let _ = feeder.send_to(&report, ("127.0.0.1", feed.port + 1)).await;
+                                        let _ = feeder
+                                            .send_to(&report, ("127.0.0.1", feed.port + 1))
+                                            .await;
                                     }
                                     let _ = feeder.send_to(&bytes, ("127.0.0.1", feed.port)).await;
                                 }
@@ -409,8 +446,11 @@ impl Downloader for WhepDownloader {
                         context.max_bytes.to_string().into(),
                     ];
                     args.extend(
-                        ["-map", "0:v:0?", "-map", "0:a:0?", "-c", "copy", "-sn", "-dn", "-f", "matroska"]
-                            .map(OsString::from),
+                        [
+                            "-map", "0:v:0?", "-map", "0:a:0?", "-c", "copy", "-sn", "-dn", "-f",
+                            "matroska",
+                        ]
+                        .map(OsString::from),
                     );
                     args.push(dest.as_os_str().to_owned());
                     let (tx, rx) = oneshot::channel();
@@ -435,9 +475,17 @@ impl Downloader for WhepDownloader {
                     // ffmpeg binds its ports on start. The held packets follow shortly.
                     tokio::time::sleep(Duration::from_millis(300)).await;
                     for feed in &feeds {
-                        let incoming = if feed.kind == MediaKind::Video { &mut video } else { &mut audio };
+                        let incoming = if feed.kind == MediaKind::Video {
+                            &mut video
+                        } else {
+                            &mut audio
+                        };
                         for bytes in incoming.held.drain(..) {
-                            let port = if bytes.len() >= 2 && bytes[1] == 200 { feed.port + 1 } else { feed.port };
+                            let port = if bytes.len() >= 2 && bytes[1] == 200 {
+                                feed.port + 1
+                            } else {
+                                feed.port
+                            };
                             let _ = feeder.send_to(&bytes, ("127.0.0.1", port)).await;
                         }
                     }
@@ -475,7 +523,10 @@ impl Downloader for WhepDownloader {
                         quiet_after.as_secs()
                     )));
                 }
-                ended_by = Some(format!("the media stopped arriving for {} s", quiet_after.as_secs()));
+                ended_by = Some(format!(
+                    "the media stopped arriving for {} s",
+                    quiet_after.as_secs()
+                ));
                 break 'session;
             }
             if recorded.is_some() {
@@ -483,7 +534,9 @@ impl Downloader for WhepDownloader {
             }
 
             // Wait for the next thing: a packet, the engine's timeout, or ffmpeg finishing.
-            let wait = tokio::time::sleep_until(tokio::time::Instant::from_std(timeout.max(Instant::now())));
+            let wait = tokio::time::sleep_until(tokio::time::Instant::from_std(
+                timeout.max(Instant::now()),
+            ));
             tokio::pin!(wait);
             tokio::select! {
                 received = socket.recv_from(&mut buf) => {
@@ -540,9 +593,9 @@ impl Downloader for WhepDownloader {
                 .await;
         }
         let Some((output, ending)) = outcome else {
-            return Err(process(
-                ended_by.unwrap_or_else(|| "the session ended before any media arrived".into()),
-            ));
+            return Err(process(ended_by.unwrap_or_else(|| {
+                "the session ended before any media arrived".into()
+            })));
         };
         let captured = output.last_time.unwrap_or(Duration::ZERO).as_secs_f64();
         let limit = max_live.as_secs_f64();
@@ -612,12 +665,41 @@ mod tests {
         let audio = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let mut child = Command::new(ffmpeg.ffmpeg_path())
             .args(["-hide_banner", "-nostdin", "-loglevel", "error", "-re"])
-            .args(["-f", "lavfi", "-i", &format!("testsrc=size=64x64:rate=10:duration={seconds}")])
-            .args(["-f", "lavfi", "-i", &format!("sine=frequency=440:sample_rate=48000:duration={seconds}")])
-            .args(["-map", "0:v", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-g", "10", "-f", "rtp"])
-            .arg(format!("rtp://127.0.0.1:{}", video.local_addr().unwrap().port()))
+            .args([
+                "-f",
+                "lavfi",
+                "-i",
+                &format!("testsrc=size=64x64:rate=10:duration={seconds}"),
+            ])
+            .args([
+                "-f",
+                "lavfi",
+                "-i",
+                &format!("sine=frequency=440:sample_rate=48000:duration={seconds}"),
+            ])
+            .args([
+                "-map",
+                "0:v",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-pix_fmt",
+                "yuv420p",
+                "-g",
+                "10",
+                "-f",
+                "rtp",
+            ])
+            .arg(format!(
+                "rtp://127.0.0.1:{}",
+                video.local_addr().unwrap().port()
+            ))
             .args(["-map", "1:a", "-c:a", "libopus", "-b:a", "48k", "-f", "rtp"])
-            .arg(format!("rtp://127.0.0.1:{}", audio.local_addr().unwrap().port()))
+            .arg(format!(
+                "rtp://127.0.0.1:{}",
+                audio.local_addr().unwrap().port()
+            ))
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
@@ -664,11 +746,19 @@ mod tests {
         seen: Arc<Mutex<Seen>>,
     }
 
-    fn text_response(status: u16, content_type: &str, body: String, extra: &[(&str, &str)]) -> TransportResponse {
+    fn text_response(
+        status: u16,
+        content_type: &str,
+        body: String,
+        extra: &[(&str, &str)],
+    ) -> TransportResponse {
         let mut headers = HeaderMap::new();
         headers.insert("content-type", HeaderValue::from_str(content_type).unwrap());
         for (name, value) in extra {
-            headers.insert(HeaderName::from_bytes(name.as_bytes()).unwrap(), HeaderValue::from_str(value).unwrap());
+            headers.insert(
+                HeaderName::from_bytes(name.as_bytes()).unwrap(),
+                HeaderValue::from_str(value).unwrap(),
+            );
         }
         TransportResponse {
             status: StatusCode::from_u16(status).unwrap(),
@@ -683,7 +773,10 @@ mod tests {
         async fn send(&self, request: TransportRequest) -> Result<TransportResponse, HttpError> {
             match (request.method.as_str(), request.url.path()) {
                 ("POST", "/whep") => {
-                    assert_eq!(request.headers.get("content-type").unwrap(), "application/sdp");
+                    assert_eq!(
+                        request.headers.get("content-type").unwrap(),
+                        "application/sdp"
+                    );
                     let offer_text = String::from_utf8(request.body.unwrap().to_vec()).unwrap();
                     {
                         let mut seen = self.seen.lock().unwrap();
@@ -694,11 +787,19 @@ mod tests {
                     let offer = SdpOffer::from_sdp_string(&offer_text).unwrap();
                     let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
                     let local = socket.local_addr().unwrap();
-                    let mut rtc = Rtc::builder().set_rtp_mode(true).set_ice_lite(true).build(Instant::now());
+                    let mut rtc = Rtc::builder()
+                        .set_rtp_mode(true)
+                        .set_ice_lite(true)
+                        .build(Instant::now());
                     rtc.add_local_candidate(Candidate::host(local, "udp").unwrap());
                     let answer = rtc.sdp_api().accept_offer(offer).unwrap();
                     tokio::spawn(serve(rtc, socket, local, self.packets.clone()));
-                    Ok(text_response(201, "application/sdp", answer.to_sdp_string(), &[("location", "/whep/session/1")]))
+                    Ok(text_response(
+                        201,
+                        "application/sdp",
+                        answer.to_sdp_string(),
+                        &[("location", "/whep/session/1")],
+                    ))
                 }
                 ("DELETE", "/whep/session/1") => {
                     self.seen.lock().unwrap().deletes += 1;
@@ -720,7 +821,8 @@ mod tests {
         let mut connected = false;
         let mut next = 0usize;
         let mut started: Option<Instant> = None;
-        let mut seq: Vec<(MediaKind, u64)> = vec![(MediaKind::Video, 1000), (MediaKind::Audio, 5000)];
+        let mut seq: Vec<(MediaKind, u64)> =
+            vec![(MediaKind::Video, 1000), (MediaKind::Audio, 5000)];
         let mut buf = vec![0u8; 2000];
         loop {
             let timeout = loop {
@@ -734,7 +836,9 @@ mod tests {
                         connected = true;
                         started = Some(Instant::now());
                     }
-                    Output::Event(Event::IceConnectionStateChange(IceConnectionState::Disconnected)) => return,
+                    Output::Event(Event::IceConnectionStateChange(
+                        IceConnectionState::Disconnected,
+                    )) => return,
                     Output::Event(_) => {}
                 }
             };
@@ -812,27 +916,44 @@ mod tests {
             seen: seen.clone(),
         });
         let http = Http::with_transport(endpoint, Http::test_config());
-        let downloader = WhepDownloader::new(http, ffmpeg.clone()).quiet_after(Duration::from_secs(4));
-        let mut variant = Variant::new(Url::parse("https://whep.test/whep").unwrap(), VariantKind::Whep);
+        let downloader =
+            WhepDownloader::new(http, ffmpeg.clone()).quiet_after(Duration::from_secs(4));
+        let mut variant = Variant::new(
+            Url::parse("https://whep.test/whep").unwrap(),
+            VariantKind::Whep,
+        );
         variant.live = true;
         let mut context = DownloadContext::new(50_000_000);
         context.max_live = Duration::from_secs(3);
         let (progress, watched) = tokio::sync::watch::channel(Progress::default());
-        let downloaded = downloader.download(&variant, &dir.join("job"), &context, progress).await.unwrap();
+        let downloaded = downloader
+            .download(&variant, &dir.join("job"), &context, progress)
+            .await
+            .unwrap();
         let last = *watched.borrow();
         let info = ffmpeg.probe(&downloaded.file.path).await.unwrap();
         assert!(info.video.is_some(), "{info:?}");
         assert!(info.audio.is_some(), "{info:?}");
         let duration = info.duration.unwrap().as_secs_f64();
         assert!((2.0..=3.6).contains(&duration), "{info:?}");
-        assert!(downloaded.notes.iter().any(|n| n.contains("capture cut at the limit")), "{:?}", downloaded.notes);
+        assert!(
+            downloaded
+                .notes
+                .iter()
+                .any(|n| n.contains("capture cut at the limit")),
+            "{:?}",
+            downloaded.notes
+        );
         assert_eq!(last.total, Some(3));
-        let seen = seen.lock().unwrap();
-        assert_eq!(seen.posts, 1);
-        assert_eq!(seen.deletes, 1);
-        assert!(seen.offer_had_video && seen.offer_had_audio);
-        drop(seen);
-        let sdp = tokio::fs::read_to_string(dir.join("job").join("session.sdp")).await.unwrap();
+        {
+            let seen = seen.lock().unwrap();
+            assert_eq!(seen.posts, 1);
+            assert_eq!(seen.deletes, 1);
+            assert!(seen.offer_had_video && seen.offer_had_audio);
+        }
+        let sdp = tokio::fs::read_to_string(dir.join("job").join("session.sdp"))
+            .await
+            .unwrap();
         assert!(sdp.contains("H264/90000"), "{sdp}");
         assert!(sdp.contains("opus/48000"), "{sdp}");
         let _ = tokio::fs::remove_dir_all(&dir).await;
@@ -849,16 +970,48 @@ mod tests {
                 .unwrap()
         };
         let feeds = vec![
-            Feed { kind: MediaKind::Video, port: 5004, params: params(Codec::H264) },
-            Feed { kind: MediaKind::Audio, port: 5006, params: params(Codec::Opus) },
+            Feed {
+                kind: MediaKind::Video,
+                port: 5004,
+                params: params(Codec::H264),
+            },
+            Feed {
+                kind: MediaKind::Audio,
+                port: 5006,
+                params: params(Codec::Opus),
+            },
         ];
         let sdp = session_description(&feeds);
         assert!(sdp.starts_with("v=0\r\n"), "{sdp}");
-        assert!(sdp.contains(&format!("m=video 5004 RTP/AVP {}\r\n", *feeds[0].params.pt())), "{sdp}");
-        assert!(sdp.contains(&format!("a=rtpmap:{} H264/90000\r\n", *feeds[0].params.pt())), "{sdp}");
+        assert!(
+            sdp.contains(&format!(
+                "m=video 5004 RTP/AVP {}\r\n",
+                *feeds[0].params.pt()
+            )),
+            "{sdp}"
+        );
+        assert!(
+            sdp.contains(&format!(
+                "a=rtpmap:{} H264/90000\r\n",
+                *feeds[0].params.pt()
+            )),
+            "{sdp}"
+        );
         assert!(sdp.contains("packetization-mode=1"), "{sdp}");
-        assert!(sdp.contains(&format!("m=audio 5006 RTP/AVP {}\r\n", *feeds[1].params.pt())), "{sdp}");
-        assert!(sdp.contains(&format!("a=rtpmap:{} opus/48000/2\r\n", *feeds[1].params.pt())), "{sdp}");
+        assert!(
+            sdp.contains(&format!(
+                "m=audio 5006 RTP/AVP {}\r\n",
+                *feeds[1].params.pt()
+            )),
+            "{sdp}"
+        );
+        assert!(
+            sdp.contains(&format!(
+                "a=rtpmap:{} opus/48000/2\r\n",
+                *feeds[1].params.pt()
+            )),
+            "{sdp}"
+        );
         assert_eq!(rtpmap_name(Codec::Av1), None);
         let port = loopback_port_pair().unwrap();
         assert_eq!(port % 2, 0);

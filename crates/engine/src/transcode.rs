@@ -173,7 +173,9 @@ pub enum TranscodeError {
     AudioBudgetUnreachable { max_bytes: u64, duration_secs: u64 },
     #[error("cannot fit the picture under {max_bytes} bytes")]
     ImageBudgetUnreachable { max_bytes: u64 },
-    #[error("File size is {size} bytes. The destination allows {max_bytes} bytes. This file cannot be reduced.")]
+    #[error(
+        "File size is {size} bytes. The destination allows {max_bytes} bytes. This file cannot be reduced."
+    )]
     CannotShrink { size: u64, max_bytes: u64 },
     #[error("destination does not take {0} files")]
     NotAccepted(MediaKind),

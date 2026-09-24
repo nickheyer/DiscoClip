@@ -10,13 +10,15 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
-use dash_mpd::{AdaptationSet, MPD, Period, Representation, SegmentBase, SegmentList, SegmentTemplate};
+use dash_mpd::{
+    AdaptationSet, MPD, Period, Representation, SegmentBase, SegmentList, SegmentTemplate,
+};
 use futures::StreamExt;
 use url::Url;
 
 use super::segments::{
-    Budget, Consumer, InitSection, Meter, PartKey, Timing, TrackWriter, fetch_bytes,
-    fetch_text, mux_parts,
+    Budget, Consumer, InitSection, Meter, PartKey, Timing, TrackWriter, fetch_bytes, fetch_text,
+    mux_parts,
 };
 use super::{
     DownloadContext, DownloadError, Downloaded, Downloader, LocalSubtitle, mp4, subtitles,
@@ -36,6 +38,8 @@ pub struct DashDownloader {
     http: Http,
     ffmpeg: Ffmpeg,
 }
+
+type InitSegment = (Url, Option<(u64, u64)>);
 
 impl DashDownloader {
     pub fn new(http: Http, ffmpeg: Ffmpeg) -> Self {
@@ -66,7 +70,13 @@ fn joined(parent: &Url, bases: &[dash_mpd::BaseURL]) -> Result<Url, DownloadErro
 }
 
 /// A segment template with its `$Name$` and `$Name%0Nd$` identifiers filled in.
-fn fill_template(template: &str, id: &str, bandwidth: u64, number: Option<u64>, time: Option<u64>) -> String {
+fn fill_template(
+    template: &str,
+    id: &str,
+    bandwidth: u64,
+    number: Option<u64>,
+    time: Option<u64>,
+) -> String {
     let mut out = String::with_capacity(template.len() + 16);
     let mut rest = template;
     while let Some(start) = rest.find('$') {
@@ -87,7 +97,12 @@ fn fill_template(template: &str, id: &str, bandwidth: u64, number: Option<u64>, 
             .split_once('%')
             .map_or((token, None), |(n, f)| (n, Some(f)));
         let width = format
-            .and_then(|f| f.trim_start_matches('0').trim_end_matches('d').parse::<usize>().ok())
+            .and_then(|f| {
+                f.trim_start_matches('0')
+                    .trim_end_matches('d')
+                    .parse::<usize>()
+                    .ok()
+            })
             .unwrap_or(0);
         let value = match name {
             "RepresentationID" => id.to_string(),
@@ -272,7 +287,10 @@ impl<'a> Track<'a> {
     }
 
     fn mime(&self) -> Option<&str> {
-        self.rep.mimeType.as_deref().or(self.set.mimeType.as_deref())
+        self.rep
+            .mimeType
+            .as_deref()
+            .or(self.set.mimeType.as_deref())
     }
 
     fn language(&self) -> Option<&str> {
@@ -287,9 +305,15 @@ impl<'a> Track<'a> {
             || self.segment_base.is_some()
     }
 
-    fn init_of(&self, source: Option<&str>, range: Option<&str>) -> Result<Option<(Url, Option<(u64, u64)>)>, DownloadError> {
+    fn init_of(
+        &self,
+        source: Option<&str>,
+        range: Option<&str>,
+    ) -> Result<Option<InitSegment>, DownloadError> {
         let range = match range {
-            Some(text) => Some(parse_range(text).ok_or_else(|| manifest_error(format!("bad range {text}")))?),
+            Some(text) => {
+                Some(parse_range(text).ok_or_else(|| manifest_error(format!("bad range {text}")))?)
+            }
             None => None,
         };
         match source {
@@ -364,11 +388,18 @@ struct Session<'a> {
 impl Session<'_> {
     fn note(&self, message: String) {
         tracing::info!("{message}");
-        self.notes.lock().unwrap_or_else(|e| e.into_inner()).push(message);
+        self.notes
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(message);
     }
 
     /// The pieces of `track`, in order, that can be fetched now.
-    async fn pieces(&self, track: &Track<'_>, clock: Option<Clock>) -> Result<Vec<Piece>, DownloadError> {
+    async fn pieces(
+        &self,
+        track: &Track<'_>,
+        clock: Option<Clock>,
+    ) -> Result<Vec<Piece>, DownloadError> {
         let mut pieces = Vec::new();
         if let Some(template) = track.template.as_ref().filter(|t| t.media.is_some()) {
             let media = template.media.as_deref().unwrap();
@@ -376,11 +407,14 @@ impl Session<'_> {
             let pto = template.presentationTimeOffset.unwrap_or(0) as f64 / timescale;
             let start_number = template.startNumber.unwrap_or(1);
             let init = track.init_of(
+                template.initialization.as_deref().or(template
+                    .Initialization
+                    .as_ref()
+                    .and_then(|i| i.sourceURL.as_deref())),
                 template
-                    .initialization
-                    .as_deref()
-                    .or(template.Initialization.as_ref().and_then(|i| i.sourceURL.as_deref())),
-                template.Initialization.as_ref().and_then(|i| i.range.as_deref()),
+                    .Initialization
+                    .as_ref()
+                    .and_then(|i| i.range.as_deref()),
             )?;
             let times: Vec<(u64, u64, u64)> = if let Some(timeline) = &template.SegmentTimeline {
                 track
@@ -390,10 +424,9 @@ impl Session<'_> {
                     .map(|(index, (time, duration))| (start_number + index as u64, time, duration))
                     .collect()
             } else {
-                let duration = template
-                    .duration
-                    .filter(|d| *d > 0.0)
-                    .ok_or_else(|| manifest_error("segment template without a duration or timeline"))?;
+                let duration = template.duration.filter(|d| *d > 0.0).ok_or_else(|| {
+                    manifest_error("segment template without a duration or timeline")
+                })?;
                 let segment_secs = duration / timescale;
                 let (first, last) = if let Some(period_duration) = track.period_duration {
                     let count = (period_duration / segment_secs).ceil().max(1.0) as u64;
@@ -406,7 +439,10 @@ impl Session<'_> {
                         let latest = start_number + (elapsed / segment_secs).floor() as u64 - 1;
                         let earliest = clock
                             .time_shift
-                            .map(|shift| start_number + ((elapsed - shift) / segment_secs).floor().max(0.0) as u64)
+                            .map(|shift| {
+                                start_number
+                                    + ((elapsed - shift) / segment_secs).floor().max(0.0) as u64
+                            })
                             .unwrap_or(start_number);
                         (earliest, latest)
                     }
@@ -417,11 +453,23 @@ impl Session<'_> {
                 };
                 let last = template.endNumber.map_or(last, |end| last.min(end));
                 (first..=last)
-                    .map(|n| (n, ((n - start_number) as f64 * duration) as u64, duration as u64))
+                    .map(|n| {
+                        (
+                            n,
+                            ((n - start_number) as f64 * duration) as u64,
+                            duration as u64,
+                        )
+                    })
                     .collect()
             };
             for (number, time, duration) in times {
-                let filled = fill_template(media, &track.id(), track.bandwidth(), Some(number), Some(time));
+                let filled = fill_template(
+                    media,
+                    &track.id(),
+                    track.bandwidth(),
+                    Some(number),
+                    Some(time),
+                );
                 let url = track
                     .base
                     .join(&filled)
@@ -439,8 +487,12 @@ impl Session<'_> {
         } else if let Some(list) = track.list {
             let timescale = list.timescale.unwrap_or(1).max(1) as f64;
             let init = track.init_of(
-                list.Initialization.as_ref().and_then(|i| i.sourceURL.as_deref()),
-                list.Initialization.as_ref().and_then(|i| i.range.as_deref()),
+                list.Initialization
+                    .as_ref()
+                    .and_then(|i| i.sourceURL.as_deref()),
+                list.Initialization
+                    .as_ref()
+                    .and_then(|i| i.range.as_deref()),
             )?;
             let count = list.segment_urls.len();
             let durations: Vec<f64> = if let Some(timeline) = &list.SegmentTimeline {
@@ -465,7 +517,10 @@ impl Session<'_> {
                     None => track.base.clone(),
                 };
                 let range = match &item.mediaRange {
-                    Some(text) => Some(parse_range(text).ok_or_else(|| manifest_error(format!("bad range {text}")))?),
+                    Some(text) => Some(
+                        parse_range(text)
+                            .ok_or_else(|| manifest_error(format!("bad range {text}")))?,
+                    ),
                     None => None,
                 };
                 let duration = durations.get(index).copied().unwrap_or(0.0);
@@ -482,14 +537,19 @@ impl Session<'_> {
             }
         } else if let Some(segment_base) = track.segment_base {
             let index_range = match segment_base.indexRange.as_deref() {
-                Some(text) => Some(parse_range(text).ok_or_else(|| manifest_error(format!("bad index range {text}")))?),
+                Some(text) => Some(
+                    parse_range(text)
+                        .ok_or_else(|| manifest_error(format!("bad index range {text}")))?,
+                ),
                 None => None,
             };
             let init_range = segment_base
                 .Initialization
                 .as_ref()
                 .and_then(|i| i.range.as_deref())
-                .map(|text| parse_range(text).ok_or_else(|| manifest_error(format!("bad range {text}"))))
+                .map(|text| {
+                    parse_range(text).ok_or_else(|| manifest_error(format!("bad range {text}")))
+                })
                 .transpose()?
                 .or(index_range.map(|(start, _)| (0, start.saturating_sub(1))));
             let init = init_range.map(|range| (track.base.clone(), Some(range)));
@@ -504,7 +564,8 @@ impl Session<'_> {
                     init,
                 }),
                 Some(index_range) => {
-                    self.index_pieces(track, index_range, &init, &mut pieces).await?;
+                    self.index_pieces(track, index_range, &init, &mut pieces)
+                        .await?;
                 }
             }
         } else {
@@ -538,7 +599,14 @@ impl Session<'_> {
         init: &Option<(Url, Option<(u64, u64)>)>,
         pieces: &mut Vec<Piece>,
     ) -> Result<(), DownloadError> {
-        let bytes = fetch_bytes(self.http, &track.base, self.platform, self.headers, Some(index_range)).await?;
+        let bytes = fetch_bytes(
+            self.http,
+            &track.base,
+            self.platform,
+            self.headers,
+            Some(index_range),
+        )
+        .await?;
         let sidx = mp4::parse_sidx(&bytes)?;
         let timescale = sidx.timescale.max(1) as f64;
         let mut offset = index_range.0 + sidx.len as u64 + sidx.first_offset;
@@ -567,9 +635,17 @@ impl Session<'_> {
 
     /// The initialization section `init` names, fetched once. A section whose samples
     /// are protected is DRM.
-    async fn init_section(&self, init: &(Url, Option<(u64, u64)>)) -> Result<Arc<InitSection>, DownloadError> {
+    async fn init_section(
+        &self,
+        init: &(Url, Option<(u64, u64)>),
+    ) -> Result<Arc<InitSection>, DownloadError> {
         let id = init_id(init);
-        if let Some(section) = self.inits.lock().unwrap_or_else(|e| e.into_inner()).get(&id) {
+        if let Some(section) = self
+            .inits
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&id)
+        {
             return Ok(section.clone());
         }
         let bytes = fetch_bytes(self.http, &init.0, self.platform, self.headers, init.1)
@@ -602,12 +678,22 @@ impl Session<'_> {
         Ok(section)
     }
 
-    async fn fetch_piece(&self, piece: &Piece) -> Result<(Option<Arc<InitSection>>, Vec<u8>), DownloadError> {
+    async fn fetch_piece(
+        &self,
+        piece: &Piece,
+    ) -> Result<(Option<Arc<InitSection>>, Vec<u8>), DownloadError> {
         let init = match &piece.init {
             Some(init) => Some(self.init_section(init).await?),
             None => None,
         };
-        let bytes = fetch_bytes(self.http, &piece.url, self.platform, self.headers, piece.range).await?;
+        let bytes = fetch_bytes(
+            self.http,
+            &piece.url,
+            self.platform,
+            self.headers,
+            piece.range,
+        )
+        .await?;
         Ok((init, bytes.to_vec()))
     }
 
@@ -685,7 +771,8 @@ impl Cursor {
     }
 
     fn wants(&self, piece: &Piece) -> bool {
-        self.last.is_none_or(|(period, number)| (piece.period, piece.number) > (period, number))
+        self.last
+            .is_none_or(|(period, number)| (piece.period, piece.number) > (period, number))
     }
 }
 
@@ -810,7 +897,10 @@ struct Chosen<'a> {
     texts: Vec<(String, Track<'a>)>,
 }
 
-fn best_video<'a>(period: &'a Period, wanted: &Wanted) -> Option<(&'a AdaptationSet, &'a Representation)> {
+fn best_video<'a>(
+    period: &'a Period,
+    wanted: &Wanted,
+) -> Option<(&'a AdaptationSet, &'a Representation)> {
     let candidates: Vec<(&AdaptationSet, &Representation)> = period
         .adaptations
         .iter()
@@ -827,13 +917,20 @@ fn best_video<'a>(period: &'a Period, wanted: &Wanted) -> Option<(&'a Adaptation
         let fits = height <= wanted.max_height;
         (
             fits,
-            if fits { i64::from(height) } else { -i64::from(height) },
+            if fits {
+                i64::from(height)
+            } else {
+                -i64::from(height)
+            },
             r.bandwidth.unwrap_or(0),
         )
     })
 }
 
-fn best_audio<'a>(period: &'a Period, wanted: &Wanted) -> Option<(&'a AdaptationSet, &'a Representation)> {
+fn best_audio<'a>(
+    period: &'a Period,
+    wanted: &Wanted,
+) -> Option<(&'a AdaptationSet, &'a Representation)> {
     let candidates: Vec<(&AdaptationSet, &Representation)> = period
         .adaptations
         .iter()
@@ -876,13 +973,21 @@ fn choose<'a>(
     };
     let (primary, audio) = match video {
         Some((set, rep)) => {
-            let muxed = parse_codecs(rep.codecs.as_deref().or(set.codecs.as_deref())).1.is_some();
-            let audio = if muxed { None } else { best_audio(period, wanted) };
+            let muxed = parse_codecs(rep.codecs.as_deref().or(set.codecs.as_deref()))
+                .1
+                .is_some();
+            let audio = if muxed {
+                None
+            } else {
+                best_audio(period, wanted)
+            };
             ((set, rep), audio)
         }
         None => (
             best_audio(period, wanted).ok_or_else(|| {
-                manifest_error(format!("period {period_index} has no video or audio representation"))
+                manifest_error(format!(
+                    "period {period_index} has no video or audio representation"
+                ))
             })?,
             None,
         ),
@@ -892,9 +997,23 @@ fn choose<'a>(
             return Err(DownloadError::Drm(manifest.to_string(), system));
         }
     }
-    let primary = Track::new(manifest_base, mpd, period_index, bounds, primary.0, primary.1)?;
+    let primary = Track::new(
+        manifest_base,
+        mpd,
+        period_index,
+        bounds,
+        primary.0,
+        primary.1,
+    )?;
     let audio = match audio {
-        Some((set, rep)) => Some(Track::new(manifest_base, mpd, period_index, bounds, set, rep)?),
+        Some((set, rep)) => Some(Track::new(
+            manifest_base,
+            mpd,
+            period_index,
+            bounds,
+            set,
+            rep,
+        )?),
         None => None,
     };
     let mut texts = Vec::new();
@@ -910,7 +1029,10 @@ fn choose<'a>(
             .find(|track| {
                 track.segmented()
                     && text_kind(track).is_some()
-                    && track.language().unwrap_or("und").eq_ignore_ascii_case(language)
+                    && track
+                        .language()
+                        .unwrap_or("und")
+                        .eq_ignore_ascii_case(language)
             });
         if let Some(track) = found {
             texts.push((language.clone(), track));
@@ -925,11 +1047,20 @@ fn choose<'a>(
 
 /// The segmented text tracks a manifest offers, one per language, as the subtitle
 /// tracks the job can choose among.
-fn text_tracks(manifest_base: &Url, manifest: &Url, mpd: &MPD, headers: &[(String, String)]) -> Result<Vec<SubtitleTrack>, DownloadError> {
+fn text_tracks(
+    manifest_base: &Url,
+    manifest: &Url,
+    mpd: &MPD,
+    headers: &[(String, String)],
+) -> Result<Vec<SubtitleTrack>, DownloadError> {
     let bounds = period_bounds(mpd);
     let mut tracks: Vec<SubtitleTrack> = Vec::new();
     for (index, period) in mpd.periods.iter().enumerate() {
-        for set in period.adaptations.iter().filter(dash_mpd::is_subtitle_adaptation) {
+        for set in period
+            .adaptations
+            .iter()
+            .filter(dash_mpd::is_subtitle_adaptation)
+        {
             for rep in &set.representations {
                 let track = Track::new(manifest_base, mpd, index, bounds[index], set, rep)?;
                 let Some(kind) = text_kind(&track) else {
@@ -939,7 +1070,10 @@ fn text_tracks(manifest_base: &Url, manifest: &Url, mpd: &MPD, headers: &[(Strin
                     continue;
                 }
                 let language = track.language().unwrap_or("und").to_string();
-                if tracks.iter().any(|t| t.language.eq_ignore_ascii_case(&language)) {
+                if tracks
+                    .iter()
+                    .any(|t| t.language.eq_ignore_ascii_case(&language))
+                {
                     continue;
                 }
                 let mut url = manifest.clone();
@@ -1098,8 +1232,16 @@ impl Downloader for DashDownloader {
             let mut audio_pieces = Vec::new();
             let mut text_pieces: Vec<Vec<Piece>> = vec![Vec::new(); text_languages.len()];
             let mut text_kinds: Vec<Option<TextKind>> = vec![None; text_languages.len()];
-            for period_index in 0..mpd.periods.len() {
-                let chosen = choose(&base, manifest, &mpd, period_index, bounds[period_index], &wanted, &text_languages)?;
+            for (period_index, &period_bounds) in bounds.iter().enumerate() {
+                let chosen = choose(
+                    &base,
+                    manifest,
+                    &mpd,
+                    period_index,
+                    period_bounds,
+                    &wanted,
+                    &text_languages,
+                )?;
                 primary_pieces.extend(session.pieces(&chosen.primary, clock).await?);
                 if let Some(track) = &chosen.audio {
                     has_audio = true;
@@ -1175,13 +1317,16 @@ impl Downloader for DashDownloader {
                 &mut cursors.0,
                 Some(&mut meter),
             );
-            let audio_run = session.fetch_track("audio", audio_fresh, live, &mut audio, &mut cursors.1, None);
+            let audio_run =
+                session.fetch_track("audio", audio_fresh, live, &mut audio, &mut cursors.1, None);
             let text_runs = futures::future::join_all(
                 text_fresh
                     .into_iter()
                     .zip(texts.iter_mut())
                     .zip(cursors.2.iter_mut())
-                    .map(|((pieces, sink), cursor)| session.fetch_track("subtitles", pieces, live, sink, cursor, None)),
+                    .map(|((pieces, sink), cursor)| {
+                        session.fetch_track("subtitles", pieces, live, sink, cursor, None)
+                    }),
             );
             let (cut, audio_result, text_results) = tokio::join!(primary_run, audio_run, text_runs);
             let cut = cut?;
@@ -1290,7 +1435,10 @@ impl Downloader for DashDownloader {
         Ok(Downloaded {
             file,
             subtitles: local_subtitles,
-            notes: session.notes.into_inner().unwrap_or_else(|e| e.into_inner()),
+            notes: session
+                .notes
+                .into_inner()
+                .unwrap_or_else(|e| e.into_inner()),
         })
     }
 }
@@ -1302,11 +1450,20 @@ mod tests {
     #[test]
     fn templates_fill_their_identifiers() {
         assert_eq!(
-            fill_template("$RepresentationID$/$Number%05d$_$Time$_$Bandwidth$$$.m4s", "v1", 500, Some(7), Some(9000)),
+            fill_template(
+                "$RepresentationID$/$Number%05d$_$Time$_$Bandwidth$$$.m4s",
+                "v1",
+                500,
+                Some(7),
+                Some(9000)
+            ),
             "v1/00007_9000_500$.m4s"
         );
         assert_eq!(fill_template("plain.m4s", "v1", 0, None, None), "plain.m4s");
-        assert_eq!(fill_template("odd$Number", "v1", 0, Some(1), None), "odd$Number");
+        assert_eq!(
+            fill_template("odd$Number", "v1", 0, Some(1), None),
+            "odd$Number"
+        );
         assert_eq!(fill_template("$Unknown$", "v1", 0, None, None), "$Unknown$");
     }
 
@@ -1314,7 +1471,10 @@ mod tests {
     fn ranges_and_ids_are_read() {
         assert_eq!(parse_range("805-8668"), Some((805, 8668)));
         assert_eq!(parse_range("5-4"), None);
-        let mut variant = Variant::new(Url::parse("https://cdn.test/m.mpd").unwrap(), VariantKind::Dash);
+        let mut variant = Variant::new(
+            Url::parse("https://cdn.test/m.mpd").unwrap(),
+            VariantKind::Dash,
+        );
         variant.format_id = Some("p2-v1080".into());
         assert_eq!(wanted_id(&variant).as_deref(), Some("v1080"));
         variant.format_id = Some("p-x".into());
@@ -1368,7 +1528,11 @@ mod tests {
     impl Packaged {
         fn serve(&self, site: &Site, prefix: &str) {
             for (name, bytes) in &self.files {
-                site.put_bytes(&format!("{BASE}{prefix}{name}"), "application/octet-stream", bytes);
+                site.put_bytes(
+                    &format!("{BASE}{prefix}{name}"),
+                    "application/octet-stream",
+                    bytes,
+                );
             }
         }
     }
@@ -1377,10 +1541,30 @@ mod tests {
     async fn package(ffmpeg: &Ffmpeg, dir: &Path, seconds: u32, extra: &[&str]) -> Packaged {
         tokio::fs::create_dir_all(dir).await.unwrap();
         let mut args: Vec<String> = [
-            "-loglevel", "error", "-f", "lavfi", "-i", &format!("testsrc=size=64x64:rate=10:duration={seconds}"),
-            "-f", "lavfi", "-i", &format!("sine=frequency=440:duration={seconds}"),
-            "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-g", "10", "-c:a", "aac",
-            "-f", "dash", "-seg_duration", "1",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            &format!("testsrc=size=64x64:rate=10:duration={seconds}"),
+            "-f",
+            "lavfi",
+            "-i",
+            &format!("sine=frequency=440:duration={seconds}"),
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-pix_fmt",
+            "yuv420p",
+            "-g",
+            "10",
+            "-c:a",
+            "aac",
+            "-f",
+            "dash",
+            "-seg_duration",
+            "1",
         ]
         .map(String::from)
         .to_vec();
@@ -1399,10 +1583,20 @@ mod tests {
         Packaged { mpd, files }
     }
 
-    async fn download_dash(site: &Arc<Site>, ffmpeg: &Ffmpeg, name: &str, dir: &Path, context: &DownloadContext, format_id: Option<&str>) -> (Result<Downloaded, DownloadError>, Progress) {
+    async fn download_dash(
+        site: &Arc<Site>,
+        ffmpeg: &Ffmpeg,
+        name: &str,
+        dir: &Path,
+        context: &DownloadContext,
+        format_id: Option<&str>,
+    ) -> (Result<Downloaded, DownloadError>, Progress) {
         let http = Http::with_transport(site.clone(), Http::test_config());
         let downloader = DashDownloader::new(http, ffmpeg.clone());
-        let mut variant = Variant::new(Url::parse(&format!("{BASE}{name}.mpd")).unwrap(), VariantKind::Dash);
+        let mut variant = Variant::new(
+            Url::parse(&format!("{BASE}{name}.mpd")).unwrap(),
+            VariantKind::Dash,
+        );
         variant.format_id = format_id.map(str::to_string);
         let (progress, watched) = tokio::sync::watch::channel(Progress::default());
         let result = downloader.download(&variant, dir, context, progress).await;
@@ -1434,14 +1628,26 @@ mod tests {
             let site = Site::new();
             packaged.serve(&site, "");
             site.put_text(&format!("{BASE}{name}.mpd"), MPD_TYPE, &packaged.mpd);
-            let (result, progress) = download_dash(&site, &ffmpeg, name, &dir.join(format!("job-{name}")), &DownloadContext::new(50_000_000), Some("0")).await;
+            let (result, progress) = download_dash(
+                &site,
+                &ffmpeg,
+                name,
+                &dir.join(format!("job-{name}")),
+                &DownloadContext::new(50_000_000),
+                Some("0"),
+            )
+            .await;
             let downloaded = result.unwrap_or_else(|e| panic!("{name}: {e}"));
             let info = probed(&ffmpeg, &downloaded).await;
             assert!(info.video.is_some(), "{name}: {info:?}");
             assert!(info.audio.is_some(), "{name}: {info:?}");
             let duration = info.duration.unwrap().as_secs_f64();
             assert!(near(duration, 3.0), "{name}: {duration}");
-            assert!(downloaded.notes.is_empty(), "{name}: {:?}", downloaded.notes);
+            assert!(
+                downloaded.notes.is_empty(),
+                "{name}: {:?}",
+                downloaded.notes
+            );
             assert_eq!(progress.done, 3, "{name}");
             assert_eq!(progress.total, Some(3), "{name}");
             assert!(!dir.join(format!("job-{name}")).join("video.0.mp4").exists());
@@ -1450,14 +1656,54 @@ mod tests {
     }
 
     /// One file with a global segment index, as `SegmentBase` addresses it.
-    async fn indexed_file(ffmpeg: &Ffmpeg, path: &Path, video: bool) -> (Vec<u8>, (u64, u64), (u64, u64)) {
+    async fn indexed_file(
+        ffmpeg: &Ffmpeg,
+        path: &Path,
+        video: bool,
+    ) -> (Vec<u8>, (u64, u64), (u64, u64)) {
         let mut args: Vec<String> = vec!["-loglevel".into(), "error".into()];
         if video {
-            args.extend(["-f", "lavfi", "-i", "testsrc=size=64x64:rate=10:duration=3", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-g", "10"].map(String::from));
+            args.extend(
+                [
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "testsrc=size=64x64:rate=10:duration=3",
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "ultrafast",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-g",
+                    "10",
+                ]
+                .map(String::from),
+            );
         } else {
-            args.extend(["-f", "lavfi", "-i", "sine=frequency=440:duration=3", "-c:a", "aac"].map(String::from));
+            args.extend(
+                [
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "sine=frequency=440:duration=3",
+                    "-c:a",
+                    "aac",
+                ]
+                .map(String::from),
+            );
         }
-        args.extend(["-movflags", "frag_keyframe+empty_moov+default_base_moof+global_sidx", "-frag_duration", "1000000", "-f", "mp4"].map(String::from));
+        args.extend(
+            [
+                "-movflags",
+                "frag_keyframe+empty_moov+default_base_moof+global_sidx",
+                "-frag_duration",
+                "1000000",
+                "-f",
+                "mp4",
+            ]
+            .map(String::from),
+        );
         args.push(path.to_str().unwrap().to_string());
         run_ffmpeg(ffmpeg, &args).await;
         let bytes = tokio::fs::read(path).await.unwrap();
@@ -1466,7 +1712,11 @@ mod tests {
             .into_iter()
             .find(|(kind, _, _)| kind == b"sidx")
             .unwrap();
-        (bytes, (0, sidx.1 as u64 - 1), (sidx.1 as u64, sidx.2 as u64 - 1))
+        (
+            bytes,
+            (0, sidx.1 as u64 - 1),
+            (sidx.1 as u64, sidx.2 as u64 - 1),
+        )
     }
 
     #[tokio::test]
@@ -1474,8 +1724,10 @@ mod tests {
         let dir = temp_dir("sidx");
         tokio::fs::create_dir_all(&dir).await.unwrap();
         let ffmpeg = Ffmpeg::provision(&dir.join("tools")).await.unwrap();
-        let (video, video_init, video_index) = indexed_file(&ffmpeg, &dir.join("v.mp4"), true).await;
-        let (audio, audio_init, audio_index) = indexed_file(&ffmpeg, &dir.join("a.mp4"), false).await;
+        let (video, video_init, video_index) =
+            indexed_file(&ffmpeg, &dir.join("v.mp4"), true).await;
+        let (audio, audio_init, audio_index) =
+            indexed_file(&ffmpeg, &dir.join("a.mp4"), false).await;
         let mpd = format!(
             r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT3S" profiles="urn:mpeg:dash:profile:isoff-on-demand:2011">
   <Period>
@@ -1493,14 +1745,28 @@ mod tests {
     </AdaptationSet>
   </Period>
 </MPD>"#,
-            video_index.0, video_index.1, video_init.0, video_init.1,
-            audio_index.0, audio_index.1, audio_init.0, audio_init.1
+            video_index.0,
+            video_index.1,
+            video_init.0,
+            video_init.1,
+            audio_index.0,
+            audio_index.1,
+            audio_init.0,
+            audio_init.1
         );
         let site = Site::new();
         site.put_bytes(&format!("{BASE}v.mp4"), "video/mp4", &video);
         site.put_bytes(&format!("{BASE}a.mp4"), "audio/mp4", &audio);
         site.put_text(&format!("{BASE}sidx.mpd"), MPD_TYPE, &mpd);
-        let (result, _) = download_dash(&site, &ffmpeg, "sidx", &dir.join("job"), &DownloadContext::new(50_000_000), Some("v")).await;
+        let (result, _) = download_dash(
+            &site,
+            &ffmpeg,
+            "sidx",
+            &dir.join("job"),
+            &DownloadContext::new(50_000_000),
+            Some("v"),
+        )
+        .await;
         let downloaded = result.unwrap();
         let info = probed(&ffmpeg, &downloaded).await;
         assert!(info.video.is_some() && info.audio.is_some(), "{info:?}");
@@ -1508,8 +1774,14 @@ mod tests {
         // The index, the initialization section and each subsegment were ranged requests.
         let ranges = site.ranges_seen(&format!("{BASE}v.mp4"));
         assert!(ranges.len() >= 4, "{ranges:?}");
-        assert_eq!(ranges[0], format!("bytes={}-{}", video_index.0, video_index.1));
-        assert!(ranges.contains(&format!("bytes={}-{}", video_init.0, video_init.1)), "{ranges:?}");
+        assert_eq!(
+            ranges[0],
+            format!("bytes={}-{}", video_index.0, video_index.1)
+        );
+        assert!(
+            ranges.contains(&format!("bytes={}-{}", video_init.0, video_init.1)),
+            "{ranges:?}"
+        );
         let _ = tokio::fs::remove_dir_all(&dir).await;
     }
 
@@ -1545,18 +1817,45 @@ mod tests {
         let mpd = manifest(
             "type=\"static\" mediaPresentationDuration=\"PT4S\"",
             &[
-                period_of(&first.mpd, "id=\"a\" start=\"PT0S\" duration=\"PT2S\"", "a/"),
-                period_of(&second.mpd, "id=\"b\" start=\"PT2S\" duration=\"PT2S\"", "b/"),
+                period_of(
+                    &first.mpd,
+                    "id=\"a\" start=\"PT0S\" duration=\"PT2S\"",
+                    "a/",
+                ),
+                period_of(
+                    &second.mpd,
+                    "id=\"b\" start=\"PT2S\" duration=\"PT2S\"",
+                    "b/",
+                ),
             ],
         );
         site.put_text(&format!("{BASE}periods.mpd"), MPD_TYPE, &mpd);
-        let (result, progress) = download_dash(&site, &ffmpeg, "periods", &dir.join("job"), &DownloadContext::new(50_000_000), Some("p1-0")).await;
+        let (result, progress) = download_dash(
+            &site,
+            &ffmpeg,
+            "periods",
+            &dir.join("job"),
+            &DownloadContext::new(50_000_000),
+            Some("p1-0"),
+        )
+        .await;
         let downloaded = result.unwrap();
         let info = probed(&ffmpeg, &downloaded).await;
         assert!(info.audio.is_some(), "{info:?}");
         assert!(near(info.duration.unwrap().as_secs_f64(), 4.0), "{info:?}");
-        assert!(downloaded.notes.iter().any(|n| n.contains("2 periods")), "{:?}", downloaded.notes);
-        assert!(downloaded.notes.iter().any(|n| n.contains("joined from 2 parts")), "{:?}", downloaded.notes);
+        assert!(
+            downloaded.notes.iter().any(|n| n.contains("2 periods")),
+            "{:?}",
+            downloaded.notes
+        );
+        assert!(
+            downloaded
+                .notes
+                .iter()
+                .any(|n| n.contains("joined from 2 parts")),
+            "{:?}",
+            downloaded.notes
+        );
         assert_eq!(progress.total, Some(4));
         assert_eq!(progress.done, 4);
         let _ = tokio::fs::remove_dir_all(&dir).await;
@@ -1572,7 +1871,8 @@ mod tests {
             .replace("<S t=\"0\" d=\"10240\" r=\"4\" />", &video_line);
         // The audio timeline lists one entry per segment. Keep the first `count`.
         let start = mpd.find("timescale=\"44100\"").unwrap();
-        let tl_start = mpd[start..].find("<SegmentTimeline>").unwrap() + start + "<SegmentTimeline>".len();
+        let tl_start =
+            mpd[start..].find("<SegmentTimeline>").unwrap() + start + "<SegmentTimeline>".len();
         let tl_end = mpd[tl_start..].find("</SegmentTimeline>").unwrap() + tl_start;
         let entries: Vec<&str> = mpd[tl_start..tl_end]
             .lines()
@@ -1607,15 +1907,34 @@ mod tests {
         );
         let mut context = DownloadContext::new(50_000_000);
         context.max_live = Duration::from_secs(60);
-        let (result, progress) = download_dash(&site, &ffmpeg, "live", &dir.join("job"), &context, Some("0")).await;
+        let (result, progress) = download_dash(
+            &site,
+            &ffmpeg,
+            "live",
+            &dir.join("job"),
+            &context,
+            Some("0"),
+        )
+        .await;
         let downloaded = result.unwrap();
         let info = probed(&ffmpeg, &downloaded).await;
         assert!(info.audio.is_some(), "{info:?}");
         assert!(near(info.duration.unwrap().as_secs_f64(), 5.0), "{info:?}");
-        assert!(downloaded.notes.iter().any(|n| n.contains("the live stream ended")), "{:?}", downloaded.notes);
+        assert!(
+            downloaded
+                .notes
+                .iter()
+                .any(|n| n.to_lowercase().contains("stream ended")),
+            "{:?}",
+            downloaded.notes
+        );
         assert_eq!(site.hits(&format!("{BASE}live.mpd")), 3);
         for n in 1..=5 {
-            assert_eq!(site.hits(&format!("{BASE}chunk-stream0-{n:05}.m4s")), 1, "segment {n}");
+            assert_eq!(
+                site.hits(&format!("{BASE}chunk-stream0-{n:05}.m4s")),
+                1,
+                "segment {n}"
+            );
         }
         assert_eq!(progress.total, Some(60));
         assert_eq!(progress.done, 5);
@@ -1632,11 +1951,19 @@ mod tests {
             ],
         );
         context.max_live = Duration::from_millis(2_500);
-        let (result, _) = download_dash(&site, &ffmpeg, "cut", &dir.join("cut"), &context, Some("0")).await;
+        let (result, _) =
+            download_dash(&site, &ffmpeg, "cut", &dir.join("cut"), &context, Some("0")).await;
         let downloaded = result.unwrap();
         let info = probed(&ffmpeg, &downloaded).await;
         assert!(near(info.duration.unwrap().as_secs_f64(), 3.0), "{info:?}");
-        assert!(downloaded.notes.iter().any(|n| n.contains("capture cut at the limit")), "{:?}", downloaded.notes);
+        assert!(
+            downloaded
+                .notes
+                .iter()
+                .any(|n| n.contains("capture cut at the limit")),
+            "{:?}",
+            downloaded.notes
+        );
         assert_eq!(site.hits(&format!("{BASE}chunk-stream0-00005.m4s")), 0);
 
         // A manifest that stops answering ends the capture with what was taken.
@@ -1650,11 +1977,26 @@ mod tests {
             ],
         );
         context.max_live = Duration::from_secs(60);
-        let (result, _) = download_dash(&site, &ffmpeg, "gone", &dir.join("gone"), &context, Some("0")).await;
+        let (result, _) = download_dash(
+            &site,
+            &ffmpeg,
+            "gone",
+            &dir.join("gone"),
+            &context,
+            Some("0"),
+        )
+        .await;
         let downloaded = result.unwrap();
         let info = probed(&ffmpeg, &downloaded).await;
         assert!(near(info.duration.unwrap().as_secs_f64(), 2.0), "{info:?}");
-        assert!(downloaded.notes.iter().any(|n| n.contains("could not be reloaded 3 times")), "{:?}", downloaded.notes);
+        assert!(
+            downloaded
+                .notes
+                .iter()
+                .any(|n| n.contains("reload failed 3 times")),
+            "{:?}",
+            downloaded.notes
+        );
         let _ = tokio::fs::remove_dir_all(&dir).await;
     }
 
@@ -1675,32 +2017,53 @@ mod tests {
                 }
                 _ => name.clone(),
             };
-            site.put_bytes(&format!("{BASE}{served}"), "application/octet-stream", bytes);
+            site.put_bytes(
+                &format!("{BASE}{served}"),
+                "application/octet-stream",
+                bytes,
+            );
         }
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
         let started = now - 100;
-        let start_time = format!(
-            "{}",
-            chrono_free_rfc3339(started)
-        );
+        let start_time = chrono_free_rfc3339(started);
         let dynamic = packaged
             .mpd
             .replace("type=\"static\"", &format!("type=\"dynamic\" availabilityStartTime=\"{start_time}\" minimumUpdatePeriod=\"PT1S\" timeShiftBufferDepth=\"PT3S\""))
             .replace("mediaPresentationDuration=\"PT3.0S\"", "");
         // The stream then ends: the manifest turns static, numbered as before.
-        let ended = packaged.mpd.replace("startNumber=\"1\"", "startNumber=\"98\"");
+        let ended = packaged
+            .mpd
+            .replace("startNumber=\"1\"", "startNumber=\"98\"");
         site.put_series(
             &format!("{BASE}clock.mpd"),
             vec![Reply::new(MPD_TYPE, dynamic), Reply::new(MPD_TYPE, ended)],
         );
         let mut context = DownloadContext::new(50_000_000);
         context.max_live = Duration::from_secs(60);
-        let (result, _) = download_dash(&site, &ffmpeg, "clock", &dir.join("job"), &context, Some("0")).await;
+        let (result, _) = download_dash(
+            &site,
+            &ffmpeg,
+            "clock",
+            &dir.join("job"),
+            &context,
+            Some("0"),
+        )
+        .await;
         let downloaded = result.unwrap();
         let info = probed(&ffmpeg, &downloaded).await;
         assert!(info.audio.is_some(), "{info:?}");
         assert!(near(info.duration.unwrap().as_secs_f64(), 3.0), "{info:?}");
-        assert!(downloaded.notes.iter().any(|n| n.contains("the live stream ended")), "{:?}", downloaded.notes);
+        assert!(
+            downloaded
+                .notes
+                .iter()
+                .any(|n| n.to_lowercase().contains("stream ended")),
+            "{:?}",
+            downloaded.notes
+        );
         let asked: Vec<String> = site
             .seen()
             .into_iter()
@@ -1750,8 +2113,18 @@ mod tests {
             "<ContentProtection schemeIdUri=\"urn:mpeg:dash:mp4protection:2011\" value=\"cenc\"/><ContentProtection schemeIdUri=\"urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed\"/><Representation id=\"0\"",
         );
         site.put_text(&format!("{BASE}declared.mpd"), MPD_TYPE, &declared);
-        let (result, _) = download_dash(&site, &ffmpeg, "declared", &dir.join("declared"), &DownloadContext::new(50_000_000), Some("0")).await;
-        assert!(matches!(result.unwrap_err(), DownloadError::Drm(_, system) if system == "widevine"));
+        let (result, _) = download_dash(
+            &site,
+            &ffmpeg,
+            "declared",
+            &dir.join("declared"),
+            &DownloadContext::new(50_000_000),
+            Some("0"),
+        )
+        .await;
+        assert!(
+            matches!(result.unwrap_err(), DownloadError::Drm(_, system) if system == "widevine")
+        );
         assert_eq!(site.hits(&format!("{BASE}init-stream0.m4s")), 0);
 
         // Nothing declared, but the initialization section says the samples are protected.
@@ -1761,13 +2134,32 @@ mod tests {
             .find(|(name, _)| name == "init-stream0.m4s")
             .map(|(_, bytes)| bytes.clone())
             .unwrap();
-        let path = [(b"moov", 0usize), (b"trak", 0), (b"mdia", 0), (b"minf", 0), (b"stbl", 0), (b"stsd", 0), (b"avc1", 0)];
-        let mut locked = append_within(&init, &path, &sinf(b"avc1", b"cbcs", &tenc(1, 9, 16, None)));
+        let path = [
+            (b"moov", 0usize),
+            (b"trak", 0),
+            (b"mdia", 0),
+            (b"minf", 0),
+            (b"stbl", 0),
+            (b"stsd", 0),
+            (b"avc1", 0),
+        ];
+        let mut locked =
+            append_within(&init, &path, &sinf(b"avc1", b"cbcs", &tenc(1, 9, 16, None)));
         rename(&mut locked, &path, b"encv");
         site.put_bytes(&format!("{BASE}init-stream0.m4s"), "video/mp4", &locked);
         site.put_text(&format!("{BASE}silent.mpd"), MPD_TYPE, &packaged.mpd);
-        let (result, _) = download_dash(&site, &ffmpeg, "silent", &dir.join("silent"), &DownloadContext::new(50_000_000), Some("0")).await;
-        assert!(matches!(result.unwrap_err(), DownloadError::Drm(_, system) if system == "cenc (cbcs)"));
+        let (result, _) = download_dash(
+            &site,
+            &ffmpeg,
+            "silent",
+            &dir.join("silent"),
+            &DownloadContext::new(50_000_000),
+            Some("0"),
+        )
+        .await;
+        assert!(
+            matches!(result.unwrap_err(), DownloadError::Drm(_, system) if system == "cenc (cbcs)")
+        );
         let _ = tokio::fs::remove_dir_all(&dir).await;
     }
 
@@ -1849,11 +2241,31 @@ mod tests {
         let packaged = package(&ffmpeg, &dir.join("pkg"), 3, &[]).await;
         let site = Site::new();
         packaged.serve(&site, "");
-        site.put_bytes(&format!("{BASE}wvtt-init.mp4"), "application/mp4", &wvtt_init());
-        site.put_bytes(&format!("{BASE}wvtt-1.m4s"), "application/mp4", &wvtt_fragment(0, &[(1000, "One"), (500, ""), (1000, "Two")]));
-        site.put_bytes(&format!("{BASE}wvtt-2.m4s"), "application/mp4", &wvtt_fragment(2500, &[(500, "Three")]));
-        site.put_text(&format!("{BASE}de-1.vtt"), "text/vtt", "WEBVTT\n\n00:00:00.250 --> 00:00:01.000\nEins\n");
-        site.put_text(&format!("{BASE}de-2.vtt"), "text/vtt", "WEBVTT\n\n00:00:02.000 --> 00:00:02.750\nZwei\n");
+        site.put_bytes(
+            &format!("{BASE}wvtt-init.mp4"),
+            "application/mp4",
+            &wvtt_init(),
+        );
+        site.put_bytes(
+            &format!("{BASE}wvtt-1.m4s"),
+            "application/mp4",
+            &wvtt_fragment(0, &[(1000, "One"), (500, ""), (1000, "Two")]),
+        );
+        site.put_bytes(
+            &format!("{BASE}wvtt-2.m4s"),
+            "application/mp4",
+            &wvtt_fragment(2500, &[(500, "Three")]),
+        );
+        site.put_text(
+            &format!("{BASE}de-1.vtt"),
+            "text/vtt",
+            "WEBVTT\n\n00:00:00.250 --> 00:00:01.000\nEins\n",
+        );
+        site.put_text(
+            &format!("{BASE}de-2.vtt"),
+            "text/vtt",
+            "WEBVTT\n\n00:00:02.000 --> 00:00:02.750\nZwei\n",
+        );
         site.put_text(&format!("{BASE}fr-1.ttml"), "application/ttml+xml", "<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div><p begin=\"0.5s\" end=\"1s\">Un</p></div></body></tt>");
         site.put_text(&format!("{BASE}fr-2.ttml"), "application/ttml+xml", "<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div><p begin=\"2s\" end=\"3s\">Deux</p></div></body></tt>");
         let text_sets = r#"
@@ -1885,9 +2297,24 @@ mod tests {
             tracks: Vec::new(),
             language: None,
         });
-        let (result, _) = download_dash(&site, &ffmpeg, "text", &dir.join("job"), &context, Some("0")).await;
+        let (result, _) = download_dash(
+            &site,
+            &ffmpeg,
+            "text",
+            &dir.join("job"),
+            &context,
+            Some("0"),
+        )
+        .await;
         let downloaded = result.unwrap();
-        assert!(near(probed(&ffmpeg, &downloaded).await.duration.unwrap().as_secs_f64(), 3.0));
+        assert!(near(
+            probed(&ffmpeg, &downloaded)
+                .await
+                .duration
+                .unwrap()
+                .as_secs_f64(),
+            3.0
+        ));
         assert_eq!(downloaded.subtitles.len(), 3, "{:?}", downloaded.subtitles);
         let by_language = |language: &str| {
             downloaded
@@ -1899,14 +2326,22 @@ mod tests {
         let en = by_language("en");
         assert_eq!(en.format, SubtitleFormat::Vtt);
         assert_eq!(en.name.as_deref(), Some("English"));
-        assert_eq!(en.url.as_ref().unwrap().as_str(), format!("{BASE}text.mpd#text-en"));
+        assert_eq!(
+            en.url.as_ref().unwrap().as_str(),
+            format!("{BASE}text.mpd#text-en")
+        );
         let text = tokio::fs::read_to_string(&en.path).await.unwrap();
         assert_eq!(
             text,
             "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nOne\n\n00:00:01.500 --> 00:00:02.500\nTwo\n\n00:00:02.500 --> 00:00:03.000\nThree\n\n"
         );
-        let de = tokio::fs::read_to_string(&by_language("de").path).await.unwrap();
-        assert_eq!(de, "WEBVTT\n\n00:00:00.250 --> 00:00:01.000\nEins\n\n00:00:02.000 --> 00:00:02.750\nZwei\n\n");
+        let de = tokio::fs::read_to_string(&by_language("de").path)
+            .await
+            .unwrap();
+        assert_eq!(
+            de,
+            "WEBVTT\n\n00:00:00.250 --> 00:00:01.000\nEins\n\n00:00:02.000 --> 00:00:02.750\nZwei\n\n"
+        );
         let fr = by_language("fr");
         assert_eq!(fr.format, SubtitleFormat::Ttml);
         let text = tokio::fs::read_to_string(&fr.path).await.unwrap();
@@ -1920,7 +2355,8 @@ mod tests {
             tracks: Vec::new(),
             language: Some("de".into()),
         });
-        let (result, _) = download_dash(&site, &ffmpeg, "text", &dir.join("de"), &context, Some("0")).await;
+        let (result, _) =
+            download_dash(&site, &ffmpeg, "text", &dir.join("de"), &context, Some("0")).await;
         let downloaded = result.unwrap();
         assert_eq!(downloaded.subtitles.len(), 1);
         assert_eq!(downloaded.subtitles[0].language, "de");

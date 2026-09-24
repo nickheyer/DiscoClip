@@ -407,9 +407,7 @@ fn audio_codec(name: &str) -> Option<AudioCodec> {
     }
 }
 
-
 // Age verification through the SSO cookie
-
 
 /// The signed-in viewer the `ams` SSO cookie stands for: the id token the page gateway
 /// wants and who it names.
@@ -459,9 +457,7 @@ pub async fn age_token(http: &Http, platform: &str) -> Result<Option<AgeToken>, 
     }))
 }
 
-
 // Episode numbering in Mediathek titles
-
 
 /// What a Mediathek title says about the episode, such as `(S06/E07)` or `Folge 25/42:`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -525,9 +521,7 @@ pub fn episode_info(title: &str) -> EpisodeInfo {
     }
 }
 
-
 // The resolver
-
 
 pub struct ArdResolver {
     http: Http,

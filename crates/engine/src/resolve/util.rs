@@ -21,9 +21,7 @@ use url::Url;
 
 use super::page::balanced_end;
 
-
 // Numbers and strings in JSON
-
 
 /// An integer, whether the platform wrote it as a number or as a numeric string.
 pub fn int(value: &Value) -> Option<i64> {
@@ -514,9 +512,7 @@ pub fn qualities<'a>(order: &'a [&'a str]) -> impl Fn(&str) -> i64 + 'a {
     }
 }
 
-
 // Dates
-
 
 const TIMEZONE_NAMES: &[(&str, i32)] = &[
     ("UT", 0),
@@ -1094,9 +1090,7 @@ pub fn search_any(patterns: &[&Regex], text: &str) -> Option<String> {
     patterns.iter().find_map(|re| search(re, text))
 }
 
-
 // HTML
-
 
 /// `&amp;`, `&#39;`, `&#x27;` and the common named entities, decoded.
 pub fn html_unescape(text: &str) -> String {
@@ -1310,9 +1304,7 @@ pub fn element_by_class(html: &str, class: &str) -> Option<String> {
     Some(html[start..end].to_string())
 }
 
-
 // XML
-
 
 /// Parses XML leniently: a byte order mark or leading whitespace is fine.
 pub fn xml(text: &str) -> Option<roxmltree::Document<'_>> {
@@ -1343,9 +1335,7 @@ pub fn xml_find_all<'a>(node: roxmltree::Node<'a, 'a>, name: &str) -> Vec<roxmlt
         .collect()
 }
 
-
 // Hashes, ciphers, encodings
-
 
 pub fn md5_hex(data: &[u8]) -> String {
     hex::encode(Md5::digest(data))

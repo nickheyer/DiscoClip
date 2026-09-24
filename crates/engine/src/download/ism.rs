@@ -14,8 +14,8 @@ use futures::StreamExt;
 use url::Url;
 
 use super::segments::{
-    Budget, Consumer, InitSection, Meter, PartKey, Timing, TrackWriter, fetch_bytes,
-    fetch_text, mux_parts,
+    Budget, Consumer, InitSection, Meter, PartKey, Timing, TrackWriter, fetch_bytes, fetch_text,
+    mux_parts,
 };
 use super::{
     DownloadContext, DownloadError, Downloaded, Downloader, LocalSubtitle, mp4, subtitles,
@@ -46,7 +46,6 @@ impl IsmDownloader {
 fn manifest_error(message: impl Into<String>) -> DownloadError {
     DownloadError::Manifest(message.into())
 }
-
 
 // The manifest
 
@@ -117,7 +116,10 @@ fn decode_hex(text: &str) -> Result<Vec<u8>, DownloadError> {
 
 /// The DRM system a `ProtectionHeader` names.
 fn protection_system(system_id: Option<&str>) -> String {
-    match system_id.map(|id| id.trim().to_ascii_lowercase()).as_deref() {
+    match system_id
+        .map(|id| id.trim().to_ascii_lowercase())
+        .as_deref()
+    {
         Some("9a04f079-9840-4286-ab92-e65be0885f95") | None => "playready".into(),
         Some("edef8ba9-79d6-4ace-a3c8-27dcd51d21ed") => "widevine".into(),
         Some(other) => other.to_string(),
@@ -133,7 +135,9 @@ fn parse_manifest(text: &str) -> Result<Manifest, DownloadError> {
             root.tag_name().name()
         )));
     }
-    let timescale = attr_u64(root, "TimeScale").filter(|t| *t > 0).unwrap_or(DEFAULT_TIMESCALE);
+    let timescale = attr_u64(root, "TimeScale")
+        .filter(|t| *t > 0)
+        .unwrap_or(DEFAULT_TIMESCALE);
     let duration = attr_u64(root, "Duration")
         .filter(|d| *d > 0)
         .map(|ticks| ticks as f64 / timescale as f64);
@@ -156,13 +160,19 @@ fn parse_manifest(text: &str) -> Result<Manifest, DownloadError> {
         .children()
         .filter(|n| n.is_element() && n.tag_name().name() == "StreamIndex")
     {
-        let kind = match node.attribute("Type").map(|t| t.to_ascii_lowercase()).as_deref() {
+        let kind = match node
+            .attribute("Type")
+            .map(|t| t.to_ascii_lowercase())
+            .as_deref()
+        {
             Some("video") => StreamKind::Video,
             Some("audio") => StreamKind::Audio,
             Some("text") => StreamKind::Text,
             _ => continue,
         };
-        let stream_timescale = attr_u64(node, "TimeScale").filter(|t| *t > 0).unwrap_or(timescale);
+        let stream_timescale = attr_u64(node, "TimeScale")
+            .filter(|t| *t > 0)
+            .unwrap_or(timescale);
         let mut levels = Vec::new();
         for (position, level) in node
             .children()
@@ -177,7 +187,10 @@ fn parse_manifest(text: &str) -> Result<Manifest, DownloadError> {
                         .children()
                         .filter(|n| n.is_element() && n.tag_name().name() == "Attribute")
                         .filter_map(|a| {
-                            Some((a.attribute("Name")?.to_string(), a.attribute("Value")?.to_string()))
+                            Some((
+                                a.attribute("Name")?.to_string(),
+                                a.attribute("Value")?.to_string(),
+                            ))
                         })
                         .collect()
                 })
@@ -185,7 +198,11 @@ fn parse_manifest(text: &str) -> Result<Manifest, DownloadError> {
             levels.push(Level {
                 index: attr_u32(level, "Index").unwrap_or(position as u32),
                 bitrate: attr_u64(level, "Bitrate").unwrap_or(0),
-                four_cc: level.attribute("FourCC").unwrap_or("").trim().to_ascii_uppercase(),
+                four_cc: level
+                    .attribute("FourCC")
+                    .unwrap_or("")
+                    .trim()
+                    .to_ascii_uppercase(),
                 width: attr_u32(level, "MaxWidth")
                     .or_else(|| attr_u32(level, "Width"))
                     .unwrap_or(0),
@@ -217,12 +234,9 @@ fn parse_manifest(text: &str) -> Result<Manifest, DownloadError> {
                 Some(d) => d,
                 None => {
                     // A chunk without a length runs to the next one, or to the end.
-                    let next = entries
-                        .get(index + 1)
-                        .and_then(|n| attr_u64(*n, "t"));
-                    let end = next.or_else(|| {
-                        duration.map(|d| (d * stream_timescale as f64) as u64)
-                    });
+                    let next = entries.get(index + 1).and_then(|n| attr_u64(*n, "t"));
+                    let end =
+                        next.or_else(|| duration.map(|d| (d * stream_timescale as f64) as u64));
                     match end {
                         Some(end) if end > start => end - start,
                         _ => return Err(manifest_error("chunk without a length")),
@@ -260,7 +274,12 @@ fn parse_manifest(text: &str) -> Result<Manifest, DownloadError> {
 }
 
 /// The URL of the fragment of `level` starting at `time`.
-fn fragment_url(manifest: &Url, stream: &Stream, level: &Level, time: u64) -> Result<Url, DownloadError> {
+fn fragment_url(
+    manifest: &Url,
+    stream: &Stream,
+    level: &Level,
+    time: u64,
+) -> Result<Url, DownloadError> {
     let attributes = level
         .attributes
         .iter()
@@ -278,7 +297,6 @@ fn fragment_url(manifest: &Url, stream: &Stream, level: &Level, time: u64) -> Re
         .join(&filled)
         .map_err(|e| manifest_error(format!("bad fragment URL {filled}: {e}")))
 }
-
 
 // Boxes
 
@@ -346,7 +364,12 @@ fn init_segment(stream: &Stream, level: &Level, track_id: u32) -> Result<Vec<u8>
     tkhd.extend_from_slice(&0u16.to_be_bytes()); // layer
     tkhd.extend_from_slice(&0u16.to_be_bytes()); // alternate group
     tkhd.extend_from_slice(
-        &(if stream.kind == StreamKind::Audio { 0x0100u16 } else { 0 }).to_be_bytes(),
+        &(if stream.kind == StreamKind::Audio {
+            0x0100u16
+        } else {
+            0
+        })
+        .to_be_bytes(),
     );
     tkhd.extend_from_slice(&[0u8; 2]);
     tkhd.extend_from_slice(&matrix);
@@ -480,7 +503,13 @@ fn avcc(level: &Level) -> Result<Vec<u8>, DownloadError> {
     if pps.is_empty() {
         return Err(manifest_error("H264 level without a picture parameter set"));
     }
-    let mut out = vec![1, first[1], first[2], first[3], 0xFC | (level.nal_length - 1)];
+    let mut out = vec![
+        1,
+        first[1],
+        first[2],
+        first[3],
+        0xFC | (level.nal_length - 1),
+    ];
     out.push(0xE0 | sps.len() as u8);
     for unit in &sps {
         out.extend_from_slice(&(unit.len() as u16).to_be_bytes());
@@ -616,7 +645,11 @@ fn hvcc(level: &Level) -> Result<Vec<u8>, DownloadError> {
     out.push(0xF8 | (luma as u8 & 7));
     out.push(0xF8 | (chroma as u8 & 7));
     out.extend_from_slice(&[0, 0]);
-    out.push(((max_sub_layers_minus1 as u8 + 1) << 3) | (temporal_id_nesting << 2) | (level.nal_length - 1));
+    out.push(
+        ((max_sub_layers_minus1 as u8 + 1) << 3)
+            | (temporal_id_nesting << 2)
+            | (level.nal_length - 1),
+    );
     let arrays: Vec<(u8, &Vec<&[u8]>)> = [(32u8, &vps), (33, &sps), (34, &pps)]
         .into_iter()
         .filter(|(_, units)| !units.is_empty())
@@ -637,7 +670,9 @@ fn hvcc(level: &Level) -> Result<Vec<u8>, DownloadError> {
 fn audio_entry(level: &Level) -> Result<Vec<u8>, DownloadError> {
     let tag = level.audio_tag;
     let four_cc = level.four_cc.as_str();
-    let (kind, config) = if matches!(four_cc, "AACL" | "AACH" | "AACP" | "AAC") || (four_cc.is_empty() && tag == Some(255)) {
+    let (kind, config) = if matches!(four_cc, "AACL" | "AACH" | "AACP" | "AAC")
+        || (four_cc.is_empty() && tag == Some(255))
+    {
         let specific = if level.private.is_empty() {
             audio_specific_config(level)?
         } else {
@@ -647,13 +682,31 @@ fn audio_entry(level: &Level) -> Result<Vec<u8>, DownloadError> {
     } else if four_cc == "MP3" || (four_cc.is_empty() && tag == Some(85)) {
         (*b"mp4a", esds(0x6B, &[], level.bitrate))
     } else if matches!(four_cc, "AC-3" | "AC3" | "DD") {
-        (*b"ac-3", if level.private.is_empty() { Vec::new() } else { plain_box(b"dac3", &level.private) })
+        (
+            *b"ac-3",
+            if level.private.is_empty() {
+                Vec::new()
+            } else {
+                plain_box(b"dac3", &level.private)
+            },
+        )
     } else if matches!(four_cc, "EC-3" | "EC3" | "DDP") {
-        (*b"ec-3", if level.private.is_empty() { Vec::new() } else { plain_box(b"dec3", &level.private) })
+        (
+            *b"ec-3",
+            if level.private.is_empty() {
+                Vec::new()
+            } else {
+                plain_box(b"dec3", &level.private)
+            },
+        )
     } else {
         return Err(DownloadError::Unsupported(format!(
             "Smooth Streaming audio codec {} cannot be remuxed",
-            if four_cc.is_empty() { format!("tag {}", tag.unwrap_or(0)) } else { four_cc.to_string() }
+            if four_cc.is_empty() {
+                format!("tag {}", tag.unwrap_or(0))
+            } else {
+                four_cc.to_string()
+            }
         )));
     };
     let mut body = vec![0u8; 6];
@@ -676,8 +729,12 @@ fn audio_specific_config(level: &Level) -> Result<Vec<u8>, DownloadError> {
     let index = RATES
         .iter()
         .position(|r| *r == level.sampling_rate)
-        .ok_or_else(|| manifest_error(format!("AAC sampling rate {} has no index", level.sampling_rate)))?
-        as u16;
+        .ok_or_else(|| {
+            manifest_error(format!(
+                "AAC sampling rate {} has no index",
+                level.sampling_rate
+            ))
+        })? as u16;
     let channels = level.channels.min(7);
     let packed: u16 = (2 << 11) | (index << 7) | (channels << 3);
     Ok(packed.to_be_bytes().to_vec())
@@ -804,7 +861,6 @@ fn text_documents(fragment: &[u8]) -> Vec<String> {
     out
 }
 
-
 // Choosing and fetching
 
 /// Which streams and levels the download wants.
@@ -838,7 +894,11 @@ fn best_video<'a>(manifest: &'a Manifest, wanted: &Wanted) -> Option<(&'a Stream
         let fits = l.height <= wanted.max_height;
         (
             fits,
-            if fits { i64::from(l.height) } else { -i64::from(l.height) },
+            if fits {
+                i64::from(l.height)
+            } else {
+                -i64::from(l.height)
+            },
             l.bitrate,
         )
     })
@@ -851,10 +911,11 @@ fn best_audio<'a>(manifest: &'a Manifest, wanted: &Wanted) -> Option<(&'a Stream
         .filter(|s| s.kind == StreamKind::Audio)
         .flat_map(|s| s.levels.iter().map(move |l| (s, l)))
         .max_by_key(|(s, l)| {
-            let preferred = wanted
-                .language
-                .as_deref()
-                .is_some_and(|w| s.language.as_deref().is_some_and(|have| have.eq_ignore_ascii_case(w)));
+            let preferred = wanted.language.as_deref().is_some_and(|w| {
+                s.language
+                    .as_deref()
+                    .is_some_and(|have| have.eq_ignore_ascii_case(w))
+            });
             (preferred, l.bitrate)
         })
 }
@@ -869,7 +930,11 @@ struct Piece {
     url: Url,
 }
 
-fn pieces_of(manifest_url: &Url, stream: &Stream, level: &Level) -> Result<Vec<Piece>, DownloadError> {
+fn pieces_of(
+    manifest_url: &Url,
+    stream: &Stream,
+    level: &Level,
+) -> Result<Vec<Piece>, DownloadError> {
     stream
         .chunks
         .iter()
@@ -885,9 +950,17 @@ fn pieces_of(manifest_url: &Url, stream: &Stream, level: &Level) -> Result<Vec<P
 }
 
 /// The text streams a manifest offers, one per language, as subtitle tracks.
-fn text_tracks(manifest_url: &Url, manifest: &Manifest, headers: &[(String, String)]) -> Vec<SubtitleTrack> {
+fn text_tracks(
+    manifest_url: &Url,
+    manifest: &Manifest,
+    headers: &[(String, String)],
+) -> Vec<SubtitleTrack> {
     let mut tracks: Vec<SubtitleTrack> = Vec::new();
-    for stream in manifest.streams.iter().filter(|s| s.kind == StreamKind::Text) {
+    for stream in manifest
+        .streams
+        .iter()
+        .filter(|s| s.kind == StreamKind::Text)
+    {
         let Some(level) = stream.levels.first() else {
             continue;
         };
@@ -895,7 +968,10 @@ fn text_tracks(manifest_url: &Url, manifest: &Manifest, headers: &[(String, Stri
             continue;
         }
         let language = stream.language.clone().unwrap_or_else(|| "und".into());
-        if tracks.iter().any(|t| t.language.eq_ignore_ascii_case(&language)) {
+        if tracks
+            .iter()
+            .any(|t| t.language.eq_ignore_ascii_case(&language))
+        {
             continue;
         }
         let mut url = manifest_url.clone();
@@ -961,7 +1037,10 @@ struct Session<'a> {
 impl Session<'_> {
     fn note(&self, message: String) {
         tracing::info!("{message}");
-        self.notes.lock().unwrap_or_else(|e| e.into_inner()).push(message);
+        self.notes
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(message);
     }
 
     /// Fetches `pieces` in order into `consumer`, each given its decode time when it is
@@ -980,7 +1059,8 @@ impl Session<'_> {
     ) -> Result<bool, DownloadError> {
         let max_live = self.max_live.as_secs_f64();
         let fetches = futures::stream::iter(pieces.into_iter().map(|piece| async move {
-            let result = fetch_bytes(self.http, &piece.url, self.platform, self.headers, None).await;
+            let result =
+                fetch_bytes(self.http, &piece.url, self.platform, self.headers, None).await;
             (piece, result)
         }))
         .buffered(CONCURRENCY);
@@ -989,7 +1069,10 @@ impl Session<'_> {
             let bytes = match result {
                 Ok(bytes) => bytes,
                 Err(error) if live => {
-                    self.note(format!("{name}: fragment at {:.1} s skipped: {error}", piece.start));
+                    self.note(format!(
+                        "{name}: fragment at {:.1} s skipped: {error}",
+                        piece.start
+                    ));
                     consumer.gap();
                     cursor.last = Some(piece.time);
                     continue;
@@ -1146,7 +1229,12 @@ impl Downloader for IsmDownloader {
                         manifest
                             .streams
                             .iter()
-                            .map(|s| s.chunks.iter().map(|(_, d)| *d as f64 / s.timescale as f64).sum::<f64>())
+                            .map(|s| {
+                                s.chunks
+                                    .iter()
+                                    .map(|(_, d)| *d as f64 / s.timescale as f64)
+                                    .sum::<f64>()
+                            })
                             .fold(0.0, f64::max)
                     })
                 });
@@ -1166,7 +1254,10 @@ impl Downloader for IsmDownloader {
                 ),
             };
             if !inits.contains_key("video") {
-                inits.insert("video".into(), init_section(primary_choice.0, primary_choice.1)?);
+                inits.insert(
+                    "video".into(),
+                    init_section(primary_choice.0, primary_choice.1)?,
+                );
             }
             if let Some((stream, level)) = audio_choice
                 && !inits.contains_key("audio")
@@ -1183,17 +1274,19 @@ impl Downloader for IsmDownloader {
             };
             let mut text_pieces: Vec<Vec<Piece>> = Vec::new();
             for track in &text_choices {
-                let stream = manifest
-                    .streams
-                    .iter()
-                    .find(|s| {
-                        s.kind == StreamKind::Text
-                            && s.language.as_deref().unwrap_or("und").eq_ignore_ascii_case(&track.language)
-                    });
-                text_pieces.push(match stream.and_then(|s| s.levels.first().map(|l| (s, l))) {
-                    Some((stream, level)) => pieces_of(manifest_url, stream, level)?,
-                    None => Vec::new(),
+                let stream = manifest.streams.iter().find(|s| {
+                    s.kind == StreamKind::Text
+                        && s.language
+                            .as_deref()
+                            .unwrap_or("und")
+                            .eq_ignore_ascii_case(&track.language)
                 });
+                text_pieces.push(
+                    match stream.and_then(|s| s.levels.first().map(|l| (s, l))) {
+                        Some((stream, level)) => pieces_of(manifest_url, stream, level)?,
+                        None => Vec::new(),
+                    },
+                );
             }
             // The stream is captured from now: of what a live manifest still offers, only
             // as much as the limit allows, counted back from its end.
@@ -1346,7 +1439,10 @@ impl Downloader for IsmDownloader {
         Ok(Downloaded {
             file,
             subtitles: local_subtitles,
-            notes: session.notes.into_inner().unwrap_or_else(|e| e.into_inner()),
+            notes: session
+                .notes
+                .into_inner()
+                .unwrap_or_else(|e| e.into_inner()),
         })
     }
 }
@@ -1407,10 +1503,31 @@ mod tests {
         tokio::fs::create_dir_all(dir).await.unwrap();
         let out = dir.join("pkg");
         let args: Vec<String> = [
-            "-loglevel", "error", "-f", "lavfi", "-i", &format!("testsrc=size=64x64:rate=10:duration={seconds}"),
-            "-f", "lavfi", "-i", &format!("sine=frequency=440:duration={seconds}"),
-            "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-g", "10", "-c:a", "aac",
-            "-f", "smoothstreaming", "-min_frag_duration", "1000000", out.to_str().unwrap(),
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            &format!("testsrc=size=64x64:rate=10:duration={seconds}"),
+            "-f",
+            "lavfi",
+            "-i",
+            &format!("sine=frequency=440:duration={seconds}"),
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-pix_fmt",
+            "yuv420p",
+            "-g",
+            "10",
+            "-c:a",
+            "aac",
+            "-f",
+            "smoothstreaming",
+            "-min_frag_duration",
+            "1000000",
+            out.to_str().unwrap(),
         ]
         .map(String::from)
         .to_vec();
@@ -1426,11 +1543,16 @@ mod tests {
             while let Some(entry) = entries.next_entry().await.unwrap() {
                 let name = entry.file_name().to_string_lossy().into_owned();
                 if name.starts_with("Fragments(") {
-                    files.push((format!("{level_name}/{name}"), tokio::fs::read(entry.path()).await.unwrap()));
+                    files.push((
+                        format!("{level_name}/{name}"),
+                        tokio::fs::read(entry.path()).await.unwrap(),
+                    ));
                 }
             }
         }
-        let raw = tokio::fs::read_to_string(out.join("Manifest")).await.unwrap();
+        let raw = tokio::fs::read_to_string(out.join("Manifest"))
+            .await
+            .unwrap();
         let manifest = with_chunk_times(&raw, &files);
         Packaged { manifest, files }
     }
@@ -1449,7 +1571,11 @@ mod tests {
         for line in manifest.lines() {
             let trimmed = line.trim();
             if trimmed.starts_with("<StreamIndex") {
-                kind = if trimmed.contains("Type=\"video\"") { Some("video") } else { Some("audio") };
+                kind = if trimmed.contains("Type=\"video\"") {
+                    Some("video")
+                } else {
+                    Some("audio")
+                };
                 out.push_str(line);
                 out.push('\n');
                 continue;
@@ -1465,7 +1591,10 @@ mod tests {
                     .collect();
                 times.sort_unstable();
                 for (index, time) in times.iter().enumerate() {
-                    let end = times.get(index + 1).copied().unwrap_or(duration.max(*time + 1));
+                    let end = times
+                        .get(index + 1)
+                        .copied()
+                        .unwrap_or(duration.max(*time + 1));
                     out.push_str(&format!("<c t=\"{time}\" d=\"{}\" />\n", end - time));
                 }
                 continue;
@@ -1489,7 +1618,10 @@ mod tests {
     ) -> (Result<Downloaded, DownloadError>, Progress) {
         let http = Http::with_transport(site.clone(), Http::test_config());
         let downloader = IsmDownloader::new(http, ffmpeg.clone());
-        let mut variant = Variant::new(Url::parse(&format!("{BASE}{name}.ism/Manifest")).unwrap(), VariantKind::Ism);
+        let mut variant = Variant::new(
+            Url::parse(&format!("{BASE}{name}.ism/Manifest")).unwrap(),
+            VariantKind::Ism,
+        );
         variant.format_id = format_id.map(str::to_string);
         let (progress, watched) = tokio::sync::watch::channel(Progress::default());
         let result = downloader.download(&variant, dir, context, progress).await;
@@ -1532,8 +1664,18 @@ mod tests {
         assert_eq!(video.kind, StreamKind::Video);
         assert_eq!(video.levels.len(), 2);
         assert_eq!(video.levels[0].width, 1280);
-        assert_eq!(video.levels[0].attributes, vec![("hardwareProfile".to_string(), "10000".to_string())]);
-        assert_eq!(video.chunks, vec![(0, 20_000_000), (20_000_000, 20_000_000), (40_000_000, 20_000_000)]);
+        assert_eq!(
+            video.levels[0].attributes,
+            vec![("hardwareProfile".to_string(), "10000".to_string())]
+        );
+        assert_eq!(
+            video.chunks,
+            vec![
+                (0, 20_000_000),
+                (20_000_000, 20_000_000),
+                (40_000_000, 20_000_000)
+            ]
+        );
         let url = fragment_url(
             &Url::parse("https://h/p/v.ism/Manifest").unwrap(),
             video,
@@ -1551,7 +1693,11 @@ mod tests {
         assert!(audio.levels[0].private.is_empty());
         let text = &manifest.streams[2];
         assert_eq!(text.kind, StreamKind::Text);
-        let tracks = text_tracks(&Url::parse("https://h/v.ism/Manifest").unwrap(), &manifest, &[]);
+        let tracks = text_tracks(
+            &Url::parse("https://h/v.ism/Manifest").unwrap(),
+            &manifest,
+            &[],
+        );
         assert_eq!(tracks.len(), 1);
         assert_eq!(tracks[0].language, "deu");
         assert_eq!(tracks[0].format, SubtitleFormat::Ttml);
@@ -1564,7 +1710,8 @@ mod tests {
         assert!(parse_manifest("<MPD/>").is_err());
         assert!(parse_manifest("nonsense").is_err());
         // A last chunk without a length runs to the end. Without an end it cannot.
-        let open_ended = parse_manifest(&HAND_WRITTEN.replace("<c d=\"20000000\"/>", "<c/>")).unwrap();
+        let open_ended =
+            parse_manifest(&HAND_WRITTEN.replace("<c d=\"20000000\"/>", "<c/>")).unwrap();
         assert_eq!(open_ended.streams[0].chunks[2], (40_000_000, 20_000_000));
         assert!(matches!(
             parse_manifest(
@@ -1596,12 +1743,18 @@ mod tests {
         assert!(init.windows(4).any(|w| w == b"avc1"));
 
         let audio = &manifest.streams[1];
-        assert_eq!(audio_specific_config(&audio.levels[0]).unwrap(), vec![0x11, 0x90]);
+        assert_eq!(
+            audio_specific_config(&audio.levels[0]).unwrap(),
+            vec![0x11, 0x90]
+        );
         let entry = audio_entry(&audio.levels[0]).unwrap();
         assert_eq!(&entry[4..8], b"mp4a");
         assert!(entry.windows(4).any(|w| w == b"esds"));
         let init = init_segment(audio, &audio.levels[0], 1).unwrap();
-        assert_eq!(mp4::read_init(&init).unwrap().tracks[0].timescale, 10_000_000);
+        assert_eq!(
+            mp4::read_init(&init).unwrap().tracks[0].timescale,
+            10_000_000
+        );
         let mut mp3 = audio.levels[0].clone();
         mp3.four_cc = String::new();
         mp3.audio_tag = Some(85);
@@ -1614,10 +1767,16 @@ mod tests {
         assert!(entry.windows(4).any(|w| w == b"dec3"));
         let mut wma = audio.levels[0].clone();
         wma.four_cc = "WMAP".into();
-        assert!(matches!(audio_entry(&wma).unwrap_err(), DownloadError::Unsupported(_)));
+        assert!(matches!(
+            audio_entry(&wma).unwrap_err(),
+            DownloadError::Unsupported(_)
+        ));
         let mut vc1 = video.levels[0].clone();
         vc1.four_cc = "WVC1".into();
-        assert!(matches!(video_entry(&vc1).unwrap_err(), DownloadError::Unsupported(_)));
+        assert!(matches!(
+            video_entry(&vc1).unwrap_err(),
+            DownloadError::Unsupported(_)
+        ));
         assert_eq!(language_code(Some("eng")), 0x15c7);
         assert_eq!(language_code(None), language_code(Some("und")));
     }
@@ -1633,9 +1792,23 @@ mod tests {
         run_ffmpeg(
             &ffmpeg,
             &[
-                "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=64x64:rate=10:duration=1",
-                "-c:v", "libx265", "-preset", "ultrafast", "-x265-params", "log-level=none",
-                "-pix_fmt", "yuv420p", "-tag:v", "hvc1", path.to_str().unwrap(),
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=64x64:rate=10:duration=1",
+                "-c:v",
+                "libx265",
+                "-preset",
+                "ultrafast",
+                "-x265-params",
+                "log-level=none",
+                "-pix_fmt",
+                "yuv420p",
+                "-tag:v",
+                "hvc1",
+                path.to_str().unwrap(),
             ]
             .map(String::from),
         )
@@ -1653,7 +1826,7 @@ mod tests {
             pos += 3;
             for _ in 0..count {
                 let len = u16::from_be_bytes([reference[pos], reference[pos + 1]]) as usize;
-                if matches!(kind, 32 | 33 | 34) {
+                if matches!(kind, 32..=34) {
                     private.extend_from_slice(&[0, 0, 0, 1]);
                     private.extend_from_slice(&reference[pos + 2..pos + 2 + len]);
                 }
@@ -1675,7 +1848,13 @@ mod tests {
             attributes: Vec::new(),
         };
         let built = hvcc(&level).unwrap();
-        assert_eq!(&built[..22], &reference[..22], "built {} reference {}", hex::encode(&built[..22]), hex::encode(&reference[..22]));
+        assert_eq!(
+            &built[..22],
+            &reference[..22],
+            "built {} reference {}",
+            hex::encode(&built[..22]),
+            hex::encode(&reference[..22])
+        );
         assert_eq!(built[22], 3);
         assert_eq!(built[23], 0x80 | 32);
         let _ = tokio::fs::remove_dir_all(&dir).await;
@@ -1687,15 +1866,27 @@ mod tests {
         let ffmpeg = Ffmpeg::provision(&dir.join("tools")).await.unwrap();
         let packaged = package(&ffmpeg, &dir, 2).await;
         let manifest = parse_manifest(&packaged.manifest).unwrap();
-        let video = manifest.streams.iter().find(|s| s.kind == StreamKind::Video).unwrap();
+        let video = manifest
+            .streams
+            .iter()
+            .find(|s| s.kind == StreamKind::Video)
+            .unwrap();
         let times = packaged.video_times();
-        let second = &packaged.files.iter().find(|(name, _)| name.contains(&format!("video={}", times[1]))).unwrap().1;
+        let second = &packaged
+            .files
+            .iter()
+            .find(|(name, _)| name.contains(&format!("video={}", times[1])))
+            .unwrap()
+            .1;
         let fixed = with_decode_time(second, times[1]).unwrap();
         assert_eq!(fixed.len(), second.len() + 20);
         let tfhd = fixed.windows(4).position(|w| w == b"tfhd").unwrap();
         assert_eq!(&fixed[tfhd + 20..tfhd + 24], b"tfdt");
         assert_eq!(fixed[tfhd + 24], 1);
-        assert_eq!(u64::from_be_bytes(fixed[tfhd + 28..tfhd + 36].try_into().unwrap()), times[1]);
+        assert_eq!(
+            u64::from_be_bytes(fixed[tfhd + 28..tfhd + 36].try_into().unwrap()),
+            times[1]
+        );
         // The same again changes nothing, and ffmpeg places the fragment where it says.
         assert_eq!(with_decode_time(&fixed, times[1]).unwrap(), fixed);
         let init = init_section(video, &video.levels[0]).unwrap();
@@ -1705,9 +1896,18 @@ mod tests {
         tokio::fs::write(&path, &file).await.unwrap();
         let info = ffmpeg.probe(&path).await.unwrap();
         assert!(info.video.is_some(), "{info:?}");
-        assert!(near(mp4::start_time(&fixed, init.parsed.as_ref().unwrap()).unwrap(), times[1] as f64 / 10_000_000.0));
+        assert!(near(
+            mp4::start_time(&fixed, init.parsed.as_ref().unwrap()).unwrap(),
+            times[1] as f64 / 10_000_000.0
+        ));
         // The file's timeline runs from zero to the fragment's end.
-        assert!(near(info.duration.unwrap().as_secs_f64(), times[1] as f64 / 10_000_000.0 + 1.0), "{info:?}");
+        assert!(
+            near(
+                info.duration.unwrap().as_secs_f64(),
+                times[1] as f64 / 10_000_000.0 + 1.0
+            ),
+            "{info:?}"
+        );
         let _ = tokio::fs::remove_dir_all(&dir).await;
     }
 
@@ -1718,8 +1918,20 @@ mod tests {
         let packaged = package(&ffmpeg, &dir, 3).await;
         let site = Site::new();
         packaged.serve(&site, "v.ism/");
-        site.put_text(&format!("{BASE}v.ism/Manifest"), MANIFEST_TYPE, &packaged.manifest);
-        let (result, progress) = download_ism(&site, &ffmpeg, "v", &dir.join("job"), &DownloadContext::new(50_000_000), Some("video-0")).await;
+        site.put_text(
+            &format!("{BASE}v.ism/Manifest"),
+            MANIFEST_TYPE,
+            &packaged.manifest,
+        );
+        let (result, progress) = download_ism(
+            &site,
+            &ffmpeg,
+            "v",
+            &dir.join("job"),
+            &DownloadContext::new(50_000_000),
+            Some("video-0"),
+        )
+        .await;
         let downloaded = result.unwrap();
         assert!(downloaded.file.path.ends_with("source.mkv"));
         let info = ffmpeg.probe(&downloaded.file.path).await.unwrap();
@@ -1739,25 +1951,54 @@ mod tests {
         // Audio alone, as an audio-only variant asks.
         let http = Http::with_transport(site.clone(), Http::test_config());
         let downloader = IsmDownloader::new(http, ffmpeg.clone());
-        let mut variant = Variant::new(Url::parse(&format!("{BASE}v.ism/Manifest")).unwrap(), VariantKind::Ism);
+        let mut variant = Variant::new(
+            Url::parse(&format!("{BASE}v.ism/Manifest")).unwrap(),
+            VariantKind::Ism,
+        );
         variant.format_id = Some("audio".into());
         variant.audio_only = true;
         let (progress, _) = tokio::sync::watch::channel(Progress::default());
-        let downloaded = downloader.download(&variant, &dir.join("audio"), &DownloadContext::new(50_000_000), progress).await.unwrap();
+        let downloaded = downloader
+            .download(
+                &variant,
+                &dir.join("audio"),
+                &DownloadContext::new(50_000_000),
+                progress,
+            )
+            .await
+            .unwrap();
         let info = ffmpeg.probe(&downloaded.file.path).await.unwrap();
         assert!(info.video.is_none(), "{info:?}");
         assert!(info.audio.is_some(), "{info:?}");
         assert!(near(info.duration.unwrap().as_secs_f64(), 3.0), "{info:?}");
 
         // Over the byte budget, the download stops.
-        let (result, _) = download_ism(&site, &ffmpeg, "v", &dir.join("small"), &DownloadContext::new(10_000), Some("video-0")).await;
-        assert!(matches!(result.unwrap_err(), DownloadError::TooLarge { .. }));
+        let (result, _) = download_ism(
+            &site,
+            &ffmpeg,
+            "v",
+            &dir.join("small"),
+            &DownloadContext::new(10_000),
+            Some("video-0"),
+        )
+        .await;
+        assert!(matches!(
+            result.unwrap_err(),
+            DownloadError::TooLarge { .. }
+        ));
         let _ = tokio::fs::remove_dir_all(&dir).await;
     }
 
     fn level_bitrate(manifest: &str, kind: &str) -> String {
         let stream = manifest.split(&format!("Type=\"{kind}\"")).nth(1).unwrap();
-        stream.split("Bitrate=\"").nth(1).unwrap().split('"').next().unwrap().to_string()
+        stream
+            .split("Bitrate=\"")
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+            .unwrap()
+            .to_string()
     }
 
     /// A live manifest of the packaged presentation offering its first `count` fragments
@@ -1782,13 +2023,26 @@ mod tests {
         if ended {
             out
         } else {
-            out.replace("MinorVersion=\"0\"", "MinorVersion=\"0\" IsLive=\"TRUE\" LookAheadFragmentCount=\"2\"")
-                .replace(&format!("Duration=\"{}\"", duration_of(&packaged.manifest)), "Duration=\"0\"")
+            out.replace(
+                "MinorVersion=\"0\"",
+                "MinorVersion=\"0\" IsLive=\"TRUE\" LookAheadFragmentCount=\"2\"",
+            )
+            .replace(
+                &format!("Duration=\"{}\"", duration_of(&packaged.manifest)),
+                "Duration=\"0\"",
+            )
         }
     }
 
     fn duration_of(manifest: &str) -> String {
-        manifest.split("Duration=\"").nth(1).unwrap().split('"').next().unwrap().to_string()
+        manifest
+            .split("Duration=\"")
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+            .unwrap()
+            .to_string()
     }
 
     #[tokio::test]
@@ -1808,12 +2062,27 @@ mod tests {
         );
         let mut context = DownloadContext::new(50_000_000);
         context.max_live = Duration::from_secs(60);
-        let (result, progress) = download_ism(&site, &ffmpeg, "l", &dir.join("job"), &context, Some("video-0")).await;
+        let (result, progress) = download_ism(
+            &site,
+            &ffmpeg,
+            "l",
+            &dir.join("job"),
+            &context,
+            Some("video-0"),
+        )
+        .await;
         let downloaded = result.unwrap();
         let info = ffmpeg.probe(&downloaded.file.path).await.unwrap();
         assert!(info.video.is_some() && info.audio.is_some(), "{info:?}");
         assert!(near(info.duration.unwrap().as_secs_f64(), 4.0), "{info:?}");
-        assert!(downloaded.notes.iter().any(|n| n.contains("the live stream ended")), "{:?}", downloaded.notes);
+        assert!(
+            downloaded
+                .notes
+                .iter()
+                .any(|n| n.to_lowercase().contains("stream ended")),
+            "{:?}",
+            downloaded.notes
+        );
         assert_eq!(site.hits(&format!("{BASE}l.ism/Manifest")), 3);
         for (name, _) in &packaged.files {
             assert_eq!(site.hits(&format!("{BASE}l.ism/{name}")), 1, "{name}");
@@ -1832,13 +2101,34 @@ mod tests {
             ],
         );
         context.max_live = Duration::from_millis(2_500);
-        let (result, _) = download_ism(&site, &ffmpeg, "c", &dir.join("cut"), &context, Some("video-0")).await;
+        let (result, _) = download_ism(
+            &site,
+            &ffmpeg,
+            "c",
+            &dir.join("cut"),
+            &context,
+            Some("video-0"),
+        )
+        .await;
         let downloaded = result.unwrap();
         let info = ffmpeg.probe(&downloaded.file.path).await.unwrap();
         assert!(near(info.duration.unwrap().as_secs_f64(), 3.0), "{info:?}");
-        assert!(downloaded.notes.iter().any(|n| n.contains("capture cut at the limit")), "{:?}", downloaded.notes);
+        assert!(
+            downloaded
+                .notes
+                .iter()
+                .any(|n| n.contains("capture cut at the limit")),
+            "{:?}",
+            downloaded.notes
+        );
         let last = *packaged.video_times().last().unwrap();
-        assert_eq!(site.hits(&format!("{BASE}c.ism/QualityLevels({})/Fragments(video={last})", level_bitrate(&packaged.manifest, "video"))), 0);
+        assert_eq!(
+            site.hits(&format!(
+                "{BASE}c.ism/QualityLevels({})/Fragments(video={last})",
+                level_bitrate(&packaged.manifest, "video")
+            )),
+            0
+        );
 
         // A manifest that stops answering ends the capture with what was taken.
         let site = Site::new();
@@ -1851,11 +2141,26 @@ mod tests {
             ],
         );
         context.max_live = Duration::from_secs(60);
-        let (result, _) = download_ism(&site, &ffmpeg, "g", &dir.join("gone"), &context, Some("video-0")).await;
+        let (result, _) = download_ism(
+            &site,
+            &ffmpeg,
+            "g",
+            &dir.join("gone"),
+            &context,
+            Some("video-0"),
+        )
+        .await;
         let downloaded = result.unwrap();
         let info = ffmpeg.probe(&downloaded.file.path).await.unwrap();
         assert!(near(info.duration.unwrap().as_secs_f64(), 2.0), "{info:?}");
-        assert!(downloaded.notes.iter().any(|n| n.contains("could not be reloaded 3 times")), "{:?}", downloaded.notes);
+        assert!(
+            downloaded
+                .notes
+                .iter()
+                .any(|n| n.contains("reload failed 3 times")),
+            "{:?}",
+            downloaded.notes
+        );
         let _ = tokio::fs::remove_dir_all(&dir).await;
     }
 
@@ -1873,8 +2178,18 @@ mod tests {
         );
         assert!(locked.contains("<Protection>"));
         site.put_text(&format!("{BASE}p.ism/Manifest"), MANIFEST_TYPE, &locked);
-        let (result, _) = download_ism(&site, &ffmpeg, "p", &dir.join("job"), &DownloadContext::new(50_000_000), Some("video-0")).await;
-        assert!(matches!(result.unwrap_err(), DownloadError::Drm(_, system) if system == "playready"));
+        let (result, _) = download_ism(
+            &site,
+            &ffmpeg,
+            "p",
+            &dir.join("job"),
+            &DownloadContext::new(50_000_000),
+            Some("video-0"),
+        )
+        .await;
+        assert!(
+            matches!(result.unwrap_err(), DownloadError::Drm(_, system) if system == "playready")
+        );
         for (name, _) in &packaged.files {
             assert_eq!(site.hits(&format!("{BASE}p.ism/{name}")), 0);
         }
@@ -1894,8 +2209,16 @@ mod tests {
                 format!("<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div><p begin=\"{begin}\" end=\"{end}\">{text}</p></div></body></tt>").as_bytes(),
             )
         };
-        site.put_bytes(&format!("{BASE}t.ism/QualityLevels(1000)/Fragments(textstream_deu=0)"), "application/mp4", &ttml("0.5s", "1s", "Eins"));
-        site.put_bytes(&format!("{BASE}t.ism/QualityLevels(1000)/Fragments(textstream_deu=10000000)"), "application/mp4", &ttml("1s", "2s", "Zwei"));
+        site.put_bytes(
+            &format!("{BASE}t.ism/QualityLevels(1000)/Fragments(textstream_deu=0)"),
+            "application/mp4",
+            &ttml("0.5s", "1s", "Eins"),
+        );
+        site.put_bytes(
+            &format!("{BASE}t.ism/QualityLevels(1000)/Fragments(textstream_deu=10000000)"),
+            "application/mp4",
+            &ttml("1s", "2s", "Zwei"),
+        );
         let manifest = packaged.manifest.replace(
             "</SmoothStreamingMedia>",
             "<StreamIndex Type=\"text\" Name=\"Untertitel\" Language=\"deu\" Subtype=\"CAPT\" QualityLevels=\"1\" Chunks=\"2\" Url=\"QualityLevels({bitrate})/Fragments(textstream_deu={start time})\">\n<QualityLevel Index=\"0\" Bitrate=\"1000\" FourCC=\"TTML\"/>\n<c t=\"0\" d=\"10000000\"/><c t=\"10000000\" d=\"10000000\"/>\n</StreamIndex>\n</SmoothStreamingMedia>",
@@ -1906,15 +2229,35 @@ mod tests {
             tracks: Vec::new(),
             language: None,
         });
-        let (result, _) = download_ism(&site, &ffmpeg, "t", &dir.join("job"), &context, Some("video-0")).await;
+        let (result, _) = download_ism(
+            &site,
+            &ffmpeg,
+            "t",
+            &dir.join("job"),
+            &context,
+            Some("video-0"),
+        )
+        .await;
         let downloaded = result.unwrap();
-        assert!(near(ffmpeg.probe(&downloaded.file.path).await.unwrap().duration.unwrap().as_secs_f64(), 2.0));
+        assert!(near(
+            ffmpeg
+                .probe(&downloaded.file.path)
+                .await
+                .unwrap()
+                .duration
+                .unwrap()
+                .as_secs_f64(),
+            2.0
+        ));
         assert_eq!(downloaded.subtitles.len(), 1, "{:?}", downloaded.subtitles);
         let track = &downloaded.subtitles[0];
         assert_eq!(track.language, "deu");
         assert_eq!(track.name.as_deref(), Some("Untertitel"));
         assert_eq!(track.format, SubtitleFormat::Ttml);
-        assert_eq!(track.url.as_ref().unwrap().as_str(), format!("{BASE}t.ism/Manifest#text-deu"));
+        assert_eq!(
+            track.url.as_ref().unwrap().as_str(),
+            format!("{BASE}t.ism/Manifest#text-deu")
+        );
         let text = tokio::fs::read_to_string(&track.path).await.unwrap();
         assert!(text.contains("Eins") && text.contains("Zwei"), "{text}");
         assert_eq!(text.matches("<tt ").count(), 1, "{text}");

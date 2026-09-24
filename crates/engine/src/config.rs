@@ -14,6 +14,7 @@ pub struct EngineConfig {
     pub playlists: PlaylistConfig,
     pub live: LiveConfig,
     pub download: DownloadConfig,
+    pub browser: BrowserConfig,
     pub retention: RetentionConfig,
 }
 
@@ -27,6 +28,7 @@ impl Default for EngineConfig {
             playlists: PlaylistConfig::default(),
             live: LiveConfig::default(),
             download: DownloadConfig::default(),
+            browser: BrowserConfig::default(),
             retention: RetentionConfig::default(),
         }
     }
@@ -106,6 +108,19 @@ impl Default for DownloadConfig {
             resume_attempts: 5,
         }
     }
+}
+
+/// The headless browser that captures pages whose player feeds a media source extension
+/// rather than playing a file or a manifest the engine could fetch itself.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct BrowserConfig {
+    /// The Chromium or Chrome executable. Unset, the first found among the usual names
+    /// on `PATH` and the usual install locations is used.
+    pub executable: Option<PathBuf>,
+    /// Arguments added to the browser's command line, such as `--no-sandbox` where the
+    /// sandbox cannot be set up.
+    pub args: Vec<String>,
 }
 
 /// How long finished jobs and their cached files are kept.

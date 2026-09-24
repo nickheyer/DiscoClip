@@ -412,14 +412,13 @@ async fn execute(ctx: &Context, job: &mut Job, job_dir: &Path) -> Result<(), Int
         clip,
         platform: resolved.resolver.clone(),
         download: config.download.clone(),
-        subtitles: (job.request.options.subtitles != SubtitleMode::Skip).then(|| {
-            SubtitleChoice {
-                tracks: subtitles::pick(
-                    &resolved.subtitles,
-                    job.request.options.subtitle_language.as_deref(),
-                ),
-                language: job.request.options.subtitle_language.clone(),
-            }
+        browser: config.browser.clone(),
+        subtitles: (job.request.options.subtitles != SubtitleMode::Skip).then(|| SubtitleChoice {
+            tracks: subtitles::pick(
+                &resolved.subtitles,
+                job.request.options.subtitle_language.as_deref(),
+            ),
+            language: job.request.options.subtitle_language.clone(),
         }),
     };
     let (progress, forwarder) = ctx.progress(job.id, stage);
@@ -451,7 +450,11 @@ async fn execute(ctx: &Context, job: &mut Job, job_dir: &Path) -> Result<(), Int
             choice
                 .tracks
                 .iter()
-                .filter(|t| !local_subtitles.iter().any(|s| s.url.as_ref() == Some(&t.url)))
+                .filter(|t| {
+                    !local_subtitles
+                        .iter()
+                        .any(|s| s.url.as_ref() == Some(&t.url))
+                })
                 .cloned()
                 .collect()
         })
@@ -562,13 +565,9 @@ async fn execute(ctx: &Context, job: &mut Job, job_dir: &Path) -> Result<(), Int
                 .expect("a link is produced only with a fallback");
             job.artifacts.delivery = Delivery::Link;
             job.artifacts.link_reason = Some(reason.clone());
-            ctx.note(
-                job,
-                Some(stage),
-                format!("{reason}. Posting a media link."),
-            )
-            .await
-            .map_err(|e| failed(stage)(e.into()))?;
+            ctx.note(job, Some(stage), format!("{reason}. Posting a media link."))
+                .await
+                .map_err(|e| failed(stage)(e.into()))?;
             match output {
                 Some(output) => output,
                 None => match produce(

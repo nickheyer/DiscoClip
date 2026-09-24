@@ -792,7 +792,7 @@ mod tests {
             .await
             .unwrap_err();
         assert!(
-            matches!(&error, ResolveError::Unavailable { reason, .. } if reason.contains("Google Docs document, not a file")),
+            matches!(&error, ResolveError::Unavailable { reason, .. } if reason.contains("Google Docs document")),
             "{error}"
         );
         assert_eq!(

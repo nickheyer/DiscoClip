@@ -603,6 +603,10 @@ fn api(state: AppState) -> Router {
         )
         .route("/discord/guilds", get(discord::list_guilds))
         .route("/discord/guilds/refresh", post(discord::refresh_guilds))
+        .route(
+            "/discord/guilds/{guild}/applications",
+            get(discord::guild_applications),
+        )
         .route("/audit", get(audit::list))
         .route("/frontends", get(frontends::list).post(frontends::create))
         .route(
@@ -1004,13 +1008,19 @@ mod tests {
         assert_eq!(body, json!({"needed": true}));
 
         let (status, body) = client
-            .post("/api/setup", json!({"username": "nick", "password": "short"}))
+            .post(
+                "/api/setup",
+                json!({"username": "nick", "password": "short"}),
+            )
             .await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
         assert!(client.cookie.is_none());
 
         let (status, body) = client
-            .post("/api/setup", json!({"username": "nick", "password": "correct horse"}))
+            .post(
+                "/api/setup",
+                json!({"username": "nick", "password": "correct horse"}),
+            )
             .await;
         assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(body["user"]["username"], "nick");
@@ -1021,7 +1031,10 @@ mod tests {
         let (_, body) = client.get("/api/setup").await;
         assert_eq!(body, json!({"needed": false}));
         let (status, _) = client
-            .post("/api/setup", json!({"username": "other", "password": "correct horse"}))
+            .post(
+                "/api/setup",
+                json!({"username": "other", "password": "correct horse"}),
+            )
             .await;
         assert_eq!(status, StatusCode::CONFLICT);
         let (status, body) = client.get("/api/session").await;

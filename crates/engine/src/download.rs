@@ -13,13 +13,14 @@ use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
 use url::Url;
 
-use crate::config::DownloadConfig;
+use crate::config::{BrowserConfig, DownloadConfig};
 use crate::event::{Progress, ProgressSender};
 use crate::ffmpeg::Ffmpeg;
 use crate::http::{Http, HttpError, Response, RetryPolicy, StatusCode};
 use crate::media::{AudioCodec, Container, LocalFile};
 use crate::resolve::{Cipher, ClipRange, SubtitleFormat, SubtitleTrack, Variant, VariantKind};
 
+pub mod browser;
 pub mod dash;
 pub mod hls;
 pub mod ism;
@@ -55,6 +56,8 @@ pub struct DownloadContext {
     /// How many connections fetch one file, how much each asks for, and how often a
     /// broken transfer is picked up again.
     pub download: DownloadConfig,
+    /// The headless browser pages whose players feed a media source are captured in.
+    pub browser: BrowserConfig,
     /// The subtitles wanted beside the media. `None` when the job skips them. A
     /// downloader fetches the tracks it knows how to follow with the media, such as HLS
     /// renditions, and reports them. The pipeline fetches the rest.
@@ -70,6 +73,7 @@ impl DownloadContext {
             clip: None,
             platform: crate::http::WEB_PLATFORM.to_string(),
             download: DownloadConfig::default(),
+            browser: BrowserConfig::default(),
             subtitles: None,
         }
     }
@@ -132,6 +136,8 @@ pub enum DownloadError {
     Process(String),
     #[error("{0} is protected by {1} DRM")]
     Drm(String, String),
+    #[error("{url} needs a headless browser, which is not available: {reason}")]
+    BrowserUnavailable { url: String, reason: String },
     #[error("{0}")]
     Unsupported(String),
     /// A server answered a ranged request with bytes that do not fit the file being put
@@ -296,7 +302,9 @@ fn classify(response: &Response, url: &Url) -> Result<Answer, DownloadError> {
                 DownloadError::Range(format!("{url} answered 206 without a Content-Range"))
             })?;
             let (start, end, total) = parse_content_range(value).ok_or_else(|| {
-                DownloadError::Range(format!("{url} answered an unreadable Content-Range: {value}"))
+                DownloadError::Range(format!(
+                    "{url} answered an unreadable Content-Range: {value}"
+                ))
             })?;
             Ok(Answer::Partial { start, end, total })
         }
@@ -592,7 +600,12 @@ impl Transfer<'_> {
 
     /// Fetches bytes `start..=end` into their place in the file, picking up from wherever
     /// a broken transfer stopped.
-    async fn fetch_range(&self, start: u64, end: u64, validator: Option<&str>) -> Result<(), Hitch> {
+    async fn fetch_range(
+        &self,
+        start: u64,
+        end: u64,
+        validator: Option<&str>,
+    ) -> Result<(), Hitch> {
         let mut file = tokio::fs::OpenOptions::new()
             .write(true)
             .open(self.path)
@@ -1013,8 +1026,14 @@ mod tests {
         let body = pattern(100_000);
         let site = Site::new();
         site.put(FILE, file_reply(&body));
-        let (result, progress) =
-            fetch_from(&site, &ffmpeg, &context(3, 16_000, 5), &dir.join("job"), None).await;
+        let (result, progress) = fetch_from(
+            &site,
+            &ffmpeg,
+            &context(3, 16_000, 5),
+            &dir.join("job"),
+            None,
+        )
+        .await;
         let downloaded = result.unwrap();
         assert_eq!(downloaded.file.size, 100_000);
         assert_eq!(tokio::fs::read(&downloaded.file.path).await.unwrap(), body);
@@ -1047,8 +1066,14 @@ mod tests {
         // A file no longer than one chunk takes one request.
         let site = Site::new();
         site.put(FILE, file_reply(&body[..10_000]));
-        let (result, _) =
-            fetch_from(&site, &ffmpeg, &context(3, 16_000, 5), &dir.join("small"), None).await;
+        let (result, _) = fetch_from(
+            &site,
+            &ffmpeg,
+            &context(3, 16_000, 5),
+            &dir.join("small"),
+            None,
+        )
+        .await;
         assert_eq!(result.unwrap().file.size, 10_000);
         assert_eq!(site.hits(FILE), 1);
         let _ = tokio::fs::remove_dir_all(&dir).await;
@@ -1064,8 +1089,14 @@ mod tests {
         site.break_at(FILE, 0, 5_000);
         site.break_at(FILE, 32_000, 7_500);
         site.break_at(FILE, 39_500, 1_000);
-        let (result, progress) =
-            fetch_from(&site, &ffmpeg, &context(2, 16_000, 5), &dir.join("job"), None).await;
+        let (result, progress) = fetch_from(
+            &site,
+            &ffmpeg,
+            &context(2, 16_000, 5),
+            &dir.join("job"),
+            None,
+        )
+        .await;
         let downloaded = result.unwrap();
         assert_eq!(tokio::fs::read(&downloaded.file.path).await.unwrap(), body);
         assert_eq!(progress.done, 100_000);
@@ -1073,8 +1104,14 @@ mod tests {
         assert_eq!(ranges.len(), 10, "{ranges:?}");
         assert_eq!(ranges[0], "bytes=0-15999");
         assert_eq!(ranges[1], "bytes=5000-15999");
-        assert!(ranges.contains(&"bytes=39500-47999".to_string()), "{ranges:?}");
-        assert!(ranges.contains(&"bytes=40500-47999".to_string()), "{ranges:?}");
+        assert!(
+            ranges.contains(&"bytes=39500-47999".to_string()),
+            "{ranges:?}"
+        );
+        assert!(
+            ranges.contains(&"bytes=40500-47999".to_string()),
+            "{ranges:?}"
+        );
 
         // One more break than the resumes allowed fails the download and leaves nothing.
         let site = Site::new();
@@ -1082,10 +1119,18 @@ mod tests {
         site.break_at(FILE, 0, 5_000);
         site.break_at(FILE, 5_000, 1_000);
         site.break_at(FILE, 6_000, 1_000);
-        let (result, _) =
-            fetch_from(&site, &ffmpeg, &context(2, 16_000, 2), &dir.join("spent"), None).await;
+        let (result, _) = fetch_from(
+            &site,
+            &ffmpeg,
+            &context(2, 16_000, 2),
+            &dir.join("spent"),
+            None,
+        )
+        .await;
         match result.unwrap_err() {
-            DownloadError::Interrupted { resumes: 2, last, .. } => {
+            DownloadError::Interrupted {
+                resumes: 2, last, ..
+            } => {
                 assert!(last.contains("connection reset"), "{last}");
                 assert!(last.contains("after 7000 bytes"), "{last}");
             }
@@ -1104,8 +1149,14 @@ mod tests {
         let site = Site::without_ranges();
         site.put(FILE, file_reply(&body));
         site.break_at(FILE, 0, 20_000);
-        let (result, progress) =
-            fetch_from(&site, &ffmpeg, &context(4, 16_000, 5), &dir.join("job"), None).await;
+        let (result, progress) = fetch_from(
+            &site,
+            &ffmpeg,
+            &context(4, 16_000, 5),
+            &dir.join("job"),
+            None,
+        )
+        .await;
         let downloaded = result.unwrap();
         assert_eq!(tokio::fs::read(&downloaded.file.path).await.unwrap(), body);
         assert_eq!(progress.done, 50_000);
@@ -1134,8 +1185,14 @@ mod tests {
                 Reply::new("application/octet-stream", new.clone()).etag("\"v2\""),
             ],
         );
-        let (result, progress) =
-            fetch_from(&site, &ffmpeg, &context(1, 20_000, 5), &dir.join("job"), None).await;
+        let (result, progress) = fetch_from(
+            &site,
+            &ffmpeg,
+            &context(1, 20_000, 5),
+            &dir.join("job"),
+            None,
+        )
+        .await;
         let downloaded = result.unwrap();
         assert_eq!(downloaded.file.size, 45_000);
         assert_eq!(tokio::fs::read(&downloaded.file.path).await.unwrap(), new);
@@ -1344,7 +1401,10 @@ mod tests {
         .await;
         let downloaded = result.unwrap();
         assert_eq!(tokio::fs::read(&downloaded.file.path).await.unwrap(), plain);
-        assert!(site.ranges_seen(FILE).contains(&"bytes=72345-89999".to_string()));
+        assert!(
+            site.ranges_seen(FILE)
+                .contains(&"bytes=72345-89999".to_string())
+        );
         let _ = tokio::fs::remove_dir_all(&dir).await;
     }
 }

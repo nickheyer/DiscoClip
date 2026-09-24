@@ -316,7 +316,7 @@ async fn every_kind_of_media_goes_through_the_pipeline() {
     assert!(
         job.log
             .iter()
-            .any(|e| e.message.contains("resolved image with 1 variant(s)")),
+            .any(|e| e.message.contains("resolved image with 1 variants")),
         "{:?}",
         job.log
     );
@@ -346,7 +346,7 @@ async fn every_kind_of_media_goes_through_the_pipeline() {
     assert!(
         job.log
             .iter()
-            .any(|e| e.message.contains("publishing as is")),
+            .any(|e| e.message.contains("Publishing without conversion")),
         "{:?}",
         job.log
     );
@@ -424,7 +424,7 @@ async fn a_file_too_large_for_its_destination_is_refused_not_converted() {
         JobStatus::Failed { stage, message } => {
             assert_eq!(stage.as_str(), "transcode");
             assert!(
-                message.contains("cannot be made smaller"),
+                message.contains("cannot be reduced"),
                 "unexpected message: {message}"
             );
         }
@@ -511,7 +511,7 @@ async fn a_destination_with_a_page_gets_a_link_when_the_upload_would_be_too_redu
     assert!(
         job.log
             .iter()
-            .any(|e| e.message.contains("a link to the page will be posted")),
+            .any(|e| e.message.contains("Posting a media link")),
         "{:?}",
         job.log
     );

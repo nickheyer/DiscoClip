@@ -1,6 +1,9 @@
 //! The platforms the engine covers: what each resolver takes and returns, what its
 //! fixture links last found when run, and the session its stored cookies make.
 
+use std::future::Future;
+use std::time::Duration;
+
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -12,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use super::AppState;
 use super::auth::Auth;
 use super::error::ApiError;
-use crate::cookies::SessionCheckResult;
+use crate::cookies::{SessionCheckResult, StoredSession};
 use crate::fixtures::{PlatformCoverage, RunError};
 use crate::users::Permission;
 
@@ -22,10 +25,24 @@ use crate::users::Permission;
 pub struct PlatformView {
     #[serde(flatten)]
     pub coverage: PlatformCoverage,
-    /// When the platform's cookies were last replaced or cleared from the app.
+    /// How many cookies the app has saved for the platform. The cookies its requests pick
+    /// up along the way are not a session and are not counted here.
+    pub cookies: usize,
+    /// When the platform's saved cookies were last replaced or cleared from the app.
     pub cookies_updated_at: Option<Timestamp>,
     /// What the platform said about its cookies when last asked.
     pub session_check: Option<SessionCheckResult>,
+}
+
+impl PlatformView {
+    fn new(coverage: PlatformCoverage, session: Option<StoredSession>) -> Self {
+        PlatformView {
+            coverage,
+            cookies: session.as_ref().map(|s| s.cookies).unwrap_or(0),
+            cookies_updated_at: session.as_ref().and_then(|s| s.updated_at),
+            session_check: session.and_then(|s| s.check),
+        }
+    }
 }
 
 async fn views(state: &AppState) -> Result<Vec<PlatformView>, ApiError> {
@@ -37,11 +54,7 @@ async fn views(state: &AppState) -> Result<Vec<PlatformView>, ApiError> {
         .into_iter()
         .map(|coverage| {
             let session = sessions.remove(coverage.id);
-            PlatformView {
-                coverage,
-                cookies_updated_at: session.as_ref().and_then(|s| s.updated_at),
-                session_check: session.and_then(|s| s.check),
-            }
+            PlatformView::new(coverage, session)
         })
         .collect())
 }
@@ -53,11 +66,7 @@ async fn view(state: &AppState, id: &str) -> Result<PlatformView, ApiError> {
         .await?
         .ok_or(ApiError::NotFound)?;
     let session = state.cookies.summaries().await?.remove(id);
-    Ok(PlatformView {
-        coverage,
-        cookies_updated_at: session.as_ref().and_then(|s| s.updated_at),
-        session_check: session.and_then(|s| s.check),
-    })
+    Ok(PlatformView::new(coverage, session))
 }
 
 fn platform_named(state: &AppState, id: &str) -> Result<Platform, ApiError> {
@@ -211,11 +220,30 @@ fn parse_cookies(platform: &Platform, body: &CookiesImport) -> Result<Jar, ApiEr
     Ok(jar)
 }
 
+/// Runs `check` under the configured outgoing request timeout, so a platform that never
+/// answers cannot hold the request open.
+async fn within_timeout<T>(
+    state: &AppState,
+    id: &str,
+    check: impl Future<Output = T>,
+) -> Result<T, ApiError> {
+    let secs = state.engine.http().config().request_timeout_secs.max(1);
+    tokio::time::timeout(Duration::from_secs(secs), check)
+        .await
+        .map_err(|_| {
+            ApiError::BadGateway(format!(
+                "{id} did not answer about its session within {secs}s"
+            ))
+        })
+}
+
 /// Asks the platform what its stored cookies are worth, and keeps the answer.
 async fn ask_platform(state: &AppState, id: &str) -> Result<SessionCheckResult, ApiError> {
-    let session = state.engine.check_session(id).await.map_err(|e| {
-        ApiError::BadGateway(format!("{id} could not be asked about its session: {e}"))
-    })?;
+    let session = within_timeout(state, id, state.engine.check_session(id))
+        .await?
+        .map_err(|e| {
+            ApiError::BadGateway(format!("{id} could not be asked about its session: {e}"))
+        })?;
     Ok(state.cookies.record_check(id, &session.check).await?)
 }
 
@@ -282,11 +310,15 @@ pub async fn check_session(
 
 #[cfg(test)]
 mod tests {
+    use std::time::{Duration, Instant};
+
     use axum::http::{Method, StatusCode};
+    use discoclip_engine::http::{Cookie, Jar};
     use serde_json::{Value as Json, json};
 
+    use super::within_timeout;
     use crate::users::Role;
-    use crate::web::testing::{Client, app_with_admin, wait_for};
+    use crate::web::testing::{Client, FIXTURE_HOST, app_with_admin, wait_for};
 
     #[tokio::test]
     async fn session_cookies_are_imported_checked_and_cleared() {
@@ -305,6 +337,16 @@ mod tests {
         assert_eq!(body["cookies"], 0);
         assert!(body["cookies_updated_at"].is_null());
         assert!(body["session_check"].is_null());
+
+        // Cookies the platform's own requests pick up along the way are no saved session:
+        // the count and the date it carries come from what the app stored.
+        app.state.engine.http().set_jar(
+            "fixtured",
+            Jar::from_cookies(vec![Cookie::new("visited", "1", FIXTURE_HOST)]),
+        );
+        let (_, body) = admin.get("/api/platforms/fixtured").await;
+        assert_eq!(body["cookies"], 0, "{body}");
+        assert!(body["cookies_updated_at"].is_null(), "{body}");
 
         // Operators may not. Admins import a cookies.txt and the platform is asked.
         let netscape = json!({
@@ -430,6 +472,30 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_session_check_cannot_outlast_the_configured_timeout() {
+        let app = app_with_admin().await;
+        let mut config = app.state.engine.http().config();
+        config.request_timeout_secs = 1;
+        app.state.engine.http().configure(config);
+
+        // A platform that never answers is given up on, and one that answers is not cut short.
+        let began = Instant::now();
+        let error = within_timeout(&app.state, "fixtured", std::future::pending::<()>())
+            .await
+            .unwrap_err();
+        assert!(began.elapsed() < Duration::from_secs(10));
+        let message = error.message();
+        assert!(message.contains("did not answer"), "{message}");
+        assert!(message.contains("1s"), "{message}");
+        assert_eq!(
+            within_timeout(&app.state, "fixtured", async { 7 })
+                .await
+                .unwrap(),
+            7
+        );
+    }
+
+    #[tokio::test]
     async fn platforms_list_their_coverage_and_run_their_fixtures() {
         let app = app_with_admin().await;
         app.state
@@ -534,7 +600,8 @@ mod tests {
         assert!(ok["duration_ms"].is_number());
         let bad = by_url(&done, "/bad");
         assert_eq!(bad["status"], "fail");
-        assert!(bad["error"].as_str().unwrap().contains("no video found"));
+        // The message says what went wrong and never repeats the link the row already shows.
+        assert_eq!(bad["error"], "No video found");
         assert!(bad["last_pass_at"].is_null());
         let slow = by_url(&done, "/slow");
         assert_eq!(slow["status"], "pass");
@@ -542,11 +609,9 @@ mod tests {
         // A link that wants a login is told apart from a broken one.
         let login = by_url(&done, "/login");
         assert_eq!(login["status"], "login_required");
-        assert!(
-            login["error"]
-                .as_str()
-                .unwrap()
-                .contains("needs a logged-in fixtured session"),
+        assert_eq!(
+            login["error"],
+            "Needs a logged-in fixtured session: members' links are read with the sid cookie",
             "{login}"
         );
         assert!(login["last_pass_at"].is_null());

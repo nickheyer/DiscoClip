@@ -35,7 +35,6 @@ pub mod bilibili;
 pub mod bitchute;
 pub mod blerp;
 pub mod blogger;
-pub mod bloomberg;
 pub mod bluesky;
 pub mod bongacams;
 pub mod box_;
@@ -46,7 +45,6 @@ pub mod bunny;
 pub mod businessinsider;
 pub mod buzzfeed;
 pub mod byutv;
-pub mod catbox;
 pub mod ccc;
 pub mod chaturbate;
 pub mod cloudflare_stream;
@@ -61,7 +59,6 @@ pub mod dctp;
 pub mod democracynow;
 pub mod discord;
 pub mod douyin;
-pub mod dplay;
 pub mod dropbox;
 pub mod drtv;
 pub mod dumpert;
@@ -168,7 +165,6 @@ pub fn builtin_resolvers(http: &Http) -> Vec<Arc<dyn Resolver>> {
         Arc::new(coub::CoubResolver::new(http.clone())),
         Arc::new(giphy::GiphyResolver::new(http.clone())),
         Arc::new(tenor::TenorResolver::new(http.clone())),
-        Arc::new(catbox::CatboxResolver::new(http.clone())),
         Arc::new(google_drive::GoogleDriveResolver::new(http.clone())),
         Arc::new(dropbox::DropboxResolver::new(http.clone())),
         Arc::new(onedrive::OnedriveResolver::new(http.clone())),
@@ -199,7 +195,6 @@ pub fn builtin_resolvers(http: &Http) -> Vec<Arc<dyn Resolver>> {
         Arc::new(audioboom::AudioboomResolver::new(http.clone())),
         Arc::new(amp::AmpResolver::new(http.clone())),
         Arc::new(ard::ArdResolver::new(http.clone())),
-        Arc::new(dplay::DplayResolver::new(http.clone())),
         Arc::new(floatplane::FloatplaneResolver::new(http.clone())),
         Arc::new(jixie::JixieResolver::new(http.clone())),
         Arc::new(medialaan::MedialaanResolver::new(http.clone())),
@@ -217,7 +212,6 @@ pub fn builtin_resolvers(http: &Http) -> Vec<Arc<dyn Resolver>> {
         Arc::new(dailymail::DailymailResolver::new(http.clone())),
         Arc::new(blerp::BlerpResolver::new(http.clone())),
         Arc::new(blogger::BloggerResolver::new(http.clone())),
-        Arc::new(bloomberg::BloombergResolver::new(http.clone())),
         Arc::new(bongacams::BongacamsResolver::new(http.clone())),
         Arc::new(box_::BoxResolver::new(http.clone())),
         Arc::new(bundesliga::BundesligaResolver::new(http.clone())),
@@ -889,8 +883,6 @@ pub enum ResolveError {
     },
     #[error("{0} is rate limiting requests. Try again later.")]
     RateLimited(Url),
-    #[error("{url} needs a headless browser, which is not available: {reason}")]
-    BrowserUnavailable { url: Url, reason: String },
     /// The only resolvers that take the link are turned off by the profile assigned.
     #[error("{platform} links are turned off here: {url}")]
     Disabled { url: Url, platform: &'static str },
@@ -906,8 +898,7 @@ impl ResolveError {
             | Self::Unavailable { url, .. }
             | Self::Malformed { url, .. }
             | Self::Drm { url, .. }
-            | Self::LoginRequired { url, .. }
-            | Self::BrowserUnavailable { url, .. } => *url = origin.clone(),
+            | Self::LoginRequired { url, .. } => *url = origin.clone(),
             Self::Unsupported(_) | Self::Redirect(_) | Self::Http(_) | Self::Disabled { .. } => {}
         }
         self

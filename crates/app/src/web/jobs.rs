@@ -414,7 +414,10 @@ pub async fn submit(
     }
     let mut job = Request::new(local_origin(&identity), request.url.clone());
     let in_force = in_force_for(&state, &job.origin);
-    if let Some(platform) = turned_off(&state.engine.resolvers_for(&request.url), &in_force.disabled) {
+    if let Some(platform) = turned_off(
+        &state.engine.resolvers_for(&request.url),
+        &in_force.disabled,
+    ) {
         return Err(ApiError::BadRequest(format!(
             "The assigned profile disables {platform} links."
         )));
@@ -700,11 +703,9 @@ pub(super) async fn locate(
     if candidates.is_empty() {
         return Err(ApiError::NotFound);
     }
-    let path = first_present(candidates).await.ok_or_else(|| {
-        ApiError::Conflict(
-            "This file was deleted by retention cleanup.".into(),
-        )
-    })?;
+    let path = first_present(candidates)
+        .await
+        .ok_or_else(|| ApiError::Conflict("This file was deleted by retention cleanup.".into()))?;
     let ext = path
         .extension()
         .and_then(|e| e.to_str())

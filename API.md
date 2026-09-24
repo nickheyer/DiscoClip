@@ -561,7 +561,7 @@ Sets and resets multiple settings in one operation. Changes apply immediately.
 
 #### PUT /api/settings/{key}
 
-Saves and applies a value at a dotted key.
+Saves and applies a value at a dotted key. A secret sent as `null`, alone or inside a section, keeps the value already stored for it, which is how the withheld secrets of `SettingsView` round-trip.
 
 | Field | Value |
 |---|---|
@@ -1319,6 +1319,19 @@ Refreshes the current account Discord server list.
 | Response | `200` `Guild[]` |
 | Errors | `401` `404` `502` |
 
+#### GET /api/discord/guilds/{guild}/applications
+
+Lists the applications whose bots have been in a Discord server.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_watch_rules` or session managing `guild` |
+| Path | `guild` `snowflake` |
+| Query | None |
+| Body | None |
+| Response | `200` `GuildApplication[]` |
+| Errors | `401` `403` |
+
 ### Jobs
 
 #### GET /api/jobs
@@ -2054,8 +2067,10 @@ Includes jobs from any listed server or channel. Both lists empty includes all j
 |---|---|
 | `settings` | `object` |
 | `defaults` | `object` |
+| `exemplar` | `object`, the settings with every optional section filled with placeholder values, so the shape and type of every key can be read where `defaults` holds `null` |
 | `entries` | `SettingEntry[]` |
-| `secrets` | `string[]` |
+| `secrets` | `string[]`, the secret keys that hold a value |
+| `secret_keys` | `string[]`, every secret key, set or not |
 | `data_dir` | `string` |
 | `provisioning_file` | `string \| null` |
 
@@ -2201,8 +2216,17 @@ Includes jobs from any listed server or channel. Both lists empty includes all j
 | `id` | `uuid` |
 | `...ProfileInput` | `ProfileInput` |
 | `builtin` | `bool`: ships with the server, cannot be removed |
+| `server_limits` | `ServerLimits`: the engine's limits, which cap this profile |
 | `created_at` | `timestamp` |
 | `updated_at` | `timestamp` |
+
+#### ServerLimits
+
+| Field | Type |
+|---|---|
+| `max_source_bytes` | `integer` |
+| `max_duration_secs` | `integer \| null`: `null` puts no bound on how long media may be |
+| `max_height` | `integer` |
 
 #### Preset
 
@@ -2331,6 +2355,15 @@ Includes jobs from any listed server or channel. Both lists empty includes all j
 | `permissions` | `string` |
 | `manageable` | `bool` |
 | `fetched_at` | `timestamp` |
+
+#### GuildApplication
+
+| Field | Type |
+|---|---|
+| `application_id` | `uuid` |
+| `name` | `string` |
+| `guild_name` | `string` |
+| `present` | `bool` |
 
 #### Submitted
 
@@ -2728,15 +2761,16 @@ Includes jobs from any listed server or channel. Both lists empty includes all j
 | `media` | `MediaKind[]`: every kind its links can resolve to |
 | `tags` | `string[]`: what kind of place it is: the preset ids minus `sfw` |
 | `session` | `SessionSupport` |
-| `cookies` | `integer` |
 | `fixtures` | `FixtureResult[]` |
 | `last_run_at` | `timestamp \| null` |
-| `last_pass_at` | `timestamp \| null` |
+| `last_pass_at` | `timestamp \| null`: the last run in which every link passed |
 | `last_fail_at` | `timestamp \| null` |
 | `passed` | `integer` |
 | `failed` | `integer` |
+| `login_required` | `integer`: links that resolve only with a login the saved cookies do not give |
 | `running` | `bool` |
-| `cookies_updated_at` | `timestamp \| null` |
+| `cookies` | `integer`: cookies the app has saved for the platform |
+| `cookies_updated_at` | `timestamp \| null`: when those cookies were last replaced or cleared |
 | `session_check` | `SessionCheckResult \| null` |
 
 #### SessionCheckResult
@@ -2761,8 +2795,8 @@ Includes jobs from any listed server or channel. Both lists empty includes all j
 | `url` | `url` |
 | `status` | `FixtureStatus` |
 | `run_at` | `timestamp \| null` |
-| `last_pass_at` | `timestamp \| null` |
-| `error` | `string \| null` |
+| `last_pass_at` | `timestamp \| null`: when this link last resolved |
+| `error` | `string \| null`: what went wrong, as a sentence that never repeats `url` |
 | `title` | `string \| null` |
 | `found` | `Found \| null`: what the link resolved to, when it did |
 | `duration_ms` | `integer \| null` |

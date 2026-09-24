@@ -1,0 +1,425 @@
+<script lang="ts">
+	import PlusIcon from '@lucide/svelte/icons/plus';
+	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
+	import Trash2Icon from '@lucide/svelte/icons/trash-2';
+	import XIcon from '@lucide/svelte/icons/x';
+	import { onMount } from 'svelte';
+	import { SvelteURLSearchParams } from 'svelte/reactivity';
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
+	import { jobs, platforms } from '$lib/api/endpoints';
+	import type {
+		BulkAction,
+		JobOrder,
+		JobQuery,
+		JobSummary,
+		PlatformCoverage,
+		StatusKind
+	} from '$lib/api/types';
+	import Bytes from '$lib/components/Bytes.svelte';
+	import Confirm from '$lib/components/Confirm.svelte';
+	import DataTable, { type Column } from '$lib/components/DataTable.svelte';
+	import ErrorState from '$lib/components/ErrorState.svelte';
+	import Field from '$lib/components/Field.svelte';
+	import JobTitle from '$lib/components/JobTitle.svelte';
+	import MediaKindIcon from '$lib/components/MediaKindIcon.svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
+	import Pager from '$lib/components/Pager.svelte';
+	import RelativeTime from '$lib/components/RelativeTime.svelte';
+	import SearchInput from '$lib/components/SearchInput.svelte';
+	import Spinner from '$lib/components/Spinner.svelte';
+	import Status from '$lib/components/Status.svelte';
+	import Toolbar from '$lib/components/Toolbar.svelte';
+	import { feed } from '$lib/events.svelte';
+	import { mediaLabel, number } from '$lib/format';
+	import { mergeJobEvent } from '$lib/live';
+	import { session } from '$lib/session.svelte';
+	import { submitDialog } from '$lib/submit.svelte';
+	import { notify, reportError } from '$lib/toast.svelte';
+
+	const LIMIT = 50;
+	const STATUSES: StatusKind[] = ['queued', 'running', 'done', 'failed', 'cancelled'];
+
+	/** The filters, read from the URL so a page can be shared and refreshed. */
+	const query = $derived.by((): JobQuery => {
+		const p = page.url.searchParams;
+		const status = p.get('status');
+		const order = p.get('order');
+		const offset = Number(p.get('offset') ?? 0);
+		return {
+			q: p.get('q') ?? undefined,
+			status:
+				status && STATUSES.includes(status as StatusKind) ? (status as StatusKind) : undefined,
+			resolver: p.get('resolver') ?? undefined,
+			source: p.get('source') ?? undefined,
+			top_level: p.get('top_level') === 'true' ? true : undefined,
+			after: p.get('after') ?? undefined,
+			before: p.get('before') ?? undefined,
+			order: order === 'oldest' ? 'oldest' : undefined,
+			offset: Number.isFinite(offset) && offset > 0 ? offset : undefined,
+			limit: LIMIT
+		};
+	});
+
+	let rows = $state<JobSummary[]>([]);
+	let total = $state(0);
+	let loading = $state(true);
+	let error = $state<unknown>(null);
+	let selected = $state<string[]>([]);
+	let coverage = $state<PlatformCoverage[]>([]);
+	let confirmDelete = $state(false);
+	let bulkPending = $state<BulkAction | null>(null);
+
+	// Draft filter values, written to the URL on Apply.
+	let q = $state('');
+	let status = $state<StatusKind | ''>('');
+	let resolver = $state('');
+	let source = $state('');
+	let topLevel = $state(false);
+	let after = $state('');
+	let before = $state('');
+	let order = $state<JobOrder>('newest');
+
+	function syncDraft() {
+		q = query.q ?? '';
+		status = query.status ?? '';
+		resolver = query.resolver ?? '';
+		source = query.source ?? '';
+		topLevel = query.top_level === true;
+		after = toLocalInput(query.after);
+		before = toLocalInput(query.before);
+		order = query.order ?? 'newest';
+	}
+
+	function toLocalInput(timestamp: string | undefined): string {
+		if (!timestamp) return '';
+		const d = new Date(timestamp);
+		if (Number.isNaN(d.getTime())) return '';
+		const pad = (n: number) => String(n).padStart(2, '0');
+		return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+	}
+
+	function fromLocalInput(text: string): string | undefined {
+		if (!text) return undefined;
+		const d = new Date(text);
+		return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
+	}
+
+	async function apply(offset = 0) {
+		const params = new SvelteURLSearchParams();
+		if (q.trim()) params.set('q', q.trim());
+		if (status) params.set('status', status);
+		if (resolver.trim()) params.set('resolver', resolver.trim());
+		if (source.trim()) params.set('source', source.trim());
+		if (topLevel) params.set('top_level', 'true');
+		const afterIso = fromLocalInput(after);
+		const beforeIso = fromLocalInput(before);
+		if (afterIso) params.set('after', afterIso);
+		if (beforeIso) params.set('before', beforeIso);
+		if (order === 'oldest') params.set('order', 'oldest');
+		if (offset > 0) params.set('offset', String(offset));
+		const search = params.toString();
+		// The path is this page's own route; only the query changes.
+		// eslint-disable-next-line svelte/no-navigation-without-resolve
+		await goto(search ? `${resolve('/jobs')}?${search}` : resolve('/jobs'), {
+			keepFocus: true,
+			noScroll: true
+		});
+	}
+
+	async function clear() {
+		q = '';
+		status = '';
+		resolver = '';
+		source = '';
+		topLevel = false;
+		after = '';
+		before = '';
+		order = 'newest';
+		await apply();
+	}
+
+	let requestId = 0;
+	async function load() {
+		const id = ++requestId;
+		loading = true;
+		error = null;
+		try {
+			const result = await jobs.list(query);
+			if (id !== requestId) return;
+			rows = result.jobs;
+			total = result.total;
+			selected = selected.filter((key) => rows.some((row) => row.id === key));
+		} catch (err) {
+			if (id !== requestId) return;
+			error = err;
+		} finally {
+			if (id === requestId) loading = false;
+		}
+	}
+
+	$effect(() => {
+		void query;
+		syncDraft();
+		void load();
+	});
+
+	/** Whether a job belongs on the page with the filters in force. */
+	function matches(job: JobSummary): boolean {
+		if (query.status && job.status.status !== query.status) return false;
+		if (query.resolver && job.resolver !== query.resolver) return false;
+		if (query.source && job.source !== query.source) return false;
+		if (query.top_level && job.parent !== null) return false;
+		if (query.after && job.created_at < query.after) return false;
+		if (query.before && job.created_at > query.before) return false;
+		if (query.q) {
+			const needle = query.q.toLowerCase();
+			const hay = [job.title, job.url, job.uploader, job.submitted_by]
+				.filter(Boolean)
+				.join(' ')
+				.toLowerCase();
+			if (!hay.includes(needle)) return false;
+		}
+		return true;
+	}
+
+	onMount(() => {
+		platforms
+			.list()
+			.then((list) => (coverage = list))
+			.catch(() => (coverage = []));
+		return feed.onJob((event) => {
+			const before = rows.length;
+			const insert = !query.offset && query.order !== 'oldest';
+			rows = mergeJobEvent(rows, event, { insert, filter: matches, max: LIMIT });
+			if (rows.length > before) total += rows.length - before;
+			if (event.kind === 'deleted' && rows.length < before) total = Math.max(0, total - 1);
+		});
+	});
+
+	async function bulk(action: BulkAction) {
+		if (selected.length === 0) return;
+		bulkPending = action;
+		try {
+			const result = await jobs.bulk({ action, ids: selected });
+			const verb = { retry: 'retried', cancel: 'cancelled', delete: 'deleted' }[action];
+			const firstError = result.results.find((r) => !r.ok)?.error;
+			if (result.failed === 0) {
+				notify.success(`${number(result.succeeded)} ${verb}`);
+			} else {
+				notify.error(
+					`${number(result.succeeded)} ${verb}, ${number(result.failed)} failed`,
+					firstError ?? undefined
+				);
+			}
+			selected = [];
+			await load();
+		} catch (err) {
+			reportError(err, `Could not ${action} the selected jobs`);
+		} finally {
+			bulkPending = null;
+		}
+	}
+
+	const columns: Column<JobSummary>[] = [
+		{ key: 'job', label: 'Job', cell: jobCell, class: 'min-w-64' },
+		{ key: 'media', label: 'Media', cell: mediaCell },
+		{ key: 'status', label: 'Status', cell: statusCell },
+		{ key: 'origin', label: 'Origin', cell: originCell },
+		{
+			key: 'destination',
+			label: 'Destination',
+			value: (job) => job.destination,
+			class: 'max-w-40 truncate'
+		},
+		{ key: 'size', label: 'Size', align: 'right', cell: sizeCell },
+		{ key: 'age', label: 'Submitted', cell: ageCell }
+	];
+
+	const canManage = $derived(session.can('manage_jobs'));
+</script>
+
+{#snippet jobCell(job: JobSummary)}
+	<JobTitle {job} />
+{/snippet}
+{#snippet mediaCell(job: JobSummary)}
+	<span class="inline-flex items-center gap-1.5 text-sm" title={mediaLabel(job.media)}>
+		<MediaKindIcon kind={job.media} />
+		{#if job.live}<span class="text-error-700-300">Live</span>{/if}
+		{#if job.children > 0}<span class="text-surface-600-400">{number(job.children)} entries</span
+			>{/if}
+	</span>
+{/snippet}
+{#snippet statusCell(job: JobSummary)}
+	<Status job={job.status} />
+{/snippet}
+{#snippet originCell(job: JobSummary)}
+	<div class="text-sm">
+		<p>{job.source}</p>
+		<p class="max-w-40 truncate text-sm text-surface-600-400" title={job.origin.reference}>
+			{job.submitted_by ?? job.origin.reference}
+		</p>
+	</div>
+{/snippet}
+{#snippet sizeCell(job: JobSummary)}
+	<Bytes value={job.output_bytes} />
+{/snippet}
+{#snippet ageCell(job: JobSummary)}
+	<RelativeTime at={job.created_at} class="whitespace-nowrap" />
+{/snippet}
+
+<PageHeader title="Jobs" />
+
+<form
+	class="grid gap-4 card border border-surface-200-800 bg-surface-100-900 p-5 sm:grid-cols-2 sm:p-6 xl:grid-cols-4"
+	onsubmit={(event) => {
+		event.preventDefault();
+		void apply();
+	}}
+>
+	<Field label="Search jobs" for="job-search" class="sm:col-span-2">
+		<SearchInput
+			id="job-search"
+			bind:value={q}
+			placeholder="Title, link, or uploader"
+			onsearch={() => void apply()}
+		/>
+	</Field>
+	<Field label="Status" for="job-status">
+		<select id="job-status" class="select" bind:value={status}>
+			<option value="">Any status</option>
+			{#each STATUSES as kind (kind)}<option value={kind}
+					>{kind[0].toUpperCase() + kind.slice(1)}</option
+				>{/each}
+		</select>
+	</Field>
+	<Field label="Sort by" for="job-order">
+		<select id="job-order" class="select" bind:value={order}>
+			<option value="newest">Newest first</option>
+			<option value="oldest">Oldest first</option>
+		</select>
+	</Field>
+	<Field label="Resolver" for="job-resolver">
+		<input
+			id="job-resolver"
+			class="input"
+			list="resolvers"
+			placeholder="Any resolver"
+			bind:value={resolver}
+		/>
+	</Field>
+	<datalist id="resolvers">
+		{#each coverage as platform (platform.id)}<option value={platform.id}>{platform.name}</option
+			>{/each}
+	</datalist>
+	<Field label="Source" for="job-source">
+		<input id="job-source" class="input" placeholder="For example, Discord" bind:value={source} />
+	</Field>
+	<Field label="Submitted after" for="job-after">
+		<input id="job-after" class="input" type="datetime-local" bind:value={after} />
+	</Field>
+	<Field label="Submitted before" for="job-before">
+		<input id="job-before" class="input" type="datetime-local" bind:value={before} />
+	</Field>
+	<div
+		class="flex flex-wrap items-center justify-between gap-4 border-t border-surface-200-800 pt-4 sm:col-span-2 xl:col-span-4"
+	>
+		<label class="flex min-h-11 items-center gap-3 text-sm">
+			<input class="checkbox" type="checkbox" bind:checked={topLevel} />
+			Hide playlist entries
+		</label>
+		<div class="flex gap-3">
+			<button type="button" class="btn preset-tonal" onclick={clear}>Clear filters</button>
+			<button type="submit" class="btn preset-filled">Apply filters</button>
+		</div>
+	</div>
+</form>
+
+{#if canManage && selected.length > 0}
+	<div
+		class="flex flex-wrap items-center gap-2 card bg-primary-50-950 p-3 text-sm"
+		role="toolbar"
+		aria-label="Selected jobs"
+	>
+		<span class="font-medium">{number(selected.length)} selected</span>
+		<span class="flex-1"></span>
+		<button
+			type="button"
+			class="btn preset-tonal btn-sm"
+			onclick={() => bulk('retry')}
+			disabled={bulkPending !== null}
+		>
+			{#if bulkPending === 'retry'}<Spinner />{:else}<RotateCcwIcon class="size-4" />{/if}
+			Retry
+		</button>
+		<button
+			type="button"
+			class="btn preset-tonal btn-sm"
+			onclick={() => bulk('cancel')}
+			disabled={bulkPending !== null}
+		>
+			{#if bulkPending === 'cancel'}<Spinner />{:else}<XIcon class="size-4" />{/if}
+			Cancel
+		</button>
+		<button
+			type="button"
+			class="btn preset-tonal-error btn-sm"
+			onclick={() => (confirmDelete = true)}
+			disabled={bulkPending !== null}
+		>
+			{#if bulkPending === 'delete'}<Spinner />{:else}<Trash2Icon class="size-4" />{/if}
+			Delete
+		</button>
+		<button type="button" class="btn btn-sm hover:preset-tonal" onclick={() => (selected = [])}>
+			Clear selection
+		</button>
+	</div>
+{/if}
+
+<Toolbar description="Every link the server has been asked to fetch.">
+	{#if canManage}
+		<button
+			type="button"
+			class="btn preset-filled-primary-500"
+			onclick={() => (submitDialog.open = true)}
+		>
+			<PlusIcon class="size-4" />
+			Submit a link
+		</button>
+	{/if}
+</Toolbar>
+
+{#if error && !loading}
+	<ErrorState {error} onretry={load} />
+{:else}
+	<DataTable
+		{rows}
+		{columns}
+		rowKey={(job) => job.id}
+		{loading}
+		selectable={canManage}
+		bind:selected
+		rowHref={(job) => resolve('/(app)/jobs/[id]', { id: job.id })}
+		rowLabel="View"
+	>
+		{#snippet empty()}
+			No jobs match these filters.
+		{/snippet}
+	</DataTable>
+	<Pager
+		{total}
+		limit={LIMIT}
+		offset={query.offset ?? 0}
+		onchange={(offset) => void apply(offset)}
+	/>
+{/if}
+
+<Confirm
+	bind:open={confirmDelete}
+	title="Delete {number(selected.length)} job{selected.length === 1 ? '' : 's'}?"
+	message="Their records and cached files go away. Running jobs are skipped."
+	confirmLabel="Delete"
+	danger
+	onconfirm={() => bulk('delete')}
+/>

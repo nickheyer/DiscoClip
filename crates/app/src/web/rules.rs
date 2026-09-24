@@ -272,7 +272,10 @@ mod tests {
         let (status, body) = admin.post(&guild_rules, json!({"channel_id": "10"})).await;
         assert_eq!(status, StatusCode::CONFLICT, "{body}");
         let (status, _) = admin
-            .post(&guild_rules, json!({"channel_id": "11", "allow_users": ["x"]}))
+            .post(
+                &guild_rules,
+                json!({"channel_id": "11", "allow_users": ["x"]}),
+            )
             .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
         // What profiles carry now is not a rule's to say.

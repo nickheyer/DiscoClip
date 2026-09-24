@@ -4,6 +4,7 @@
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
+use discoclip_engine::Limits;
 use serde::{Deserialize, Serialize};
 
 use super::AppState;
@@ -40,6 +41,44 @@ async fn may_assign(state: &AppState, identity: &Identity, scope: &Scope) -> Res
     }
 }
 
+/// The engine's own limits. They cap every profile, however high a profile sets its own,
+/// and they are what a blank profile limit ends up bounded by.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct ServerLimits {
+    pub max_source_bytes: u64,
+    /// `null` when the server puts no bound of its own on how long media may be.
+    pub max_duration_secs: Option<u64>,
+    pub max_height: u32,
+}
+
+impl From<Limits> for ServerLimits {
+    fn from(limits: Limits) -> Self {
+        Self {
+            max_source_bytes: limits.max_source_bytes,
+            max_duration_secs: limits.max_duration_secs,
+            max_height: limits.max_height,
+        }
+    }
+}
+
+/// A profile as the API hands it over: the profile itself, and the server limits that cap
+/// it, so whoever edits profiles reads the ceiling without the settings permission.
+#[derive(Debug, Serialize)]
+pub struct ProfileView {
+    #[serde(flatten)]
+    pub profile: Profile,
+    pub server_limits: ServerLimits,
+}
+
+impl ProfileView {
+    fn of(profile: Profile, limits: Limits) -> Self {
+        Self {
+            profile,
+            server_limits: limits.into(),
+        }
+    }
+}
+
 /// The presets a profile can choose, each with the platforms in it.
 pub async fn presets(State(state): State<AppState>, Auth(_): Auth) -> Json<Vec<Preset>> {
     Json(state.profiles.cache().presets().list().to_vec())
@@ -49,30 +88,41 @@ pub async fn presets(State(state): State<AppState>, Auth(_): Auth) -> Json<Vec<P
 pub async fn list(
     State(state): State<AppState>,
     Auth(_): Auth,
-) -> Result<Json<Vec<Profile>>, ApiError> {
-    Ok(Json(state.profiles.list().await?))
+) -> Result<Json<Vec<ProfileView>>, ApiError> {
+    let limits = state.engine.config().limits;
+    Ok(Json(
+        state
+            .profiles
+            .list()
+            .await?
+            .into_iter()
+            .map(|profile| ProfileView::of(profile, limits.clone()))
+            .collect(),
+    ))
 }
 
 pub async fn get(
     State(state): State<AppState>,
     Auth(_): Auth,
     Path(id): Path<String>,
-) -> Result<Json<Profile>, ApiError> {
+) -> Result<Json<ProfileView>, ApiError> {
     let id: ProfileId = parse_id(&id)?;
-    Ok(Json(
-        state.profiles.get(id).await?.ok_or(ApiError::NotFound)?,
-    ))
+    let profile = state.profiles.get(id).await?.ok_or(ApiError::NotFound)?;
+    Ok(Json(ProfileView::of(profile, state.engine.config().limits)))
 }
 
 pub async fn create(
     State(state): State<AppState>,
     Auth(identity): Auth,
     Json(input): Json<ProfileInput>,
-) -> Result<(StatusCode, Json<Profile>), ApiError> {
+) -> Result<(StatusCode, Json<ProfileView>), ApiError> {
     identity.require(Permission::ManageSettings)?;
     let profile = state.profiles.create(&identity.actor(), input).await?;
     tracing::info!(by = identity.user.username, profile = %profile.id, name = profile.input.name, "profile created");
-    Ok((StatusCode::CREATED, Json(profile)))
+    Ok((
+        StatusCode::CREATED,
+        Json(ProfileView::of(profile, state.engine.config().limits)),
+    ))
 }
 
 pub async fn update(
@@ -80,12 +130,12 @@ pub async fn update(
     Auth(identity): Auth,
     Path(id): Path<String>,
     Json(input): Json<ProfileInput>,
-) -> Result<Json<Profile>, ApiError> {
+) -> Result<Json<ProfileView>, ApiError> {
     identity.require(Permission::ManageSettings)?;
     let id: ProfileId = parse_id(&id)?;
     let profile = state.profiles.update(&identity.actor(), id, input).await?;
     tracing::info!(by = identity.user.username, profile = %profile.id, name = profile.input.name, "profile updated");
-    Ok(Json(profile))
+    Ok(Json(ProfileView::of(profile, state.engine.config().limits)))
 }
 
 pub async fn delete(
@@ -247,8 +297,23 @@ mod tests {
         assert_eq!(body["platforms"]["fixtured"], true);
         assert_eq!(body["platforms"]["nothing"], true);
         assert_eq!(body["disabled"], json!([]));
-        assert_eq!(body["limits"], json!({"max_source_bytes": null, "max_duration_secs": null, "max_height": null}));
+        assert_eq!(
+            body["limits"],
+            json!({"max_source_bytes": null, "max_duration_secs": null, "max_height": null})
+        );
         assert_eq!(body["applied"][0]["scope"]["kind"], "global");
+
+        // Every profile carries the engine's own limits, so whoever edits a profile reads
+        // the ceiling its blank limits end up under without the settings permission.
+        let server_limits = json!({
+            "max_source_bytes": 2_u64 * 1024 * 1024 * 1024,
+            "max_duration_secs": 3 * 60 * 60,
+            "max_height": 1080
+        });
+        assert_eq!(profiles[0]["server_limits"], server_limits);
+        let (status, body) = viewer.get(&format!("/api/profiles/{default_id}")).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["server_limits"], server_limits);
 
         // Viewers may not edit.
         let input = json!({
@@ -265,6 +330,7 @@ mod tests {
         assert_eq!(status, StatusCode::CREATED, "{body}");
         let id = body["id"].as_str().unwrap().to_string();
         assert_eq!(body["builtin"], false);
+        assert_eq!(body["server_limits"], server_limits);
         assert_eq!(body["platforms"]["overrides"]["fixtured"], false);
         assert_eq!(body["limits"]["max_duration_secs"], 120);
         assert_eq!(body["limits"]["max_height"], 720);
@@ -316,7 +382,7 @@ mod tests {
             body["error"]
                 .as_str()
                 .unwrap_or_default()
-                .contains("fixtured links are turned off"),
+                .contains("The assigned profile disables fixtured links."),
             "{body}"
         );
         // A link the profile allows is queued under its limits, tightened by the

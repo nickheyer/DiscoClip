@@ -59,9 +59,12 @@ fn boxes(data: &[u8], range: Range<usize>) -> Result<Vec<BoxRef>, DownloadError>
         let (size, header) = match size {
             0 => (range.end - pos, 8),
             1 => {
-                let large = u64_at(data, pos + 8)
-                    .ok_or_else(|| bad("box with a large size cut short"))?;
-                (usize::try_from(large).map_err(|_| bad("box too large"))?, 16)
+                let large =
+                    u64_at(data, pos + 8).ok_or_else(|| bad("box with a large size cut short"))?;
+                (
+                    usize::try_from(large).map_err(|_| bad("box too large"))?,
+                    16,
+                )
             }
             n => (n as usize, 8),
         };
@@ -130,7 +133,9 @@ impl Protection {
     /// Reads the fields `tenc` and `seig` entries share, from `at`: reserved, pattern,
     /// isProtected, Per_Sample_IV_Size, KID, and the constant IV when there is one.
     fn parse(data: &[u8], at: usize, scheme: [u8; 4]) -> Result<Self, DownloadError> {
-        let pattern = *data.get(at + 1).ok_or_else(|| bad("protection entry cut short"))?;
+        let pattern = *data
+            .get(at + 1)
+            .ok_or_else(|| bad("protection entry cut short"))?;
         let protected = data[at + 2] == 1;
         let iv_size = data[at + 3];
         let constant_iv = if protected && iv_size == 0 {
@@ -192,7 +197,11 @@ fn free(out: &mut [u8], at: &BoxRef) {
 
 /// The `seig` sample group descriptions in an `sgpd` box, in order. Empty for any other
 /// grouping.
-fn seig_entries(data: &[u8], sgpd: &BoxRef, scheme: [u8; 4]) -> Result<Vec<Protection>, DownloadError> {
+fn seig_entries(
+    data: &[u8],
+    sgpd: &BoxRef,
+    scheme: [u8; 4],
+) -> Result<Vec<Protection>, DownloadError> {
     let body = sgpd.start + sgpd.header;
     let version = data[body];
     if data.get(body + 4..body + 8) != Some(b"seig") {
@@ -266,23 +275,17 @@ pub fn read_init(data: &[u8]) -> Result<Init, DownloadError> {
         let parts = boxes(data, trak.body())?;
         let tkhd = child(&parts, b"tkhd").ok_or_else(|| bad("trak without tkhd"))?;
         let tkhd_body = tkhd.start + tkhd.header;
-        let id = u32_at(
-            data,
-            tkhd_body + if data[tkhd_body] == 1 { 20 } else { 12 },
-        )
-        .ok_or_else(|| bad("tkhd cut short"))?;
+        let id = u32_at(data, tkhd_body + if data[tkhd_body] == 1 { 20 } else { 12 })
+            .ok_or_else(|| bad("tkhd cut short"))?;
         let mdia = child(&parts, b"mdia").ok_or_else(|| bad("trak without mdia"))?;
         let mdia_parts = boxes(data, mdia.body())?;
         let mdhd = child(&mdia_parts, b"mdhd").ok_or_else(|| bad("mdia without mdhd"))?;
         let mdhd_body = mdhd.start + mdhd.header;
-        let timescale = u32_at(
-            data,
-            mdhd_body + if data[mdhd_body] == 1 { 20 } else { 12 },
-        )
-        .ok_or_else(|| bad("mdhd cut short"))?;
+        let timescale = u32_at(data, mdhd_body + if data[mdhd_body] == 1 { 20 } else { 12 })
+            .ok_or_else(|| bad("mdhd cut short"))?;
         let minf = child(&mdia_parts, b"minf").ok_or_else(|| bad("mdia without minf"))?;
-        let stbl = child(&boxes(data, minf.body())?, b"stbl")
-            .ok_or_else(|| bad("minf without stbl"))?;
+        let stbl =
+            child(&boxes(data, minf.body())?, b"stbl").ok_or_else(|| bad("minf without stbl"))?;
         let stbl_parts = boxes(data, stbl.body())?;
         let stsd = child(&stbl_parts, b"stsd").ok_or_else(|| bad("stbl without stsd"))?;
         let mut protection = None;
@@ -293,11 +296,13 @@ pub fn read_init(data: &[u8]) -> Result<Init, DownloadError> {
             let children_start = sample_entry_children(data, &entry)?;
             let children = boxes(data, children_start..entry.end)?;
             let sinf = child(&children, b"sinf").ok_or_else(|| {
-                bad(format!("protected sample entry {} without sinf", entry.name()))
+                bad(format!(
+                    "protected sample entry {} without sinf",
+                    entry.name()
+                ))
             })?;
             let sinf_parts = boxes(data, sinf.body())?;
-            let frma = child(&sinf_parts, b"frma")
-                .ok_or_else(|| bad("sinf without frma"))?;
+            let frma = child(&sinf_parts, b"frma").ok_or_else(|| bad("sinf without frma"))?;
             let format: [u8; 4] = data[frma.start + frma.header..frma.start + frma.header + 4]
                 .try_into()
                 .unwrap();
@@ -314,7 +319,11 @@ pub fn read_init(data: &[u8]) -> Result<Init, DownloadError> {
             let schi = child(&sinf_parts, b"schi").ok_or_else(|| bad("sinf without schi"))?;
             let tenc = child(&boxes(data, schi.body())?, b"tenc")
                 .ok_or_else(|| bad("schi without tenc"))?;
-            protection = Some(Protection::parse(data, tenc.start + tenc.header + 4, scheme)?);
+            protection = Some(Protection::parse(
+                data,
+                tenc.start + tenc.header + 4,
+                scheme,
+            )?);
             out[entry.start + 4..entry.start + 8].copy_from_slice(&format);
             free(&mut out, &sinf);
         }
@@ -368,7 +377,8 @@ fn sample_infos(
         pos += iv_size;
         let mut runs = Vec::new();
         if subsamples {
-            let n = u16_at(data, pos).ok_or_else(|| bad("sample encryption information cut short"))?;
+            let n =
+                u16_at(data, pos).ok_or_else(|| bad("sample encryption information cut short"))?;
             pos += 2;
             for _ in 0..n {
                 let clear = u16_at(data, pos)
@@ -458,7 +468,11 @@ fn decrypt_sample(
                 let blocks = region.len() / 16;
                 let mut i = 0;
                 while i < blocks {
-                    let run = if patterned { crypt.min(blocks - i) } else { blocks - i };
+                    let run = if patterned {
+                        crypt.min(blocks - i)
+                    } else {
+                        blocks - i
+                    };
                     for _ in 0..run {
                         let block: &mut [u8] = &mut region[i * 16..i * 16 + 16];
                         let ciphertext: [u8; 16] = block.try_into().unwrap();
@@ -627,8 +641,8 @@ pub fn text_samples(data: &[u8], init: &Init) -> Result<(u32, Vec<TextSample>), 
         {
             let parts = boxes(data, traf.body())?;
             let tfhd = child(&parts, b"tfhd").ok_or_else(|| bad("traf without tfhd"))?;
-            let track_id = u32_at(data, tfhd.start + tfhd.header + 4)
-                .ok_or_else(|| bad("tfhd cut short"))?;
+            let track_id =
+                u32_at(data, tfhd.start + tfhd.header + 4).ok_or_else(|| bad("tfhd cut short"))?;
             let track = init
                 .tracks
                 .iter()
@@ -701,6 +715,57 @@ pub fn wvtt_cues(sample: &[u8]) -> Result<Vec<WebvttCue>, DownloadError> {
         cues.push(cue);
     }
     Ok(cues)
+}
+
+/// What tells one media segment from another: the track the first `traf` of the `moof`
+/// carries samples for, and the decode time its samples start at.
+pub fn fragment_key(data: &[u8]) -> Result<(u32, u64), DownloadError> {
+    let top = boxes(data, 0..data.len())?;
+    let moof = child(&top, b"moof").ok_or_else(|| bad("media segment has no moof"))?;
+    let traf = boxes(data, moof.body())?
+        .into_iter()
+        .find(|b| &b.kind == b"traf")
+        .ok_or_else(|| bad("moof without traf"))?;
+    let parts = boxes(data, traf.body())?;
+    let tfhd = child(&parts, b"tfhd").ok_or_else(|| bad("traf without tfhd"))?;
+    let track = u32_at(data, tfhd.start + tfhd.header + 4).ok_or_else(|| bad("tfhd cut short"))?;
+    let time = match child(&parts, b"tfdt") {
+        Some(tfdt) => {
+            let body = tfdt.start + tfdt.header;
+            let version = *data.get(body).ok_or_else(|| bad("tfdt cut short"))?;
+            if version == 1 {
+                u64_at(data, body + 4).ok_or_else(|| bad("tfdt cut short"))?
+            } else {
+                u64::from(u32_at(data, body + 4).ok_or_else(|| bad("tfdt cut short"))?)
+            }
+        }
+        None => 0,
+    };
+    Ok((track, time))
+}
+
+/// The sample descriptions of every track in the movie box of `init`, laid end to end:
+/// the codec configuration, which two initialization sections share exactly when the
+/// media they introduce can be joined without decoding it.
+pub fn sample_descriptions(init: &[u8]) -> Result<Vec<u8>, DownloadError> {
+    let top = boxes(init, 0..init.len())?;
+    let moov = child(&top, b"moov").ok_or_else(|| bad("initialization section has no moov"))?;
+    let mut out = Vec::new();
+    for trak in boxes(init, moov.body())?
+        .iter()
+        .filter(|b| &b.kind == b"trak")
+    {
+        let mut at = *trak;
+        for kind in [b"mdia", b"minf", b"stbl", b"stsd"] {
+            at = child(&boxes(init, at.body())?, kind)
+                .ok_or_else(|| bad(format!("trak without {}", String::from_utf8_lossy(kind))))?;
+        }
+        out.extend_from_slice(&init[at.body()]);
+    }
+    if out.is_empty() {
+        return Err(bad("initialization section declares no track"));
+    }
+    Ok(out)
 }
 
 /// The top-level boxes of a file or segment: each kind with where it starts and ends.
@@ -779,7 +844,11 @@ pub fn parse_sidx(data: &[u8]) -> Result<Sidx, DownloadError> {
 /// Decrypts every protected sample of a media segment with `key`, in place, and frees
 /// the boxes that described the encryption, so the segment reads as plain media after
 /// `init.cleared`.
-pub fn decrypt_fragment(data: &[u8], init: &Init, key: &[u8; 16]) -> Result<Vec<u8>, DownloadError> {
+pub fn decrypt_fragment(
+    data: &[u8],
+    init: &Init,
+    key: &[u8; 16],
+) -> Result<Vec<u8>, DownloadError> {
     let mut out = data.to_vec();
     for moof in boxes(data, 0..data.len())?
         .iter()
@@ -792,8 +861,8 @@ pub fn decrypt_fragment(data: &[u8], init: &Init, key: &[u8; 16]) -> Result<Vec<
         {
             let parts = boxes(data, traf.body())?;
             let tfhd = child(&parts, b"tfhd").ok_or_else(|| bad("traf without tfhd"))?;
-            let track_id = u32_at(data, tfhd.start + tfhd.header + 4)
-                .ok_or_else(|| bad("tfhd cut short"))?;
+            let track_id =
+                u32_at(data, tfhd.start + tfhd.header + 4).ok_or_else(|| bad("tfhd cut short"))?;
             let track = init
                 .tracks
                 .iter()
@@ -823,9 +892,11 @@ pub fn decrypt_fragment(data: &[u8], init: &Init, key: &[u8; 16]) -> Result<Vec<
             for (count, index) in &groups {
                 let protection = match *index {
                     0 => default,
-                    i if i > 0x1_0000 => local_seig
-                        .get((i - 0x1_0001) as usize)
-                        .ok_or_else(|| bad("sample group names a description the fragment lacks"))?,
+                    i if i > 0x1_0000 => {
+                        local_seig.get((i - 0x1_0001) as usize).ok_or_else(|| {
+                            bad("sample group names a description the fragment lacks")
+                        })?
+                    }
                     i => track
                         .seig
                         .get((i - 1) as usize)
@@ -846,9 +917,12 @@ pub fn decrypt_fragment(data: &[u8], init: &Init, key: &[u8; 16]) -> Result<Vec<
                     )));
                 }
                 sample_infos(data, body + 8, count, flags & 2 != 0, iv_size_of)?
-            } else if let (Some(saio), Some(saiz)) = (child(&parts, b"saio"), child(&parts, b"saiz")) {
+            } else if let (Some(saio), Some(saiz)) =
+                (child(&parts, b"saio"), child(&parts, b"saiz"))
+            {
                 let saio_body = saio.start + saio.header;
-                let saio_flags = u32_at(data, saio_body).ok_or_else(|| bad("saio cut short"))? & 0x00ff_ffff;
+                let saio_flags =
+                    u32_at(data, saio_body).ok_or_else(|| bad("saio cut short"))? & 0x00ff_ffff;
                 let mut pos = saio_body + 4 + if saio_flags & 1 != 0 { 8 } else { 0 };
                 let entries = u32_at(data, pos).ok_or_else(|| bad("saio cut short"))?;
                 pos += 4;
@@ -861,7 +935,8 @@ pub fn decrypt_fragment(data: &[u8], init: &Init, key: &[u8; 16]) -> Result<Vec<
                     u32_at(data, pos).ok_or_else(|| bad("saio cut short"))? as usize
                 };
                 let saiz_body = saiz.start + saiz.header;
-                let saiz_flags = u32_at(data, saiz_body).ok_or_else(|| bad("saiz cut short"))? & 0x00ff_ffff;
+                let saiz_flags =
+                    u32_at(data, saiz_body).ok_or_else(|| bad("saiz cut short"))? & 0x00ff_ffff;
                 let pos = saiz_body + 4 + if saiz_flags & 1 != 0 { 8 } else { 0 };
                 let default_size = data[pos];
                 let count = u32_at(data, pos + 1).ok_or_else(|| bad("saiz cut short"))? as usize;
@@ -876,11 +951,14 @@ pub fn decrypt_fragment(data: &[u8], init: &Init, key: &[u8; 16]) -> Result<Vec<
                 };
                 sample_infos(data, moof.start + offset, count, subsampled, iv_size_of)?
             } else if per_sample.iter().any(|p| p.protected) {
-                return Err(bad("protected fragment without sample encryption information"));
+                return Err(bad(
+                    "protected fragment without sample encryption information",
+                ));
             } else {
                 Vec::new()
             };
-            for (index, ((offset, size), protection)) in samples.iter().zip(&per_sample).enumerate() {
+            for (index, ((offset, size), protection)) in samples.iter().zip(&per_sample).enumerate()
+            {
                 if !protection.protected {
                     continue;
                 }
@@ -917,8 +995,16 @@ pub fn decrypt_fragment(data: &[u8], init: &Init, key: &[u8; 16]) -> Result<Vec<
 /// The earliest time any track fragment of the segment starts at, in seconds.
 pub fn start_time(data: &[u8], init: &Init) -> Option<f64> {
     let mut earliest: Option<f64> = None;
-    for moof in boxes(data, 0..data.len()).ok()?.iter().filter(|b| &b.kind == b"moof") {
-        for traf in boxes(data, moof.body()).ok()?.iter().filter(|b| &b.kind == b"traf") {
+    for moof in boxes(data, 0..data.len())
+        .ok()?
+        .iter()
+        .filter(|b| &b.kind == b"moof")
+    {
+        for traf in boxes(data, moof.body())
+            .ok()?
+            .iter()
+            .filter(|b| &b.kind == b"traf")
+        {
             let parts = boxes(data, traf.body()).ok()?;
             let tfhd = child(&parts, b"tfhd")?;
             let track_id = u32_at(data, tfhd.start + tfhd.header + 4)?;
@@ -1062,7 +1148,14 @@ pub mod build {
 
     /// Encrypts one sample's runs with the `cbcs` pattern, as the packager's side of
     /// [`decrypt_sample`].
-    pub fn encrypt_cbcs(sample: &mut [u8], key: &[u8; 16], iv: &[u8; 16], crypt: usize, skip: usize, subsamples: &[(usize, usize)]) {
+    pub fn encrypt_cbcs(
+        sample: &mut [u8],
+        key: &[u8; 16],
+        iv: &[u8; 16],
+        crypt: usize,
+        skip: usize,
+        subsamples: &[(usize, usize)],
+    ) {
         let cipher = Aes128::new(key.into());
         let mut pos = 0;
         for &(clear, encrypted) in subsamples {
@@ -1072,7 +1165,11 @@ pub mod build {
             let blocks = region.len() / 16;
             let mut i = 0;
             while i < blocks {
-                let run = if crypt > 0 { crypt.min(blocks - i) } else { blocks - i };
+                let run = if crypt > 0 {
+                    crypt.min(blocks - i)
+                } else {
+                    blocks - i
+                };
                 for _ in 0..run {
                     let block = &mut region[i * 16..i * 16 + 16];
                     let mut inner: [u8; 16] = block.try_into().unwrap();
@@ -1096,7 +1193,12 @@ pub mod build {
     /// Turns a plain fragment (moof + mdat, with default-base-is-moof) into a `cbcs`
     /// one: every sample encrypted past `clear_lead` bytes with the 1:9 pattern and a
     /// per-sample IV, described by a `senc` box added to each track fragment.
-    pub fn encrypt_fragment_cbcs(data: &[u8], key: &[u8; 16], iv: &[u8; 16], clear_lead: usize) -> Vec<u8> {
+    pub fn encrypt_fragment_cbcs(
+        data: &[u8],
+        key: &[u8; 16],
+        iv: &[u8; 16],
+        clear_lead: usize,
+    ) -> Vec<u8> {
         let track = Track {
             id: 0,
             timescale: 1,
@@ -1112,7 +1214,11 @@ pub mod build {
         let mut sencs: Vec<(usize, Vec<u8>)> = Vec::new();
         for moof in top.iter().filter(|b| &b.kind == b"moof") {
             let mut running_base = moof.start;
-            for traf in boxes(data, moof.body()).unwrap().iter().filter(|b| &b.kind == b"traf") {
+            for traf in boxes(data, moof.body())
+                .unwrap()
+                .iter()
+                .filter(|b| &b.kind == b"traf")
+            {
                 let parts = boxes(data, traf.body()).unwrap();
                 let FragmentSamples {
                     samples, next_base, ..
@@ -1158,8 +1264,16 @@ pub mod build {
             // Sample data moved by what was inserted before it. Every trun's offset
             // is relative to the moof, so it grows by the same amount.
             let moof_now = boxes(&out, moof.start..out.len()).unwrap()[0];
-            for traf in boxes(&out, moof_now.body()).unwrap().iter().filter(|b| &b.kind == b"traf") {
-                for trun in boxes(&out, traf.body()).unwrap().iter().filter(|b| &b.kind == b"trun") {
+            for traf in boxes(&out, moof_now.body())
+                .unwrap()
+                .iter()
+                .filter(|b| &b.kind == b"traf")
+            {
+                for trun in boxes(&out, traf.body())
+                    .unwrap()
+                    .iter()
+                    .filter(|b| &b.kind == b"trun")
+                {
                     let body = trun.start + trun.header;
                     if u32_at(&out, body).unwrap() & 1 != 0 {
                         let offset = u32_at(&out, body + 8).unwrap() as i32 + inserted as i32;
@@ -1352,12 +1466,28 @@ mod tests {
         let sinf = sinf(b"avc1", b"cbcs", &tenc(1, 9, 0, Some(&iv)));
         let mut protected = append_within(
             &plain,
-            &[(b"moov", 0), (b"trak", 0), (b"mdia", 0), (b"minf", 0), (b"stbl", 0), (b"stsd", 0), (b"avc1", 0)],
+            &[
+                (b"moov", 0),
+                (b"trak", 0),
+                (b"mdia", 0),
+                (b"minf", 0),
+                (b"stbl", 0),
+                (b"stsd", 0),
+                (b"avc1", 0),
+            ],
             &sinf,
         );
         rename(
             &mut protected,
-            &[(b"moov", 0), (b"trak", 0), (b"mdia", 0), (b"minf", 0), (b"stbl", 0), (b"stsd", 0), (b"avc1", 0)],
+            &[
+                (b"moov", 0),
+                (b"trak", 0),
+                (b"mdia", 0),
+                (b"minf", 0),
+                (b"stbl", 0),
+                (b"stsd", 0),
+                (b"avc1", 0),
+            ],
             b"encv",
         );
         let init = read_init(&protected).unwrap();
@@ -1400,12 +1530,28 @@ mod tests {
         // An unknown scheme is refused.
         let mut other = append_within(
             &plain,
-            &[(b"moov", 0), (b"trak", 0), (b"mdia", 0), (b"minf", 0), (b"stbl", 0), (b"stsd", 0), (b"avc1", 0)],
+            &[
+                (b"moov", 0),
+                (b"trak", 0),
+                (b"mdia", 0),
+                (b"minf", 0),
+                (b"stbl", 0),
+                (b"stsd", 0),
+                (b"avc1", 0),
+            ],
             &super::build::sinf(b"avc1", b"abcd", &tenc(0, 0, 16, None)),
         );
         rename(
             &mut other,
-            &[(b"moov", 0), (b"trak", 0), (b"mdia", 0), (b"minf", 0), (b"stbl", 0), (b"stsd", 0), (b"avc1", 0)],
+            &[
+                (b"moov", 0),
+                (b"trak", 0),
+                (b"mdia", 0),
+                (b"minf", 0),
+                (b"stbl", 0),
+                (b"stsd", 0),
+                (b"avc1", 0),
+            ],
             b"encv",
         );
         assert!(matches!(read_init(&other), Err(DownloadError::Segment(m)) if m.contains("abcd")));

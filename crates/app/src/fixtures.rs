@@ -141,8 +141,6 @@ pub struct PlatformCoverage {
     /// What kind of place it is: the presets it belongs to.
     pub tags: &'static [Tag],
     pub session: SessionSupport,
-    /// How many cookies the platform's jar holds.
-    pub cookies: usize,
     pub fixtures: Vec<FixtureResult>,
     #[serde(flatten)]
     pub summary: PlatformSummary,
@@ -544,7 +542,6 @@ impl FixtureRunner {
             media: platform.media,
             tags: platform.tags,
             session: platform.session,
-            cookies: self.engine.http().jar(platform.id).len(),
             fixtures,
             summary: record.map(|r| r.summary.clone()).unwrap_or_default(),
             running: running.contains(platform.id),
@@ -665,7 +662,7 @@ impl FixtureRunner {
                     url: example.to_string(),
                     ok: false,
                     login_required: false,
-                    error: Some(format!("not a URL: {error}")),
+                    error: Some(format!("Not a URL: {error}")),
                     title: None,
                     found: None,
                     duration: began.elapsed(),
@@ -675,7 +672,7 @@ impl FixtureRunner {
                         url: example.to_string(),
                         ok: false,
                         login_required: false,
-                        error: Some(format!("no answer within {}s", timeout.as_secs())),
+                        error: Some(format!("No answer within {}s", timeout.as_secs())),
                         title: None,
                         found: None,
                         duration: began.elapsed(),
@@ -684,7 +681,7 @@ impl FixtureRunner {
                         url: example.to_string(),
                         ok: false,
                         login_required: matches!(error, ResolveError::LoginRequired { .. }),
-                        error: Some(error.to_string()),
+                        error: Some(message(example, &error)),
                         title: None,
                         found: None,
                         duration: began.elapsed(),
@@ -749,14 +746,14 @@ fn judge(url: &str, resolution: Resolution, duration: Duration) -> Outcome {
             } else if let Some(system) = resolved.drm() {
                 (
                     false,
-                    Some(format!("every variant is locked with {system} DRM")),
+                    Some(format!("Every variant is locked with {system} DRM")),
                     resolved.title,
                     None,
                 )
             } else {
                 (
                     false,
-                    Some("resolved without any media variant".to_string()),
+                    Some("Resolved without any media variant".to_string()),
                     resolved.title,
                     None,
                 )
@@ -766,7 +763,7 @@ fn judge(url: &str, resolution: Resolution, duration: Duration) -> Outcome {
             if playlist.entries.is_empty() {
                 (
                     false,
-                    Some("the playlist has no entries".to_string()),
+                    Some("The playlist has no entries".to_string()),
                     playlist.title,
                     None,
                 )
@@ -792,9 +789,40 @@ fn judge(url: &str, resolution: Resolution, duration: Duration) -> Outcome {
     }
 }
 
+/// What a link's failure reads as: the resolver's words about what went wrong, as a
+/// sentence and without the link itself, which every row shows beside the message.
+fn message(url: &str, error: &ResolveError) -> String {
+    match error {
+        ResolveError::Unsupported(_) => "No resolver takes this link".to_string(),
+        ResolveError::NotFound(_) => "No video found".to_string(),
+        ResolveError::Unavailable { reason, .. } => format!("Unavailable: {reason}"),
+        ResolveError::Malformed { detail, .. } => format!("Unexpected response: {detail}"),
+        ResolveError::Http(error) => sentence(&error.to_string().replace(url, "the link")),
+        ResolveError::Redirect(to) => format!("The media lives at {to}"),
+        ResolveError::Drm { system, .. } => format!("Protected by {system} DRM"),
+        ResolveError::LoginRequired {
+            platform, reason, ..
+        } => format!("Needs a logged-in {platform} session: {reason}"),
+        ResolveError::RateLimited(_) => "Rate limited. Try again later.".to_string(),
+        ResolveError::Disabled { platform, .. } => {
+            format!("Links for {platform} are turned off here")
+        }
+    }
+}
+
+/// The text with its first letter in upper case.
+fn sentence(text: &str) -> String {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use discoclip_engine::http::{HttpError, StatusCode};
     use discoclip_engine::resolve::{Playlist, PlaylistEntry, Resolved, Variant};
 
     async fn store() -> FixtureStore {
@@ -808,7 +836,7 @@ mod tests {
             url: url.into(),
             ok,
             login_required: false,
-            error: (!ok).then(|| "no video found".to_string()),
+            error: (!ok).then(|| "No video found".to_string()),
             title: ok.then(|| "A clip".to_string()),
             found: ok.then_some(Found::Media {
                 media: MediaKind::Video,
@@ -823,9 +851,7 @@ mod tests {
             url: url.into(),
             ok: false,
             login_required: true,
-            error: Some(format!(
-                "{url} needs a logged-in p session: posts are read with the sid cookie"
-            )),
+            error: Some("Needs a logged-in p session: posts are read with the sid cookie".into()),
             title: None,
             found: None,
             duration: Duration::from_millis(12),
@@ -862,7 +888,7 @@ mod tests {
             .unwrap();
         assert!(!post.ok);
         assert!(post.login_required);
-        assert!(post.error.as_ref().unwrap().contains("needs a logged-in"));
+        assert!(post.error.as_ref().unwrap().contains("Needs a logged-in"));
         assert_eq!(post.last_pass_at, None);
 
         // With the session in place the link passes, and the platform with it.
@@ -991,5 +1017,41 @@ mod tests {
             )
             .ok
         );
+    }
+
+    #[test]
+    fn a_failure_reads_as_a_sentence_without_the_link() {
+        let url = Url::parse("https://p/v").unwrap();
+        let at = url.as_str();
+        for (error, expected) in [
+            (
+                ResolveError::unavailable(&url, "HTTP 502 Bad Gateway"),
+                "Unavailable: HTTP 502 Bad Gateway",
+            ),
+            (ResolveError::NotFound(url.clone()), "No video found"),
+            (
+                ResolveError::login_required(&url, "p", "posts are read with the sid cookie"),
+                "Needs a logged-in p session: posts are read with the sid cookie",
+            ),
+            (
+                ResolveError::drm(&url, "widevine"),
+                "Protected by widevine DRM",
+            ),
+            (
+                ResolveError::malformed(&url, "the page carries no player"),
+                "Unexpected response: the page carries no player",
+            ),
+            (
+                ResolveError::Http(HttpError::Status {
+                    url: url.to_string(),
+                    status: StatusCode::BAD_GATEWAY,
+                }),
+                "The link answered HTTP 502 Bad Gateway",
+            ),
+        ] {
+            let text = message(at, &error);
+            assert_eq!(text, expected);
+            assert!(!text.contains(at), "{text} repeats the link");
+        }
     }
 }

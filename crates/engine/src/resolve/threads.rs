@@ -605,7 +605,7 @@ mod tests {
             .await
             .unwrap_err();
         assert!(
-            matches!(&error, ResolveError::Unavailable { reason, .. } if reason.contains("no post data")),
+            matches!(&error, ResolveError::Unavailable { reason, .. } if reason.contains("Post data unavailable")),
             "{error}"
         );
     }

@@ -789,7 +789,7 @@ mod tests {
         );
         let error = resolver.resolve(&url).await.unwrap_err();
         assert!(
-            matches!(&error, ResolveError::LoginRequired { reason, .. } if reason.contains("verify")),
+            matches!(&error, ResolveError::LoginRequired { reason, .. } if reason.contains("requires verification")),
             "{error}"
         );
         assert!(matches!(

@@ -5,11 +5,12 @@
 //! archives require a dedicated host resolver.
 
 use std::collections::HashSet;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use jiff::{Span, SpanRelativeTo};
+use regex::Regex;
 use scraper::Selector;
 use url::Url;
 
@@ -130,6 +131,48 @@ pub struct PageMedia {
     candidates: Vec<Candidate>,
     pub iframes: Vec<Url>,
     pub embeds: Vec<Url>,
+    /// Whether the page carries a player that plays through a media source.
+    pub player: bool,
+}
+
+/// The scripts of the player libraries that feed a media source, and the media source
+/// calls a player of the page's own makes.
+static RE_PLAYER_SCRIPT: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?i)(?:\bhls(?:\.light)?(?:\.min)?\.js|\bdash\.(?:all|mediaplayer)|\bdashjs\b|shaka-player|\bvideo(?:\.|-)?js\b|\bjwplayer\b|\bplyr\b|\bclappr\b|\bflowplayer\b|\bbitmovin|theoplayer|\bvidstack\b|mediaelement|p2p-media-loader|\bMediaSource\b|addSourceBuffer)",
+    )
+    .expect("valid")
+});
+
+/// Whether the page carries a player that plays through a media source: a video or
+/// audio element with no source the engine could fetch, or the script of a player
+/// library that feeds one.
+pub fn has_media_source_player(page: &Page) -> bool {
+    let document = page.document();
+    let media = Selector::parse("video, audio").expect("valid");
+    let sources = Selector::parse("source[src]").expect("valid");
+    let fetchable = |src: &str| {
+        page.url()
+            .join(src.trim())
+            .is_ok_and(|url| matches!(url.scheme(), "http" | "https"))
+    };
+    for element in document.select(&media) {
+        let own = element.value().attr("src").is_some_and(fetchable);
+        let child = element
+            .select(&sources)
+            .any(|source| source.value().attr("src").is_some_and(fetchable));
+        if !own && !child {
+            return true;
+        }
+    }
+    let scripts = Selector::parse("script").expect("valid");
+    document.select(&scripts).any(|script| {
+        script
+            .value()
+            .attr("src")
+            .is_some_and(|src| RE_PLAYER_SCRIPT.is_match(src))
+            || RE_PLAYER_SCRIPT.is_match(&script.text().collect::<String>())
+    })
 }
 
 /// Whether one of `players` takes `url`.
@@ -269,7 +312,37 @@ pub fn extract(html: &str, base: &Url, players: &[Arc<dyn Resolver>]) -> PageMed
         candidates,
         iframes: page.iframes(),
         embeds: embedded_players(&page, players),
+        player: has_media_source_player(&page),
     }
+}
+
+/// What one look at a link, as one client, turned up.
+enum Attempt {
+    Found(Resolved),
+    /// A page with nothing to fetch but a player that plays through a media source: what
+    /// the page says about its media, and where the page ended up.
+    Player {
+        url: Url,
+        media: PageMedia,
+    },
+    Nothing,
+}
+
+/// The media of a page whose player plays through a media source alone: the page itself,
+/// to be captured in a browser.
+fn captured_page(link: &Url, url: Url, media: PageMedia) -> Resolved {
+    let mut variant = Variant::new(url.clone(), VariantKind::Browser);
+    variant.duration = media.duration;
+    let mut resolved = Resolved::new("web");
+    resolved.title = media.title;
+    resolved.description = media.description;
+    resolved.uploader = media.uploader;
+    resolved.duration = media.duration;
+    resolved.thumbnail = media.thumbnail;
+    resolved.webpage_url = Some(url);
+    resolved.clip = timestamp_hint(link).map(|start| ClipRange { start, end: None });
+    resolved.variants = vec![variant];
+    resolved
 }
 
 /// Parses ISO 8601 durations such as `PT1H2M3.5S` or `P1DT2H`.
@@ -337,7 +410,7 @@ impl WebResolver {
         }
     }
 
-    async fn attempt(&self, user_agent: &str, url: &Url) -> Result<Option<Resolved>, ResolveError> {
+    async fn attempt(&self, user_agent: &str, url: &Url) -> Result<Attempt, ResolveError> {
         let response = self
             .http
             .get(url.clone())
@@ -362,7 +435,7 @@ impl WebResolver {
                 resolved.title = file_title(&final_url);
                 resolved.webpage_url = Some(final_url);
                 resolved.variants = vec![v];
-                Ok(Some(resolved))
+                Ok(Attempt::Found(resolved))
             }
             Kind::Hls => {
                 drop(response);
@@ -374,21 +447,21 @@ impl WebResolver {
                 resolved.live = expanded.live;
                 resolved.subtitles = expanded.subtitles;
                 resolved.variants = expanded.variants;
-                Ok(Some(resolved))
+                Ok(Attempt::Found(resolved))
             }
             Kind::Dash => {
                 drop(response);
                 let mut resolved = Resolved::new("web");
                 resolved.title = file_title(&final_url);
                 resolved.variants = vec![Variant::new(final_url, VariantKind::Dash)];
-                Ok(Some(resolved))
+                Ok(Attempt::Found(resolved))
             }
             Kind::Ism => {
                 drop(response);
                 let mut resolved = Resolved::new("web");
                 resolved.title = file_title(&final_url);
                 resolved.variants = vec![Variant::new(final_url, VariantKind::Ism)];
-                Ok(Some(resolved))
+                Ok(Attempt::Found(resolved))
             }
             Kind::Sdp => {
                 drop(response);
@@ -396,7 +469,7 @@ impl WebResolver {
                 resolved.title = file_title(&final_url);
                 resolved.live = true;
                 resolved.variants = vec![live_variant(final_url, VariantKind::Rtp)];
-                Ok(Some(resolved))
+                Ok(Attempt::Found(resolved))
             }
             Kind::Html => {
                 if final_url.host_str() != url.host_str() {
@@ -427,7 +500,13 @@ impl WebResolver {
                     {
                         return Err(ResolveError::Redirect(embed.clone()));
                     }
-                    return Ok(None);
+                    if media.player {
+                        return Ok(Attempt::Player {
+                            url: final_url,
+                            media,
+                        });
+                    }
+                    return Ok(Attempt::Nothing);
                 }
                 for v in &mut variants {
                     if v.duration.is_none() {
@@ -443,7 +522,7 @@ impl WebResolver {
                 resolved.webpage_url = Some(final_url);
                 resolved.clip = timestamp_hint(url).map(|start| ClipRange { start, end: None });
                 resolved.variants = variants;
-                Ok(Some(resolved))
+                Ok(Attempt::Found(resolved))
             }
             // A file that is neither media nor a page: a document, an archive, a feed.
             Kind::Other => Err(ResolveError::Unsupported(url.clone())),
@@ -473,10 +552,11 @@ impl Resolver for WebResolver {
                 "json-ld",
                 "video tags",
                 "embedded players",
+                "media source players",
             ],
             formats: &[
-                "mp4", "webm", "mkv", "mov", "hls", "dash", "ism", "mp3", "m4a", "ogg", "flac",
-                "wav", "jpg", "png", "webp", "gif",
+                "mp4", "webm", "mkv", "mov", "hls", "dash", "ism", "browser", "mp3", "m4a", "ogg",
+                "flac", "wav", "jpg", "png", "webp", "gif",
             ],
             media: &[MediaKind::Video, MediaKind::Audio, MediaKind::Image],
             tags: &[Tag::Video, Tag::Images, Tag::Music],
@@ -489,12 +569,22 @@ impl Resolver for WebResolver {
         matches!(url.scheme(), "http" | "https") && url.host_str().is_some()
     }
 
+    /// The page as a browser sees it, then as an embed bot does, which some pages give
+    /// their video to alone. A page with nothing to fetch either way but a player that
+    /// plays through a media source is captured in a browser.
     async fn resolve(&self, url: &Url) -> Result<Resolution, ResolveError> {
-        if let Some(found) = self.attempt(BROWSER_UA, url).await? {
-            return Ok(Resolution::from(found));
+        let mut player = None;
+        for user_agent in [BROWSER_UA, EMBED_BOT_UA] {
+            match self.attempt(user_agent, url).await? {
+                Attempt::Found(found) => return Ok(Resolution::from(found)),
+                Attempt::Player { url, media } => {
+                    player.get_or_insert((url, media));
+                }
+                Attempt::Nothing => {}
+            }
         }
-        if let Some(found) = self.attempt(EMBED_BOT_UA, url).await? {
-            return Ok(Resolution::from(found));
+        if let Some((page_url, media)) = player {
+            return Ok(Resolution::from(captured_page(url, page_url, media)));
         }
         Err(ResolveError::NotFound(url.clone()))
     }
@@ -551,7 +641,10 @@ mod tests {
         );
         assert_eq!(classify(&url("https://h/v.ism/Manifest"), None), Kind::Ism);
         assert_eq!(classify(&url("https://h/cam/session.sdp"), None), Kind::Sdp);
-        assert_eq!(classify(&url("https://h/cam"), Some("application/sdp")), Kind::Sdp);
+        assert_eq!(
+            classify(&url("https://h/cam"), Some("application/sdp")),
+            Kind::Sdp
+        );
         assert_eq!(
             classify(&url("https://h/v.mp4"), Some("application/octet-stream")),
             Kind::File(Some(Container::Mp4), MediaKind::Video)
@@ -931,6 +1024,103 @@ mod tests {
             matches!(&error, ResolveError::Unsupported(u) if u.as_str() == "https://cdn.test/paper.pdf"),
             "{error}"
         );
+    }
+
+    #[tokio::test]
+    async fn pages_with_a_media_source_player_and_nothing_to_fetch_are_captured_in_a_browser() {
+        let page = r#"<html><head><title>Live show - Site</title><meta property="og:description" content="Tonight's show"><meta property="og:image" content="https://site.test/poster.jpg"></head><body><video id="player" playsinline></video><script src="/assets/hls.min.js"></script></body></html>"#;
+        let mut fixture = Fixture::new("web", None);
+        for _ in 0..2 {
+            fixture.exchanges.push(exchange(
+                "https://site.test/live/show",
+                "text/html",
+                page,
+                200,
+                &[],
+            ));
+        }
+        let resolver = web(Http::replay(fixture));
+        let resolved = resolver
+            .resolve(&Url::parse("https://site.test/live/show?t=90").unwrap())
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
+        assert_eq!(resolved.title.as_deref(), Some("Live show - Site"));
+        assert_eq!(resolved.description.as_deref(), Some("Tonight's show"));
+        assert_eq!(
+            resolved.webpage_url.as_ref().map(Url::as_str),
+            Some("https://site.test/live/show")
+        );
+        assert_eq!(resolved.clip.unwrap().start, Duration::from_secs(90));
+        assert_eq!(resolved.variants.len(), 1);
+        assert_eq!(resolved.variants[0].kind, VariantKind::Browser);
+        assert_eq!(
+            resolved.variants[0].url.as_str(),
+            "https://site.test/live/show"
+        );
+
+        // A page that offers its video to the embed bot alone gets that file, not a capture.
+        let bare = r#"<html><body><video></video><script>var ms = new MediaSource();</script></body></html>"#;
+        let with_video = r#"<html><head><meta property="og:video" content="https://cdn.test/clip.mp4"></head></html>"#;
+        let mut fixture = Fixture::new("web", None);
+        fixture.exchanges.push(exchange(
+            "https://site.test/post",
+            "text/html",
+            bare,
+            200,
+            &[],
+        ));
+        fixture.exchanges.push(exchange(
+            "https://site.test/post",
+            "text/html",
+            with_video,
+            200,
+            &[],
+        ));
+        fixture.exchanges.push(exchange(
+            "https://cdn.test/clip.mp4",
+            "video/mp4",
+            "",
+            206,
+            &[("content-range", "bytes 0-0/5000")],
+        ));
+        let resolver = web(Http::replay(fixture));
+        let resolved = resolver
+            .resolve(&Url::parse("https://site.test/post").unwrap())
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
+        assert_eq!(resolved.variants[0].kind, VariantKind::File);
+    }
+
+    #[test]
+    fn media_source_players_are_told_from_plain_pages() {
+        let base = Url::parse("https://site.test/p").unwrap();
+        let has = |html: &str| has_media_source_player(&Page::parse(html, &base));
+        assert!(has(r#"<video src="blob:https://site.test/1234"></video>"#));
+        assert!(has(
+            r#"<video><source src="blob:x" type="video/mp4"></video>"#
+        ));
+        assert!(has(r#"<audio id="a"></audio>"#));
+        assert!(has(
+            r#"<div id="p"></div><script src="https://cdn.test/dash.all.min.js"></script>"#
+        ));
+        assert!(has(r#"<script>if (window.MediaSource) start();</script>"#));
+        assert!(has(
+            r#"<script src="/static/shaka-player.compiled.js"></script>"#
+        ));
+        assert!(!has(r#"<video src="/clips/a.mp4"></video>"#));
+        assert!(!has(
+            r#"<video><source src="https://cdn.test/a.webm"></video>"#
+        ));
+        assert!(!has(
+            r#"<p>Just words</p><script src="/analytics.js"></script>"#
+        ));
+        assert!(!has(
+            r#"<script>var jsdash = 1; var hlsjsonp = 2;</script>"#
+        ));
     }
 
     #[tokio::test]

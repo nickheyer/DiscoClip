@@ -652,7 +652,7 @@ mod tests {
             .await
             .unwrap_err();
         assert!(
-            matches!(&error, ResolveError::Unavailable { reason, .. } if reason.contains("own site")),
+            matches!(&error, ResolveError::Unavailable { reason, .. } if reason.contains("requires its original website")),
             "{error}"
         );
         let page = Page::parse(

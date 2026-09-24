@@ -105,10 +105,10 @@ impl Role {
     pub fn description(self) -> &'static str {
         match self {
             Role::Admin => {
-                "Everything: accounts, Discord applications, settings, rules, bots, the audit log and the server log."
+                "Everything: users, applications, settings, watch rules, bots, the audit log and the server log."
             }
-            Role::Operator => "Jobs, watch rules and the bots.",
-            Role::Viewer => "Read only, plus the rules of guilds they manage on Discord.",
+            Role::Operator => "Jobs, watch rules and bots.",
+            Role::Viewer => "Read only, plus the watch rules of servers they manage on Discord.",
         }
     }
 

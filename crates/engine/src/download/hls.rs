@@ -18,12 +18,11 @@ use md5::{Digest, Md5};
 use url::Url;
 
 use super::segments::{
-    Budget, Consumer, InitSection, Meter, PartKey, Timing, TrackWriter, fetch_bytes,
-    fetch_text, mux_parts,
+    Budget, Consumer, InitSection, Meter, PartKey, Timing, TrackWriter, fetch_bytes, fetch_text,
+    mux_parts,
 };
 use super::{
-    DownloadContext, DownloadError, Downloaded, Downloader, LocalSubtitle, mp4, mpegts,
-    subtitles,
+    DownloadContext, DownloadError, Downloaded, Downloader, LocalSubtitle, mp4, mpegts, subtitles,
 };
 use crate::event::{Progress, ProgressSender};
 use crate::ffmpeg::Ffmpeg;
@@ -124,7 +123,11 @@ fn choose_stream(master: &MasterPlaylist, max_height: u32) -> Option<&m3u8_rs::V
             let fits = height <= max_height;
             (
                 fits,
-                if fits { i64::from(height) } else { -i64::from(height) },
+                if fits {
+                    i64::from(height)
+                } else {
+                    -i64::from(height)
+                },
                 v.average_bandwidth.unwrap_or(v.bandwidth),
             )
         })
@@ -273,9 +276,10 @@ fn key_spec(
         .map(|url| signed_url(&url, query))
         .map_err(|e| DownloadError::Manifest(format!("bad key uri: {e}")))?;
     let iv = match key.iv.as_deref() {
-        Some(iv) => Some(parse_iv(iv).ok_or_else(|| {
-            DownloadError::Manifest(format!("unreadable key IV {iv}"))
-        })?),
+        Some(iv) => Some(
+            parse_iv(iv)
+                .ok_or_else(|| DownloadError::Manifest(format!("unreadable key IV {iv}")))?,
+        ),
         None => None,
     };
     Ok(Some(KeySpec { method, url, iv }))
@@ -299,7 +303,8 @@ fn pieces_of(
         if segment.unknown_tags.iter().any(|t| {
             t.tag == "X-KEY"
                 && t.rest.as_deref().is_some_and(|rest| {
-                    rest.split(',').any(|attr| attr.trim().eq_ignore_ascii_case("METHOD=NONE"))
+                    rest.split(',')
+                        .any(|attr| attr.trim().eq_ignore_ascii_case("METHOD=NONE"))
                 })
         }) {
             key = None;
@@ -319,7 +324,9 @@ fn pieces_of(
                 let start = r.offset.unwrap_or(0);
                 (start, start + r.length.saturating_sub(1))
             });
-            let same = map.as_ref().is_some_and(|m| m.url == url && m.range == range);
+            let same = map
+                .as_ref()
+                .is_some_and(|m| m.url == url && m.range == range);
             if !same {
                 map = Some(MapSpec {
                     url,
@@ -436,7 +443,10 @@ struct Session<'a> {
 impl Session<'_> {
     fn note(&self, message: String) {
         tracing::info!("{message}");
-        self.notes.lock().unwrap_or_else(|e| e.into_inner()).push(message);
+        self.notes
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(message);
     }
 
     /// The 16 bytes at `url`: fetched, or carried in a `data:` URL.
@@ -468,10 +478,7 @@ impl Session<'_> {
                 .to_vec()
         };
         let key: [u8; 16] = bytes.as_slice().try_into().map_err(|_| {
-            DownloadError::Manifest(format!(
-                "key at {url} is {} bytes, not 16",
-                bytes.len()
-            ))
+            DownloadError::Manifest(format!("key at {url} is {} bytes, not 16", bytes.len()))
         })?;
         self.keys
             .lock()
@@ -480,7 +487,11 @@ impl Session<'_> {
         Ok(key)
     }
 
-    async fn init_section(&self, map: &MapSpec, sequence: u64) -> Result<Arc<InitSection>, DownloadError> {
+    async fn init_section(
+        &self,
+        map: &MapSpec,
+        sequence: u64,
+    ) -> Result<Arc<InitSection>, DownloadError> {
         let id = map.id();
         if let Some(init) = self
             .inits
@@ -520,12 +531,22 @@ impl Session<'_> {
 
     /// Fetches and decrypts one segment: its initialization section, when it has one,
     /// and its bytes.
-    async fn fetch_piece(&self, piece: &Piece) -> Result<(Option<Arc<InitSection>>, Vec<u8>), DownloadError> {
+    async fn fetch_piece(
+        &self,
+        piece: &Piece,
+    ) -> Result<(Option<Arc<InitSection>>, Vec<u8>), DownloadError> {
         let init = match &piece.map {
             Some(map) => Some(self.init_section(map, piece.sequence).await?),
             None => None,
         };
-        let bytes = fetch_bytes(self.http, &piece.url, self.platform, self.headers, piece.range).await?;
+        let bytes = fetch_bytes(
+            self.http,
+            &piece.url,
+            self.platform,
+            self.headers,
+            piece.range,
+        )
+        .await?;
         let Some(key_spec) = &piece.key else {
             return Ok((init, bytes.to_vec()));
         };
@@ -649,7 +670,11 @@ impl Session<'_> {
                     let total = if live {
                         max_live
                     } else {
-                        playlist.segments.iter().map(|s| f64::from(s.duration)).sum()
+                        playlist
+                            .segments
+                            .iter()
+                            .map(|s| f64::from(s.duration))
+                            .sum()
                     };
                     meter.set_total(total);
                 }
@@ -737,10 +762,7 @@ impl Session<'_> {
             }
             if !live {
                 if was_live == Some(true) {
-                    self.note(format!(
-                        "{name}: stream ended. Recorded {:.0} s.",
-                        captured
-                    ));
+                    self.note(format!("{name}: stream ended. Recorded {:.0} s.", captured));
                 }
                 return Ok(());
             }
@@ -833,19 +855,23 @@ impl Downloader for HlsDownloader {
                 segments: Vec::new(),
             })
             .collect();
-        let video_run = session.follow(&video_url, "video", &mut video, Some(&mut meter), Some(first));
+        let video_run = session.follow(
+            &video_url,
+            "video",
+            &mut video,
+            Some(&mut meter),
+            Some(first),
+        );
         let audio_run = async {
             match &audio_url {
                 Some(url) => session.follow(url, "audio", &mut audio, None, None).await,
                 None => Ok(()),
             }
         };
-        let text_runs = futures::future::join_all(
-            subtitle_tracks
-                .iter()
-                .zip(texts.iter_mut())
-                .map(|(track, collector)| session.follow(&track.url, "subtitles", collector, None, None)),
-        );
+        let text_runs =
+            futures::future::join_all(subtitle_tracks.iter().zip(texts.iter_mut()).map(
+                |(track, collector)| session.follow(&track.url, "subtitles", collector, None, None),
+            ));
         let (video_result, audio_result, text_results) =
             tokio::join!(video_run, audio_run, text_runs);
         video_result?;
@@ -908,7 +934,10 @@ impl Downloader for HlsDownloader {
         Ok(Downloaded {
             file,
             subtitles: local_subtitles,
-            notes: session.notes.into_inner().unwrap_or_else(|e| e.into_inner()),
+            notes: session
+                .notes
+                .into_inner()
+                .unwrap_or_else(|e| e.into_inner()),
         })
     }
 }
@@ -940,7 +969,9 @@ mod tests {
             #EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720\n720a.m3u8\n\
             #EXT-X-STREAM-INF:BANDWIDTH=4000000,RESOLUTION=1280x720\n720b.m3u8\n\
             #EXT-X-STREAM-INF:BANDWIDTH=1000000,RESOLUTION=640x360\n360.m3u8\n";
-        let Playlist::MasterPlaylist(master) = m3u8_rs::parse_playlist_res(master.as_bytes()).unwrap() else {
+        let Playlist::MasterPlaylist(master) =
+            m3u8_rs::parse_playlist_res(master.as_bytes()).unwrap()
+        else {
             panic!("master expected");
         };
         assert_eq!(choose_stream(&master, 1080).unwrap().uri, "1080.m3u8");
@@ -963,13 +994,20 @@ mod tests {
             keyformatversions: None,
         };
         let base = Url::parse("https://cdn.test/v/").unwrap();
-        let spec = key_spec(&key("AES-128", "k.bin", None), &base, &[], &base).unwrap().unwrap();
+        let spec = key_spec(&key("AES-128", "k.bin", None), &base, &[], &base)
+            .unwrap()
+            .unwrap();
         assert_eq!(spec.method, Encryption::Aes128);
         assert_eq!(spec.url.as_str(), "https://cdn.test/v/k.bin");
         assert_eq!(spec.iv_for(7)[15], 7);
-        let spec = key_spec(&key("SAMPLE-AES-CTR", "k.bin", Some("identity")), &base, &[], &base)
-            .unwrap()
-            .unwrap();
+        let spec = key_spec(
+            &key("SAMPLE-AES-CTR", "k.bin", Some("identity")),
+            &base,
+            &[],
+            &base,
+        )
+        .unwrap()
+        .unwrap();
         assert_eq!(spec.method, Encryption::SampleAesCtr);
         assert!(matches!(
             key_spec(&key("SAMPLE-AES", "skd://x", Some("com.apple.streamingkeydelivery")), &base, &[], &base),
@@ -993,7 +1031,8 @@ mod tests {
             #EXTINF:4.0,\ns10.m4s\n#EXTINF:4.0,\ns11.m4s\n\
             #EXT-X-DISCONTINUITY\n#EXT-X-MAP:URI=\"init2.mp4\"\n#EXT-X-KEY:METHOD=NONE\n\
             #EXTINF:2.5,\ns12.m4s\n#EXT-X-BYTERANGE:100@50\n#EXTINF:1,\nall.m4s\n#EXT-X-BYTERANGE:200\n#EXTINF:1,\nall.m4s\n";
-        let Playlist::MediaPlaylist(media) = m3u8_rs::parse_playlist_res(text.as_bytes()).unwrap() else {
+        let Playlist::MediaPlaylist(media) = m3u8_rs::parse_playlist_res(text.as_bytes()).unwrap()
+        else {
             panic!("media expected");
         };
         let base = Url::parse("https://cdn.test/v/x.m3u8").unwrap();
@@ -1001,12 +1040,21 @@ mod tests {
         assert_eq!(pieces.len(), 5);
         assert_eq!(pieces[0].sequence, 10);
         assert_eq!(pieces[0].discontinuity, 3);
-        assert_eq!(pieces[0].map.as_ref().unwrap().url.as_str(), "https://cdn.test/v/init.mp4");
-        assert_eq!(pieces[0].key.as_ref().unwrap().url.as_str(), "https://cdn.test/v/k1");
+        assert_eq!(
+            pieces[0].map.as_ref().unwrap().url.as_str(),
+            "https://cdn.test/v/init.mp4"
+        );
+        assert_eq!(
+            pieces[0].key.as_ref().unwrap().url.as_str(),
+            "https://cdn.test/v/k1"
+        );
         assert_eq!(pieces[1].key.as_ref().unwrap().iv_for(11)[0], 0);
         assert_eq!(pieces[2].discontinuity, 4);
         assert!(pieces[2].key.is_none());
-        assert_eq!(pieces[2].map.as_ref().unwrap().url.as_str(), "https://cdn.test/v/init2.mp4");
+        assert_eq!(
+            pieces[2].map.as_ref().unwrap().url.as_str(),
+            "https://cdn.test/v/init2.mp4"
+        );
         assert_eq!(pieces[3].range, Some((50, 149)));
         assert_eq!(pieces[4].range, Some((150, 349)));
         assert_eq!(pieces[4].sequence, 14);
@@ -1044,16 +1092,51 @@ mod tests {
     }
 
     /// Encodes `seconds` of test picture and tone with `extra` arguments ahead of `out`.
-    async fn encode(ffmpeg: &Ffmpeg, seconds: u32, video: bool, audio: bool, extra: &[&str], out: &Path) {
+    async fn encode(
+        ffmpeg: &Ffmpeg,
+        seconds: u32,
+        video: bool,
+        audio: bool,
+        extra: &[&str],
+        out: &Path,
+    ) {
         let mut args: Vec<String> = vec!["-loglevel".into(), "error".into()];
         if video {
-            args.extend(["-f", "lavfi", "-i", &format!("testsrc=size=64x64:rate=10:duration={seconds}")].map(String::from));
+            args.extend(
+                [
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    &format!("testsrc=size=64x64:rate=10:duration={seconds}"),
+                ]
+                .map(String::from),
+            );
         }
         if audio {
-            args.extend(["-f", "lavfi", "-i", &format!("sine=frequency=440:duration={seconds}")].map(String::from));
+            args.extend(
+                [
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    &format!("sine=frequency=440:duration={seconds}"),
+                ]
+                .map(String::from),
+            );
         }
         if video {
-            args.extend(["-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-g", "10"].map(String::from));
+            args.extend(
+                [
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "ultrafast",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-g",
+                    "10",
+                ]
+                .map(String::from),
+            );
         }
         if audio {
             args.extend(["-c:a", "aac"].map(String::from));
@@ -1076,10 +1159,16 @@ mod tests {
 
     impl Packaged {
         fn segments(&self) -> Vec<(String, f32)> {
-            let Playlist::MediaPlaylist(media) = m3u8_rs::parse_playlist_res(self.playlist.as_bytes()).unwrap() else {
+            let Playlist::MediaPlaylist(media) =
+                m3u8_rs::parse_playlist_res(self.playlist.as_bytes()).unwrap()
+            else {
                 panic!("media playlist expected");
             };
-            media.segments.iter().map(|s| (s.uri.clone(), s.duration)).collect()
+            media
+                .segments
+                .iter()
+                .map(|s| (s.uri.clone(), s.duration))
+                .collect()
         }
 
         fn serve(&self, site: &Site, name: &str) {
@@ -1090,17 +1179,45 @@ mod tests {
         }
     }
 
-    async fn package(ffmpeg: &Ffmpeg, dir: &Path, name: &str, seconds: u32, fmp4: bool, video: bool, audio: bool) -> Packaged {
+    async fn package(
+        ffmpeg: &Ffmpeg,
+        dir: &Path,
+        name: &str,
+        seconds: u32,
+        fmp4: bool,
+        video: bool,
+        audio: bool,
+    ) -> Packaged {
         tokio::fs::create_dir_all(dir).await.unwrap();
         let segment_type = if fmp4 { "fmp4" } else { "mpegts" };
         let pattern = dir.join(format!("{name}%d.{}", if fmp4 { "m4s" } else { "ts" }));
         let init = format!("{name}.init.mp4");
         let extra = [
-            "-f", "hls", "-hls_time", "1", "-hls_playlist_type", "vod", "-hls_segment_type", segment_type,
-            "-hls_fmp4_init_filename", &init, "-hls_segment_filename", pattern.to_str().unwrap(),
+            "-f",
+            "hls",
+            "-hls_time",
+            "1",
+            "-hls_playlist_type",
+            "vod",
+            "-hls_segment_type",
+            segment_type,
+            "-hls_fmp4_init_filename",
+            &init,
+            "-hls_segment_filename",
+            pattern.to_str().unwrap(),
         ];
-        encode(ffmpeg, seconds, video, audio, &extra, &dir.join(format!("{name}.m3u8"))).await;
-        let playlist = tokio::fs::read_to_string(dir.join(format!("{name}.m3u8"))).await.unwrap();
+        encode(
+            ffmpeg,
+            seconds,
+            video,
+            audio,
+            &extra,
+            &dir.join(format!("{name}.m3u8")),
+        )
+        .await;
+        let playlist = tokio::fs::read_to_string(dir.join(format!("{name}.m3u8")))
+            .await
+            .unwrap();
         let mut files = Vec::new();
         for line in playlist.lines() {
             let file = if let Some(rest) = line.strip_prefix("#EXT-X-MAP:URI=\"") {
@@ -1116,8 +1233,15 @@ mod tests {
         Packaged { playlist, files }
     }
 
-    fn media_playlist(sequence: u64, segments: &[(String, f32)], end: bool, extra_head: &str) -> String {
-        let mut text = format!("#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:1\n#EXT-X-MEDIA-SEQUENCE:{sequence}\n{extra_head}");
+    fn media_playlist(
+        sequence: u64,
+        segments: &[(String, f32)],
+        end: bool,
+        extra_head: &str,
+    ) -> String {
+        let mut text = format!(
+            "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:1\n#EXT-X-MEDIA-SEQUENCE:{sequence}\n{extra_head}"
+        );
         for (uri, duration) in segments {
             text.push_str(&format!("#EXTINF:{duration:.3},\n{uri}\n"));
         }
@@ -1127,10 +1251,19 @@ mod tests {
         text
     }
 
-    async fn download_hls(site: &Arc<Site>, ffmpeg: &Ffmpeg, name: &str, dir: &Path, context: &DownloadContext) -> (Result<Downloaded, DownloadError>, Progress) {
+    async fn download_hls(
+        site: &Arc<Site>,
+        ffmpeg: &Ffmpeg,
+        name: &str,
+        dir: &Path,
+        context: &DownloadContext,
+    ) -> (Result<Downloaded, DownloadError>, Progress) {
         let http = Http::with_transport(site.clone(), Http::test_config());
         let downloader = HlsDownloader::new(http, ffmpeg.clone());
-        let variant = Variant::new(Url::parse(&format!("{BASE}{name}.m3u8")).unwrap(), VariantKind::Hls);
+        let variant = Variant::new(
+            Url::parse(&format!("{BASE}{name}.m3u8")).unwrap(),
+            VariantKind::Hls,
+        );
         let (progress, watched) = tokio::sync::watch::channel(Progress::default());
         let result = downloader.download(&variant, dir, context, progress).await;
         let last = *watched.borrow();
@@ -1155,7 +1288,14 @@ mod tests {
         let packaged = package(&ffmpeg, &dir.join("pkg"), "plain", 3, false, true, true).await;
         let site = Site::new();
         packaged.serve(&site, "plain");
-        let (result, progress) = download_hls(&site, &ffmpeg, "plain", &dir.join("job"), &DownloadContext::new(50_000_000)).await;
+        let (result, progress) = download_hls(
+            &site,
+            &ffmpeg,
+            "plain",
+            &dir.join("job"),
+            &DownloadContext::new(50_000_000),
+        )
+        .await;
         let downloaded = result.unwrap();
         let duration = probed_duration(&ffmpeg, &downloaded).await;
         assert!(near(duration, 3.0), "{duration}");
@@ -1185,7 +1325,14 @@ mod tests {
         let site = Site::new();
         locked.serve(&site, "locked");
         site.put_bytes(&format!("{BASE}key.bin"), "application/octet-stream", &key);
-        let (result, _) = download_hls(&site, &ffmpeg, "locked", &dir.join("locked"), &DownloadContext::new(50_000_000)).await;
+        let (result, _) = download_hls(
+            &site,
+            &ffmpeg,
+            "locked",
+            &dir.join("locked"),
+            &DownloadContext::new(50_000_000),
+        )
+        .await;
         let downloaded = result.unwrap();
         let duration = probed_duration(&ffmpeg, &downloaded).await;
         assert!(near(duration, 3.0), "{duration}");
@@ -1203,7 +1350,12 @@ mod tests {
         let files: Vec<(String, Vec<u8>)> = packaged
             .files
             .iter()
-            .map(|(name, bytes)| (name.clone(), mpegts::encrypt_sample_aes(bytes, &key, &iv).unwrap()))
+            .map(|(name, bytes)| {
+                (
+                    name.clone(),
+                    mpegts::encrypt_sample_aes(bytes, &key, &iv).unwrap(),
+                )
+            })
             .collect();
         let mut playlist = String::new();
         for line in packaged.playlist.lines() {
@@ -1219,7 +1371,14 @@ mod tests {
         }
         let site = Site::new();
         Packaged { playlist, files }.serve(&site, "saes");
-        let (result, _) = download_hls(&site, &ffmpeg, "saes", &dir.join("job"), &DownloadContext::new(50_000_000)).await;
+        let (result, _) = download_hls(
+            &site,
+            &ffmpeg,
+            "saes",
+            &dir.join("job"),
+            &DownloadContext::new(50_000_000),
+        )
+        .await;
         let downloaded = result.unwrap();
         let info = ffmpeg.probe(&downloaded.file.path).await.unwrap();
         assert!(info.audio.is_some(), "{info:?}");
@@ -1242,7 +1401,15 @@ mod tests {
                 // Both tracks become protected sample entries with their sinf.
                 let mut init = bytes.clone();
                 let stsd = |trak: usize, entry: &'static [u8; 4]| {
-                    vec![(b"moov", 0usize), (b"trak", trak), (b"mdia", 0), (b"minf", 0), (b"stbl", 0), (b"stsd", 0), (entry, 0)]
+                    vec![
+                        (b"moov", 0usize),
+                        (b"trak", trak),
+                        (b"mdia", 0),
+                        (b"minf", 0),
+                        (b"stbl", 0),
+                        (b"stsd", 0),
+                        (entry, 0),
+                    ]
                 };
                 let tenc = tenc(1, 9, 16, None);
                 init = append_within(&init, &stsd(0, b"avc1"), &sinf(b"avc1", b"cbcs", &tenc));
@@ -1271,7 +1438,14 @@ mod tests {
         let site = Site::new();
         Packaged { playlist, files }.serve(&site, "fmp4");
         site.put_bytes(&format!("{BASE}key.bin"), "application/octet-stream", &key);
-        let (result, _) = download_hls(&site, &ffmpeg, "fmp4", &dir.join("job"), &DownloadContext::new(50_000_000)).await;
+        let (result, _) = download_hls(
+            &site,
+            &ffmpeg,
+            "fmp4",
+            &dir.join("job"),
+            &DownloadContext::new(50_000_000),
+        )
+        .await;
         let downloaded = result.unwrap();
         let info = ffmpeg.probe(&downloaded.file.path).await.unwrap();
         assert!(info.audio.is_some(), "{info:?}");
@@ -1299,11 +1473,19 @@ mod tests {
         );
         let mut context = DownloadContext::new(50_000_000);
         context.max_live = Duration::from_secs(60);
-        let (result, progress) = download_hls(&site, &ffmpeg, "live", &dir.join("job"), &context).await;
+        let (result, progress) =
+            download_hls(&site, &ffmpeg, "live", &dir.join("job"), &context).await;
         let downloaded = result.unwrap();
         let duration = probed_duration(&ffmpeg, &downloaded).await;
         assert!(near(duration, 5.0), "{duration}");
-        assert!(downloaded.notes.iter().any(|n| n.contains("the live stream ended")), "{:?}", downloaded.notes);
+        assert!(
+            downloaded
+                .notes
+                .iter()
+                .any(|n| n.to_lowercase().contains("stream ended")),
+            "{:?}",
+            downloaded.notes
+        );
         assert_eq!(site.hits(&format!("{BASE}live.m3u8")), 3);
         for (uri, _) in &segments {
             assert_eq!(site.hits(&format!("{BASE}{uri}")), 1, "{uri}");
@@ -1336,7 +1518,14 @@ mod tests {
         let downloaded = result.unwrap();
         let duration = probed_duration(&ffmpeg, &downloaded).await;
         assert!(near(duration, 3.0), "{duration}");
-        assert!(downloaded.notes.iter().any(|n| n.contains("capture cut at the limit")), "{:?}", downloaded.notes);
+        assert!(
+            downloaded
+                .notes
+                .iter()
+                .any(|n| n.contains("capture cut at the limit")),
+            "{:?}",
+            downloaded.notes
+        );
         assert_eq!(site.hits(&format!("{BASE}{}", segments[4].0)), 0);
 
         // A live window longer than the limit is taken from its end.
@@ -1353,7 +1542,14 @@ mod tests {
         let downloaded = result.unwrap();
         let duration = probed_duration(&ffmpeg, &downloaded).await;
         assert!(near(duration, 2.0), "{duration}");
-        assert!(downloaded.notes.iter().any(|n| n.contains("3 earlier segment(s)")), "{:?}", downloaded.notes);
+        assert!(
+            downloaded
+                .notes
+                .iter()
+                .any(|n| n.contains("3 earlier segment(s)")),
+            "{:?}",
+            downloaded.notes
+        );
         assert_eq!(site.hits(&format!("{BASE}{}", segments[0].0)), 0);
         assert_eq!(site.hits(&format!("{BASE}{}", segments[3].0)), 1);
         let _ = tokio::fs::remove_dir_all(&dir).await;
@@ -1374,11 +1570,25 @@ mod tests {
                 Reply::new(M3U8, "gone").status(404),
             ],
         );
-        let (result, _) = download_hls(&site, &ffmpeg, "gone", &dir.join("job"), &DownloadContext::new(50_000_000)).await;
+        let (result, _) = download_hls(
+            &site,
+            &ffmpeg,
+            "gone",
+            &dir.join("job"),
+            &DownloadContext::new(50_000_000),
+        )
+        .await;
         let downloaded = result.unwrap();
         let duration = probed_duration(&ffmpeg, &downloaded).await;
         assert!(near(duration, 2.0), "{duration}");
-        assert!(downloaded.notes.iter().any(|n| n.contains("could not be reloaded 3 times")), "{:?}", downloaded.notes);
+        assert!(
+            downloaded
+                .notes
+                .iter()
+                .any(|n| n.contains("reload failed 3 times")),
+            "{:?}",
+            downloaded.notes
+        );
         assert_eq!(site.hits(&format!("{BASE}gone.m3u8")), 4);
 
         // A missing segment of a live stream is skipped with a note. Of a recording it
@@ -1393,13 +1603,48 @@ mod tests {
                 Reply::new(M3U8, media_playlist(0, &segments[0..3], true, "")),
             ],
         );
-        let (result, _) = download_hls(&site, &ffmpeg, "hole", &dir.join("hole"), &DownloadContext::new(50_000_000)).await;
+        let (result, _) = download_hls(
+            &site,
+            &ffmpeg,
+            "hole",
+            &dir.join("hole"),
+            &DownloadContext::new(50_000_000),
+        )
+        .await;
         let downloaded = result.unwrap();
-        assert!(downloaded.notes.iter().any(|n| n.contains("segment 1 of the live stream skipped")), "{:?}", downloaded.notes);
-        assert!(downloaded.notes.iter().any(|n| n.contains("2 parts joined")), "{:?}", downloaded.notes);
-        site.put_text(&format!("{BASE}vodhole.m3u8"), M3U8, &media_playlist(0, &segments[0..3], true, ""));
-        let (result, _) = download_hls(&site, &ffmpeg, "vodhole", &dir.join("vodhole"), &DownloadContext::new(50_000_000)).await;
-        assert!(matches!(result.unwrap_err(), DownloadError::Status { status: 404, .. }));
+        assert!(
+            downloaded
+                .notes
+                .iter()
+                .any(|n| n.contains("segment 1 of the live stream skipped")),
+            "{:?}",
+            downloaded.notes
+        );
+        assert!(
+            downloaded
+                .notes
+                .iter()
+                .any(|n| n.contains("2 parts joined")),
+            "{:?}",
+            downloaded.notes
+        );
+        site.put_text(
+            &format!("{BASE}vodhole.m3u8"),
+            M3U8,
+            &media_playlist(0, &segments[0..3], true, ""),
+        );
+        let (result, _) = download_hls(
+            &site,
+            &ffmpeg,
+            "vodhole",
+            &dir.join("vodhole"),
+            &DownloadContext::new(50_000_000),
+        )
+        .await;
+        assert!(matches!(
+            result.unwrap_err(),
+            DownloadError::Status { status: 404, .. }
+        ));
         let _ = tokio::fs::remove_dir_all(&dir).await;
     }
 
@@ -1424,11 +1669,25 @@ mod tests {
         }
         playlist.push_str("#EXT-X-ENDLIST\n");
         site.put_text(&format!("{BASE}disc.m3u8"), M3U8, &playlist);
-        let (result, _) = download_hls(&site, &ffmpeg, "disc", &dir.join("job"), &DownloadContext::new(50_000_000)).await;
+        let (result, _) = download_hls(
+            &site,
+            &ffmpeg,
+            "disc",
+            &dir.join("job"),
+            &DownloadContext::new(50_000_000),
+        )
+        .await;
         let downloaded = result.unwrap();
         let duration = probed_duration(&ffmpeg, &downloaded).await;
         assert!(near(duration, 4.0), "{duration}");
-        assert!(downloaded.notes.iter().any(|n| n == "the stream is discontinuous: 2 parts joined"), "{:?}", downloaded.notes);
+        assert!(
+            downloaded
+                .notes
+                .iter()
+                .any(|n| n == "the stream is discontinuous: 2 parts joined"),
+            "{:?}",
+            downloaded.notes
+        );
         assert!(!dir.join("job").join("video.parts.txt").exists());
         assert!(!dir.join("job").join("video.1.ts").exists());
         let _ = tokio::fs::remove_dir_all(&dir).await;
@@ -1490,23 +1749,46 @@ mod tests {
         let track = &downloaded.subtitles[0];
         assert_eq!(track.language, "en");
         assert_eq!(track.format, SubtitleFormat::Vtt);
-        assert_eq!(track.url.as_ref().unwrap().as_str(), format!("{BASE}subs.m3u8"));
+        assert_eq!(
+            track.url.as_ref().unwrap().as_str(),
+            format!("{BASE}subs.m3u8")
+        );
         assert_eq!(site.hits(&format!("{BASE}subs-de.m3u8")), 0);
         let first_segment = &video.files[0].1;
         let media_start = mpegts::start_time(first_segment).unwrap() as f64 / 90_000.0;
         let shift = 2.4 - media_start;
         let text = tokio::fs::read_to_string(&track.path).await.unwrap();
-        let expected_one = format!("{} --> {}\nOne\n", format_time(shift), format_time(1.0 + shift));
-        let expected_two = format!("{} --> {}\nTwo\n", format_time(1.5 + shift), format_time(2.5 + shift));
+        let expected_one = format!(
+            "{} --> {}\nOne\n",
+            format_time(shift),
+            format_time(1.0 + shift)
+        );
+        let expected_two = format!(
+            "{} --> {}\nTwo\n",
+            format_time(1.5 + shift),
+            format_time(2.5 + shift)
+        );
         assert!(text.starts_with("WEBVTT\n\n"), "{text}");
-        assert!(text.contains(&expected_one), "{text}\nexpected {expected_one}");
-        assert!(text.contains(&expected_two), "{text}\nexpected {expected_two}");
+        assert!(
+            text.contains(&expected_one),
+            "{text}\nexpected {expected_one}"
+        );
+        assert!(
+            text.contains(&expected_two),
+            "{text}\nexpected {expected_two}"
+        );
         let _ = tokio::fs::remove_dir_all(&dir).await;
     }
 
     fn format_time(seconds: f64) -> String {
         let ms = (seconds.max(0.0) * 1000.0).round() as u64;
-        format!("{:02}:{:02}:{:02}.{:03}", ms / 3_600_000, (ms / 60_000) % 60, (ms / 1000) % 60, ms % 1000)
+        format!(
+            "{:02}:{:02}:{:02}.{:03}",
+            ms / 3_600_000,
+            (ms / 60_000) % 60,
+            (ms / 1000) % 60,
+            ms % 1000
+        )
     }
 
     #[tokio::test]
@@ -1519,8 +1801,17 @@ mod tests {
             M3U8,
             "#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXT-X-KEY:METHOD=SAMPLE-AES,URI=\"skd://asset\",KEYFORMAT=\"com.apple.streamingkeydelivery\",KEYFORMATVERSIONS=\"1\"\n#EXTINF:4.0,\ns0.ts\n#EXT-X-ENDLIST\n",
         );
-        let (result, _) = download_hls(&site, &ffmpeg, "drm", &dir.join("job"), &DownloadContext::new(50_000_000)).await;
-        assert!(matches!(result.unwrap_err(), DownloadError::Drm(_, system) if system == "FairPlay"));
+        let (result, _) = download_hls(
+            &site,
+            &ffmpeg,
+            "drm",
+            &dir.join("job"),
+            &DownloadContext::new(50_000_000),
+        )
+        .await;
+        assert!(
+            matches!(result.unwrap_err(), DownloadError::Drm(_, system) if system == "FairPlay")
+        );
         assert_eq!(site.hits(&format!("{BASE}s0.ts")), 0);
         let _ = tokio::fs::remove_dir_all(&dir).await;
     }

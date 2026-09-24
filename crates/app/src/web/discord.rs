@@ -1,13 +1,27 @@
 //! The Discord guilds an account belongs to and can manage, from its Discord grant.
 
 use axum::Json;
-use axum::extract::State;
+use axum::extract::{Path, State};
+use serde::Serialize;
 
 use super::AppState;
 use super::auth::Auth;
 use super::error::ApiError;
+use crate::applications::ApplicationId;
 use crate::discord::{Guild, fetch_guilds};
 use crate::users::UserId;
+
+/// An application whose bot has been in a guild, as much as a guild's manager needs to
+/// reach its channels and rules.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct GuildApplication {
+    pub application_id: ApplicationId,
+    pub name: String,
+    /// The guild's name, as the bot last saw it.
+    pub guild_name: String,
+    /// Whether the bot is in the guild now.
+    pub present: bool,
+}
 
 /// Fetches `user`'s guilds with a fresh Discord token and stores them.
 pub async fn sync_guilds(state: &AppState, user: UserId) -> Result<Vec<Guild>, ApiError> {
@@ -37,6 +51,33 @@ pub async fn refresh_guilds(
     Auth(identity): Auth,
 ) -> Result<Json<Vec<Guild>>, ApiError> {
     Ok(Json(sync_guilds(&state, identity.user.id).await?))
+}
+
+/// The applications whose bots have been in `guild`, for whoever may edit its rules: the
+/// way an account that manages the guild on Discord finds the pages for it.
+pub async fn guild_applications(
+    State(state): State<AppState>,
+    Auth(identity): Auth,
+    Path(guild): Path<String>,
+) -> Result<Json<Vec<GuildApplication>>, ApiError> {
+    super::rules::may_edit(&state, &identity, &guild).await?;
+    let applications = state.applications.list().await?;
+    let records = state.bot_guilds.list_for_guild(&guild).await?;
+    let found = records
+        .into_iter()
+        .filter_map(|record| {
+            let application = applications
+                .iter()
+                .find(|application| application.id == record.application_id)?;
+            Some(GuildApplication {
+                application_id: application.id,
+                name: application.name.clone(),
+                guild_name: record.name,
+                present: record.present,
+            })
+        })
+        .collect();
+    Ok(Json(found))
 }
 
 #[cfg(test)]

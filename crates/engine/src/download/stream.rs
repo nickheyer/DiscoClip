@@ -55,7 +55,10 @@ async fn input_of(
     let mut args: Vec<OsString> = Vec::new();
     match variant.kind {
         VariantKind::Rtmp => {
-            if !matches!(variant.url.scheme(), "rtmp" | "rtmpe" | "rtmps" | "rtmpt" | "rtmpte" | "rtmpts") {
+            if !matches!(
+                variant.url.scheme(),
+                "rtmp" | "rtmpe" | "rtmps" | "rtmpt" | "rtmpte" | "rtmpts"
+            ) {
                 return Err(DownloadError::Unsupported(format!(
                     "{} is not an RTMP address",
                     variant.url
@@ -91,7 +94,8 @@ async fn input_of(
         VariantKind::Rtp => {
             let source: OsString = match variant.url.scheme() {
                 "http" | "https" => {
-                    let (_, text) = fetch_text(http, &variant.url, platform, &variant.headers, MAX_SDP).await?;
+                    let (_, text) =
+                        fetch_text(http, &variant.url, platform, &variant.headers, MAX_SDP).await?;
                     if !text.lines().any(|line| line.trim_start().starts_with("m=")) {
                         return Err(DownloadError::Manifest(format!(
                             "{} is not a session description: no media line",
@@ -131,7 +135,10 @@ async fn input_of(
 #[async_trait]
 impl Downloader for StreamDownloader {
     fn handles(&self, kind: VariantKind) -> bool {
-        matches!(kind, VariantKind::Rtmp | VariantKind::Rtsp | VariantKind::Rtp)
+        matches!(
+            kind,
+            VariantKind::Rtmp | VariantKind::Rtsp | VariantKind::Rtp
+        )
     }
 
     async fn download(
@@ -254,21 +261,51 @@ mod tests {
 
     /// A port nothing listens on right now.
     async fn free_port() -> u16 {
-        TcpListener::bind("127.0.0.1:0").await.unwrap().local_addr().unwrap().port()
+        TcpListener::bind("127.0.0.1:0")
+            .await
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port()
     }
 
     /// Three seconds of test picture and tone, encoded once as ffmpeg input arguments.
     fn source_args(seconds: u32, audio: bool) -> Vec<String> {
         let mut args: Vec<String> = [
-            "-loglevel", "error", "-re", "-f", "lavfi", "-i",
+            "-loglevel",
+            "error",
+            "-re",
+            "-f",
+            "lavfi",
+            "-i",
             &format!("testsrc=size=64x64:rate=10:duration={seconds}"),
         ]
         .map(String::from)
         .to_vec();
         if audio {
-            args.extend(["-f", "lavfi", "-i", &format!("sine=frequency=440:duration={seconds}")].map(String::from));
+            args.extend(
+                [
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    &format!("sine=frequency=440:duration={seconds}"),
+                ]
+                .map(String::from),
+            );
         }
-        args.extend(["-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-g", "10"].map(String::from));
+        args.extend(
+            [
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-pix_fmt",
+                "yuv420p",
+                "-g",
+                "10",
+            ]
+            .map(String::from),
+        );
         if audio {
             args.extend(["-c:a", "aac"].map(String::from));
         }
@@ -297,7 +334,8 @@ mod tests {
         context: &DownloadContext,
     ) -> (Result<Downloaded, DownloadError>, Progress) {
         let http = Http::with_transport(site.clone(), Http::test_config());
-        let downloader = StreamDownloader::new(http, ffmpeg.clone()).quiet_after(Duration::from_secs(3));
+        let downloader =
+            StreamDownloader::new(http, ffmpeg.clone()).quiet_after(Duration::from_secs(3));
         let mut variant = Variant::new(Url::parse(url).unwrap(), kind);
         variant.live = true;
         let (progress, watched) = tokio::sync::watch::channel(Progress::default());
@@ -326,7 +364,15 @@ mod tests {
         let mut attempt = 0;
         let (downloaded, progress) = loop {
             attempt += 1;
-            let (result, progress) = record(&site, &ffmpeg, &url, VariantKind::Rtmp, &dir.join(format!("job{attempt}")), &context).await;
+            let (result, progress) = record(
+                &site,
+                &ffmpeg,
+                &url,
+                VariantKind::Rtmp,
+                &dir.join(format!("job{attempt}")),
+                &context,
+            )
+            .await;
             match result {
                 Ok(downloaded) => break (downloaded, progress),
                 Err(error) if attempt < 20 => {
@@ -340,7 +386,14 @@ mod tests {
         assert!(info.video.is_some(), "{info:?}");
         assert!(info.audio.is_some(), "{info:?}");
         assert!(near(info.duration.unwrap().as_secs_f64(), 3.0), "{info:?}");
-        assert!(downloaded.notes.iter().any(|n| n.contains("the stream ended")), "{:?}", downloaded.notes);
+        assert!(
+            downloaded
+                .notes
+                .iter()
+                .any(|n| n.to_lowercase().contains("stream ended")),
+            "{:?}",
+            downloaded.notes
+        );
         assert_eq!(progress.total, Some(60));
         assert!(progress.done >= 2, "{progress:?}");
         let _ = tokio::fs::remove_dir_all(&dir).await;
@@ -354,7 +407,16 @@ mod tests {
         let port = free_port().await & !1;
         let sdp_path = dir.join("sender.sdp");
         let mut args = source_args(4, false);
-        args.extend(["-f", "rtp", "-sdp_file", sdp_path.to_str().unwrap(), &format!("rtp://127.0.0.1:{port}")].map(String::from));
+        args.extend(
+            [
+                "-f",
+                "rtp",
+                "-sdp_file",
+                sdp_path.to_str().unwrap(),
+                &format!("rtp://127.0.0.1:{port}"),
+            ]
+            .map(String::from),
+        );
         let _sender = spawn_ffmpeg(&ffmpeg, &args);
         let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
         let sdp = loop {
@@ -368,23 +430,66 @@ mod tests {
         };
         let site = Site::new();
         site.put_text("https://cam.test/session.sdp", "application/sdp", &sdp);
-        site.put_text("https://cam.test/page.sdp", "application/sdp", "v=0\no=- 0 0 IN IP4 127.0.0.1\ns=nothing\n");
+        site.put_text(
+            "https://cam.test/page.sdp",
+            "application/sdp",
+            "v=0\no=- 0 0 IN IP4 127.0.0.1\ns=nothing\n",
+        );
         let mut context = DownloadContext::new(50_000_000);
         context.max_live = Duration::from_secs(60);
-        let (result, _) = record(&site, &ffmpeg, "https://cam.test/session.sdp", VariantKind::Rtp, &dir.join("job"), &context).await;
+        let (result, _) = record(
+            &site,
+            &ffmpeg,
+            "https://cam.test/session.sdp",
+            VariantKind::Rtp,
+            &dir.join("job"),
+            &context,
+        )
+        .await;
         let downloaded = result.unwrap();
         let info = ffmpeg.probe(&downloaded.file.path).await.unwrap();
         assert!(info.video.is_some(), "{info:?}");
         assert!(info.duration.unwrap().as_secs_f64() >= 1.5, "{info:?}");
-        assert!(downloaded.notes.iter().any(|n| n.contains("went quiet")), "{:?}", downloaded.notes);
+        assert!(
+            downloaded
+                .notes
+                .iter()
+                .any(|n| n.contains("Stream idle for")),
+            "{:?}",
+            downloaded.notes
+        );
         assert!(dir.join("job").join("session.sdp").exists());
         // A document without a media line is not a session.
-        let (result, _) = record(&site, &ffmpeg, "https://cam.test/page.sdp", VariantKind::Rtp, &dir.join("bad"), &context).await;
+        let (result, _) = record(
+            &site,
+            &ffmpeg,
+            "https://cam.test/page.sdp",
+            VariantKind::Rtp,
+            &dir.join("bad"),
+            &context,
+        )
+        .await;
         assert!(matches!(result.unwrap_err(), DownloadError::Manifest(_)));
         // The wrong scheme for the kind is refused before ffmpeg runs.
-        let (result, _) = record(&site, &ffmpeg, "https://cam.test/x", VariantKind::Rtsp, &dir.join("scheme"), &context).await;
+        let (result, _) = record(
+            &site,
+            &ffmpeg,
+            "https://cam.test/x",
+            VariantKind::Rtsp,
+            &dir.join("scheme"),
+            &context,
+        )
+        .await;
         assert!(matches!(result.unwrap_err(), DownloadError::Unsupported(_)));
-        let (result, _) = record(&site, &ffmpeg, "ftp://cam.test/x", VariantKind::Rtp, &dir.join("scheme2"), &context).await;
+        let (result, _) = record(
+            &site,
+            &ffmpeg,
+            "ftp://cam.test/x",
+            VariantKind::Rtp,
+            &dir.join("scheme2"),
+            &context,
+        )
+        .await;
         assert!(matches!(result.unwrap_err(), DownloadError::Unsupported(_)));
         let _ = tokio::fs::remove_dir_all(&dir).await;
     }
@@ -396,7 +501,16 @@ mod tests {
         let port = socket.local_addr().unwrap().port();
         let sdp_path = dir.join("capture.sdp");
         let mut args = source_args(seconds, false);
-        args.extend(["-f", "rtp", "-sdp_file", sdp_path.to_str().unwrap(), &format!("rtp://127.0.0.1:{port}")].map(String::from));
+        args.extend(
+            [
+                "-f",
+                "rtp",
+                "-sdp_file",
+                sdp_path.to_str().unwrap(),
+                &format!("rtp://127.0.0.1:{port}"),
+            ]
+            .map(String::from),
+        );
         let mut sender = spawn_ffmpeg(ffmpeg, &args);
         let mut packets = Vec::new();
         let mut buf = vec![0u8; 2000];
@@ -410,7 +524,9 @@ mod tests {
             }
         }
         // Whatever is still queued on the socket.
-        while let Ok(Ok((n, _))) = tokio::time::timeout(Duration::from_millis(200), socket.recv_from(&mut buf)).await {
+        while let Ok(Ok((n, _))) =
+            tokio::time::timeout(Duration::from_millis(200), socket.recv_from(&mut buf)).await
+        {
             packets.push(buf[..n].to_vec());
         }
         let sdp = tokio::fs::read_to_string(&sdp_path).await.unwrap();
@@ -441,13 +557,19 @@ mod tests {
                 }
             }
             let reply = match method.as_str() {
-                "OPTIONS" => format!("RTSP/1.0 200 OK\r\nCSeq: {cseq}\r\nPublic: OPTIONS, DESCRIBE, SETUP, PLAY, TEARDOWN\r\n\r\n"),
+                "OPTIONS" => format!(
+                    "RTSP/1.0 200 OK\r\nCSeq: {cseq}\r\nPublic: OPTIONS, DESCRIBE, SETUP, PLAY, TEARDOWN\r\n\r\n"
+                ),
                 "DESCRIBE" => format!(
                     "RTSP/1.0 200 OK\r\nCSeq: {cseq}\r\nContent-Base: rtsp://127.0.0.1/cam/\r\nContent-Type: application/sdp\r\nContent-Length: {}\r\n\r\n{sdp}",
                     sdp.len()
                 ),
-                "SETUP" => format!("RTSP/1.0 200 OK\r\nCSeq: {cseq}\r\nSession: 1;timeout=60\r\nTransport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n\r\n"),
-                "PLAY" => format!("RTSP/1.0 200 OK\r\nCSeq: {cseq}\r\nSession: 1\r\nRange: npt=0.000-\r\n\r\n"),
+                "SETUP" => format!(
+                    "RTSP/1.0 200 OK\r\nCSeq: {cseq}\r\nSession: 1;timeout=60\r\nTransport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n\r\n"
+                ),
+                "PLAY" => format!(
+                    "RTSP/1.0 200 OK\r\nCSeq: {cseq}\r\nSession: 1\r\nRange: npt=0.000-\r\n\r\n"
+                ),
                 _ => format!("RTSP/1.0 200 OK\r\nCSeq: {cseq}\r\nSession: 1\r\n\r\n"),
             };
             write.write_all(reply.as_bytes()).await.unwrap();
@@ -458,8 +580,12 @@ mod tests {
                         continue;
                     }
                     let timestamp = u32::from_be_bytes(packet[4..8].try_into().unwrap());
-                    let (start, at) = *first_time.get_or_insert((timestamp, tokio::time::Instant::now()));
-                    let due = at + Duration::from_secs_f64(f64::from(timestamp.wrapping_sub(start)) / 90_000.0);
+                    let (start, at) =
+                        *first_time.get_or_insert((timestamp, tokio::time::Instant::now()));
+                    let due = at
+                        + Duration::from_secs_f64(
+                            f64::from(timestamp.wrapping_sub(start)) / 90_000.0,
+                        );
                     tokio::time::sleep_until(due).await;
                     let mut frame = vec![b'$', 0];
                     frame.extend_from_slice(&(packet.len() as u16).to_be_bytes());
@@ -490,12 +616,20 @@ mod tests {
         let site = Site::new();
         let mut context = DownloadContext::new(50_000_000);
         context.max_live = Duration::from_secs(60);
-        let (result, progress) = record(&site, &ffmpeg, &format!("rtsp://127.0.0.1:{port}/cam"), VariantKind::Rtsp, &dir.join("job"), &context).await;
+        let (result, progress) = record(
+            &site,
+            &ffmpeg,
+            &format!("rtsp://127.0.0.1:{port}/cam"),
+            VariantKind::Rtsp,
+            &dir.join("job"),
+            &context,
+        )
+        .await;
         let downloaded = result.unwrap();
         let info = ffmpeg.probe(&downloaded.file.path).await.unwrap();
         assert!(info.video.is_some(), "{info:?}");
         assert!(near(info.duration.unwrap().as_secs_f64(), 3.0), "{info:?}");
-        assert!(downloaded.notes.iter().any(|n| n.contains("the stream ended") || n.contains("went quiet")), "{:?}", downloaded.notes);
+        assert!(downloaded.notes.iter().any(|n| n.to_lowercase().contains("stream ended") || n.contains("Stream idle for")), "{:?}", downloaded.notes);
         assert_eq!(progress.total, Some(60));
         server.abort();
 
@@ -505,11 +639,26 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         let server = tokio::spawn(serve_rtsp(listener, sdp, packets));
         context.max_live = Duration::from_secs(2);
-        let (result, _) = record(&site, &ffmpeg, &format!("rtsp://127.0.0.1:{port}/cam"), VariantKind::Rtsp, &dir.join("cut"), &context).await;
+        let (result, _) = record(
+            &site,
+            &ffmpeg,
+            &format!("rtsp://127.0.0.1:{port}/cam"),
+            VariantKind::Rtsp,
+            &dir.join("cut"),
+            &context,
+        )
+        .await;
         let downloaded = result.unwrap();
         let info = ffmpeg.probe(&downloaded.file.path).await.unwrap();
         assert!(near(info.duration.unwrap().as_secs_f64(), 2.0), "{info:?}");
-        assert!(downloaded.notes.iter().any(|n| n.contains("capture cut at the limit")), "{:?}", downloaded.notes);
+        assert!(
+            downloaded
+                .notes
+                .iter()
+                .any(|n| n.contains("capture cut at the limit")),
+            "{:?}",
+            downloaded.notes
+        );
         server.abort();
         let _ = tokio::fs::remove_dir_all(&dir).await;
     }

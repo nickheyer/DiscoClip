@@ -500,9 +500,14 @@ pub struct EntryView {
 pub struct View {
     pub settings: Json,
     pub defaults: Json,
+    /// Settings with every optional section filled in with placeholder values, so the
+    /// shape and type of every path can be read even where `defaults` holds `null`.
+    pub exemplar: Json,
     pub entries: Vec<EntryView>,
     /// Secret keys that hold a value. Their values are withheld from `settings`.
     pub secrets: Vec<String>,
+    /// Every key that is a secret, set or not.
+    pub secret_keys: Vec<String>,
 }
 
 /// Writes the provisioned values into `db`, keeping anything the app changed, and returns
@@ -634,6 +639,7 @@ impl SettingsStore {
         let change = change.clone();
         transact(&self.db, move |tx| {
             let before = read_entries(tx)?;
+            let change = with_stored_secrets(change, &before);
             let mut rows: BTreeMap<String, Json> = before
                 .iter()
                 .map(|entry| (entry.key.clone(), entry.value.clone()))
@@ -675,6 +681,7 @@ impl SettingsStore {
         transact(&self.db, move |tx| {
             let before = read_entries(tx)?;
             let before_tree = assemble(&before)?;
+            let change = with_stored_secrets(change, &before);
             let now = Timestamp::now();
             let mut removed = Vec::new();
             for key in &change.reset {
@@ -944,6 +951,61 @@ fn decode(entries: &[Entry]) -> Result<Settings, SettingsError> {
     Ok(settings)
 }
 
+/// Every leaf of `tree` that is a secret, whether or not it holds a value.
+fn secret_paths(tree: &Json) -> Vec<String> {
+    let mut leaves = BTreeMap::new();
+    crate::config::json_leaves(tree, "", &mut leaves);
+    leaves
+        .into_keys()
+        .filter(|key| key.split('.').any(audit::is_secret_name))
+        .collect()
+}
+
+/// The change with every secret it sends as `null` replaced by the stored one, so the
+/// settings it previews and applies are the same.
+fn with_stored_secrets(mut change: Change, before: &[Entry]) -> Change {
+    for (key, value) in change.set.iter_mut() {
+        keep_stored_secrets(key, value, before);
+    }
+    change
+}
+
+/// Puts the stored value back into every secret beneath `key` that `value` sends as
+/// `null`. The app reads secrets withheld as `null`, so sending a section back unchanged
+/// keeps its secret rather than erasing it.
+fn keep_stored_secrets(key: &str, value: &mut Json, before: &[Entry]) {
+    let stored = |leaf: &str| before.iter().find(|entry| entry.key == leaf);
+    if key.split('.').any(audit::is_secret_name) {
+        if value.is_null()
+            && let Some(entry) = stored(key)
+        {
+            *value = entry.value.clone();
+        }
+        return;
+    }
+    let leaves = leaves_of(key, value);
+    for (leaf, sent) in &leaves {
+        if !sent.is_null() || !leaf.split('.').any(audit::is_secret_name) {
+            continue;
+        }
+        let Some(entry) = stored(leaf) else {
+            continue;
+        };
+        let Some(rest) = leaf
+            .strip_prefix(key)
+            .and_then(|rest| rest.strip_prefix('.'))
+        else {
+            continue;
+        };
+        if let Some(slot) = rest
+            .split('.')
+            .try_fold(&mut *value, |node, segment| node.get_mut(segment))
+        {
+            *slot = entry.value.clone();
+        }
+    }
+}
+
 /// The settings tree with every secret withheld, and the keys of the secrets that are set.
 fn withhold_secrets(tree: &Json) -> (Json, Vec<String>) {
     let mut leaves = BTreeMap::new();
@@ -977,9 +1039,14 @@ fn view_of(settings: &Settings, entries: &[Entry]) -> View {
     let (withheld, secrets) = withhold_secrets(&tree);
     let (defaults, _) =
         withhold_secrets(&serde_json::to_value(Settings::default()).unwrap_or(Json::Null));
+    let full = serde_json::to_value(Settings::exemplar()).unwrap_or(Json::Null);
+    let secret_keys = secret_paths(&full);
+    let (exemplar, _) = withhold_secrets(&full);
     View {
         settings: withheld,
         defaults,
+        exemplar,
+        secret_keys,
         entries: entries
             .iter()
             .map(|entry| EntryView {
@@ -1659,6 +1726,72 @@ mod tests {
             ]
         );
         assert!(view.entries.iter().all(|e| e.source == Source::App));
+        assert_eq!(view.exemplar["auth"]["github"]["client_id"], "");
+        assert_eq!(view.exemplar["auth"]["github"]["client_secret"], Json::Null);
+        assert_eq!(view.exemplar["web"]["tls"]["cert"], "cert.pem");
+        assert_eq!(view.exemplar["engine"]["archive"]["keep"], "output");
+        assert_eq!(
+            view.secret_keys,
+            vec![
+                "auth.github.client_secret",
+                "auth.google.client_secret",
+                "auth.oidc.client_secret"
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_secret_sent_as_null_keeps_the_stored_one() {
+        let store = store().await;
+        store
+            .set(
+                &actor(),
+                "auth.github",
+                json!({"client_id": "id", "client_secret": "s3cret"}),
+            )
+            .await
+            .unwrap();
+        let settings = store
+            .set(
+                &actor(),
+                "auth.github",
+                json!({"client_id": "new-id", "client_secret": null}),
+            )
+            .await
+            .unwrap();
+        let github = settings.auth.github.as_ref().unwrap();
+        assert_eq!(github.client_id, "new-id");
+        assert_eq!(github.client_secret.expose_secret(), "s3cret");
+        let previewed = store
+            .preview(&Change::set(
+                "auth.github",
+                json!({"client_id": "newer-id", "client_secret": null}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            previewed.auth.github.unwrap().client_secret.expose_secret(),
+            "s3cret"
+        );
+        let settings = store
+            .set(&actor(), "auth.github.client_secret", Json::Null)
+            .await
+            .unwrap();
+        assert_eq!(
+            settings.auth.github.unwrap().client_secret.expose_secret(),
+            "s3cret"
+        );
+        let missing = store
+            .set(
+                &actor(),
+                "auth.google",
+                json!({"client_id": "g", "client_secret": null}),
+            )
+            .await;
+        assert!(
+            missing.is_err(),
+            "a section with no secret stored cannot keep one"
+        );
     }
 
     #[test]

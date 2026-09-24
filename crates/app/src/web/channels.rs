@@ -34,10 +34,20 @@ where
 {
     tokio::time::timeout(wait, call).await.map_err(|_| {
         ApiError::Unavailable(format!(
-            "Discord {what} request timed out after {}s. Try again shortly.",
-            wait.as_secs()
+            "Discord has not answered {what} within {}, which usually means it is rate limiting \
+             the bot. Try again shortly.",
+            wait_text(wait)
         ))
     })
+}
+
+/// A wait as people read it: `20 ms` under a second, `8 s` from there.
+fn wait_text(wait: Duration) -> String {
+    if wait < Duration::from_secs(1) {
+        format!("{} ms", wait.as_millis())
+    } else {
+        format!("{} s", wait.as_secs())
+    }
 }
 
 use super::AppState;

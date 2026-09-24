@@ -130,6 +130,9 @@ fn duration_of(mpd: &MPD) -> Option<Duration> {
     (sum > Duration::ZERO).then_some(sum)
 }
 
+/// representation id
+type RungKey = (String, Option<u32>, Option<u32>, Option<String>, bool);
+
 /// [`expand`] for a manifest already read: `text` came from `base`, and `url` names the
 /// manifest in errors and in the variants.
 pub fn expand_manifest(
@@ -152,7 +155,7 @@ pub fn expand_manifest(
     // A representation of a later period that repeats an earlier one, by id and shape,
     // is the same ladder rung carried across the periods, which the downloader joins in
     // turn. It is listed once.
-    let mut seen: HashSet<(String, Option<u32>, Option<u32>, Option<String>, bool)> = HashSet::new();
+    let mut seen: HashSet<RungKey> = HashSet::new();
     for (period_index, period) in mpd.periods.iter().enumerate() {
         let period_drm = presentation_protection(&mpd, period);
         let prefixed = |id: Option<String>| {
@@ -451,10 +454,20 @@ mod tests {
     #[test]
     fn periods_repeat_one_ladder_and_carry_protection_of_their_own() {
         let url = Url::parse("https://cdn.test/v/manifest.mpd").unwrap();
-        let period = &MPD[MPD.find("<Period>").unwrap()..MPD.find("</Period>").unwrap() + "</Period>".len()];
+        let period =
+            &MPD[MPD.find("<Period>").unwrap()..MPD.find("</Period>").unwrap() + "</Period>".len()];
         let three = MPD.replace(period, &format!("{period}{period}{period}"));
         let expanded = expand_manifest(&url, &url, &three, &[]).unwrap();
-        assert_eq!(expanded.variants.len(), 2, "{:?}", expanded.variants.iter().map(|v| &v.format_id).collect::<Vec<_>>());
+        assert_eq!(
+            expanded.variants.len(),
+            2,
+            "{:?}",
+            expanded
+                .variants
+                .iter()
+                .map(|v| &v.format_id)
+                .collect::<Vec<_>>()
+        );
         assert_eq!(expanded.variants[0].format_id.as_deref(), Some("v720"));
         // A later period with a rung of its own adds it, named for its period.
         let extra = period.replace(
@@ -463,7 +476,11 @@ mod tests {
         );
         let mixed = MPD.replace(period, &format!("{period}{extra}"));
         let expanded = expand_manifest(&url, &url, &mixed, &[]).unwrap();
-        let ids: Vec<&str> = expanded.variants.iter().filter_map(|v| v.format_id.as_deref()).collect();
+        let ids: Vec<&str> = expanded
+            .variants
+            .iter()
+            .filter_map(|v| v.format_id.as_deref())
+            .collect();
         assert_eq!(ids, ["v720", "v1080", "p1-v480"]);
         // Protection declared on the period or the presentation locks every rung in it.
         let locked = MPD.replace(

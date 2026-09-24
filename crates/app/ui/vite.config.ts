@@ -21,6 +21,11 @@ export default defineConfig({
 			adapter: adapter({ pages: out, assets: out, fallback: 'index.html' })
 		})
 	],
+	build: {
+		// Fonts stay files: the server's CSP allows `font-src 'self'` only, so an inlined
+		// `data:` font would be blocked.
+		assetsInlineLimit: (file) => (/\.(woff2?|ttf|otf)$/i.test(file) ? false : undefined)
+	},
 	server: {
 		proxy: {
 			// The Host header stays the dev server's, so the backend's Origin check passes.

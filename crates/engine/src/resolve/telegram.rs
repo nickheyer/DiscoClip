@@ -287,10 +287,7 @@ impl TelegramResolver {
             return Err(if lower.contains("not found") {
                 ResolveError::NotFound(origin.clone())
             } else if lower.contains("private") || lower.contains("restricted") {
-                ResolveError::unavailable(
-                    origin,
-                    format!("{error}. The channel is private."),
-                )
+                ResolveError::unavailable(origin, format!("{error}. The channel is private."))
             } else {
                 ResolveError::unavailable(origin, error.clone())
             });

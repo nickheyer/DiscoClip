@@ -520,10 +520,14 @@ fn check(
         }
     }
     if input.limits.max_source_bytes == Some(0) {
-        return Err(ProfileError::Invalid("max_source_bytes must be above zero".into()));
+        return Err(ProfileError::Invalid(
+            "max_source_bytes must be above zero".into(),
+        ));
     }
     if input.limits.max_height == Some(0) {
-        return Err(ProfileError::Invalid("max_height must be above zero".into()));
+        return Err(ProfileError::Invalid(
+            "max_height must be above zero".into(),
+        ));
     }
     Ok(ProfileInput {
         name,
@@ -708,7 +712,10 @@ impl ProfileStore {
             refresh(tx, &cache)?;
             let converted = convert_rule_policies(tx, &cache)?;
             if converted > 0 {
-                tracing::info!(profiles = converted, "watch rule policies turned into channel profiles");
+                tracing::info!(
+                    profiles = converted,
+                    "watch rule policies turned into channel profiles"
+                );
                 refresh(tx, &cache)?;
             }
             refresh(tx, &cache)
@@ -1016,7 +1023,12 @@ fn encode(toggles: &PlatformToggles) -> Result<String, ProfileError> {
 }
 
 /// Inserts a checked profile as `id`, created and updated `now`.
-fn insert(conn: &Connection, id: ProfileId, input: &ProfileInput, now: Timestamp) -> rusqlite::Result<usize> {
+fn insert(
+    conn: &Connection,
+    id: ProfileId,
+    input: &ProfileInput,
+    now: Timestamp,
+) -> rusqlite::Result<usize> {
     let platforms = match encode(&input.platforms) {
         Ok(text) => text,
         Err(error) => {
@@ -1130,16 +1142,14 @@ fn convert_rule_policies(conn: &Connection, cache: &ProfileCache) -> Result<usiz
         }
         let platforms = match (policy.hosts.is_empty(), existing) {
             (true, None) => PlatformToggles::default(),
-            (true, Some(previous)) => {
-                cache
-                    .inner
-                    .read()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .profiles
-                    .get(&previous)
-                    .map(|(toggles, _)| toggles.clone())
-                    .unwrap_or_default()
-            }
+            (true, Some(previous)) => cache
+                .inner
+                .read()
+                .unwrap_or_else(|e| e.into_inner())
+                .profiles
+                .get(&previous)
+                .map(|(toggles, _)| toggles.clone())
+                .unwrap_or_default(),
             (false, None) => PlatformToggles {
                 default: PlatformDefault::Disabled,
                 presets: Vec::new(),
@@ -1154,7 +1164,8 @@ fn convert_rule_policies(conn: &Connection, cache: &ProfileCache) -> Result<usiz
                         .platforms
                         .iter()
                         .map(|id| {
-                            let on = allowed.contains(id) && before.get(*id).copied().unwrap_or(true);
+                            let on =
+                                allowed.contains(id) && before.get(*id).copied().unwrap_or(true);
                             (id.to_string(), on)
                         })
                         .collect(),
@@ -1230,7 +1241,13 @@ fn convert_rule_policies(conn: &Connection, cache: &ProfileCache) -> Result<usiz
              VALUES (?1, ?2, ?3, ?4, ?5)
              ON CONFLICT(scope) DO UPDATE SET profile_id = excluded.profile_id,
                 updated_at = excluded.updated_at",
-            params![scope.key(), scope.kind(), scope.guild_id(), id.to_string(), nanos(now)],
+            params![
+                scope.key(),
+                scope.kind(),
+                scope.guild_id(),
+                id.to_string(),
+                nanos(now)
+            ],
         )?;
         audit::record(
             conn,
@@ -1526,7 +1543,9 @@ mod tests {
         // The bot asks by ids and gets the same answer.
         let cache = store.cache();
         assert_eq!(
-            cache.in_force(Some(Id::new(5)), Some(Id::new(1)), Some(Id::new(8))).disabled,
+            cache
+                .in_force(Some(Id::new(5)), Some(Id::new(1)), Some(Id::new(8)))
+                .disabled,
             vec![
                 "redgifs".to_string(),
                 "web".to_string(),
@@ -1693,9 +1712,25 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(store.get(guild_wide.id).await.unwrap().unwrap().input.limits.max_duration_secs, Some(600));
+        assert_eq!(
+            store
+                .get(guild_wide.id)
+                .await
+                .unwrap()
+                .unwrap()
+                .input
+                .limits
+                .max_duration_secs,
+            Some(600)
+        );
         store
-            .assign(&actor(), Scope::Guild { guild_id: "5".into() }, guild_wide.id)
+            .assign(
+                &actor(),
+                Scope::Guild {
+                    guild_id: "5".into(),
+                },
+                guild_wide.id,
+            )
             .await
             .unwrap();
         store
@@ -1715,7 +1750,10 @@ mod tests {
         assert_eq!(guild.max_source_bytes, Some(50_000_000));
         assert_eq!(guild.max_duration_secs, Some(600));
         assert_eq!(guild.max_height, None);
-        let channel = store.cache().in_force(Some(Id::new(5)), Some(Id::new(1)), None).limits;
+        let channel = store
+            .cache()
+            .in_force(Some(Id::new(5)), Some(Id::new(1)), None)
+            .limits;
         assert_eq!(channel.max_source_bytes, Some(50_000_000));
         assert_eq!(channel.max_duration_secs, Some(60));
         assert_eq!(channel.max_height, Some(480));
@@ -1774,7 +1812,10 @@ mod tests {
         let profiles = store.list().await.unwrap();
         let names: Vec<&str> = profiles.iter().map(|p| p.input.name.as_str()).collect();
         assert_eq!(names, vec!["Default", "Channel 1 rule", "Channel 3 rule"]);
-        let one = profiles.iter().find(|p| p.input.name == "Channel 1 rule").unwrap();
+        let one = profiles
+            .iter()
+            .find(|p| p.input.name == "Channel 1 rule")
+            .unwrap();
         assert_eq!(one.input.limits.max_source_bytes, Some(1000));
         assert_eq!(one.input.limits.max_duration_secs, Some(30));
         assert_eq!(one.input.limits.max_height, Some(720));
@@ -1802,7 +1843,13 @@ mod tests {
         store.load().await.unwrap();
         assert_eq!(store.list().await.unwrap().len(), 3);
         let staged: i64 = db
-            .call(|conn| Ok(conn.query_row("SELECT COUNT(*) FROM watch_rule_policies", [], |row| row.get(0))?))
+            .call(|conn| {
+                Ok(
+                    conn.query_row("SELECT COUNT(*) FROM watch_rule_policies", [], |row| {
+                        row.get(0)
+                    })?,
+                )
+            })
             .await
             .unwrap();
         assert_eq!(staged, 0);
@@ -1822,8 +1869,16 @@ mod tests {
             .find(|e| e.details["converted_from_rule"]["channel_id"] == "1")
             .unwrap();
         assert_eq!(from.details["converted_from_rule"]["rule_id"], "r1");
-        assert_eq!(from.details["converted_from_rule"]["unmatched_hosts"], json!(["nobody.example"]));
-        assert!(entries.entries.iter().any(|e| e.action == Action::ProfileAssign));
+        assert_eq!(
+            from.details["converted_from_rule"]["unmatched_hosts"],
+            json!(["nobody.example"])
+        );
+        assert!(
+            entries
+                .entries
+                .iter()
+                .any(|e| e.action == Action::ProfileAssign)
+        );
     }
 
     #[test]

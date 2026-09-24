@@ -1,6 +1,7 @@
 //! Source-agnostic media pipeline: resolve, download, transcode, publish, archive.
 
 pub mod archive;
+pub mod browser;
 pub mod config;
 pub mod detect;
 pub mod download;
@@ -23,7 +24,8 @@ pub use reqwest;
 pub use rusqlite;
 
 pub use config::{
-    DownloadConfig, EngineConfig, Limits, LiveConfig, PlaylistConfig, RetentionConfig,
+    BrowserConfig, DownloadConfig, EngineConfig, Limits, LiveConfig, PlaylistConfig,
+    RetentionConfig,
 };
 pub use engine::{
     CancelError, DeleteError, Engine, EngineBuilder, EngineError, EngineHandle, PlatformSession,

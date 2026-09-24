@@ -863,7 +863,7 @@ mod tests {
             .await
             .unwrap_err();
         assert!(
-            matches!(&error, ResolveError::Unavailable { reason, .. } if reason.contains("scripts")),
+            matches!(&error, ResolveError::Unavailable { reason, .. } if reason.contains("requires JavaScript")),
             "{error}"
         );
         assert!(matches!(

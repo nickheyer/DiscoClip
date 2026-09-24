@@ -360,8 +360,7 @@ fn check(input: &FrontendInput, known: &Known) -> Result<FrontendInput, Frontend
         && !input.access.providers.iter().any(|p| p == "discord")
     {
         return Err(FrontendError::Invalid(
-            "Discord membership checks need the discord provider among the view's providers"
-                .into(),
+            "Discord membership checks need the discord provider among the view's providers".into(),
         ));
     }
     if input.access.discord_members && input.scope.guilds.is_empty() {

@@ -291,7 +291,8 @@ impl Ffmpeg {
         let stderr_bytes = stderr_task.await.unwrap_or_default();
         let stderr = tail(&stderr_bytes);
         // ffmpeg stopped by request exits with 255. That is the stop taking effect.
-        if !status.success() && !(asked && status.code() == Some(255)) {
+        let stopped_on_request = asked && status.code() == Some(255);
+        if !(status.success() || stopped_on_request) {
             return Err(FfmpegError::Process(format!(
                 "exit status {}: {}",
                 status

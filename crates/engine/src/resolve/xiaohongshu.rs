@@ -122,8 +122,10 @@ pub fn initial_state(html: &str) -> Option<Value> {
 
 /// The note `id` names in a page's state.
 pub fn note_of<'a>(state: &'a Value, id: &str) -> Option<&'a Value> {
-    let note = state["note"]["noteDetailMap"][id]["note"].as_object()?;
-    Some(&state["note"]["noteDetailMap"][id]["note"]).filter(|_| !note.is_empty())
+    let note = &state["note"]["noteDetailMap"][id]["note"];
+    note.as_object()
+        .is_some_and(|fields| !fields.is_empty())
+        .then_some(note)
 }
 
 /// The message in the answer a page's own request for the note got, which the state

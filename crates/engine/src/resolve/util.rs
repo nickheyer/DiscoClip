@@ -394,10 +394,7 @@ pub fn parse_count(text: &str) -> Option<u64> {
         return None;
     }
     // Drop a leading word such as `Views:` or `viewed`.
-    let s = match s.find(|c: char| c.is_ascii_digit()) {
-        Some(index) => &s[index..],
-        None => return None,
-    };
+    let s = &s[s.find(|c: char| c.is_ascii_digit())?..];
     let number: String = s
         .chars()
         .take_while(|c| c.is_ascii_digit() || *c == ',' || *c == '.')

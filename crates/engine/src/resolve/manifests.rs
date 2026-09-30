@@ -82,7 +82,7 @@ pub async fn expand_each(
                 position: expansion.variants.len(),
                 variant,
                 status,
-                error,
+                error: *error,
             }),
         }
     }
@@ -117,12 +117,13 @@ pub async fn expand_all(
 }
 
 /// The streams and subtitle renditions `variant`'s manifest carries. A failure comes with
-/// the status the host answered, when the request got that far.
+/// the status the host answered, when the request got that far. The error is boxed so
+/// the failure stays small next to the streams a success carries.
 async fn read(
     http: &Http,
     platform: &str,
     variant: &Variant,
-) -> Result<(Vec<Variant>, Vec<SubtitleTrack>), (Option<StatusCode>, ResolveError)> {
+) -> Result<(Vec<Variant>, Vec<SubtitleTrack>), (Option<StatusCode>, Box<ResolveError>)> {
     let limit = match variant.kind {
         VariantKind::Hls => hls::MAX_PLAYLIST,
         _ => dash::MAX_MANIFEST,
@@ -134,16 +135,16 @@ async fn read(
         .headers(&variant.headers)
         .send()
         .await
-        .map_err(|e| (None, e.into()))?;
+        .map_err(|e| (None, Box::new(e.into())))?;
     let status = response.status;
     if let Some(error) = status_error(status, &variant.url) {
-        return Err((Some(status), error));
+        return Err((Some(status), Box::new(error)));
     }
     let base = response.url.clone();
     let body = response
         .bytes(limit)
         .await
-        .map_err(|e| (Some(status), e.into()))?;
+        .map_err(|e| (Some(status), Box::new(e.into())))?;
     let expanded = match variant.kind {
         VariantKind::Hls => hls::expand_playlist(
             http,
@@ -164,7 +165,7 @@ async fn read(
         )
         .map(|e| (e.variants, e.subtitles)),
     };
-    expanded.map_err(|e| (Some(status), e))
+    expanded.map_err(|e| (Some(status), Box::new(e)))
 }
 
 #[cfg(test)]

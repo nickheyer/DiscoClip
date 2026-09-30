@@ -1571,6 +1571,7 @@ dependencies = [
  "twilight-cache-inmemory",
  "twilight-gateway",
  "twilight-http",
+ "twilight-http-ratelimiting",
  "twilight-model",
  "twilight-util",
  "url",

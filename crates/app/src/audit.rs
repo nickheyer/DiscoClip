@@ -162,10 +162,16 @@ pub enum Action {
     FrontendUserDelete,
     /// Viewer sessions of a front end ended.
     FrontendSessionsRevoke,
+    /// A database backup made on request.
+    BackupRun,
+    /// A backup file removed.
+    BackupDelete,
+    /// A backup restored through the application.
+    BackupRestore,
 }
 
 impl Action {
-    pub const ALL: [Action; 31] = [
+    pub const ALL: [Action; 34] = [
         Action::SettingsSet,
         Action::SettingsReset,
         Action::SettingsImport,
@@ -197,6 +203,9 @@ impl Action {
         Action::FrontendUserPassword,
         Action::FrontendUserDelete,
         Action::FrontendSessionsRevoke,
+        Action::BackupRun,
+        Action::BackupDelete,
+        Action::BackupRestore,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -232,6 +241,9 @@ impl Action {
             Action::FrontendUserPassword => "frontend.user.password",
             Action::FrontendUserDelete => "frontend.user.delete",
             Action::FrontendSessionsRevoke => "frontend.sessions.revoke",
+            Action::BackupRun => "backup.run",
+            Action::BackupDelete => "backup.delete",
+            Action::BackupRestore => "backup.restore",
         }
     }
 }
@@ -281,6 +293,8 @@ pub enum TargetKind {
     Profile,
     /// A front end, by its id.
     Frontend,
+    /// A backup file, by its name.
+    Backup,
 }
 
 impl TargetKind {
@@ -292,6 +306,7 @@ impl TargetKind {
             TargetKind::Platform => "platform",
             TargetKind::Profile => "profile",
             TargetKind::Frontend => "frontend",
+            TargetKind::Backup => "backup",
         }
     }
 
@@ -303,6 +318,7 @@ impl TargetKind {
             "platform" => Some(TargetKind::Platform),
             "profile" => Some(TargetKind::Profile),
             "frontend" => Some(TargetKind::Frontend),
+            "backup" => Some(TargetKind::Backup),
             _ => None,
         }
     }
@@ -343,11 +359,12 @@ impl Target {
         }
     }
 
-    pub fn rule(id: impl std::fmt::Display, guild_id: &str, channel_id: &str) -> Self {
+    /// Named by guild and channel, with `*` for a rule watching every channel.
+    pub fn rule(id: impl std::fmt::Display, guild_id: &str, channel_id: Option<&str>) -> Self {
         Self {
             kind: TargetKind::Rule,
             id: id.to_string(),
-            name: Some(format!("{guild_id}/{channel_id}")),
+            name: Some(format!("{guild_id}/{}", channel_id.unwrap_or("*"))),
         }
     }
 
@@ -372,6 +389,14 @@ impl Target {
             kind: TargetKind::Frontend,
             id: id.to_string(),
             name: Some(slug.to_string()),
+        }
+    }
+
+    pub fn backup(name: &str) -> Self {
+        Self {
+            kind: TargetKind::Backup,
+            id: name.to_string(),
+            name: None,
         }
     }
 }

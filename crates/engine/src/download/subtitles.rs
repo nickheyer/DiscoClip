@@ -184,6 +184,157 @@ async fn fetch_track(
     }
 }
 
+/// A TTML document as SubRip text, for ffmpeg to render: every `<p>` in the body with a
+/// beginning and an end becomes a cue, `<br/>` a line break, and nested spans their text.
+/// Times are clock times, offset times in hours, minutes, seconds, milliseconds, frames
+/// or ticks, as the document's frame and tick rates count them.
+pub fn ttml_to_srt(text: &str) -> Option<String> {
+    let document = roxmltree::Document::parse(text).ok()?;
+    let root = document.root_element();
+    if root.tag_name().name() != "tt" {
+        return None;
+    }
+    let attr = |name: &str| -> Option<&str> {
+        root.attributes()
+            .find(|a| a.name() == name)
+            .map(|a| a.value())
+    };
+    let frame_rate: f64 = attr("frameRate")
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(30.0);
+    let multiplier: f64 = attr("frameRateMultiplier")
+        .and_then(|v| {
+            let mut parts = v.split_whitespace();
+            let num: f64 = parts.next()?.parse().ok()?;
+            let den: f64 = parts.next()?.parse().ok()?;
+            (den > 0.0).then(|| num / den)
+        })
+        .unwrap_or(1.0);
+    let tick_rate: f64 = attr("tickRate")
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(1.0);
+    let clock = TtmlClock {
+        frame_rate: frame_rate * multiplier,
+        tick_rate,
+    };
+    let mut cues: Vec<(f64, f64, String)> = Vec::new();
+    for node in root.descendants().filter(|n| n.is_element()) {
+        if node.tag_name().name() != "p" {
+            continue;
+        }
+        let value = |name: &str| {
+            node.attributes()
+                .find(|a| a.name() == name)
+                .map(|a| a.value())
+        };
+        let Some(begin) = value("begin").and_then(|t| clock.seconds(t)) else {
+            continue;
+        };
+        let end = match (value("end"), value("dur")) {
+            (Some(end), _) => clock.seconds(end),
+            (None, Some(dur)) => clock.seconds(dur).map(|d| begin + d),
+            (None, None) => None,
+        };
+        let Some(end) = end.filter(|end| *end > begin) else {
+            continue;
+        };
+        let mut lines = String::new();
+        ttml_text(node, &mut lines);
+        let cleaned: Vec<&str> = lines
+            .split('\n')
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .collect();
+        if cleaned.is_empty() {
+            continue;
+        }
+        cues.push((begin, end, cleaned.join("\n")));
+    }
+    if cues.is_empty() {
+        return None;
+    }
+    cues.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    let mut out = String::new();
+    for (index, (begin, end, text)) in cues.iter().enumerate() {
+        out.push_str(&format!(
+            "{}\n{} --> {}\n{text}\n\n",
+            index + 1,
+            srt_time(*begin),
+            srt_time(*end)
+        ));
+    }
+    Some(out)
+}
+
+struct TtmlClock {
+    frame_rate: f64,
+    tick_rate: f64,
+}
+
+impl TtmlClock {
+    /// A TTML time expression in seconds: `hh:mm:ss[.fraction]`, `hh:mm:ss:frames`,
+    /// or a number with `h`, `m`, `s`, `ms`, `f` or `t` after it.
+    fn seconds(&self, text: &str) -> Option<f64> {
+        let text = text.trim();
+        if text.contains(':') {
+            let parts: Vec<&str> = text.split(':').collect();
+            match parts.as_slice() {
+                [h, m, s] => {
+                    let hours: f64 = h.parse().ok()?;
+                    let minutes: f64 = m.parse().ok()?;
+                    let seconds: f64 = s.parse().ok()?;
+                    Some(hours * 3600.0 + minutes * 60.0 + seconds)
+                }
+                [h, m, s, f] => {
+                    let hours: f64 = h.parse().ok()?;
+                    let minutes: f64 = m.parse().ok()?;
+                    let seconds: f64 = s.parse().ok()?;
+                    let frames: f64 = f.parse().ok()?;
+                    Some(hours * 3600.0 + minutes * 60.0 + seconds + frames / self.frame_rate)
+                }
+                _ => None,
+            }
+        } else {
+            let unit_start = text
+                .find(|c: char| c.is_ascii_alphabetic())
+                .unwrap_or(text.len());
+            let number: f64 = text[..unit_start].trim().parse().ok()?;
+            Some(match text[unit_start..].trim() {
+                "h" => number * 3600.0,
+                "m" => number * 60.0,
+                "s" | "" => number,
+                "ms" => number / 1000.0,
+                "f" => number / self.frame_rate,
+                "t" => number / self.tick_rate,
+                _ => return None,
+            })
+        }
+    }
+}
+
+fn ttml_text(node: roxmltree::Node<'_, '_>, out: &mut String) {
+    for child in node.children() {
+        if child.is_text() {
+            out.push_str(child.text().unwrap_or(""));
+        } else if child.is_element() {
+            if child.tag_name().name() == "br" {
+                out.push('\n');
+            } else {
+                ttml_text(child, out);
+            }
+        }
+    }
+}
+
+fn srt_time(seconds: f64) -> String {
+    let total_ms = (seconds.max(0.0) * 1000.0).round() as u64;
+    let ms = total_ms % 1000;
+    let s = (total_ms / 1000) % 60;
+    let m = (total_ms / 60_000) % 60;
+    let h = total_ms / 3_600_000;
+    format!("{h:02}:{m:02}:{s:02},{ms:03}")
+}
+
 /// A WebVTT time, `hh:mm:ss.mmm` or `mm:ss.mmm`, in seconds.
 fn parse_vtt_time(text: &str) -> Option<f64> {
     let mut parts = text.trim().rsplit(':');
@@ -717,5 +868,28 @@ mod tests {
         assert_eq!(parse_vtt_time("01:02:03.500"), Some(3723.5));
         assert_eq!(parse_vtt_time("02:03.500"), Some(123.5));
         assert_eq!(parse_vtt_time("x"), None);
+    }
+
+    #[test]
+    fn ttml_documents_become_subrip_cues() {
+        let ttml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<tt xmlns="http://www.w3.org/ns/ttml" xmlns:tts="http://www.w3.org/ns/ttml#styling" ttp:frameRate="25" xmlns:ttp="http://www.w3.org/ns/ttml#parameter" ttp:tickRate="10000000">
+  <head><styling><style xml:id="s1" tts:color="white"/></styling></head>
+  <body><div>
+    <p begin="00:00:01.000" end="00:00:02.500" style="s1">Hello<br/>there</p>
+    <p begin="00:00:03:12" dur="1s"><span tts:fontStyle="italic">Twelve frames in</span></p>
+    <p begin="50000000t" end="6s">Ticks</p>
+    <p begin="7.5s" end="7s">Backwards, dropped</p>
+    <p begin="8s" end="9s">   </p>
+  </div></body>
+</tt>"#;
+        let srt = super::ttml_to_srt(ttml).unwrap();
+        assert_eq!(
+            srt,
+            "1\n00:00:01,000 --> 00:00:02,500\nHello\nthere\n\n2\n00:00:03,480 --> 00:00:04,480\nTwelve frames in\n\n3\n00:00:05,000 --> 00:00:06,000\nTicks\n\n"
+        );
+        assert!(super::ttml_to_srt("<html/>").is_none());
+        assert!(super::ttml_to_srt("not xml").is_none());
+        assert!(super::ttml_to_srt("<tt><body><p>no times</p></body></tt>").is_none());
     }
 }

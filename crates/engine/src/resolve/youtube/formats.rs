@@ -11,7 +11,7 @@ use url::Url;
 
 use super::innertube::Client;
 use super::player::Player;
-use crate::media::Container;
+use crate::media::{Container, Projection, StereoLayout};
 use crate::resolve::{
     Resolved, SubtitleFormat, SubtitleTrack, Variant, VariantKind, clean_title, essence,
 };
@@ -211,6 +211,17 @@ pub async fn variants(
             variant.video_only = adaptive && kind.starts_with("video/");
             variant.audio_only = kind.starts_with("audio/");
             variant.headers = vec![("user-agent".to_string(), client.user_agent.to_string())];
+            let projection = format["projectionType"].as_str().unwrap_or("");
+            variant.projection = match projection {
+                "EQUIRECTANGULAR" | "EQUIRECTANGULAR_THREED_TOP_BOTTOM" => {
+                    Some(Projection::Equirectangular)
+                }
+                "MESH" | "MESH_THREED_TOP_BOTTOM" => Some(Projection::EquiAngularCubemap),
+                _ => None,
+            };
+            variant.stereo = projection
+                .ends_with("_THREED_TOP_BOTTOM")
+                .then_some(StereoLayout::TopBottom);
             variant.drm = format["drmFamilies"]
                 .as_array()
                 .and_then(|f| f.first())

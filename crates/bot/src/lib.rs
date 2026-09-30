@@ -12,13 +12,16 @@ pub mod publish;
 pub mod supervisor;
 pub mod watch;
 
-pub use client::{Bot, BotError, GuildEvent, http_client};
-pub use config::{DiscordConfig, DiscordEndpoints, WatchRule};
+pub use client::{Bot, BotError, GuildEvent, http_client, rest_clients};
+pub use config::{
+    DiscordConfig, DiscordEndpoints, DiscordSettings, GuildOverride, SharedDiscordSettings,
+    UploadLimits, UploadSettings, WatchRule,
+};
 pub use directory::{ChannelInfo, Directories, Directory, GuildInfo, MemberInfo, RoleInfo};
 pub use link::{LinkTargets, MediaLink, NoLinks};
 pub use origin::{DiscordOrigin, SOURCE_ID};
 pub use profile::{InForce, PlatformLookup, ProfileSource, turned_off};
-pub use publish::{Clients, DiscordPublisher};
+pub use publish::{Clients, DiscordClients, DiscordPublisher};
 pub use supervisor::{
     BotCommand, BotControl, BotRuntime, BotState, BotStatus, ControlError, supervise,
 };

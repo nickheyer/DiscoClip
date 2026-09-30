@@ -3,9 +3,9 @@
 	import { SvelteMap } from 'svelte/reactivity';
 	import { metrics as metricsApi } from '$lib/api/endpoints';
 	import type { BotState, Metrics } from '$lib/api/types';
+	import Card from '$lib/components/Card.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import Toolbar from '$lib/components/Toolbar.svelte';
 	import RelativeTime from '$lib/components/RelativeTime.svelte';
 	import StatTile from '$lib/components/StatTile.svelte';
 	import Status from '$lib/components/Status.svelte';
@@ -60,18 +60,19 @@
 	];
 </script>
 
-<PageHeader title="Metrics" />
-
-<Toolbar description="Resource use, job counts, requests and storage. Refreshes every 5 seconds.">
+<PageHeader
+	title="Metrics"
+	description="Resource use, job counts, requests and storage. Refreshes every 5 seconds."
+>
 	{#if metrics}
-		<span class="text-sm text-surface-600-400">Updated <RelativeTime at={metrics.at} /></span>
+		<p class="text-sm text-surface-600-400">Updated <RelativeTime at={metrics.at} /></p>
 	{/if}
-</Toolbar>
+</PageHeader>
 
 {#if error && !metrics && !loading}
 	<ErrorState {error} onretry={load} />
 {:else if !metrics}
-	<div class="grid grid-cols-2 gap-3 md:grid-cols-4" aria-busy="true">
+	<div class="grid grid-cols-2 gap-4 md:grid-cols-4" aria-busy="true">
 		{#each { length: 8 }, i (i)}<div class="h-24 placeholder animate-pulse"></div>{/each}
 	</div>
 {:else}
@@ -81,9 +82,8 @@
 		</p>
 	{/if}
 
-	<section class="space-y-3" aria-label="Process">
-		<h2 class="h6">Process · version {metrics.version} · up {span(metrics.uptime_secs)}</h2>
-		<div class="grid grid-cols-2 gap-3 md:grid-cols-4">
+	<Card title="Process" description="Version {metrics.version} · up {span(metrics.uptime_secs)}">
+		<div class="grid grid-cols-2 gap-4 md:grid-cols-4">
 			{#if metrics.process}
 				<StatTile
 					label="CPU"
@@ -113,11 +113,10 @@
 				hint="1, 5 and 15 minutes · {number(metrics.system.cpus)} CPUs"
 			/>
 		</div>
-	</section>
+	</Card>
 
-	<section class="space-y-3" aria-label="Host">
-		<h2 class="h6">Host</h2>
-		<div class="grid grid-cols-2 gap-3 md:grid-cols-4">
+	<Card title="Host">
+		<div class="grid grid-cols-2 gap-4 md:grid-cols-4">
 			<StatTile
 				label="Memory free"
 				value={bytes(metrics.system.available_memory_bytes)}
@@ -143,96 +142,94 @@
 						low={disk.total_bytes * 0.8}
 						high={disk.total_bytes * 0.9}
 						optimum="0"
+						aria-label="Space used on {disk.mount}"
 					></meter>
 				</StatTile>
 			{/each}
 		</div>
-	</section>
+	</Card>
 
-	<section class="space-y-3" aria-label="Jobs">
-		<h2 class="h6">Jobs</h2>
-		<div class="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-6">
-			<StatTile
-				label="Queued"
-				value={number(metrics.jobs.counts.queued)}
-				hint="{number(metrics.jobs.queue_depth)} waiting"
-			/>
-			<StatTile
-				label="Running"
-				value={number(metrics.jobs.counts.running)}
-				hint="{number(metrics.jobs.utilisation.active)} of {number(
-					metrics.jobs.utilisation.workers
-				)} workers"
-				tone="primary"
-			/>
-			<StatTile
-				label="Done"
-				value={number(metrics.jobs.counts.done)}
-				hint="{number(metrics.jobs.last_24h.done)} in 24 h"
-				tone="success"
-			/>
-			<StatTile
-				label="Failed"
-				value={number(metrics.jobs.counts.failed)}
-				hint="{number(metrics.jobs.last_24h.failed)} in 24 h"
-				tone={metrics.jobs.last_24h.failed > 0 ? 'error' : 'surface'}
-			/>
-			<StatTile
-				label="Cancelled"
-				value={number(metrics.jobs.counts.cancelled)}
-				hint="{number(metrics.jobs.last_24h.cancelled)} in 24 h"
-			/>
-			<StatTile
-				label="Cache"
-				value={bytes(metrics.cache.bytes)}
-				hint="{number(metrics.cache.jobs)} jobs in {metrics.cache.dir}"
-			/>
-		</div>
-		{#if metrics.jobs.resolvers.length > 0}
-			<div
-				class="max-h-72 table-wrap overflow-auto rounded-container border border-surface-200-800"
-			>
-				<table class="table w-full">
-					<thead class="sticky top-0 bg-surface-100-900"
-						><tr
-							><th class="px-3 py-2 text-left">Resolver</th><th class="px-3 py-2 text-right"
-								>Done</th
-							><th class="px-3 py-2 text-right">Failed</th><th class="px-3 py-2 text-left"
-								>Last done</th
-							><th class="px-3 py-2 text-left">Last failed</th></tr
-						></thead
-					>
-					<tbody>
-						{#each [...metrics.jobs.resolvers].sort((a, b) => b.done + b.failed - (a.done + a.failed)) as r (r.resolver)}
-							<tr>
-								<td class="px-3 py-1.5 font-medium">{r.resolver}</td>
-								<td class="px-3 py-1.5 text-right tabular-nums">{number(r.done)}</td>
-								<td
-									class="px-3 py-1.5 text-right tabular-nums {r.failed > 0
-										? 'text-error-700-300'
-										: ''}">{number(r.failed)}</td
-								>
-								<td class="px-3 py-1.5"><RelativeTime at={r.last_done_at} /></td>
-								<td class="px-3 py-1.5"><RelativeTime at={r.last_failed_at} /></td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
+	<Card title="Jobs">
+		<div class="space-y-4">
+			<div class="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+				<StatTile
+					label="Queued"
+					value={number(metrics.jobs.counts.queued)}
+					hint="{number(metrics.jobs.queue_depth)} waiting"
+				/>
+				<StatTile
+					label="Running"
+					value={number(metrics.jobs.counts.running)}
+					hint="{number(metrics.jobs.utilisation.active)} of {number(
+						metrics.jobs.utilisation.workers
+					)} workers"
+					tone="primary"
+				/>
+				<StatTile
+					label="Done"
+					value={number(metrics.jobs.counts.done)}
+					hint="{number(metrics.jobs.last_24h.done)} in 24 h"
+					tone="success"
+				/>
+				<StatTile
+					label="Failed"
+					value={number(metrics.jobs.counts.failed)}
+					hint="{number(metrics.jobs.last_24h.failed)} in 24 h"
+					tone={metrics.jobs.last_24h.failed > 0 ? 'error' : 'surface'}
+				/>
+				<StatTile
+					label="Cancelled"
+					value={number(metrics.jobs.counts.cancelled)}
+					hint="{number(metrics.jobs.last_24h.cancelled)} in 24 h"
+				/>
+				<StatTile
+					label="Cache"
+					value={bytes(metrics.cache.bytes)}
+					hint="{number(metrics.cache.jobs)} jobs in {metrics.cache.dir}"
+				/>
 			</div>
-		{/if}
-	</section>
+			{#if metrics.jobs.resolvers.length > 0}
+				<div class="max-h-72 table-wrap overflow-auto">
+					<table class="table">
+						<thead class="sticky top-0 bg-surface-100-900">
+							<tr>
+								<th>Resolver</th>
+								<th class="text-right!">Done</th>
+								<th class="text-right!">Failed</th>
+								<th>Last done</th>
+								<th>Last failed</th>
+							</tr>
+						</thead>
+						<tbody class="[&>tr]:hover:preset-tonal">
+							{#each [...metrics.jobs.resolvers].sort((a, b) => b.done + b.failed - (a.done + a.failed)) as r (r.resolver)}
+								<tr>
+									<td class="font-medium">{r.resolver}</td>
+									<td class="text-right tabular-nums">{number(r.done)}</td>
+									<td class="text-right tabular-nums {r.failed > 0 ? 'text-error-600-400' : ''}">
+										{number(r.failed)}
+									</td>
+									<td><RelativeTime at={r.last_done_at} /></td>
+									<td><RelativeTime at={r.last_failed_at} /></td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{/if}
+		</div>
+	</Card>
 
-	<div class="grid gap-6 lg:grid-cols-2">
-		<section class="space-y-3" aria-label="Bots and storage">
-			<h2 class="h6">Bots, storage and checks</h2>
-			<div class="grid grid-cols-2 gap-3">
+	<div class="grid items-start gap-6 lg:grid-cols-2">
+		<Card title="Bots and storage">
+			<div class="grid grid-cols-2 gap-4">
 				<StatTile label="Applications" value={number(metrics.bots.applications)}>
-					<div class="mt-1 flex flex-wrap gap-1">
+					<div class="mt-1 flex flex-wrap gap-1.5">
 						{#each BOT_STATES as state (state)}
 							{#if metrics.bots.by_state[state]}
-								<span class="inline-flex items-center gap-1 text-sm"
-									><Status bot={state} /> {number(metrics.bots.by_state[state])}</span
-								>
+								<span class="inline-flex items-center gap-1 text-sm">
+									<Status bot={state} />
+									{number(metrics.bots.by_state[state])}
+								</span>
 							{/if}
 						{/each}
 					</div>
@@ -255,48 +252,70 @@
 					value="{number(metrics.logs.buffered)} / {number(metrics.logs.capacity)}"
 					hint="lines retained"
 				/>
+				<StatTile
+					label="Retention"
+					value={metrics.retention.last
+						? `${number(metrics.retention.last.jobs_removed + metrics.retention.last.failed_removed)} jobs`
+						: EMPTY}
+					hint={metrics.retention.last
+						? `${bytes(metrics.retention.last.bytes_freed)} freed in the last sweep · ${number(metrics.retention.sweeps)} sweeps`
+						: 'No sweep yet'}
+					tone={metrics.retention.last?.error ? 'warning' : 'surface'}
+				/>
+				<StatTile
+					label="Backups"
+					value={metrics.backups.enabled ? number(metrics.backups.count) : 'Off'}
+					hint={metrics.backups.last_error ??
+						(metrics.backups.newest_at
+							? `${bytes(metrics.backups.bytes)} kept · newest ${new Date(metrics.backups.newest_at).toLocaleString()}`
+							: 'No backup yet')}
+					tone={metrics.backups.last_error ? 'error' : 'surface'}
+				/>
+				<StatTile
+					label="Video encoder"
+					value={metrics.transcode.h264_encoder ?? EMPTY}
+					hint={metrics.transcode.shortfall ??
+						`${metrics.transcode.hardware ?? 'software'} · ${metrics.transcode.source} ffmpeg · ${metrics.transcode.choice} chosen`}
+					tone={metrics.transcode.shortfall ? 'error' : 'surface'}
+				/>
 			</div>
-		</section>
+		</Card>
 
-		<section class="space-y-3" aria-label="HTTP">
-			<h2 class="h6">Outgoing HTTP</h2>
-			<div class="grid grid-cols-3 gap-3">
-				<StatTile label="Received" value={bytes(metrics.http.bytes_received)} />
-				<StatTile label="Retries" value={number(metrics.http.retries)} />
-				<StatTile label="Rate-limit waits" value={number(metrics.http.rate_limit_waits)} />
-			</div>
-			<div
-				class="max-h-72 table-wrap overflow-auto rounded-container border border-surface-200-800"
-			>
-				<table class="table w-full">
-					<thead class="sticky top-0 bg-surface-100-900"
-						><tr
-							><th class="px-3 py-2 text-left">Host</th><th class="px-3 py-2 text-right"
-								>Requests</th
-							><th class="px-3 py-2 text-right">Failed</th></tr
-						></thead
-					>
-					<tbody>
-						{#each requests as row (row.host)}
+		<Card title="Outgoing HTTP">
+			<div class="space-y-4">
+				<div class="grid grid-cols-3 gap-4">
+					<StatTile label="Received" value={bytes(metrics.http.bytes_received)} />
+					<StatTile label="Retries" value={number(metrics.http.retries)} />
+					<StatTile label="Rate-limit waits" value={number(metrics.http.rate_limit_waits)} />
+				</div>
+				<div class="max-h-72 table-wrap overflow-auto">
+					<table class="table">
+						<thead class="sticky top-0 bg-surface-100-900">
 							<tr>
-								<td class="px-3 py-1.5 font-mono text-xs">{row.host}</td>
-								<td class="px-3 py-1.5 text-right tabular-nums">{number(row.total)}</td>
-								<td
-									class="px-3 py-1.5 text-right tabular-nums {row.failed > 0
-										? 'text-error-700-300'
-										: ''}">{number(row.failed)}</td
-								>
+								<th>Host</th>
+								<th class="text-right!">Requests</th>
+								<th class="text-right!">Failed</th>
 							</tr>
-						{:else}
-							<tr
-								><td colspan="3" class="px-3 py-6 text-center text-surface-600-400"
-									>No requests yet.</td
-								></tr
-							>
-						{/each}
-					</tbody>
-				</table>
+						</thead>
+						<tbody class="[&>tr]:hover:preset-tonal">
+							{#each requests as row (row.host)}
+								<tr>
+									<td class="font-mono text-xs">{row.host}</td>
+									<td class="text-right tabular-nums">{number(row.total)}</td>
+									<td class="text-right tabular-nums {row.failed > 0 ? 'text-error-600-400' : ''}">
+										{number(row.failed)}
+									</td>
+								</tr>
+							{:else}
+								<tr>
+									<td colspan="3" class="py-6 text-center text-surface-600-400">No requests yet.</td
+									>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
 			</div>
-		</section>
+		</Card>
 	</div>
 {/if}

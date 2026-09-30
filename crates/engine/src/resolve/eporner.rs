@@ -789,7 +789,7 @@ mod tests {
     /// Every example link resolves live: videos with a playable MP4, listings with
     /// entries.
     #[tokio::test]
-    #[ignore = "requires live Eporner access"]
+
     async fn live_examples_resolve() {
         use std::time::Duration;
 

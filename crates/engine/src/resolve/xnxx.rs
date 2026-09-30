@@ -337,7 +337,7 @@ html5player.setUploaderName('glurp');
 
     /// Every example link resolves live.
     #[tokio::test]
-    #[ignore = "requires live XNXX access"]
+
     async fn live_examples_resolve() {
         let resolver = XnxxResolver::new(Http::new(crate::http::HttpConfig::default()));
         for link in resolver.platform().examples {

@@ -118,6 +118,8 @@ struct Streams {
     playlists: Vec<Variant>,
     subtitles: Vec<SubtitleTrack>,
     duration: Option<Duration>,
+    /// The countries the streams are served in, when the document names them.
+    region: Option<String>,
 }
 
 /// The two-letter code of a language the API names in three letters, as ISO 639-2
@@ -189,6 +191,21 @@ fn attribute<'a>(ptmd: &'a Value, name: &str) -> &'a Value {
         value
     } else {
         &value["value"]
+    }
+}
+
+/// The countries a tmd document's streams are served in, by its `geoLocation`
+/// attribute: `none` is everywhere, `de` Germany, `dach` Germany, Austria and
+/// Switzerland, and `ebu` the European Broadcasting Union's countries. The CDN refuses
+/// addresses outside them.
+fn region_of(ptmd: &Value) -> Option<String> {
+    let value = attribute(ptmd, "geoLocation").as_str()?.trim();
+    match value.to_ascii_lowercase().as_str() {
+        "" | "none" => None,
+        "de" => Some("DE".into()),
+        "dach" => Some("DE, AT, CH".into()),
+        "ebu" => Some("the EBU countries".into()),
+        other => Some(other.to_ascii_uppercase()),
     }
 }
 
@@ -312,6 +329,7 @@ fn streams_of(ptmd: &Value, aspect_ratio: Option<f64>, sign_language: bool) -> S
         playlists,
         subtitles: subtitles_of(&ptmd["captions"]),
         duration,
+        region: region_of(ptmd),
     }
 }
 
@@ -486,7 +504,9 @@ impl ZdfResolver {
     }
 
     /// The video's streams, from every tmd document it lists, with the HLS masters
-    /// expanded into their renditions.
+    /// expanded into their renditions. A master the CDN refuses for a document served
+    /// only in some countries is the region refusal it stands for; one refused or gone
+    /// otherwise is left out, since the download would be refused the same way.
     async fn resolve_media(
         &self,
         nodes: &[MediaNode],
@@ -500,11 +520,13 @@ impl ZdfResolver {
         let mut playlists = Vec::new();
         let mut subtitles = Vec::new();
         let mut duration = None;
+        let mut region = None;
         let live = nodes.iter().any(|n| n.live);
         for node in nodes {
             let ptmd = self.ptmd(&node.ptmd, origin).await?;
             let streams = streams_of(&ptmd, node.aspect_ratio, node.sign_language);
             duration = duration.or(streams.duration);
+            region = region.or(streams.region);
             files.extend(streams.files);
             playlists.extend(streams.playlists);
             for track in streams.subtitles {
@@ -513,10 +535,39 @@ impl ZdfResolver {
                 }
             }
         }
+        let expansion =
+            manifests::expand_each(&self.http, PLATFORM, playlists, &mut subtitles, duration).await;
+        let mut expanded = expansion.variants;
+        let mut refusal = None;
+        for unread in expansion.unread {
+            if unread.refused()
+                && let Some(region) = &region
+            {
+                return Err(ResolveError::unavailable(
+                    origin,
+                    format!("available only in {region}"),
+                ));
+            }
+            if unread.definitive() {
+                tracing::warn!(
+                    platform = PLATFORM,
+                    url = %unread.variant.url,
+                    "HLS master left out: {}",
+                    unread.error
+                );
+                refusal.get_or_insert(unread.error.at(origin));
+            } else {
+                tracing::warn!(
+                    platform = PLATFORM,
+                    url = %unread.variant.url,
+                    "HLS master not expanded: {}",
+                    unread.error
+                );
+                expanded.push(unread.variant);
+            }
+        }
         let mut variants = files;
-        for mut variant in
-            manifests::expand_all(&self.http, PLATFORM, playlists, &mut subtitles, duration).await
-        {
+        for mut variant in expanded {
             if live {
                 variant.live = true;
             }
@@ -526,7 +577,7 @@ impl ZdfResolver {
             variants.push(variant);
         }
         if variants.is_empty() {
-            return Err(ResolveError::NotFound(origin.clone()));
+            return Err(refusal.unwrap_or_else(|| ResolveError::NotFound(origin.clone())));
         }
         if live {
             variants.iter_mut().for_each(|v| v.live = true);
@@ -843,7 +894,6 @@ impl Resolver for ZdfResolver {
                 "https://www.zdf.de/magazine/heute-journal-104",
                 "https://www.zdf.de/dokus/ein-tag-im-juli---ahrtalflut-2021-movie-100",
                 "https://www.zdf.de/live-tv",
-                "https://www.zdf.de/play/live-tv/sender/zdf-live-beitrag-100",
                 "https://www.zdfheute.de/video/heute-journal/heute-journal-vom-19-dezember-2025-100.html",
             ],
         }
@@ -1233,6 +1283,160 @@ mod tests {
         );
     }
 
+    /// A live channel's GraphQL record and tmd document, served in `geo_location`, whose
+    /// master the CDN answers with `master_status`.
+    fn live_channel_refused(geo_location: &str, master_status: u16) -> Fixture {
+        let mut fixture = Fixture::new(PLATFORM, None);
+        fixture.exchanges.push(token());
+        fixture.exchanges.push(graphql(json!({"videoByCanonical": {
+            "canonical": "zdf-live-beitrag-100", "title": "ZDF Livestream", "sharingUrl": "https://www.zdf.de/live-tv/zdf-live-beitrag-100",
+            "smartCollection": null,
+            "currentMedia": {"nodes": [{"id": "247onAir-201", "ptmdTemplate": "/tmd/2/{playerId}/live/ptmd/247onAir-201", "liveMediaType": "DEFAULT", "encryption": null, "label": "Normal"}]}
+        }})));
+        fixture.exchanges.push(get(
+            "https://api.zdf.de/tmd/2/android_native_6/live/ptmd/247onAir-201",
+            200,
+            "application/json",
+            json!({"attributes": {"geoLocation": {"value": geo_location}}, "captions": [], "priorityList": [{"formitaeten": [
+                {"facets": ["https"], "isAdaptive": true, "mimeType": "application/x-mpegURL", "type": "h264_aac_ts_http_m3u8_http", "qualities": [
+                    {"mimeCodec": "avc1.42E01E, mp4a.40.2", "quality": "auto", "audio": {"tracks": [track("https://zdf-hls-15.akamaized.net/hls/live/2016498/de/high/master.m3u8", "main", None)]}}
+                ]}
+            ]}]}).to_string(),
+        ));
+        fixture.exchanges.push(get(
+            "https://zdf-hls-15.akamaized.net/hls/live/2016498/de/high/master.m3u8",
+            master_status,
+            "text/html",
+            "<HTML><HEAD><TITLE>Access Denied</TITLE></HEAD><BODY><H1>Access Denied</H1></BODY></HTML>".into(),
+        ));
+        fixture
+    }
+
+    #[tokio::test]
+    async fn a_master_refused_outside_the_countries_served_is_the_region_refusal() {
+        let origin =
+            Url::parse("https://www.zdf.de/play/live-tv/sender/zdf-live-beitrag-100").unwrap();
+        for (geo_location, region) in [
+            ("de", "DE"),
+            ("dach", "DE, AT, CH"),
+            ("ebu", "the EBU countries"),
+            ("at", "AT"),
+        ] {
+            let resolver = ZdfResolver::new(Http::replay(live_channel_refused(geo_location, 403)));
+            let error = resolver.resolve(&origin).await.unwrap_err();
+            let expected = format!("available only in {region}");
+            assert!(
+                matches!(&error, ResolveError::Unavailable { url, reason } if *url == origin && *reason == expected),
+                "{geo_location}: {error}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_master_refused_for_a_document_served_everywhere_is_the_refusal_itself() {
+        let origin =
+            Url::parse("https://www.zdf.de/play/live-tv/sender/zdf-live-beitrag-100").unwrap();
+        let resolver = ZdfResolver::new(Http::replay(live_channel_refused("none", 403)));
+        let error = resolver.resolve(&origin).await.unwrap_err();
+        assert!(
+            matches!(&error, ResolveError::Unavailable { url, reason } if *url == origin && reason == "HTTP 403 Forbidden"),
+            "{error}"
+        );
+        let resolver = ZdfResolver::new(Http::replay(live_channel_refused("none", 404)));
+        let error = resolver.resolve(&origin).await.unwrap_err();
+        assert!(
+            matches!(&error, ResolveError::NotFound(url) if *url == origin),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_master_the_cdn_does_not_answer_stays_for_the_download() {
+        // No exchange for the master: the transport fails before any status, as a
+        // timeout would, and the master is kept for the download to try again.
+        let origin =
+            Url::parse("https://www.zdf.de/play/live-tv/sender/zdf-live-beitrag-100").unwrap();
+        let mut fixture = live_channel_refused("de", 403);
+        fixture.exchanges.pop();
+        let resolver = ZdfResolver::new(Http::replay(fixture));
+        let live = resolver.resolve(&origin).await.unwrap().media().unwrap();
+        assert!(live.live);
+        assert_eq!(live.variants.len(), 1);
+        assert_eq!(live.variants[0].kind, VariantKind::Hls);
+        assert!(live.variants[0].live);
+        assert_eq!(
+            live.variants[0].url.as_str(),
+            "https://zdf-hls-15.akamaized.net/hls/live/2016498/de/high/master.m3u8"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_refused_master_of_a_video_with_files_is_left_out() {
+        let mut fixture = Fixture::new(PLATFORM, None);
+        fixture.exchanges.push(token());
+        fixture.exchanges.push(graphql(json!({"videoByCanonical": {
+            "canonical": "inside-cdu-staffel-2-folge-1-rehbraun-100", "title": "Rehbraun",
+            "sharingUrl": "https://www.zdf.de/video/dokus/inside-cdu-102/inside-cdu-staffel-2-folge-1-rehbraun-100",
+            "smartCollection": null,
+            "currentMedia": {"nodes": [
+                {"id": "260922_folge1_rehbraun_zei", "ptmdTemplate": "/tmd/2/{playerId}/vod/ptmd/mediathek/260922_folge1_rehbraun_zei/2", "duration": 2129, "aspectRatio": "16:9", "vodMediaType": "DEFAULT", "label": "Normal"}
+            ]}
+        }})));
+        fixture.exchanges.push(get(
+            "https://api.zdf.de/tmd/2/android_native_6/vod/ptmd/mediathek/260922_folge1_rehbraun_zei/2",
+            200,
+            "application/json",
+            vod_ptmd().to_string(),
+        ));
+        fixture.exchanges.push(get(
+            "https://zdfvod.akamaized.net/x/all.csmil/master.m3u8",
+            403,
+            "text/html",
+            "<HTML><HEAD><TITLE>Access Denied</TITLE></HEAD><BODY><H1>Access Denied</H1></BODY></HTML>".into(),
+        ));
+        let resolver = ZdfResolver::new(Http::replay(fixture));
+        let resolved = resolver
+            .resolve(
+                &Url::parse(
+                    "https://www.zdf.de/video/dokus/inside-cdu-102/inside-cdu-staffel-2-folge-1-rehbraun-100",
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
+        assert!(!resolved.variants.is_empty());
+        assert!(
+            resolved
+                .variants
+                .iter()
+                .all(|v| v.kind == VariantKind::File && v.height.is_some()),
+            "{:?}",
+            resolved
+                .variants
+                .iter()
+                .map(|v| v.url.as_str())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn regions_are_read_from_the_geo_location_attribute() {
+        let region = |value: Value| region_of(&json!({"attributes": {"geoLocation": value}}));
+        assert_eq!(region(json!({"value": "none"})), None);
+        assert_eq!(region(json!("none")), None);
+        assert_eq!(region(json!(null)), None);
+        assert_eq!(region(json!({"value": "de"})), Some("DE".into()));
+        assert_eq!(region(json!({"value": "DACH"})), Some("DE, AT, CH".into()));
+        assert_eq!(
+            region(json!({"value": "ebu"})),
+            Some("the EBU countries".into())
+        );
+        assert_eq!(region(json!({"value": " ch "})), Some("CH".into()));
+        assert_eq!(region_of(&json!({})), None);
+    }
+
     #[tokio::test]
     async fn collections_list_their_episodes_by_season_and_films_resolve_to_their_video() {
         let episode = |canonical: &str, title: &str, duration: u64| {
@@ -1399,9 +1603,9 @@ mod tests {
     }
 
     /// Every example link resolves live: videos with files by height, collections with
-    /// episodes, the live TV page with its channels and a channel with its stream.
+    /// episodes, and the live TV page with its channels. The channels themselves are
+    /// served in Germany only, so none is an example.
     #[tokio::test]
-    #[ignore = "requires live ZDF access"]
     async fn live_examples_resolve() {
         let resolver = ZdfResolver::new(Http::new(crate::http::HttpConfig::default()));
         for link in resolver.platform().examples {

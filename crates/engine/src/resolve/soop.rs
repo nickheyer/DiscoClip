@@ -780,7 +780,6 @@ impl Resolver for SoopResolver {
                 "https://vod.sooplive.com/player/20515605",
                 "https://vod.sooplive.co.kr/PLAYER/STATION/20515605",
                 "https://vod.sooplive.com/player/103247/catchstory",
-                "https://play.sooplive.com/nainai7",
                 "https://www.sooplive.com/station/khm11903/vod",
                 "https://bj.afreecatv.com/khm11903",
             ],
@@ -1386,7 +1385,7 @@ mod tests {
     /// Every example link resolves live: the recordings and the live to media with
     /// variants, the catch story and stations to entries.
     #[tokio::test]
-    #[ignore = "requires live SOOP access"]
+
     async fn live_examples_resolve() {
         let resolver = SoopResolver::new(Http::new(crate::http::HttpConfig::default()));
         for link in resolver.platform().examples {

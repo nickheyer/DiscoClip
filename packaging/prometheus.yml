@@ -1,0 +1,18 @@
+# A Prometheus scrape of DiscoClip. Make an API token under Account in the web app
+# (no scopes are needed to read metrics) and put its secret in place of the credentials.
+#
+# GET /metrics answers in the text exposition to anything that does not ask for HTML,
+# so the web app's Metrics page keeps the same address for browsers.
+
+global:
+  scrape_interval: 30s
+
+scrape_configs:
+  - job_name: discoclip
+    metrics_path: /metrics
+    scheme: http
+    authorization:
+      type: Bearer
+      credentials: dc_REPLACE_WITH_THE_TOKEN_SECRET
+    static_configs:
+      - targets: ["discoclip:8080"]

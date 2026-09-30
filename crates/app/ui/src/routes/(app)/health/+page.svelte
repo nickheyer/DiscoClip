@@ -2,16 +2,15 @@
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import { onMount } from 'svelte';
 	import { health as healthApi } from '$lib/api/endpoints';
-	import type { Health } from '$lib/api/types';
+	import type { Health, HealthCheck } from '$lib/api/types';
+	import Card from '$lib/components/Card.svelte';
+	import DataTable, { type Column } from '$lib/components/DataTable.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
-	import KeyValue from '$lib/components/KeyValue.svelte';
-	import KeyValueRow from '$lib/components/KeyValueRow.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import Toolbar from '$lib/components/Toolbar.svelte';
 	import RelativeTime from '$lib/components/RelativeTime.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import Status from '$lib/components/Status.svelte';
-	import { absolute, span } from '$lib/format';
+	import { number, span } from '$lib/format';
 
 	const EVERY = 15_000;
 
@@ -40,58 +39,70 @@
 		return () => clearInterval(timer);
 	});
 
-	const TONE = {
-		ok: 'border-success-500/40',
-		warn: 'border-warning-500/60',
-		fail: 'border-error-500/60'
-	} as const;
+	/** The order checks read in: what needs attention first. */
+	const RANK = { fail: 0, warn: 1, ok: 2 };
+	const checks = $derived(
+		[...(health?.checks ?? [])].sort((a, b) => RANK[a.status] - RANK[b.status])
+	);
+	const attention = $derived(checks.filter((check) => check.status !== 'ok').length);
+
+	const columns: Column<HealthCheck>[] = [
+		{ key: 'label', label: 'Check', value: (check) => check.label, class: 'font-medium' },
+		{ key: 'status', label: 'Status', cell: statusCell },
+		{ key: 'detail', label: 'Detail', value: (check) => check.detail, class: 'text-sm' }
+	];
 </script>
 
-<PageHeader title="Health" />
+{#snippet statusCell(check: HealthCheck)}
+	<Status health={check.status} />
+{/snippet}
 
-<Toolbar description="Checks refresh every 15 seconds.">
-	{#if health}<Status health={health.status} class="mr-auto" />{/if}
-	<button type="button" class="btn preset-tonal" onclick={() => load(true)} disabled={refreshing}>
-		{#if refreshing}<Spinner />{:else}<RefreshCwIcon class="size-4" />{/if}
-		Refresh
-	</button>
-</Toolbar>
+<PageHeader title="Health" description="Checks refresh every 15 seconds.">
+	{#if health}
+		<div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-surface-600-400">
+			<Status health={health.status} />
+			<span>Version {health.version}</span>
+			<span>Up {span(health.uptime_secs)}, started <RelativeTime at={health.started_at} /></span>
+			<span>Checked <RelativeTime at={health.at} /></span>
+		</div>
+	{/if}
+	{#snippet actions()}
+		<button type="button" class="btn preset-tonal" onclick={() => load(true)} disabled={refreshing}>
+			{#if refreshing}<Spinner />{:else}<RefreshCwIcon class="size-4" />{/if}
+			Refresh
+		</button>
+	{/snippet}
+</PageHeader>
 
 {#if error && !loading && !health}
 	<ErrorState {error} onretry={() => load()} />
-{:else if !health}
-	<div class="grid gap-4 md:grid-cols-2" aria-busy="true">
-		{#each { length: 6 }, i (i)}<div class="h-24 placeholder animate-pulse"></div>{/each}
-	</div>
 {:else}
-	{#if error}
+	{#if error && health}
 		<p class="card preset-tonal-error p-3 text-sm" role="alert">
 			The last refresh failed. Showing the result from <RelativeTime at={health.at} />.
 		</p>
 	{/if}
-	<section
-		class="card border border-surface-200-800 bg-surface-100-900 p-5 sm:p-6"
-		aria-label="Server"
+	<Card
+		title="Checks"
+		count={health
+			? attention > 0
+				? `${number(attention)} of ${number(checks.length)} need attention`
+				: `${number(checks.length)} passing`
+			: undefined}
+		flush
 	>
-		<KeyValue class="sm:grid-cols-[auto_1fr_auto_1fr]">
-			<KeyValueRow label="Version" value={health.version} />
-			<KeyValueRow label="Started" value={absolute(health.started_at)} />
-			<KeyValueRow label="Uptime" value={span(health.uptime_secs)} />
-			<KeyValueRow label="Checked"><RelativeTime at={health.at} /></KeyValueRow>
-		</KeyValue>
-	</section>
-	<div class="grid gap-4 md:grid-cols-2">
-		{#each health.checks as check (check.name)}
-			<section
-				class="space-y-2 card border bg-surface-100-900 p-5 sm:p-6 {TONE[check.status]}"
-				aria-label={check.label}
-			>
-				<div class="flex items-center justify-between gap-2">
-					<h2 class="font-semibold">{check.label}</h2>
-					<Status health={check.status} />
-				</div>
-				<p class="text-sm text-surface-600-400">{check.detail}</p>
-			</section>
-		{/each}
-	</div>
+		<DataTable
+			rows={checks}
+			{columns}
+			rowKey={(check) => check.name}
+			loading={loading && !health}
+			placeholderRows={6}
+			flush
+			class="p-2"
+		>
+			{#snippet empty()}
+				The server reports no checks.
+			{/snippet}
+		</DataTable>
+	</Card>
 {/if}

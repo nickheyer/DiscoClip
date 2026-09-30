@@ -20,6 +20,7 @@ tracing.workspace = true
 twilight-cache-inmemory.workspace = true
 twilight-gateway.workspace = true
 twilight-http.workspace = true
+twilight-http-ratelimiting.workspace = true
 twilight-model.workspace = true
 twilight-util.workspace = true
 url.workspace = true

@@ -814,7 +814,7 @@ mod tests {
 
     /// Every example link resolves live: albums to their media, profiles to albums.
     #[tokio::test]
-    #[ignore = "requires live Erome access"]
+
     async fn live_examples_resolve() {
         let resolver = EromeResolver::new(Http::new(crate::http::HttpConfig::default()));
         for link in resolver.platform().examples {

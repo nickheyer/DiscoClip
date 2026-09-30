@@ -26,6 +26,7 @@ use url::Url;
 
 use crate::applications::ApplicationStore;
 use crate::audit::AuditStore;
+use crate::backup::Backups;
 use crate::bots::BotManager;
 use crate::cookies::CookieStore;
 use crate::discord::{BotGuildStore, GuildStore};
@@ -36,6 +37,7 @@ use crate::local::SharedLocalConfig;
 use crate::oauth::{OAuthService, OAuthStore, PendingStates, Provider, Registry};
 use crate::profiles::ProfileStore;
 use crate::ratelimit::RateLimiter;
+use crate::retention::Retention;
 use crate::rules::RuleStore;
 use crate::secrets::Keyring;
 use crate::sessions::{SessionStore, random_token};
@@ -49,6 +51,7 @@ pub mod applications;
 pub mod assets;
 pub mod audit;
 pub mod auth;
+pub mod backups;
 pub mod channels;
 pub mod discord;
 pub mod error;
@@ -62,6 +65,7 @@ pub mod metrics;
 pub mod oauth;
 pub mod platforms;
 pub mod profiles;
+pub mod prometheus;
 pub mod proxy;
 pub mod rules;
 pub mod settings;
@@ -165,6 +169,14 @@ pub struct AppState {
     pub sampler: Arc<metrics::Sampler>,
     /// Ends live responses when their listener stops.
     pub shutdown: CancellationToken,
+    /// Makes and keeps the database backups.
+    pub backups: Arc<Backups>,
+    /// Sweeps finished jobs and the cache on the retention settings.
+    pub retention: Arc<Retention>,
+    /// Cancelled when the whole server is shutting down, so `/healthz` says so.
+    pub stopping: CancellationToken,
+    /// The last health reading `/healthz` gave out, and when.
+    pub health_cache: Arc<Mutex<Option<(std::time::Instant, health::Health)>>>,
 }
 
 impl AppState {
@@ -213,10 +225,16 @@ pub struct Services {
     pub ffmpeg: Ffmpeg,
     /// The `local` settings as the local publisher reads them.
     pub local: SharedLocalConfig,
+    /// The `discord` settings as the Discord publisher reads them.
+    pub discord_settings: discoclip_bot::SharedDiscordSettings,
     pub data_dir: PathBuf,
     pub provisioning_file: Option<PathBuf>,
     /// When the server started.
     pub started_at: Timestamp,
+    pub backups: Arc<Backups>,
+    pub retention: Arc<Retention>,
+    /// Cancelled when the whole server is shutting down.
+    pub shutdown: CancellationToken,
 }
 
 pub struct WebApp {
@@ -257,9 +275,13 @@ impl WebApp {
             log,
             ffmpeg,
             local,
+            discord_settings,
             data_dir,
             provisioning_file,
             started_at,
+            backups,
+            retention,
+            shutdown: stopping,
         } = services;
         let oauth = Arc::new(OAuthService {
             registry: std::sync::RwLock::new(providers),
@@ -281,6 +303,8 @@ impl WebApp {
             oauth: oauth.clone(),
             public_url: public_url.clone(),
             proxies: proxies.clone(),
+            discord: discord_settings,
+            backups: backups.config_handle(),
             web: watch::Sender::new(settings.web.clone()),
         });
         let state = AppState {
@@ -312,6 +336,10 @@ impl WebApp {
             data_dir,
             provisioning_file,
             shutdown: CancellationToken::new(),
+            backups,
+            retention,
+            stopping,
+            health_cache: Arc::new(Mutex::new(None)),
         };
         state.refresh_discord_login().await?;
         Ok(Self { state })
@@ -325,6 +353,16 @@ impl WebApp {
             .route(
                 "/f/{slug}/j/{id}",
                 get(front::page).with_state(self.state.clone()),
+            )
+            .route(
+                "/healthz",
+                get(health::healthz).with_state(self.state.clone()),
+            )
+            .route(
+                "/metrics",
+                get(prometheus::get)
+                    .route_layer(from_fn_with_state(self.state.clone(), auth::identify))
+                    .with_state(self.state.clone()),
             )
             .fallback(assets::serve)
             .layer(from_fn_with_state(self.state.clone(), proxy::resolve))
@@ -344,6 +382,7 @@ impl WebApp {
     /// Binds and serves until `shutdown`.
     pub async fn serve(self, shutdown: CancellationToken) -> Result<(), WebError> {
         let listener = self.bind().await?;
+        self.state.backups.restores.ready();
         self.run(listener, shutdown).await
     }
 
@@ -672,6 +711,15 @@ fn api(state: AppState) -> Router {
         )
         .route("/health", get(health::get))
         .route("/metrics", get(metrics::get))
+        .route("/backups", get(backups::list).post(backups::run))
+        .route("/backups/restore/{id}", get(backups::restore_status))
+        .route("/backups/{name}/restore", post(backups::restore))
+        .route(
+            "/backups/{name}",
+            get(backups::download).delete(backups::delete),
+        )
+        .route("/retention", get(backups::retention))
+        .route("/retention/sweep", post(backups::sweep))
         .route("/logs", get(logs::list))
         .route("/logs/events", get(logs::events))
         .route("/jobs", get(jobs::list).post(jobs::submit))

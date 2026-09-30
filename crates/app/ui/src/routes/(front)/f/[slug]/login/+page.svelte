@@ -31,7 +31,8 @@
 		frontend: 'This view no longer accepts that login.',
 		not_listed: 'Your account is not on the list for this view.',
 		not_member: 'Your Discord account is not in every server this view covers.',
-		guilds: 'Your Discord servers could not be read.'
+		guilds: 'Your Discord servers could not be read.',
+		channels: 'The servers this view covers could not be named right now. Try again later.'
 	};
 	const callbackError = $derived.by(() => {
 		const code = page.url.searchParams.get('error');
@@ -90,11 +91,19 @@
 	const SECRET_LABEL = { pin: 'PIN', password: 'Password', token: 'Access token' } as const;
 </script>
 
+{#snippet divider(text: string)}
+	<div class="flex items-center gap-3 text-sm text-surface-600-400">
+		<hr class="hr flex-1" />
+		{text}
+		<hr class="hr flex-1" />
+	</div>
+{/snippet}
+
 <main class="flex min-h-dvh flex-col items-center justify-center gap-6 p-6">
 	{#if error && !loading}
 		<ErrorState {error} title="This view could not be opened" onretry={load} />
 	{:else if !info}
-		<Spinner class="size-8" />
+		<Spinner class="[--size:2rem]" />
 	{:else}
 		<div class="flex items-center gap-3">
 			<Mark size={36} title="" class="text-primary-500" />
@@ -105,7 +114,7 @@
 		</div>
 
 		<section
-			class="w-full max-w-md space-y-6 card bg-surface-100-900 p-6 shadow-lg"
+			class="w-full max-w-md space-y-6 card preset-filled-surface-100-900 p-6 shadow-lg"
 			aria-label="Log in"
 		>
 			{#if callbackError}
@@ -113,7 +122,7 @@
 			{/if}
 
 			{#if !info.access.secret && !info.access.accounts && info.access.providers.length === 0}
-				<p class="text-sm text-surface-600-400">
+				<p class="card preset-tonal p-3 text-sm">
 					This view is closed. Nobody can log in right now.
 				</p>
 			{/if}
@@ -150,11 +159,7 @@
 
 			{#if info.access.accounts}
 				{#if info.access.secret}
-					<div class="flex items-center gap-3 text-sm text-surface-600-400">
-						<hr class="hr flex-1" />
-						or with an account
-						<hr class="hr flex-1" />
-					</div>
+					{@render divider('or with an account')}
 				{/if}
 				<form class="space-y-4" onsubmit={(event) => submit('account', event)}>
 					<Field label="Username" for="front-username" required>
@@ -195,17 +200,13 @@
 
 			{#if info.access.providers.length > 0}
 				{#if info.access.secret || info.access.accounts}
-					<div class="flex items-center gap-3 text-sm text-surface-600-400">
-						<hr class="hr flex-1" />
-						or
-						<hr class="hr flex-1" />
-					</div>
+					{@render divider('or')}
 				{/if}
 				<div class="space-y-2">
 					{#each info.access.providers as provider (provider.id)}
-						<a href={front.providerStartUrl(slug, provider.id)} class="btn w-full preset-tonal"
-							>Continue with {provider.name}</a
-						>
+						<a href={front.providerStartUrl(slug, provider.id)} class="btn w-full preset-tonal">
+							Continue with {provider.name}
+						</a>
 					{/each}
 					{#if info.access.discord_members}
 						<p class="text-center text-sm text-surface-600-400">

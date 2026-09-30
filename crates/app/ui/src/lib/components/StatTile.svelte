@@ -15,31 +15,24 @@
 
 	const TONE = {
 		surface: '',
-		primary: 'text-primary-700-300',
-		success: 'text-success-800-200',
-		warning: 'text-warning-800-200',
-		error: 'text-error-700-300'
+		primary: 'text-primary-600-400',
+		success: 'text-success-600-400',
+		warning: 'text-warning-600-400',
+		error: 'text-error-600-400'
 	};
 </script>
 
-<div
-	class="flex min-w-0 flex-col gap-3 card border border-surface-200-800 bg-surface-100-900 p-5"
-	aria-busy={loading}
->
-	<p class="text-sm font-medium text-surface-700-300">{label}</p>
+<div class="flex min-w-0 flex-col gap-1 card preset-filled-surface-100-900 p-4" aria-busy={loading}>
+	<p class="text-sm font-medium text-surface-600-400">{label}</p>
 	{#if loading}
-		<div class="h-10 placeholder w-20 animate-pulse" aria-hidden="true"></div>
-		<div class="h-5 placeholder w-3/4 animate-pulse" aria-hidden="true"></div>
+		<div class="h-8 placeholder w-16 animate-pulse" aria-hidden="true"></div>
+		<div class="h-4 placeholder w-3/4 animate-pulse" aria-hidden="true"></div>
 	{:else}
-		<p
-			class="text-3xl leading-none font-semibold tracking-tight break-words tabular-nums {TONE[
-				tone
-			]}"
-		>
+		<p class="text-2xl font-semibold tracking-tight break-words tabular-nums {TONE[tone]}">
 			{value}
 		</p>
 		{#if hint}
-			<p class="mt-auto text-sm leading-relaxed text-surface-600-400">{hint}</p>
+			<p class="mt-auto text-xs break-words text-surface-600-400">{hint}</p>
 		{/if}
 	{/if}
 	{@render children?.()}

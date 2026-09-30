@@ -1,20 +1,23 @@
 <script lang="ts">
+	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
 	import DownloadIcon from '@lucide/svelte/icons/download';
 	import UploadIcon from '@lucide/svelte/icons/upload';
-	import { Menu, Portal } from '@skeletonlabs/skeleton-svelte';
+	import { Accordion, FileUpload, Menu, Portal } from '@skeletonlabs/skeleton-svelte';
 	import { onMount } from 'svelte';
 	import { settings as settingsApi } from '$lib/api/endpoints';
 	import type { Json, SettingsFormat, SettingsView } from '$lib/api/types';
+	import Card from '$lib/components/Card.svelte';
 	import Confirm from '$lib/components/Confirm.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
 	import Field from '$lib/components/Field.svelte';
+	import KeyValue from '$lib/components/KeyValue.svelte';
+	import KeyValueRow from '$lib/components/KeyValueRow.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import Toolbar from '$lib/components/Toolbar.svelte';
 	import SearchInput from '$lib/components/SearchInput.svelte';
 	import SettingFieldRow from '$lib/components/SettingField.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
-	import { EMPTY, number } from '$lib/format';
+	import { number } from '$lib/format';
 	import { fieldsOf } from '$lib/settings';
 	import { notify, reportError } from '$lib/toast.svelte';
 
@@ -34,7 +37,7 @@
 		engine: {
 			title: 'Engine',
 			description:
-				'How many jobs run at once, the limits on what is taken, playlists, live capture, downloads, the archive and how long finished jobs are kept.'
+				'How many jobs run at once, the limits on what is taken, playlists, live capture, downloads, the archive, how long finished jobs are kept, which ffmpeg build and video encoders run, and how long jobs get to finish at shutdown.'
 		},
 		http: {
 			title: 'Outgoing HTTP',
@@ -43,7 +46,13 @@
 		},
 		local: {
 			title: 'Web submissions',
-			description: 'Where links submitted from the web app end up, and the largest file kept there.'
+			description:
+				'Where links submitted from the web app end up, the largest file kept there, and what the media is made to.'
+		},
+		discord: {
+			title: 'Discord',
+			description:
+				'Upload limits by server boost level, what media posted to Discord is made to, and servers with a limit or target of their own, by server id.'
 		},
 		fixtures: {
 			title: 'Platform checks',
@@ -53,6 +62,11 @@
 			title: 'Web app',
 			description:
 				'The address the app listens on, the address browsers reach it at, the proxies in front of it and its HTTPS certificate.'
+		},
+		backup: {
+			title: 'Backups',
+			description:
+				'Whether the database is backed up, where, how often, and how many backups are kept. Backups are listed and made under Backups.'
 		},
 		auth: {
 			title: 'Login providers',
@@ -69,6 +83,7 @@
 	let importOpen = $state(false);
 	let importFormat = $state<SettingsFormat>('toml');
 	let importText = $state('');
+	let importFileName = $state('');
 	let importing = $state(false);
 
 	let exportOpen = $state(false);
@@ -108,6 +123,16 @@
 		}));
 	});
 
+	/** The sections that are folded shut. Every section starts open and stays open through filters. */
+	let closed = $state<string[]>([]);
+	const openSections = $derived(
+		sections.map((section) => section.name).filter((name) => !closed.includes(name))
+	);
+
+	function onAccordionChange(value: string[]) {
+		closed = sections.map((section) => section.name).filter((name) => !value.includes(name));
+	}
+
 	/** What the store holds over the defaults, by who wrote it. */
 	const overridden = $derived.by(() => {
 		if (!view) return '';
@@ -140,10 +165,9 @@
 		}
 	}
 
-	async function pickFile(event: Event) {
-		const input = event.currentTarget as HTMLInputElement;
-		const file = input.files?.[0];
+	async function pickFile(file: File | undefined) {
 		if (!file) return;
+		importFileName = file.name;
 		importText = await file.text();
 		const ext = file.name.split('.').pop()?.toLowerCase();
 		if (ext === 'yaml' || ext === 'yml') importFormat = 'yaml';
@@ -159,6 +183,7 @@
 			notify.success('Settings imported and applied');
 			importOpen = false;
 			importText = '';
+			importFileName = '';
 		} catch (err) {
 			reportError(err, 'Could not import the settings');
 		} finally {
@@ -177,60 +202,55 @@
 	}
 </script>
 
-<PageHeader title="Settings" />
-
-{#if view}
-	<div class="flex flex-wrap items-center gap-x-6 gap-y-2 card bg-surface-100-900 p-3 text-sm">
-		<span
-			><span class="text-surface-600-400">Data directory</span>
-			<span class="font-mono">{view.data_dir}</span></span
-		>
-		<span
-			><span class="text-surface-600-400">Config file</span>
-			{#if view.provisioning_file}
-				<span class="font-mono">{view.provisioning_file}</span>
-			{:else}
-				<span class="text-surface-600-400">{EMPTY}</span>
-			{/if}</span
-		>
-		<span class="text-surface-600-400">{overridden}</span>
-	</div>
-{/if}
-
-<Toolbar
+<PageHeader
+	title="Settings"
 	description="Changes apply as soon as they are saved. Values saved here win over the config file and the environment."
 >
-	<SearchInput
-		bind:value={filter}
-		placeholder="Find a setting, such as engine.workers"
-		debounce={0}
-		class="mr-auto w-full max-w-lg"
-	/>
-	<button type="button" class="btn preset-tonal" onclick={() => (importOpen = true)}>
-		<UploadIcon class="size-4" />
-		Import
-	</button>
-	<Menu onSelect={(details) => chooseExport(details.value)}>
-		<Menu.Trigger class="btn preset-tonal">
-			<DownloadIcon class="size-4" />
-			Export
-		</Menu.Trigger>
-		<Portal>
-			<Menu.Positioner>
-				<Menu.Content class="max-w-72 min-w-56 card bg-surface-100-900 p-2 shadow-xl">
-					<p class="px-2 pt-1 pb-2 text-sm text-warning-800-200">
-						Exports include secrets in plain text.
-					</p>
-					{#each FORMATS as format (format)}
-						<Menu.Item value={format}>
-							<Menu.ItemText>{FORMAT_LABELS[format]}</Menu.ItemText>
-						</Menu.Item>
-					{/each}
-				</Menu.Content>
-			</Menu.Positioner>
-		</Portal>
-	</Menu>
-</Toolbar>
+	{#snippet actions()}
+		<SearchInput
+			bind:value={filter}
+			placeholder="Find a setting, such as engine.workers"
+			debounce={0}
+			class="w-72"
+		/>
+		<button type="button" class="btn preset-tonal" onclick={() => (importOpen = true)}>
+			<UploadIcon class="size-4" />
+			Import
+		</button>
+		<Menu onSelect={(details) => chooseExport(details.value)}>
+			<Menu.Trigger class="btn preset-tonal">
+				<DownloadIcon class="size-4" />
+				Export
+			</Menu.Trigger>
+			<Portal>
+				<Menu.Positioner class="z-40">
+					<Menu.Content>
+						<Menu.ItemGroup>
+							<Menu.ItemGroupLabel class="text-warning-600-400">
+								Exports include secrets in plain text.
+							</Menu.ItemGroupLabel>
+							{#each FORMATS as format (format)}
+								<Menu.Item value={format}>
+									<Menu.ItemText>{FORMAT_LABELS[format]}</Menu.ItemText>
+								</Menu.Item>
+							{/each}
+						</Menu.ItemGroup>
+					</Menu.Content>
+				</Menu.Positioner>
+			</Portal>
+		</Menu>
+	{/snippet}
+</PageHeader>
+
+{#if view}
+	<Card label="Where the settings live">
+		<KeyValue class="sm:grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)]">
+			<KeyValueRow label="Data directory" value={view.data_dir} mono />
+			<KeyValueRow label="Config file" value={view.provisioning_file} mono />
+			<KeyValueRow label="Overridden" value={overridden} />
+		</KeyValue>
+	</Card>
+{/if}
 
 {#if error && !loading}
 	<ErrorState {error} onretry={load} />
@@ -243,22 +263,47 @@
 {:else if sections.length === 0}
 	<p class="text-sm text-surface-600-400">No setting matches.</p>
 {:else}
-	{#each sections as section (section.name)}
-		<section
-			class="card border border-surface-200-800 bg-surface-100-900 p-5 sm:p-6"
-			aria-label={section.title}
+	<Card flush label="Settings by section">
+		<!-- Skeleton's Accordion: one item per section, all open until folded by hand. -->
+		<Accordion
+			multiple
+			collapsible
+			value={openSections}
+			onValueChange={(details) => onAccordionChange(details.value)}
+			class="gap-0"
 		>
-			<h2 class="h6">{section.title}</h2>
-			{#if section.description}<p class="mb-2 text-sm text-surface-600-400">
-					{section.description}
-				</p>{/if}
-			<div class="divide-y divide-surface-200-800">
-				{#each section.fields as field (field.key)}
-					<SettingFieldRow {field} onsave={save} onreset={reset} />
-				{/each}
-			</div>
-		</section>
-	{/each}
+			{#each sections as section, i (section.name)}
+				{#if i > 0}
+					<hr class="hr" />
+				{/if}
+				<Accordion.Item value={section.name}>
+					<h3>
+						<Accordion.ItemTrigger class="flex items-center justify-between gap-3">
+							<span class="flex min-w-0 flex-wrap items-center gap-2">
+								<span class="h6">{section.title}</span>
+								<span class="badge preset-tonal" style="--badge-size: var(--text-xs)">
+									{number(section.fields.length)}
+								</span>
+							</span>
+							<Accordion.ItemIndicator class="group shrink-0">
+								<ChevronDownIcon class="size-5 transition group-data-[state=open]:rotate-180" />
+							</Accordion.ItemIndicator>
+						</Accordion.ItemTrigger>
+					</h3>
+					<Accordion.ItemContent>
+						{#if section.description}
+							<p class="mb-2 text-sm text-surface-600-400">{section.description}</p>
+						{/if}
+						<div class="divide-y divide-surface-200-800">
+							{#each section.fields as field (field.key)}
+								<SettingFieldRow {field} onsave={save} onreset={reset} />
+							{/each}
+						</div>
+					</Accordion.ItemContent>
+				</Accordion.Item>
+			{/each}
+		</Accordion>
+	</Card>
 {/if}
 
 <Confirm
@@ -285,15 +330,31 @@
 					{/each}
 				</select>
 			</Field>
-			<Field label="File" for="import-file">
-				<input
-					id="import-file"
-					class="input"
-					type="file"
-					accept=".toml,.yaml,.yml,.json,text/plain"
-					onchange={pickFile}
-				/>
-			</Field>
+			<div class="label">
+				<span class="label-text">File</span>
+				<div class="flex flex-wrap items-center gap-3">
+					<FileUpload
+						class="w-fit"
+						accept={{
+							'application/toml': ['.toml'],
+							'application/yaml': ['.yaml', '.yml'],
+							'application/json': ['.json'],
+							'text/plain': ['.toml', '.yaml', '.yml', '.json', '.txt']
+						}}
+						maxFiles={1}
+						onFileAccept={(details) => void pickFile(details.files[0])}
+					>
+						<FileUpload.Trigger class="btn preset-tonal">
+							<UploadIcon class="size-4" />
+							Choose a file
+						</FileUpload.Trigger>
+						<FileUpload.HiddenInput />
+					</FileUpload>
+					{#if importFileName}
+						<span class="text-sm text-surface-600-400">{importFileName}</span>
+					{/if}
+				</div>
+			</div>
 		</div>
 		<Field label="Or paste" for="import-text">
 			<textarea

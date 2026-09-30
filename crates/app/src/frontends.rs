@@ -109,7 +109,8 @@ pub struct Access {
     pub accounts: bool,
     /// Login provider ids, as the server's `auth` settings name them, plus `discord`.
     pub providers: Vec<String>,
-    /// A Discord login must belong to every guild in the scope.
+    /// A Discord login must belong to every guild in the scope, including the guild of
+    /// every listed channel.
     pub discord_members: bool,
     /// A Discord login must be one of these users, by id, when any are listed.
     pub discord_users: Vec<String>,
@@ -363,9 +364,9 @@ fn check(input: &FrontendInput, known: &Known) -> Result<FrontendInput, Frontend
             "Discord membership checks need the discord provider among the view's providers".into(),
         ));
     }
-    if input.access.discord_members && input.scope.guilds.is_empty() {
+    if input.access.discord_members && input.scope.is_everything() {
         return Err(FrontendError::Invalid(
-            "requiring Discord membership needs a guild in the view's scope".into(),
+            "requiring Discord membership needs a server or channel in the view's scope".into(),
         ));
     }
     if input.links.enabled {
@@ -1407,6 +1408,12 @@ mod tests {
         let created = store.create(&actor(), members, &known).await.unwrap();
         assert_eq!(created.input.slug, "members");
         assert!(!created.has_secret);
+        let mut narrowed = input("narrowed");
+        narrowed.access.discord_members = true;
+        narrowed.access.providers = vec!["discord".into()];
+        narrowed.scope.channels = vec!["9".into()];
+        let created = store.create(&actor(), narrowed, &known).await.unwrap();
+        assert_eq!(created.input.scope.channels, vec!["9".to_string()]);
         assert!(matches!(
             store
                 .create(&actor(), input("members"), &known)

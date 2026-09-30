@@ -25,22 +25,11 @@
 		return { label: 'Not run', tone: 'surface' };
 	});
 
-	/** The tags worth a chip: one that repeats a media kind says nothing the kind has not. */
+	/** The tags worth a badge: one that repeats a media kind says nothing the kind has not. */
 	const tags = $derived.by(() => {
 		const kinds = new Set(platform.media.map((kind) => mediaLabel(kind).toLowerCase()));
 		return platform.tags.filter((tag) => !kinds.has(tag.toLowerCase()));
 	});
-
-	/** Login support, cookies on file and the tags, in one line. */
-	const details = $derived(
-		[
-			SESSION[platform.session],
-			platform.cookies > 0 ? `${number(platform.cookies)} cookies` : null,
-			...tags
-		]
-			.filter((detail) => detail !== null)
-			.join(' · ')
-	);
 
 	/** How the last run went, link by link. */
 	const links = $derived.by(() => {
@@ -51,7 +40,7 @@
 	});
 </script>
 
-<div class="space-y-2">
+<div class="space-y-3">
 	<div class="flex items-start justify-between gap-2">
 		<div class="min-w-0">
 			<p class="truncate font-semibold">{platform.name}</p>
@@ -63,12 +52,27 @@
 		</div>
 		<Status label={health.label} tone={health.tone} pulse={platform.running} class="shrink-0" />
 	</div>
-	<p class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-surface-600-400">
+	<div class="flex flex-wrap gap-1.5">
 		{#each platform.media as kind (kind)}
-			<MediaKindIcon {kind} class="size-4" />
+			<span class="badge preset-tonal" style="--badge-size: var(--text-xs)">
+				<MediaKindIcon {kind} />
+				{mediaLabel(kind)}
+			</span>
 		{/each}
-		<span>{details}</span>
-	</p>
+		<span class="badge preset-outlined-surface-300-700" style="--badge-size: var(--text-xs)">
+			{SESSION[platform.session]}
+		</span>
+		{#if platform.cookies > 0}
+			<span class="badge preset-outlined-surface-300-700" style="--badge-size: var(--text-xs)">
+				{number(platform.cookies)} cookies
+			</span>
+		{/if}
+		{#each tags as tag (tag)}
+			<span class="badge preset-outlined-surface-300-700" style="--badge-size: var(--text-xs)">
+				{tag}
+			</span>
+		{/each}
+	</div>
 	<p class="text-sm text-surface-600-400">
 		{#if platform.last_run_at}
 			Run <RelativeTime at={platform.last_run_at} />

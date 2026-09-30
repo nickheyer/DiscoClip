@@ -6,6 +6,7 @@
 #   make test    run the workspace tests
 #   make clean   remove build output
 #   make deps    install the web app's packages and fetch the crates
+#   make image   build the Docker image, discoclip:latest
 
 CARGO ?= cargo
 NPM   ?= npm
@@ -13,7 +14,7 @@ UI    := crates/app/ui
 DATA  := data
 BIN   := target/release/discoclip
 
-.PHONY: dev build run test clean deps
+.PHONY: dev build run test clean deps image
 
 dev: clean
 	$(CARGO) run -- $(ARGS)
@@ -34,3 +35,6 @@ clean:
 deps:
 	cd $(UI) && $(NPM) ci --no-audit --no-fund
 	$(CARGO) fetch
+
+image:
+	docker build -t discoclip:latest .

@@ -1,0 +1,47 @@
+# docker compose up -d
+#
+# The web app is at http://localhost:8080. Open /setup once to create the admin account.
+# Settings come from the environment here, from a config file mounted at
+# /etc/discoclip/discoclip.toml and named with DISCOCLIP_CONFIG, and from the web app.
+
+services:
+  discoclip:
+    build: .
+    image: discoclip:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # The address people reach the web app at, for login callbacks and media links.
+      # DISCOCLIP_WEB__PUBLIC_URL: "https://clips.example.com"
+      # Behind a reverse proxy in the same network, trust its forwarded headers.
+      # DISCOCLIP_WEB__TRUSTED_PROXIES: "172.16.0.0/12"
+      DISCOCLIP_LOG__LEVEL: info
+    volumes:
+      - discoclip-data:/var/lib/discoclip
+      - discoclip-cache:/var/cache/discoclip
+      # A config file, when one is preferred over the environment:
+      # - ./discoclip.toml:/etc/discoclip/discoclip.toml:ro
+    # A stop gives running jobs their grace period (engine.shutdown.grace_secs, 30 s by
+    # default) and the web listener its drain before the container is killed.
+    stop_grace_period: 75s
+    # For VA-API or Quick Sync encoders, hand the render node in and point the engine at
+    # an ffmpeg build that has them (engine.ffmpeg). The embedded build encodes in software.
+    # devices:
+    #   - /dev/dri:/dev/dri
+
+  # Scrapes /metrics with an API token made under Account in the web app. Put the token
+  # into packaging/prometheus.yml first.
+  # prometheus:
+  #   image: prom/prometheus:latest
+  #   restart: unless-stopped
+  #   ports:
+  #     - "9090:9090"
+  #   volumes:
+  #     - ./packaging/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+  #     - prometheus-data:/prometheus
+
+volumes:
+  discoclip-data:
+  discoclip-cache:
+  # prometheus-data:

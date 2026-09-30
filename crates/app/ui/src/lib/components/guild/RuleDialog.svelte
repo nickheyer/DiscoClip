@@ -1,8 +1,8 @@
 <script lang="ts">
 	import XIcon from '@lucide/svelte/icons/x';
+	import { Listbox, useListCollection } from '@skeletonlabs/skeleton-svelte';
 	import { applications, rules as rulesApi } from '$lib/api/endpoints';
 	import type { GuildChannel, GuildMember, GuildRole, Rule, Snowflake, Uuid } from '$lib/api/types';
-	import Confirm from '$lib/components/Confirm.svelte';
 	import DiscordAvatar from '$lib/components/DiscordAvatar.svelte';
 	import Field from '$lib/components/Field.svelte';
 	import Modal from '$lib/components/Modal.svelte';
@@ -17,12 +17,13 @@
 		guild: Snowflake;
 		channels: GuildChannel[];
 		roles: GuildRole[];
-		/** The rule to edit, or nothing for a new one. */
+		/** The rule whose options are edited, or nothing to make a rule. */
 		rule: Rule | null;
-		/** The channel a new rule starts on. */
-		channelId?: Snowflake | null;
+		/** For a new rule: the channel it watches, or null for every channel of the server. */
+		channel?: Snowflake | null;
+		/** For a new rule: the rule its options start from. */
+		template?: Rule | null;
 		onsaved: (rule: Rule) => void;
-		ondeleted: (id: Uuid) => void;
 	}
 
 	let {
@@ -32,36 +33,48 @@
 		channels,
 		roles,
 		rule,
-		channelId = null,
-		onsaved,
-		ondeleted
+		channel = null,
+		template = null,
+		onsaved
 	}: Props = $props();
 
-	let channel = $state('');
 	let postTo = $state('');
 	let allowRoles = $state<Snowflake[]>([]);
 	let members = $state<{ id: Snowflake; member: GuildMember | null }[]>([]);
-	let enabled = $state(true);
 	let roleFilter = $state('');
 	let saving = $state(false);
-	let confirmDelete = $state(false);
 
 	const choices = $derived(watchable(channels));
+	/** The channel the options are for, or null for every channel. */
+	const target = $derived(rule ? rule.channel_id : channel);
+	const label = $derived(
+		target === null
+			? 'Every channel'
+			: channelLabel(
+					channels.find((c) => c.id === target),
+					target
+				)
+	);
 	const roleList = $derived(
 		[...roles]
 			.sort((a, b) => b.position - a.position)
 			.filter((role) => role.name.toLowerCase().includes(roleFilter.trim().toLowerCase()))
 	);
+	const roleCollection = $derived(
+		useListCollection({
+			items: roleList,
+			itemToString: (role) => role.name,
+			itemToValue: (role) => role.id
+		})
+	);
 
 	$effect(() => {
 		if (!open) return;
-		const current = rule;
-		channel = current?.channel_id ?? channelId ?? '';
-		postTo = current?.post_to ?? '';
-		allowRoles = [...(current?.allow_roles ?? [])];
-		enabled = current?.enabled ?? true;
+		const source = rule ?? template;
+		postTo = source?.post_to ?? '';
+		allowRoles = [...(source?.allow_roles ?? [])];
 		roleFilter = '';
-		const ids = current?.allow_users ?? [];
+		const ids = source?.allow_users ?? [];
 		members = ids.map((id) => ({ id, member: null }));
 		for (const id of ids) {
 			applications
@@ -81,10 +94,6 @@
 			: `#${role.color.toString(16).padStart(6, '0')}`;
 	}
 
-	function toggleRole(id: Snowflake) {
-		allowRoles = allowRoles.includes(id) ? allowRoles.filter((r) => r !== id) : [...allowRoles, id];
-	}
-
 	function addMember(member: GuildMember) {
 		if (members.some((entry) => entry.id === member.id)) return;
 		members = [...members, { id: member.id, member }];
@@ -92,181 +101,131 @@
 
 	async function save(event: SubmitEvent) {
 		event.preventDefault();
-		if (!channel) return;
 		saving = true;
 		try {
 			const input = {
-				channel_id: channel,
+				channel_id: target,
 				post_to: postTo || null,
 				allow_users: members.map((entry) => entry.id),
 				allow_roles: allowRoles,
-				enabled
+				enabled: rule?.enabled ?? true
 			};
 			const saved = rule
 				? await rulesApi.update(rule.id, input)
 				: await rulesApi.create(applicationId, guild, input);
-			notify.success(
-				rule ? 'Rule saved' : 'Rule added',
-				channelLabel(channels.find((c) => c.id === channel))
-			);
+			notify.success('Options saved', label);
 			open = false;
 			onsaved(saved);
 		} catch (error) {
-			reportError(error, 'Could not save the rule');
+			reportError(error, 'Could not save the options');
 		} finally {
 			saving = false;
 		}
-	}
-
-	async function remove() {
-		if (!rule) return;
-		await rulesApi.remove(rule.id);
-		notify.success('Rule removed');
-		open = false;
-		ondeleted(rule.id);
 	}
 </script>
 
 <Modal
 	bind:open
-	title={rule ? 'Edit watch rule' : 'Add watch rule'}
-	description="Links posted in the watched channel are fetched and posted back."
+	title={label}
+	description="Where the fetched media goes, and who may post links."
 	size="lg"
 	busy={saving}
 >
 	<form id="rule-form" class="space-y-5" onsubmit={save}>
-		<div class="grid gap-4 sm:grid-cols-2">
-			<Field label="Watch channel" for="rule-channel" required>
-				<select id="rule-channel" class="select" bind:value={channel} required>
-					<option value="" disabled>Choose a channel</option>
-					{#each choices as { channel: c, category } (c.id)}
-						<option value={c.id}>{category ? `${category} / ` : ''}{channelLabel(c)}</option>
-					{/each}
-				</select>
-			</Field>
-			<Field label="Post results to" for="rule-post-to" help="Where the finished media goes.">
-				<select id="rule-post-to" class="select" bind:value={postTo}>
-					<option value="">The same channel</option>
-					{#each choices as { channel: c, category } (c.id)}
-						<option value={c.id}>{category ? `${category} / ` : ''}{channelLabel(c)}</option>
-					{/each}
-				</select>
-			</Field>
-		</div>
+		<Field label="Post results to" for="rule-post-to">
+			<select id="rule-post-to" class="select" bind:value={postTo}>
+				<option value="">
+					{target === null ? 'The channel the link was posted in' : 'The same channel'}
+				</option>
+				{#each choices as { channel: c, category } (c.id)}
+					<option value={c.id}>{category ? `${category} / ` : ''}{channelLabel(c)}</option>
+				{/each}
+			</select>
+		</Field>
 
-		<fieldset class="space-y-2">
-			<legend class="label-text">Allowed members</legend>
-			<p class="text-sm text-surface-600-400">
-				With no members and no roles, everyone in the channel may post links.
-			</p>
-			<MemberPicker {applicationId} {guild} exclude={members.map((m) => m.id)} onpick={addMember} />
+		<fieldset class="fieldset space-y-3">
+			<legend class="legend">Who may post links</legend>
+			<p class="text-sm text-surface-600-400">Nobody chosen means everyone.</p>
+			<MemberPicker
+				{applicationId}
+				{guild}
+				placeholder="Add a member"
+				exclude={members.map((m) => m.id)}
+				onpick={addMember}
+			/>
 			{#if members.length > 0}
 				<ul class="flex flex-wrap gap-2">
 					{#each members as entry (entry.id)}
-						<li
-							class="flex items-center gap-1.5 rounded-full bg-surface-200-800 py-0.5 pr-1 pl-1 text-sm"
-						>
-							{#if entry.member}
-								<DiscordAvatar
-									user={entry.id}
-									hash={entry.member.avatar}
-									name={entry.member.username}
-									size={20}
-								/>
-								<span
-									>{entry.member.display_name ?? entry.member.nick ?? entry.member.username}</span
-								>
-							{:else}
-								<span class="pl-1 font-mono text-xs">{entry.id}</span>
-							{/if}
+						<li>
 							<button
 								type="button"
-								class="rounded-full p-0.5 hover:preset-tonal"
-								aria-label="Remove member"
+								class="chip preset-tonal"
+								aria-label="Remove {entry.member?.username ?? entry.id}"
 								onclick={() => (members = members.filter((m) => m.id !== entry.id))}
 							>
-								<XIcon class="size-3.5" />
+								{#if entry.member}
+									<DiscordAvatar
+										user={entry.id}
+										hash={entry.member.avatar}
+										name={entry.member.username}
+										size={18}
+									/>
+									<span
+										>{entry.member.display_name ?? entry.member.nick ?? entry.member.username}</span
+									>
+								{:else}
+									<span class="font-mono text-xs">{entry.id}</span>
+								{/if}
+								<XIcon />
 							</button>
 						</li>
 					{/each}
 				</ul>
 			{/if}
-		</fieldset>
 
-		<fieldset class="space-y-2">
-			<legend class="label-text">Allowed roles</legend>
-			<input
-				class="input"
-				type="search"
-				placeholder="Filter roles"
-				aria-label="Filter roles"
-				bind:value={roleFilter}
-			/>
-			<div
-				class="max-h-48 space-y-1 overflow-y-auto rounded-base border border-surface-200-800 p-2"
+			<!-- Skeleton's Listbox with a search box: pick any number of roles. -->
+			<Listbox
+				collection={roleCollection}
+				selectionMode="multiple"
+				value={allowRoles}
+				onValueChange={(details) => (allowRoles = details.value)}
 			>
-				{#if roleList.length === 0}
-					<p class="px-1 text-sm text-surface-600-400">No roles match.</p>
-				{/if}
-				{#each roleList as role (role.id)}
-					<label
-						class="flex items-center gap-2 rounded-base px-1 py-0.5 text-sm hover:bg-surface-100-900"
-					>
-						<input
-							class="checkbox"
-							type="checkbox"
-							checked={allowRoles.includes(role.id)}
-							onchange={() => toggleRole(role.id)}
-						/>
-						<span
-							class="size-2.5 rounded-full"
-							style="background: {roleColor(role)}"
-							aria-hidden="true"
-						></span>
-						<span class="truncate">{role.name}</span>
-						{#if role.managed}<span class="text-surface-600-400">integration</span>{/if}
-					</label>
-				{/each}
-			</div>
+				<Listbox.Label>Roles</Listbox.Label>
+				<Listbox.Input
+					placeholder="Filter roles"
+					value={roleFilter}
+					oninput={(event) => (roleFilter = event.currentTarget.value)}
+				/>
+				<Listbox.Content class="max-h-48 overflow-y-auto">
+					{#if roleCollection.items.length === 0}
+						<p class="px-2 py-1 text-sm text-surface-600-400">No roles match.</p>
+					{/if}
+					{#each roleCollection.items as role (role.id)}
+						<Listbox.Item item={role}>
+							<Listbox.ItemText class="flex min-w-0 items-center gap-2">
+								<span
+									class="size-2.5 shrink-0 rounded-full"
+									style="background: {roleColor(role)}"
+									aria-hidden="true"
+								></span>
+								<span class="truncate">{role.name}</span>
+								{#if role.managed}<span class="text-xs opacity-60">integration</span>{/if}
+							</Listbox.ItemText>
+							<Listbox.ItemIndicator />
+						</Listbox.Item>
+					{/each}
+				</Listbox.Content>
+			</Listbox>
 		</fieldset>
-
-		<label class="flex items-center gap-2 text-sm">
-			<input class="checkbox" type="checkbox" bind:checked={enabled} />
-			Rule enabled
-		</label>
 	</form>
 
 	{#snippet footer()}
-		{#if rule}
-			<button
-				type="button"
-				class="mr-auto btn preset-tonal-error"
-				onclick={() => (confirmDelete = true)}
-				disabled={saving}
-			>
-				Remove rule
-			</button>
-		{/if}
 		<button type="button" class="btn preset-tonal" onclick={() => (open = false)} disabled={saving}
 			>Cancel</button
 		>
-		<button
-			type="submit"
-			form="rule-form"
-			class="btn preset-filled-primary-500"
-			disabled={saving || !channel}
-		>
+		<button type="submit" form="rule-form" class="btn preset-filled-primary-500" disabled={saving}>
 			{#if saving}<Spinner />{/if}
-			{rule ? 'Save' : 'Add rule'}
+			Save
 		</button>
 	{/snippet}
 </Modal>
-
-<Confirm
-	bind:open={confirmDelete}
-	title="Remove this watch rule?"
-	message="The channel stops being watched. Jobs already made stay."
-	confirmLabel="Remove"
-	danger
-	onconfirm={remove}
-/>

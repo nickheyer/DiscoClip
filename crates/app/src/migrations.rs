@@ -372,6 +372,35 @@ ALTER TABLE watch_rules DROP COLUMN max_duration_secs;
 ALTER TABLE watch_rules DROP COLUMN max_height;
 ",
     },
+    Migration {
+        version: 21,
+        name: "watch_rules_whole_guild",
+        sql: "
+CREATE TABLE watch_rules_whole (
+    id TEXT PRIMARY KEY,
+    application_id TEXT NOT NULL REFERENCES discord_applications(id) ON DELETE CASCADE,
+    guild_id TEXT NOT NULL,
+    channel_id TEXT,
+    post_to TEXT,
+    allow_users TEXT NOT NULL,
+    allow_roles TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    UNIQUE (application_id, channel_id)
+);
+INSERT INTO watch_rules_whole (id, application_id, guild_id, channel_id, post_to, allow_users,
+    allow_roles, enabled, created_at, updated_at)
+SELECT id, application_id, guild_id, channel_id, post_to, allow_users, allow_roles, enabled,
+    created_at, updated_at
+FROM watch_rules;
+DROP TABLE watch_rules;
+ALTER TABLE watch_rules_whole RENAME TO watch_rules;
+CREATE INDEX watch_rules_guild ON watch_rules(application_id, guild_id);
+CREATE UNIQUE INDEX watch_rules_whole_guild ON watch_rules(application_id, guild_id)
+    WHERE channel_id IS NULL;
+",
+    },
 ];
 
 /// Brings the application's tables up to date. Returns how many migrations ran.

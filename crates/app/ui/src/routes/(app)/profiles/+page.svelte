@@ -11,7 +11,7 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import RelativeTime from '$lib/components/RelativeTime.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
-	import Toolbar from '$lib/components/Toolbar.svelte';
+	import Status from '$lib/components/Status.svelte';
 	import { bytes, clock, number } from '$lib/format';
 	import { session } from '$lib/session.svelte';
 	import { notify, reportError } from '$lib/toast.svelte';
@@ -22,6 +22,7 @@
 	let error = $state<unknown>(null);
 	let settingDefault = $state<Uuid | null>(null);
 	let deleting = $state<Profile | null>(null);
+	let deleteOpen = $state(false);
 
 	const canEdit = $derived(session.can('manage_settings'));
 
@@ -52,6 +53,11 @@
 		} finally {
 			settingDefault = null;
 		}
+	}
+
+	function askDelete(profile: Profile) {
+		deleting = profile;
+		deleteOpen = true;
 	}
 
 	async function remove() {
@@ -100,7 +106,15 @@
 
 {#snippet nameCell(profile: Profile)}
 	<div class="min-w-0">
-		<p class="font-medium">{profile.name}</p>
+		<p class="flex flex-wrap items-center gap-2 font-medium">
+			{profile.name}
+			{#if profile.id === defaultId}
+				<Status label="Default" tone="primary" />
+			{/if}
+			{#if profile.builtin}
+				<Status label="Built in" tone="surface" />
+			{/if}
+		</p>
 		{#if profile.description}
 			<p class="truncate text-sm text-surface-600-400">{profile.description}</p>
 		{/if}
@@ -115,7 +129,7 @@
 			{#if profile.id !== defaultId}
 				<button
 					type="button"
-					class="btn btn-sm hover:preset-tonal"
+					class="btn preset-tonal btn-sm"
 					onclick={() => setDefault(profile)}
 					disabled={settingDefault !== null}
 				>
@@ -127,28 +141,32 @@
 				<button
 					type="button"
 					class="btn-icon btn-icon-sm hover:preset-tonal-error"
-					onclick={() => (deleting = profile)}
+					onclick={() => askDelete(profile)}
 					aria-label="Delete {profile.name}"
 				>
-					<Trash2Icon class="size-4" />
+					<Trash2Icon />
 				</button>
 			{/if}
 		</span>
 	{/if}
 {/snippet}
 
-<PageHeader title="Profiles" />
-
-<Toolbar
+<PageHeader
+	title="Profiles"
 	description="Platform access and media limits. Assignments apply from the global default down to server, channel and member."
 >
-	{#if canEdit}
-		<a href={resolve('/(app)/profiles/[id]', { id: 'new' })} class="btn preset-filled-primary-500">
-			<PlusIcon class="size-4" />
-			New profile
-		</a>
-	{/if}
-</Toolbar>
+	{#snippet actions()}
+		{#if canEdit}
+			<a
+				href={resolve('/(app)/profiles/[id]', { id: 'new' })}
+				class="btn preset-filled-primary-500"
+			>
+				<PlusIcon class="size-4" />
+				New profile
+			</a>
+		{/if}
+	{/snippet}
+</PageHeader>
 
 {#if error && !loading}
 	<ErrorState {error} onretry={load} />
@@ -159,11 +177,12 @@
 		rowKey={(p) => p.id}
 		{loading}
 		rowHref={(p) => resolve('/(app)/profiles/[id]', { id: p.id })}
+		rowLabel={canEdit ? 'Edit' : 'View'}
 	/>
 {/if}
 
 <Confirm
-	open={deleting !== null}
+	bind:open={deleteOpen}
 	title="Delete {deleting?.name ?? 'this profile'}?"
 	message="Every assignment of it goes away and those scopes inherit again."
 	confirmLabel="Delete"

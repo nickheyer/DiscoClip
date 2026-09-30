@@ -1447,7 +1447,7 @@ mod tests {
     /// Every example link resolves live without a session: the public video, audio and
     /// image posts, and the creator and collection listings.
     #[tokio::test]
-    #[ignore = "requires live Patreon access"]
+
     async fn live_examples_resolve() {
         let resolver = PatreonResolver::new(Http::new(crate::http::HttpConfig::default()));
         let mut kinds = Vec::new();

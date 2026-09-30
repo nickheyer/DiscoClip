@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::http::{Browser, Cookie, Http, HttpError, Response, StatusCode};
-use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
+use crate::media::{AudioCodec, Container, MediaKind, Projection, StereoLayout, VideoCodec};
 
 pub use page::Page;
 
@@ -832,6 +832,12 @@ pub struct Variant {
     /// stream only to a player that reports playback.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub keepalive: Option<Keepalive>,
+    /// How a 360° picture is laid out, when the platform says so and the file may not.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projection: Option<Projection>,
+    /// How two eyes share the frame, when the platform says so.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stereo: Option<StereoLayout>,
 }
 
 impl Variant {
@@ -861,6 +867,8 @@ impl Variant {
             drm: None,
             cipher: None,
             keepalive: None,
+            projection: None,
+            stereo: None,
         }
     }
 

@@ -1,30 +1,11 @@
 [data-theme='discoclip'] {
 	--spacing: 0.25rem;
 	--text-scaling: 1;
-	/* Type scale: 18px body, 16px for secondary text and badges, 14px for the mono family. */
-	--text-xs: 0.875rem;
-	--text-xs--line-height: calc(1.25 / 0.875);
-	--text-sm: 1rem;
-	--text-sm--line-height: 1.5;
-	--text-base: 1.125rem;
-	--text-base--line-height: calc(1.75 / 1.125);
-	--text-lg: 1.25rem;
-	--text-lg--line-height: calc(1.75 / 1.25);
-	--text-xl: 1.375rem;
-	--text-xl--line-height: calc(1.875 / 1.375);
-	--text-2xl: 1.625rem;
-	--text-2xl--line-height: calc(2 / 1.625);
-	--text-3xl: 2rem;
-	--text-3xl--line-height: calc(2.375 / 2);
-	--text-4xl: 2.375rem;
-	--text-4xl--line-height: calc(2.75 / 2.375);
-	--text-5xl: 3rem;
-	--text-5xl--line-height: 1;
 	--typo-base--font-family: 'Inter Variable', system-ui, sans-serif;
-	--typo-base--font-size: var(--text-base);
+	--typo-base--font-size: inherit;
 	--typo-base--color-light: var(--color-surface-950);
 	--typo-base--color-dark: var(--color-surface-50);
-	--typo-base--line-height: 1.5;
+	--typo-base--line-height: inherit;
 	--typo-base--font-weight: 400;
 	--typo-base--font-style: normal;
 	--typo-base--letter-spacing: 0em;

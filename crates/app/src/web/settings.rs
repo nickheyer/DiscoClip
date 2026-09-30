@@ -294,7 +294,13 @@ mod tests {
                 "auth.oidc.client_secret"
             ])
         );
-        assert_eq!(body["data_dir"], "data");
+        assert!(
+            body["data_dir"]
+                .as_str()
+                .unwrap()
+                .contains("discoclip-data-"),
+            "{body}"
+        );
         assert!(body["provisioning_file"].is_null());
         let entries = body["entries"].as_array().unwrap();
         assert!(
@@ -532,7 +538,7 @@ mod tests {
             .iter()
             .map(|e| e["key"].as_str().unwrap())
             .collect();
-        assert_eq!(stored, vec!["engine.cache_dir", "local.dir"]);
+        assert_eq!(stored, vec!["backup.dir", "engine.cache_dir", "local.dir"]);
         assert_eq!(app.state.engine.config().workers, 2);
 
         // An address already in use is refused before it is stored.

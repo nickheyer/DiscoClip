@@ -4,6 +4,7 @@
 pub mod applications;
 pub mod args;
 pub mod audit;
+pub mod backup;
 pub mod bots;
 pub mod commands;
 pub mod compose;
@@ -19,6 +20,8 @@ pub mod migrations;
 pub mod oauth;
 pub mod profiles;
 pub mod ratelimit;
+pub mod restore;
+pub mod retention;
 pub mod rules;
 pub mod secrets;
 pub mod sessions;

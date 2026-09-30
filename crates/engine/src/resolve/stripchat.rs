@@ -878,7 +878,7 @@ mod tests {
     /// Every example link resolves live: listings with entries, the room with a live
     /// keyed playlist whose first media playlist restores to real segment addresses.
     #[tokio::test]
-    #[ignore = "requires live Stripchat access"]
+
     async fn live_examples_resolve() {
         use std::time::Duration;
 
@@ -950,7 +950,7 @@ mod tests {
     /// A room online right now is captured through the HLS downloader: the keyed media
     /// playlist is restored to the stream's own segments and the capture plays.
     #[tokio::test]
-    #[ignore = "requires live Stripchat access"]
+
     async fn live_rooms_capture_through_the_downloader() {
         use std::time::Duration;
 

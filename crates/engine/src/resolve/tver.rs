@@ -1034,7 +1034,7 @@ mod tests {
     /// Every example resolves live: an episode to a playable HLS stream, or the geo gate
     /// from outside Japan, and a series to its episodes.
     #[tokio::test]
-    #[ignore = "requires live TVer access"]
+
     async fn live_examples_resolve() {
         let resolver = TverResolver::new(Http::new(crate::http::HttpConfig::default()));
         for link in resolver.platform().examples {

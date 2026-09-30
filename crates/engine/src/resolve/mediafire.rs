@@ -913,7 +913,7 @@ mod tests {
     /// Every example link resolves live, and the files among them come back as what
     /// they are.
     #[tokio::test]
-    #[ignore = "requires live MediaFire access"]
+
     async fn live_examples_resolve() {
         let resolver = MediafireResolver::new(Http::new(crate::http::HttpConfig::default()));
         let mut kinds = Vec::new();

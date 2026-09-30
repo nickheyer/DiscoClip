@@ -26,11 +26,15 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 use tokio_stream::wrappers::{BroadcastStream, IntervalStream};
 use tokio_util::io::ReaderStream;
+use twilight_model::id::Id;
 use url::Url;
 
 use super::AppState;
 use super::auth::{Auth, Identity, parse_id};
+use super::channels::{ChannelKind, GuildMember};
 use super::error::ApiError;
+use crate::applications::ApplicationId;
+use crate::bots::BotManager;
 use crate::local::SOURCE_ID as LOCAL_SOURCE;
 use crate::users::Permission;
 use discoclip_bot::{DiscordOrigin, InForce, turned_off};
@@ -41,6 +45,75 @@ const BULK_MAX: usize = 500;
 /// How often the live feed restates the counts and the workers' load.
 const STATS_INTERVAL: Duration = Duration::from_secs(2);
 
+/// A Discord server as a job's place names it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PlaceGuild {
+    pub id: String,
+    pub name: String,
+    /// The icon hash on Discord's CDN, under `icons/<id>/`.
+    pub icon: Option<String>,
+}
+
+/// A Discord channel as a job's place names it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PlaceChannel {
+    pub id: String,
+    pub name: String,
+    pub kind: ChannelKind,
+}
+
+/// Where on Discord a job came from and where its result goes, in the names people know:
+/// the server, the channel the link was posted in, the channel the result is posted to
+/// when a rule sends it elsewhere, and the member who posted the link. Each part is
+/// there when the application's bot has learned it over its gateway since the server
+/// started. Absent for jobs from elsewhere.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Place {
+    pub guild: Option<PlaceGuild>,
+    pub channel: Option<PlaceChannel>,
+    pub destination: Option<PlaceChannel>,
+    pub author: Option<GuildMember>,
+}
+
+impl Place {
+    /// The place of a request from Discord, as far as the bot's directory names it.
+    /// `None` for other sources, and for a bot whose directory has not been made.
+    pub fn of(bots: &BotManager, origin: &Origin, destination: Option<&str>) -> Option<Self> {
+        let parsed = DiscordOrigin::parse(origin)?;
+        let directory = bots.directory(ApplicationId(parsed.application))?;
+        let channel_named = |id| {
+            directory.channel(id).map(|channel| PlaceChannel {
+                id: channel.id.to_string(),
+                name: channel.name,
+                kind: channel.kind.into(),
+            })
+        };
+        let guild = parsed.guild.and_then(|id| {
+            directory.guild(id).map(|guild| PlaceGuild {
+                id: guild.id.to_string(),
+                name: guild.name,
+                icon: guild.icon,
+            })
+        });
+        let channel = channel_named(parsed.channel);
+        let destination = destination
+            .and_then(|channel| channel.parse::<u64>().ok())
+            .and_then(Id::new_checked)
+            .filter(|id| *id != parsed.channel)
+            .and_then(channel_named);
+        let author = match (parsed.guild, parsed.author) {
+            (Some(guild), Some(user)) => directory.member(guild, user).map(GuildMember::from),
+            _ => None,
+        };
+        Some(Self {
+            guild,
+            channel,
+            destination,
+            author,
+        })
+    }
+}
+
 /// A job as a listing shows it: what was asked, where it stands, and what came of it.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct JobSummary {
@@ -49,6 +122,8 @@ pub struct JobSummary {
     pub status: JobStatus,
     pub source: SourceId,
     pub origin: Origin,
+    /// The origin in the names people know, for a request from Discord.
+    pub place: Option<Place>,
     pub destination: Option<String>,
     pub submitted_by: Option<String>,
     pub parent: Option<JobId>,
@@ -76,7 +151,8 @@ pub struct JobSummary {
 }
 
 impl JobSummary {
-    pub fn of(job: &Job) -> Self {
+    /// `bots` names the job's place when the request came from Discord.
+    pub fn of(job: &Job, bots: &BotManager) -> Self {
         let resolved = job.artifacts.resolved.as_ref();
         Self {
             id: job.id,
@@ -84,6 +160,11 @@ impl JobSummary {
             status: job.status.clone(),
             source: job.request.origin.source.clone(),
             origin: job.request.origin.clone(),
+            place: Place::of(
+                bots,
+                &job.request.origin,
+                job.request.destination.as_deref(),
+            ),
             destination: job.request.destination.clone(),
             submitted_by: job.request.submitted_by.clone(),
             parent: job.request.parent,
@@ -199,11 +280,23 @@ pub async fn list(
     let jobs = state.engine.list(&filter).await?;
     let total = state.engine.count(&filter).await?;
     Ok(Json(JobPage {
-        jobs: jobs.iter().map(JobSummary::of).collect(),
+        jobs: jobs
+            .iter()
+            .map(|job| JobSummary::of(job, &state.bots))
+            .collect(),
         total,
         limit,
         offset,
     }))
+}
+
+/// A job in full, with its place named.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct JobView {
+    #[serde(flatten)]
+    pub job: Job,
+    /// The origin in the names people know, for a request from Discord.
+    pub place: Option<Place>,
 }
 
 /// One job in full: the request, every stage's timing, the log, and every artifact.
@@ -211,9 +304,15 @@ pub async fn get(
     State(state): State<AppState>,
     Auth(_): Auth,
     Path(id): Path<String>,
-) -> Result<Json<Job>, ApiError> {
+) -> Result<Json<JobView>, ApiError> {
     let id: JobId = parse_id(&id)?;
-    Ok(Json(state.engine.get(id).await?.ok_or(ApiError::NotFound)?))
+    let job = state.engine.get(id).await?.ok_or(ApiError::NotFound)?;
+    let place = Place::of(
+        &state.bots,
+        &job.request.origin,
+        job.request.destination.as_deref(),
+    );
+    Ok(Json(JobView { job, place }))
 }
 
 /// The jobs a playlist job expanded into, oldest first.
@@ -225,7 +324,12 @@ pub async fn children(
     let id: JobId = parse_id(&id)?;
     state.engine.get(id).await?.ok_or(ApiError::NotFound)?;
     let children = state.engine.children(id).await?;
-    Ok(Json(children.iter().map(JobSummary::of).collect()))
+    Ok(Json(
+        children
+            .iter()
+            .map(|job| JobSummary::of(job, &state.bots))
+            .collect(),
+    ))
 }
 
 /// How the engine is doing: counts over every job and over the last day, the workers'
@@ -301,8 +405,10 @@ pub(super) async fn job_events(
     let first = stats_event(&read_stats(&state).await?);
     let live = BroadcastStream::new(state.engine.subscribe());
     let engine = state.engine.clone();
+    let bots = state.bots.clone();
     let jobs = live.filter_map(move |item| {
         let engine = engine.clone();
+        let bots = bots.clone();
         async move {
             match item {
                 Ok(event) => {
@@ -313,7 +419,7 @@ pub(super) async fn job_events(
                             .ok()
                             .flatten()
                             .as_ref()
-                            .map(JobSummary::of)
+                            .map(|job| JobSummary::of(job, &bots))
                     } else {
                         None
                     };

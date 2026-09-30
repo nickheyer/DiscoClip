@@ -8,6 +8,9 @@ use crate::archive::ArchiveConfig;
 #[serde(default, deny_unknown_fields)]
 pub struct EngineConfig {
     pub cache_dir: PathBuf,
+    /// An ffmpeg installed on the machine to run instead of the embedded build, with its
+    /// ffprobe beside it or on `PATH`. Unset, the embedded build is unpacked and run.
+    pub ffmpeg: Option<PathBuf>,
     pub workers: usize,
     pub limits: Limits,
     pub archive: Option<ArchiveConfig>,
@@ -16,12 +19,15 @@ pub struct EngineConfig {
     pub download: DownloadConfig,
     pub browser: BrowserConfig,
     pub retention: RetentionConfig,
+    pub transcode: TranscodeConfig,
+    pub shutdown: ShutdownConfig,
 }
 
 impl Default for EngineConfig {
     fn default() -> Self {
         Self {
             cache_dir: PathBuf::from("cache"),
+            ffmpeg: None,
             workers: 2,
             limits: Limits::default(),
             archive: None,
@@ -30,7 +36,90 @@ impl Default for EngineConfig {
             download: DownloadConfig::default(),
             browser: BrowserConfig::default(),
             retention: RetentionConfig::default(),
+            transcode: TranscodeConfig::default(),
+            shutdown: ShutdownConfig::default(),
         }
+    }
+}
+
+/// Which video encoders the transcoder may run.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EncoderChoice {
+    /// The first hardware family whose encoders run on this machine, else software.
+    #[default]
+    Auto,
+    /// libx264 and its kin, whatever the machine has.
+    Software,
+    /// NVIDIA NVENC.
+    Nvenc,
+    /// VA-API: Intel and AMD GPUs on Linux.
+    Vaapi,
+    /// Intel Quick Sync Video.
+    Qsv,
+    /// Apple VideoToolbox.
+    Videotoolbox,
+    /// AMD AMF, on Windows.
+    Amf,
+    /// Video4Linux memory-to-memory encoders: Raspberry Pi and other boards.
+    V4l2m2m,
+}
+
+impl EncoderChoice {
+    pub const ALL: [EncoderChoice; 8] = [
+        EncoderChoice::Auto,
+        EncoderChoice::Software,
+        EncoderChoice::Nvenc,
+        EncoderChoice::Vaapi,
+        EncoderChoice::Qsv,
+        EncoderChoice::Videotoolbox,
+        EncoderChoice::Amf,
+        EncoderChoice::V4l2m2m,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            EncoderChoice::Auto => "auto",
+            EncoderChoice::Software => "software",
+            EncoderChoice::Nvenc => "nvenc",
+            EncoderChoice::Vaapi => "vaapi",
+            EncoderChoice::Qsv => "qsv",
+            EncoderChoice::Videotoolbox => "videotoolbox",
+            EncoderChoice::Amf => "amf",
+            EncoderChoice::V4l2m2m => "v4l2m2m",
+        }
+    }
+}
+
+/// How video is encoded: which encoders may run, and the device they run on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct TranscodeConfig {
+    pub encoder: EncoderChoice,
+    /// The render node VA-API encoders open.
+    pub vaapi_device: PathBuf,
+}
+
+impl Default for TranscodeConfig {
+    fn default() -> Self {
+        Self {
+            encoder: EncoderChoice::Auto,
+            vaapi_device: PathBuf::from("/dev/dri/renderD128"),
+        }
+    }
+}
+
+/// How the engine stops: jobs under way get this long to finish before they are
+/// interrupted and queued again for the next start.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ShutdownConfig {
+    pub grace_secs: u64,
+}
+
+impl Default for ShutdownConfig {
+    fn default() -> Self {
+        Self { grace_secs: 30 }
     }
 }
 

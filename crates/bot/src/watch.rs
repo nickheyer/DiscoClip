@@ -4,7 +4,7 @@ use discoclip_engine::detect::find_urls;
 use discoclip_engine::job::Request;
 use twilight_model::channel::Message;
 use twilight_model::id::Id;
-use twilight_model::id::marker::ChannelMarker;
+use twilight_model::id::marker::{ChannelMarker, GuildMarker};
 use uuid::Uuid;
 
 use crate::config::WatchRule;
@@ -13,13 +13,20 @@ use crate::profile::{PlatformLookup, ProfileSource, turned_off};
 
 /// Where a running bot finds the rule for a channel, as rules are edited while it runs.
 pub trait RuleSource: Send + Sync {
-    fn rule(&self, application: Uuid, channel: Id<ChannelMarker>) -> Option<WatchRule>;
+    /// The rule for a message in `channel` of `guild`: the channel's own, or the one
+    /// watching the guild whole. Outside a guild only a channel's own rule counts.
+    fn rule(
+        &self,
+        application: Uuid,
+        guild: Option<Id<GuildMarker>>,
+        channel: Id<ChannelMarker>,
+    ) -> Option<WatchRule>;
 }
 
-/// Turns messages in watched channels into engine requests. A channel without a rule is
-/// not watched. The profile assigned for the channel and the author says which platforms
-/// count and how big a video may be, and a link that only turned-off platforms would
-/// take is left alone.
+/// Turns messages in watched channels into engine requests. A channel is watched by a
+/// rule of its own, or by the rule watching its guild whole. The profile assigned for the
+/// channel and the author says which platforms count and how big a video may be, and a
+/// link that only turned-off platforms would take is left alone.
 pub struct Watcher {
     application: Uuid,
     rules: Arc<dyn RuleSource>,
@@ -46,7 +53,10 @@ impl Watcher {
         if message.author.bot {
             return Vec::new();
         }
-        let Some(rule) = self.rules.rule(self.application, message.channel_id) else {
+        let Some(rule) = self
+            .rules
+            .rule(self.application, message.guild_id, message.channel_id)
+        else {
             return Vec::new();
         };
         if !author_allowed(&rule, message) {
@@ -126,7 +136,12 @@ mod tests {
     struct Rules(HashMap<u64, WatchRule>);
 
     impl RuleSource for Rules {
-        fn rule(&self, _: Uuid, channel: Id<ChannelMarker>) -> Option<WatchRule> {
+        fn rule(
+            &self,
+            _: Uuid,
+            _: Option<Id<GuildMarker>>,
+            channel: Id<ChannelMarker>,
+        ) -> Option<WatchRule> {
             self.0.get(&channel.get()).cloned()
         }
     }

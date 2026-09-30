@@ -1515,9 +1515,7 @@ mod tests {
         );
     }
 
-    /// Every example link resolves live: videos to renditions, listings to entries.
     #[tokio::test]
-    #[ignore = "requires live xHamster access"]
     async fn live_examples_resolve() {
         let resolver = XhamsterResolver::new(Http::new(crate::http::HttpConfig::default()));
         for link in resolver.platform().examples {

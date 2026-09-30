@@ -323,6 +323,78 @@ pub enum AudioCodec {
     Other(String),
 }
 
+/// How the picture's fields are laid out in time.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FieldOrder {
+    /// The stream does not say.
+    #[default]
+    Unknown,
+    Progressive,
+    /// Interlaced, the top field first.
+    TopFirst,
+    /// Interlaced, the bottom field first.
+    BottomFirst,
+}
+
+impl FieldOrder {
+    pub fn is_interlaced(self) -> bool {
+        matches!(self, FieldOrder::TopFirst | FieldOrder::BottomFirst)
+    }
+}
+
+/// A high dynamic range signal, by the transfer it is coded with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "format")]
+pub enum HdrFormat {
+    /// SMPTE ST 2084 perceptual quantizer: HDR10 and HDR10+.
+    Pq,
+    /// ARIB STD-B67 hybrid log-gamma.
+    Hlg,
+    /// Dolby Vision, by profile. Profiles 8 and 7 carry a PQ or HLG base layer any
+    /// player renders. Profile 5 carries nothing else and needs its own rendering.
+    DolbyVision { profile: u8 },
+}
+
+/// How a 360° picture is laid out in the frame.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "layout")]
+pub enum Projection {
+    Equirectangular,
+    /// The six faces of a cube in a 3×2 grid, `padding` pixels between them.
+    Cubemap {
+        padding: u32,
+    },
+    /// YouTube's equi-angular cubemap.
+    EquiAngularCubemap,
+    /// A crop of an equirectangular picture: the frame covers the sphere from `left` to
+    /// `right` and `top` to `bottom`, each a fraction of the full width or height.
+    EquirectangularTile {
+        left: f32,
+        top: f32,
+        right: f32,
+        bottom: f32,
+    },
+}
+
+/// How a stereoscopic picture packs its two eyes into one frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StereoLayout {
+    SideBySide,
+    TopBottom,
+}
+
+/// The colour signalling of a video stream, as the container or codec declares it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ColorInfo {
+    pub primaries: Option<String>,
+    pub transfer: Option<String>,
+    pub matrix: Option<String>,
+    pub range: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VideoTrack {
     pub codec: VideoCodec,
@@ -330,6 +402,56 @@ pub struct VideoTrack {
     pub height: u32,
     pub fps: Option<f64>,
     pub bitrate: Option<u64>,
+    /// The stream's index in the file, for ffmpeg's `-map 0:N`.
+    #[serde(default)]
+    pub index: usize,
+    #[serde(default)]
+    pub pix_fmt: Option<String>,
+    #[serde(default)]
+    pub color: ColorInfo,
+    /// The high dynamic range format the picture is coded in, when it is not SDR.
+    #[serde(default)]
+    pub hdr: Option<HdrFormat>,
+    #[serde(default)]
+    pub field_order: FieldOrder,
+    /// The pixel aspect ratio as `(num, den)` when pixels are not square.
+    #[serde(default)]
+    pub sample_aspect: Option<(u32, u32)>,
+    /// Whether the frames arrive at varying intervals.
+    #[serde(default)]
+    pub vfr: bool,
+    /// Whether the pixel format carries transparency.
+    #[serde(default)]
+    pub alpha: bool,
+    /// How a 360° picture is laid out, when it is one.
+    #[serde(default)]
+    pub projection: Option<Projection>,
+    /// How two eyes share the frame, when they do.
+    #[serde(default)]
+    pub stereo: Option<StereoLayout>,
+    /// The initial view of a 360° picture in degrees, as the file names it.
+    #[serde(default)]
+    pub view: Option<(f32, f32, f32)>,
+}
+
+impl VideoTrack {
+    /// The size the picture shows at: the coded size with the pixel aspect ratio
+    /// applied, so anamorphic sources come out with square pixels.
+    pub fn display_size(&self) -> (u32, u32) {
+        match self.sample_aspect {
+            Some((num, den)) if num > 0 && den > 0 && num != den => {
+                let width = (self.width as f64 * num as f64 / den as f64).round() as u32;
+                (width.max(2), self.height.max(2))
+            }
+            _ => (self.width, self.height),
+        }
+    }
+
+    /// Whether the picture needs work before any destination shows it as intended:
+    /// tone-mapping, deinterlacing, or a flat view of a sphere.
+    pub fn needs_processing(&self) -> bool {
+        self.hdr.is_some() || self.field_order.is_interlaced() || self.projection.is_some()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -338,6 +460,38 @@ pub struct AudioTrack {
     pub channels: u16,
     pub sample_rate: u32,
     pub bitrate: Option<u64>,
+    /// The stream's index in the file, for ffmpeg's `-map 0:N`.
+    #[serde(default)]
+    pub index: usize,
+    #[serde(default)]
+    pub language: Option<String>,
+}
+
+/// A picture attached to the file: cover art, a poster frame.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AttachedPicture {
+    pub index: usize,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// A subtitle stream inside the file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EmbeddedSubtitle {
+    pub index: usize,
+    pub codec: String,
+    #[serde(default)]
+    pub language: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
+    /// Pictures rather than text: DVD, Blu-ray and DVB subtitles.
+    pub bitmap: bool,
+    /// Whether the stream is marked as the one to show by default.
+    #[serde(default)]
+    pub default: bool,
+    /// Whether the stream is marked forced: shown even with subtitles off.
+    #[serde(default)]
+    pub forced: bool,
 }
 
 /// What a file holds, as ffprobe reads it. A still image is reported with its picture in
@@ -351,6 +505,12 @@ pub struct MediaInfo {
     pub duration: Option<Duration>,
     pub video: Option<VideoTrack>,
     pub audio: Option<AudioTrack>,
+    /// Cover art or a poster frame carried beside the streams.
+    #[serde(default)]
+    pub cover: Option<AttachedPicture>,
+    /// The subtitle streams inside the file, in order.
+    #[serde(default)]
+    pub subtitles: Vec<EmbeddedSubtitle>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -390,7 +550,10 @@ pub fn safe_stem(title: Option<&str>, fallback: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Container, MediaKind, safe_stem};
+    use super::{
+        ColorInfo, Container, FieldOrder, HdrFormat, MediaKind, Projection, VideoCodec, VideoTrack,
+        safe_stem,
+    };
 
     #[test]
     fn formats_know_their_kind() {
@@ -418,6 +581,43 @@ mod tests {
         assert_eq!(MediaKind::from_extension("png"), MediaKind::Image);
         assert_eq!(Container::Other("pdf".into()).mime(), "application/pdf");
         assert_eq!("image".parse::<MediaKind>(), Ok(MediaKind::Image));
+    }
+
+    #[test]
+    fn anamorphic_pictures_show_at_their_display_size() {
+        let mut track = VideoTrack {
+            codec: VideoCodec::H264,
+            width: 720,
+            height: 576,
+            fps: Some(25.0),
+            bitrate: None,
+            index: 0,
+            pix_fmt: None,
+            color: ColorInfo::default(),
+            hdr: None,
+            field_order: FieldOrder::Unknown,
+            sample_aspect: Some((64, 45)),
+            vfr: false,
+            alpha: false,
+            projection: None,
+            stereo: None,
+            view: None,
+        };
+        assert_eq!(track.display_size(), (1024, 576));
+        track.sample_aspect = Some((1, 1));
+        assert_eq!(track.display_size(), (720, 576));
+        assert!(!track.needs_processing());
+        track.field_order = FieldOrder::TopFirst;
+        assert!(track.needs_processing());
+        track.field_order = FieldOrder::Progressive;
+        track.hdr = Some(HdrFormat::Pq);
+        assert!(track.needs_processing());
+        track.hdr = None;
+        track.projection = Some(Projection::Equirectangular);
+        assert!(track.needs_processing());
+        let json = serde_json::to_value(&track).unwrap();
+        assert_eq!(json["projection"]["layout"], "equirectangular");
+        assert_eq!(json["field_order"], "progressive");
     }
 
     #[test]

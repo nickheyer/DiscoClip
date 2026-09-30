@@ -1,5 +1,6 @@
 <script lang="ts">
 	import PlusIcon from '@lucide/svelte/icons/plus';
+	import { Tabs } from '@skeletonlabs/skeleton-svelte';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import {
@@ -17,6 +18,7 @@
 		SessionView
 	} from '$lib/api/types';
 	import { PERMISSION_LABELS, ROLE_PERMISSIONS } from '$lib/api/types';
+	import Card from '$lib/components/Card.svelte';
 	import Confirm from '$lib/components/Confirm.svelte';
 	import CopyButton from '$lib/components/CopyButton.svelte';
 	import DataTable, { type Column } from '$lib/components/DataTable.svelte';
@@ -30,6 +32,9 @@
 	import { session } from '$lib/session.svelte';
 	import { notify, reportError } from '$lib/toast.svelte';
 
+	type Tab = 'password' | 'logins' | 'sessions' | 'tokens';
+
+	let tab = $state<Tab>('password');
 	let sessions = $state<SessionView[]>([]);
 	let identities = $state<Identity[]>([]);
 	let providers = $state<ProviderInfo[]>([]);
@@ -73,6 +78,10 @@
 	});
 
 	const allowedScopes = $derived(session.user ? ROLE_PERMISSIONS[session.user.role] : []);
+
+	function isTab(value: string): value is Tab {
+		return value === 'password' || value === 'logins' || value === 'sessions' || value === 'tokens';
+	}
 
 	async function load() {
 		loading = true;
@@ -224,32 +233,30 @@
 
 {#snippet sessionCell(s: SessionView)}
 	<div class="min-w-0">
-		<p class="font-mono text-xs">
-			{s.ip ?? 'unknown address'}
-			{#if s.current}<span class="ml-2 font-sans text-sm text-surface-600-400">This session</span
-				>{/if}
+		<p class="flex flex-wrap items-center gap-2">
+			<span class="font-mono text-xs">{s.ip ?? 'unknown address'}</span>
+			{#if s.current}
+				<span class="badge preset-tonal" style="--badge-size: var(--text-xs)">This session</span>
+			{/if}
 		</p>
 		<p class="truncate text-sm text-surface-600-400" title={s.user_agent ?? ''}>
 			{s.user_agent ?? 'unknown browser'}
 		</p>
 	</div>
 {/snippet}
-{#snippet sessionCreated(s: SessionView)}<RelativeTime
-		at={s.created_at}
-		class="whitespace-nowrap"
-	/>{/snippet}
-{#snippet sessionSeen(s: SessionView)}<RelativeTime
-		at={s.last_seen_at}
-		class="whitespace-nowrap"
-	/>{/snippet}
-{#snippet sessionExpires(s: SessionView)}<RelativeTime
-		at={s.expires_at}
-		class="whitespace-nowrap"
-	/>{/snippet}
+{#snippet sessionCreated(s: SessionView)}
+	<RelativeTime at={s.created_at} class="whitespace-nowrap" />
+{/snippet}
+{#snippet sessionSeen(s: SessionView)}
+	<RelativeTime at={s.last_seen_at} class="whitespace-nowrap" />
+{/snippet}
+{#snippet sessionExpires(s: SessionView)}
+	<RelativeTime at={s.expires_at} class="whitespace-nowrap" />
+{/snippet}
 {#snippet sessionActions(s: SessionView)}
 	<button
 		type="button"
-		class="btn btn-sm hover:preset-tonal-error"
+		class="btn preset-tonal-error btn-sm"
 		onclick={() => endSession(s)}
 		disabled={revoking !== null}
 	>
@@ -264,26 +271,30 @@
 {#snippet scopesCell(t: ApiToken)}
 	{t.scopes.map((scope) => PERMISSION_LABELS[scope]).join(', ') || 'Read only'}
 {/snippet}
-{#snippet tokenUsed(t: ApiToken)}<RelativeTime
-		at={t.last_used_at}
-		class="whitespace-nowrap"
-	/>{/snippet}
+{#snippet tokenUsed(t: ApiToken)}
+	<RelativeTime at={t.last_used_at} class="whitespace-nowrap" />
+{/snippet}
 {#snippet tokenExpires(t: ApiToken)}
-	{#if t.expires_at}<RelativeTime at={t.expires_at} class="whitespace-nowrap" />{:else}<span
-			class="text-surface-600-400">Never</span
-		>{/if}
+	{#if t.expires_at}
+		<RelativeTime at={t.expires_at} class="whitespace-nowrap" />
+	{:else}
+		<span class="text-surface-600-400">Never</span>
+	{/if}
 {/snippet}
 {#snippet tokenActions(t: ApiToken)}
-	<button
-		type="button"
-		class="btn btn-sm hover:preset-tonal-error"
-		onclick={() => (revokingToken = t)}>Revoke</button
-	>
+	<button type="button" class="btn preset-tonal-error btn-sm" onclick={() => (revokingToken = t)}>
+		Revoke
+	</button>
 {/snippet}
 
 <PageHeader title="Account">
 	{#if session.user}
-		<p class="text-sm text-surface-600-400">{session.user.username} · {session.user.role}</p>
+		<p class="flex flex-wrap items-center gap-2">
+			<span class="font-medium">{session.user.username}</span>
+			<span class="badge preset-tonal capitalize" style="--badge-size: var(--text-xs)">
+				{session.user.role}
+			</span>
+		</p>
 	{/if}
 </PageHeader>
 
@@ -294,161 +305,209 @@
 {#if error && !loading}
 	<ErrorState {error} onretry={load} />
 {:else}
-	<div class="grid gap-6 lg:grid-cols-2">
-		<section
-			class="space-y-4 card border border-surface-200-800 bg-surface-100-900 p-5 sm:p-6"
-			aria-label="Password"
-		>
-			<h2 class="h6">Password</h2>
-			{#if session.user && !session.user.has_password}
-				<p class="text-sm text-surface-600-400">
-					Your account has no password; you log in through a provider. An admin can set one under
-					Users.
-				</p>
-			{:else}
-				<form class="space-y-3" onsubmit={changePassword}>
-					<Field label="Current password" for="current-password" required>
-						<input
-							id="current-password"
-							class="input"
-							type="password"
-							bind:value={currentPassword}
-							autocomplete="current-password"
-							required
-						/>
-					</Field>
-					<Field label="New password" for="new-password" required>
-						<input
-							id="new-password"
-							class="input"
-							type="password"
-							bind:value={newPassword}
-							autocomplete="new-password"
-							required
-						/>
-					</Field>
-					<Field
-						label="Confirm new password"
-						for="confirm-password"
-						required
-						error={mismatch ? 'The passwords differ.' : null}
-					>
-						<input
-							id="confirm-password"
-							class="input"
-							type="password"
-							bind:value={confirmPassword}
-							autocomplete="new-password"
-							required
-						/>
-					</Field>
-					<div class="flex justify-end">
-						<button
-							type="submit"
-							class="btn preset-filled-primary-500"
-							disabled={changingPassword || mismatch}
-						>
-							{#if changingPassword}<Spinner />{/if}
-							Change password
-						</button>
-					</div>
-				</form>
-			{/if}
-		</section>
+	<!-- Skeleton's Tabs: the account's password, logins, sessions and tokens. -->
+	<Tabs
+		value={tab}
+		onValueChange={(details) => {
+			if (isTab(details.value)) tab = details.value;
+		}}
+	>
+		<Tabs.List class="overflow-x-auto">
+			<Tabs.Trigger value="password">Password</Tabs.Trigger>
+			<Tabs.Trigger value="logins">Linked logins</Tabs.Trigger>
+			<Tabs.Trigger value="sessions" class="gap-2">
+				Sessions
+				<span class="badge preset-tonal" style="--badge-size: var(--text-xs)">
+					{number(sessions.length)}
+				</span>
+			</Tabs.Trigger>
+			<Tabs.Trigger value="tokens" class="gap-2">
+				API tokens
+				<span class="badge preset-tonal" style="--badge-size: var(--text-xs)">
+					{number(tokens.length)}
+				</span>
+			</Tabs.Trigger>
+			<Tabs.Indicator />
+		</Tabs.List>
 
-		<section
-			class="space-y-4 card border border-surface-200-800 bg-surface-100-900 p-5 sm:p-6"
-			aria-label="Linked logins"
-		>
-			<h2 class="h6">Linked logins</h2>
-			{#if identities.length === 0 && unlinkedProviders.length === 0 && !loading}
-				<p class="text-sm text-surface-600-400">No login provider is configured on this server.</p>
-			{/if}
-			<ul class="space-y-3">
-				{#each identities as identity (identity.provider)}
-					{@const provider = providers.find((p) => p.id === identity.provider)}
-					<li class="rounded-base border border-surface-200-800 p-3 text-sm">
-						<div class="flex flex-wrap items-center justify-between gap-2">
-							<div class="min-w-0">
-								<p class="font-medium">{provider?.name ?? identity.provider}</p>
-								<p class="truncate text-sm text-surface-600-400">
-									{identity.display_name ?? identity.username ?? identity.subject}
-									{#if identity.email}· {identity.email}{/if}
-								</p>
-								<p class="text-sm text-surface-600-400">
-									Linked <RelativeTime at={identity.linked_at} />
-									{#if identity.expires_at}· token expires <RelativeTime
-											at={identity.expires_at}
-										/>{/if}
-									{#if identity.has_refresh_token}· refreshable{/if}
-								</p>
-							</div>
-							<div class="flex gap-1">
-								<button
-									type="button"
-									class="btn preset-tonal btn-sm"
-									onclick={() => refreshIdentity(identity)}
-									disabled={identityPending !== null}
-								>
-									{#if identityPending === identity.provider}<Spinner />{/if}
-									Refresh
-								</button>
-								<button
-									type="button"
-									class="btn btn-sm hover:preset-tonal-error"
-									onclick={() => (unlinking = identity)}>Unlink</button
-								>
-							</div>
+		<Tabs.Content value="password">
+			<Card title="Password" class="max-w-xl">
+				{#if session.user && !session.user.has_password}
+					<p class="text-sm text-surface-600-400">
+						Your account has no password; you log in through a provider. An admin can set one under
+						Users.
+					</p>
+				{:else}
+					<form class="space-y-4" onsubmit={changePassword}>
+						<Field label="Current password" for="current-password" required>
+							<input
+								id="current-password"
+								class="input"
+								type="password"
+								bind:value={currentPassword}
+								autocomplete="current-password"
+								required
+							/>
+						</Field>
+						<Field label="New password" for="new-password" required>
+							<input
+								id="new-password"
+								class="input"
+								type="password"
+								bind:value={newPassword}
+								autocomplete="new-password"
+								required
+							/>
+						</Field>
+						<Field
+							label="Confirm new password"
+							for="confirm-password"
+							required
+							error={mismatch ? 'The passwords differ.' : null}
+						>
+							<input
+								id="confirm-password"
+								class="input"
+								type="password"
+								bind:value={confirmPassword}
+								autocomplete="new-password"
+								required
+							/>
+						</Field>
+						<div class="flex justify-end">
+							<button
+								type="submit"
+								class="btn preset-filled-primary-500"
+								disabled={changingPassword || mismatch}
+							>
+								{#if changingPassword}<Spinner />{/if}
+								Change password
+							</button>
 						</div>
-					</li>
-				{/each}
-			</ul>
-			{#if unlinkedProviders.length > 0}
-				<div class="flex flex-wrap gap-2">
-					{#each unlinkedProviders as provider (provider.id)}
-						<a href={providersApi.startUrl(provider.id, 'link')} class="btn preset-tonal btn-sm"
-							>Link {provider.name}</a
-						>
-					{/each}
+					</form>
+				{/if}
+			</Card>
+		</Tabs.Content>
+
+		<Tabs.Content value="logins">
+			<Card title="Linked logins" class="max-w-3xl">
+				<div class="space-y-4">
+					{#if loading && identities.length === 0}
+						<div
+							class="h-16 placeholder animate-pulse"
+							aria-busy="true"
+							aria-label="Loading logins"
+						></div>
+					{:else if identities.length === 0 && unlinkedProviders.length === 0}
+						<p class="text-sm text-surface-600-400">
+							No login provider is configured on this server.
+						</p>
+					{/if}
+					{#if identities.length > 0}
+						<ul class="space-y-3">
+							{#each identities as identity (identity.provider)}
+								{@const provider = providers.find((p) => p.id === identity.provider)}
+								<li class="flex flex-wrap items-center justify-between gap-3 card preset-tonal p-3">
+									<div class="min-w-0 space-y-0.5 text-sm">
+										<p class="font-medium">{provider?.name ?? identity.provider}</p>
+										<p class="truncate text-surface-600-400">
+											{identity.display_name ?? identity.username ?? identity.subject}
+											{#if identity.email}· {identity.email}{/if}
+										</p>
+										<p class="text-surface-600-400">
+											Linked <RelativeTime at={identity.linked_at} />
+											{#if identity.expires_at}
+												· token expires <RelativeTime at={identity.expires_at} />
+											{/if}
+											{#if identity.has_refresh_token}· refreshable{/if}
+										</p>
+									</div>
+									<div class="flex gap-2">
+										<button
+											type="button"
+											class="btn preset-tonal btn-sm"
+											onclick={() => refreshIdentity(identity)}
+											disabled={identityPending !== null}
+										>
+											{#if identityPending === identity.provider}<Spinner />{/if}
+											Refresh
+										</button>
+										<button
+											type="button"
+											class="btn preset-tonal-error btn-sm"
+											onclick={() => (unlinking = identity)}>Unlink</button
+										>
+									</div>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+					{#if unlinkedProviders.length > 0}
+						<div class="flex flex-wrap gap-2">
+							{#each unlinkedProviders as provider (provider.id)}
+								<a href={providersApi.startUrl(provider.id, 'link')} class="btn preset-tonal">
+									Link {provider.name}
+								</a>
+							{/each}
+						</div>
+					{/if}
 				</div>
-			{/if}
-		</section>
-	</div>
+			</Card>
+		</Tabs.Content>
 
-	<section class="space-y-3" aria-label="Sessions">
-		<div class="flex items-center justify-between">
-			<h2 class="h6">Sessions ({number(sessions.length)})</h2>
-			{#if sessions.length > 1}
-				<button type="button" class="btn preset-tonal btn-sm" onclick={() => (confirmOthers = true)}
-					>End other sessions</button
+		<Tabs.Content value="sessions">
+			<Card title="Sessions" flush>
+				{#snippet actions()}
+					{#if sessions.length > 1}
+						<button
+							type="button"
+							class="btn preset-tonal btn-sm"
+							onclick={() => (confirmOthers = true)}>End other sessions</button
+						>
+					{/if}
+				{/snippet}
+				<DataTable
+					rows={sessions}
+					columns={sessionColumns}
+					rowKey={(s) => s.id}
+					{loading}
+					flush
+					class="p-2"
+				/>
+			</Card>
+		</Tabs.Content>
+
+		<Tabs.Content value="tokens">
+			<Card title="API tokens" flush>
+				{#snippet actions()}
+					<button
+						type="button"
+						class="btn preset-filled-primary-500 btn-sm"
+						onclick={() => (tokenOpen = true)}
+					>
+						<PlusIcon class="size-4" />
+						Create token
+					</button>
+				{/snippet}
+				<p class="px-4 pt-3 text-sm text-surface-600-400">
+					Send a token as <code>Authorization: Bearer dc_…</code>. It is limited to its scopes and
+					to what your role allows.
+				</p>
+				<DataTable
+					rows={tokens}
+					columns={tokenColumns}
+					rowKey={(t) => t.id}
+					{loading}
+					flush
+					class="p-2"
 				>
-			{/if}
-		</div>
-		<DataTable rows={sessions} columns={sessionColumns} rowKey={(s) => s.id} {loading} dense />
-	</section>
-
-	<section class="space-y-3" aria-label="API tokens">
-		<div class="flex items-center justify-between">
-			<h2 class="h6">API tokens ({number(tokens.length)})</h2>
-			<button
-				type="button"
-				class="btn preset-filled-primary-500 btn-sm"
-				onclick={() => (tokenOpen = true)}
-			>
-				<PlusIcon class="size-4" />
-				Create token
-			</button>
-		</div>
-		<p class="text-sm text-surface-600-400">
-			Send a token as <code class="font-mono">Authorization: Bearer dc_…</code>. It is limited to
-			its scopes and to what your role allows.
-		</p>
-		<DataTable rows={tokens} columns={tokenColumns} rowKey={(t) => t.id} {loading} dense>
-			{#snippet empty()}
-				No tokens yet.
-			{/snippet}
-		</DataTable>
-	</section>
+					{#snippet empty()}
+						No tokens yet.
+					{/snippet}
+				</DataTable>
+			</Card>
+		</Tabs.Content>
+	</Tabs>
 {/if}
 
 <Modal bind:open={tokenOpen} title="Create an API token" busy={minting}>
@@ -463,8 +522,8 @@
 				autocomplete="off"
 			/>
 		</Field>
-		<fieldset class="space-y-1">
-			<legend class="label-text">Scopes</legend>
+		<fieldset class="fieldset space-y-2">
+			<legend class="legend">Scopes</legend>
 			{#if allowedScopes.length === 0}
 				<p class="text-sm text-surface-600-400">
 					Your role grants read access only, so the token reads only.
@@ -516,17 +575,17 @@
 >
 	{#if minted}
 		<div class="space-y-3">
-			<p class="text-sm"><span class="font-medium">{minted.token.name}</span></p>
-			<div class="flex items-center gap-2 rounded-base bg-surface-200-800 p-3">
-				<code class="min-w-0 flex-1 font-mono text-sm break-all">{minted.secret}</code>
+			<p class="text-sm font-medium">{minted.token.name}</p>
+			<div class="flex items-center gap-2 card preset-tonal p-3">
+				<span class="min-w-0 flex-1 font-mono text-sm break-all">{minted.secret}</span>
 				<CopyButton text={minted.secret} label="Copy token" />
 			</div>
 		</div>
 	{/if}
 	{#snippet footer()}
-		<button type="button" class="btn preset-filled-primary-500" onclick={() => (minted = null)}
-			>Done</button
-		>
+		<button type="button" class="btn preset-filled-primary-500" onclick={() => (minted = null)}>
+			Done
+		</button>
 	{/snippet}
 </Modal>
 

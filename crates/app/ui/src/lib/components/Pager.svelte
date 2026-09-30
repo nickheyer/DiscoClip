@@ -18,7 +18,7 @@
 	const last = $derived(Math.min(total, offset + limit));
 </script>
 
-<div class="flex flex-wrap items-center justify-between gap-4 py-1 text-sm">
+<div class="flex flex-wrap items-center justify-between gap-4 text-sm">
 	<p class="text-surface-600-400">
 		{#if total === 0}
 			No results
@@ -28,7 +28,6 @@
 	</p>
 	{#if total > limit}
 		<Pagination
-			class="max-w-full flex-wrap gap-1 p-1.5"
 			count={total}
 			pageSize={limit}
 			{page}
@@ -38,27 +37,21 @@
 				onchange?.(offset);
 			}}
 		>
-			<Pagination.PrevTrigger class="min-h-10 min-w-10" aria-label="Previous page">
+			<Pagination.PrevTrigger aria-label="Previous page">
 				<ChevronLeftIcon class="size-4" />
 			</Pagination.PrevTrigger>
 			<Pagination.Context>
 				{#snippet children(pagination)}
 					{#each pagination().pages as item, index (index)}
 						{#if item.type === 'page'}
-							<Pagination.Item
-								{...item}
-								class="min-h-10 min-w-10 {item.value === page ? '' : 'max-sm:hidden'}"
-								>{item.value}</Pagination.Item
-							>
+							<Pagination.Item {...item}>{item.value}</Pagination.Item>
 						{:else}
-							<Pagination.Ellipsis {index} class="hidden min-h-10 min-w-8 sm:inline-flex"
-								>…</Pagination.Ellipsis
-							>
+							<Pagination.Ellipsis {index}>…</Pagination.Ellipsis>
 						{/if}
 					{/each}
 				{/snippet}
 			</Pagination.Context>
-			<Pagination.NextTrigger class="min-h-10 min-w-10" aria-label="Next page">
+			<Pagination.NextTrigger aria-label="Next page">
 				<ChevronRightIcon class="size-4" />
 			</Pagination.NextTrigger>
 		</Pagination>

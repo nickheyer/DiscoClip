@@ -1125,7 +1125,7 @@ mod tests {
     /// Every example link resolves live: the live channel and the videos with signed
     /// streams, the programme page with episodes.
     #[tokio::test]
-    #[ignore = "requires live France Télévisions access"]
+
     async fn live_examples_resolve() {
         let resolver = FrancetvResolver::new(Http::new(crate::http::HttpConfig::default()));
         for link in resolver.platform().examples {

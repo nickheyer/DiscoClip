@@ -1,5 +1,7 @@
 <script lang="ts">
+	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
 	import PlusIcon from '@lucide/svelte/icons/plus';
+	import { Accordion, Tabs } from '@skeletonlabs/skeleton-svelte';
 	import { onMount, tick } from 'svelte';
 	import {
 		roles as rolesApi,
@@ -15,7 +17,6 @@
 	import Field from '$lib/components/Field.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import Toolbar from '$lib/components/Toolbar.svelte';
 	import RelativeTime from '$lib/components/RelativeTime.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import { EMPTY, number } from '$lib/format';
@@ -80,6 +81,10 @@
 		if (!row) return;
 		row.scrollIntoView({ block: 'center' });
 		row.focus();
+	}
+
+	function isTab(value: string): value is Tab {
+		return value === 'accounts' || value === 'roles' || value === 'sessions' || value === 'tokens';
 	}
 
 	async function create(event: SubmitEvent) {
@@ -242,11 +247,13 @@
 
 {#snippet usernameCell(user: User)}
 	<span id="user-{user.id}" tabindex="-1" class="font-medium">{user.username}</span>
-	{#if user.id === session.user?.id}<span class="ml-2 text-sm text-surface-600-400">You</span>{/if}
+	{#if user.id === session.user?.id}
+		<span class="ml-2 badge preset-tonal" style="--badge-size: var(--text-xs)">You</span>
+	{/if}
 {/snippet}
 {#snippet roleCell(user: User)}
 	<select
-		class="select-sm select w-32"
+		class="select w-32"
 		value={user.role}
 		onchange={(event) => changeRole(user, event.currentTarget.value as Role)}
 		disabled={roleChanging !== null}
@@ -262,7 +269,7 @@
 	<span class="flex justify-end gap-1">
 		<button
 			type="button"
-			class="btn btn-sm hover:preset-tonal"
+			class="btn preset-tonal btn-sm"
 			onclick={() => {
 				passwordFor = user;
 				password = '';
@@ -270,7 +277,7 @@
 		>
 		<button
 			type="button"
-			class="btn btn-sm hover:preset-tonal-error"
+			class="btn preset-tonal-error btn-sm"
 			onclick={() => (deleting = user)}
 			disabled={user.id === session.user?.id}>Delete</button
 		>
@@ -278,31 +285,30 @@
 {/snippet}
 {#snippet sessionUser(s: AccountSessionView)}
 	<span class="font-medium">{s.username}</span>
-	{#if s.current}<span class="ml-2 text-sm text-surface-600-400">This session</span>{/if}
+	{#if s.current}
+		<span class="ml-2 badge preset-tonal" style="--badge-size: var(--text-xs)">This session</span>
+	{/if}
 {/snippet}
-{#snippet sessionCreated(s: AccountSessionView)}<RelativeTime
-		at={s.created_at}
-		class="whitespace-nowrap"
-	/>{/snippet}
-{#snippet sessionSeen(s: AccountSessionView)}<RelativeTime
-		at={s.last_seen_at}
-		class="whitespace-nowrap"
-	/>{/snippet}
-{#snippet sessionExpires(s: AccountSessionView)}<RelativeTime
-		at={s.expires_at}
-		class="whitespace-nowrap"
-	/>{/snippet}
+{#snippet sessionCreated(s: AccountSessionView)}
+	<RelativeTime at={s.created_at} class="whitespace-nowrap" />
+{/snippet}
+{#snippet sessionSeen(s: AccountSessionView)}
+	<RelativeTime at={s.last_seen_at} class="whitespace-nowrap" />
+{/snippet}
+{#snippet sessionExpires(s: AccountSessionView)}
+	<RelativeTime at={s.expires_at} class="whitespace-nowrap" />
+{/snippet}
 {#snippet sessionActions(s: AccountSessionView)}
 	<span class="flex justify-end gap-1">
 		<button
 			type="button"
-			class="btn btn-sm hover:preset-tonal"
+			class="btn preset-tonal btn-sm"
 			onclick={() => (revokeAllFor = { id: s.user_id, username: s.username })}
 			>End all of {s.username}</button
 		>
 		<button
 			type="button"
-			class="btn btn-sm hover:preset-tonal-error"
+			class="btn preset-tonal-error btn-sm"
 			onclick={() => revokeSession(s)}
 			disabled={revoking !== null}
 		>
@@ -318,18 +324,16 @@
 {#snippet tokenScopes(t: AccountTokenView)}
 	{t.scopes.map((scope) => PERMISSION_LABELS[scope]).join(', ') || 'Read only'}
 {/snippet}
-{#snippet tokenUsed(t: AccountTokenView)}<RelativeTime
-		at={t.last_used_at}
-		class="whitespace-nowrap"
-	/>{/snippet}
-{#snippet tokenExpires(t: AccountTokenView)}<RelativeTime
-		at={t.expires_at}
-		class="whitespace-nowrap"
-	/>{/snippet}
+{#snippet tokenUsed(t: AccountTokenView)}
+	<RelativeTime at={t.last_used_at} class="whitespace-nowrap" />
+{/snippet}
+{#snippet tokenExpires(t: AccountTokenView)}
+	<RelativeTime at={t.expires_at} class="whitespace-nowrap" />
+{/snippet}
 {#snippet tokenActions(t: AccountTokenView)}
 	<button
 		type="button"
-		class="btn btn-sm hover:preset-tonal-error"
+		class="btn preset-tonal-error btn-sm"
 		onclick={() => revokeToken(t)}
 		disabled={revoking !== null}
 	>
@@ -338,128 +342,128 @@
 	</button>
 {/snippet}
 
-<PageHeader title="Users" />
-
-<Toolbar description="Accounts, their roles, and every live session and API token.">
-	{#if tab === 'accounts'}
-		<button type="button" class="btn preset-filled-primary-500" onclick={() => (createOpen = true)}>
-			<PlusIcon class="size-4" />
-			Create account
-		</button>
-	{/if}
-</Toolbar>
-
-<div
-	class="flex gap-1 overflow-x-auto border-b border-surface-200-800"
-	role="tablist"
-	aria-label="Users"
+<PageHeader
+	title="Users"
+	description="Accounts, their roles, and every live session and API token."
 >
-	{#each TABS as entry (entry.id)}
-		<button
-			type="button"
-			role="tab"
-			aria-selected={tab === entry.id}
-			class="border-b-2 px-3 py-2 text-sm font-medium whitespace-nowrap {tab === entry.id
-				? 'border-primary-500'
-				: 'border-transparent text-surface-600-400 hover:text-surface-950-50'}"
-			onclick={() => (tab = entry.id)}
-		>
-			{entry.label}
-			<span class="ml-2 text-surface-600-400">{number(entry.count())}</span>
-		</button>
-	{/each}
-</div>
+	{#snippet actions()}
+		{#if tab === 'accounts'}
+			<button
+				type="button"
+				class="btn preset-filled-primary-500"
+				onclick={() => (createOpen = true)}
+			>
+				<PlusIcon class="size-4" />
+				Create account
+			</button>
+		{/if}
+	{/snippet}
+</PageHeader>
 
 {#if error && !loading}
 	<ErrorState {error} onretry={load} />
-{:else if tab === 'accounts'}
-	<div role="tabpanel">
-		<DataTable rows={users} columns={userColumns} rowKey={(u) => u.id} {loading} />
-	</div>
-{:else if tab === 'roles'}
-	<div class="space-y-4" role="tabpanel">
-		<p class="text-sm text-surface-600-400">
-			Roles are fixed. Choose one per account on the <button
-				type="button"
-				class="link-body underline"
-				onclick={() => (tab = 'accounts')}>Accounts tab</button
-			>.
-		</p>
-		{#if loading && roles.length === 0}
-			<ul
-				class="divide-y divide-surface-200-800 rounded-container border border-surface-200-800 bg-surface-100-900"
-				aria-busy="true"
-			>
-				{#each ROLES as role (role)}
-					<li
-						class="grid gap-4 p-5 sm:p-6 md:grid-cols-[16rem_minmax(0,1fr)_16rem] md:items-start md:gap-6"
-						aria-hidden="true"
-					>
-						<div class="space-y-2">
-							<div class="h-4 placeholder w-24 animate-pulse"></div>
-							<div class="h-4 placeholder animate-pulse"></div>
-						</div>
-						<div class="h-6 placeholder animate-pulse"></div>
-						<div class="h-4 placeholder w-40 animate-pulse"></div>
-					</li>
-				{/each}
-			</ul>
-		{:else}
-			<ul
-				class="divide-y divide-surface-200-800 rounded-container border border-surface-200-800 bg-surface-100-900"
-			>
-				{#each roles as role (role.role)}
-					<li
-						class="grid gap-4 p-5 sm:p-6 md:grid-cols-[16rem_minmax(0,1fr)_16rem] md:items-start md:gap-6"
-					>
-						<div class="space-y-1">
-							<h2 class="h6">{ROLE_LABELS[role.role]}</h2>
-							<p class="text-sm text-surface-600-400">{role.description}</p>
-						</div>
-						<p class="text-sm">
-							{role.permissions.map((permission) => PERMISSION_LABELS[permission]).join(', ') ||
-								'Read only'}
-						</p>
-						{#if role.accounts.length === 0}
-							<p class="text-sm text-surface-600-400">No accounts</p>
-						{:else}
-							<p class="flex flex-wrap items-baseline gap-x-1 gap-y-0.5 text-sm">
-								<span class="text-surface-600-400"
-									>{number(role.accounts.length)} account{role.accounts.length === 1
-										? ''
-										: 's'}:</span
-								>
-								{#each role.accounts as account, index (account.id)}
-									<span>
-										<a
-											class="link-body underline"
-											href="#user-{account.id}"
-											onclick={(event) => {
-												event.preventDefault();
-												void showAccount(account.id);
-											}}>{account.username}</a
-										>{#if index < role.accounts.length - 1},{/if}
-									</span>
-								{/each}
-							</p>
-						{/if}
-					</li>
-				{/each}
-			</ul>
-		{/if}
-	</div>
-{:else if tab === 'sessions'}
-	<div role="tabpanel">
-		<DataTable rows={sessions} columns={sessionColumns} rowKey={(s) => s.id} {loading} dense />
-	</div>
 {:else}
-	<div role="tabpanel">
-		<DataTable rows={tokens} columns={tokenColumns} rowKey={(t) => t.id} {loading} dense>
-			{#snippet empty()}
-				No API tokens exist. Accounts create them under Account.
-			{/snippet}
-		</DataTable>
-	</div>
+	<!-- Skeleton's Tabs: one per kind of record, each with its count. -->
+	<Tabs
+		value={tab}
+		onValueChange={(details) => {
+			if (isTab(details.value)) tab = details.value;
+		}}
+	>
+		<Tabs.List class="overflow-x-auto">
+			{#each TABS as entry (entry.id)}
+				<Tabs.Trigger value={entry.id} class="gap-2">
+					{entry.label}
+					<span class="badge preset-tonal" style="--badge-size: var(--text-xs)">
+						{number(entry.count())}
+					</span>
+				</Tabs.Trigger>
+			{/each}
+			<Tabs.Indicator />
+		</Tabs.List>
+		<Tabs.Content value="accounts">
+			<DataTable rows={users} columns={userColumns} rowKey={(u) => u.id} {loading} />
+		</Tabs.Content>
+		<Tabs.Content value="roles" class="space-y-4">
+			<p class="text-sm text-surface-600-400">
+				Roles are fixed. Choose one per account on the
+				<button type="button" class="anchor" onclick={() => (tab = 'accounts')}>Accounts tab</button
+				>.
+			</p>
+			{#if loading && roles.length === 0}
+				<div class="space-y-3 card preset-filled-surface-100-900 p-4" aria-busy="true">
+					{#each ROLES as role (role)}
+						<div class="h-10 placeholder animate-pulse" aria-hidden="true"></div>
+					{/each}
+				</div>
+			{:else}
+				<!-- Skeleton's Accordion: every role open, each folding to its name and count. -->
+				<Accordion
+					multiple
+					collapsible
+					defaultValue={roles.map((role) => role.role)}
+					class="card preset-filled-surface-100-900 p-2"
+				>
+					{#each roles as role, i (role.role)}
+						{#if i !== 0}
+							<hr class="hr" />
+						{/if}
+						<Accordion.Item value={role.role}>
+							<h3>
+								<Accordion.ItemTrigger class="flex items-center justify-between gap-2">
+									<span class="flex flex-wrap items-center gap-2">
+										<span class="font-semibold">{ROLE_LABELS[role.role]}</span>
+										<span class="badge preset-tonal" style="--badge-size: var(--text-xs)">
+											{number(role.accounts.length)}
+											{role.accounts.length === 1 ? 'account' : 'accounts'}
+										</span>
+									</span>
+									<Accordion.ItemIndicator class="group">
+										<ChevronDownIcon class="size-4 transition group-data-[state=open]:rotate-180" />
+									</Accordion.ItemIndicator>
+								</Accordion.ItemTrigger>
+							</h3>
+							<Accordion.ItemContent class="space-y-2 text-sm">
+								<p class="text-surface-600-400">{role.description}</p>
+								<p>
+									{role.permissions.map((permission) => PERMISSION_LABELS[permission]).join(', ') ||
+										'Read only'}
+								</p>
+								{#if role.accounts.length === 0}
+									<p class="text-surface-600-400">No accounts</p>
+								{:else}
+									<p class="flex flex-wrap items-baseline gap-x-1 gap-y-0.5">
+										{#each role.accounts as account, index (account.id)}
+											<span>
+												<a
+													class="anchor"
+													href="#user-{account.id}"
+													onclick={(event) => {
+														event.preventDefault();
+														void showAccount(account.id);
+													}}>{account.username}</a
+												>{#if index < role.accounts.length - 1},{/if}
+											</span>
+										{/each}
+									</p>
+								{/if}
+							</Accordion.ItemContent>
+						</Accordion.Item>
+					{/each}
+				</Accordion>
+			{/if}
+		</Tabs.Content>
+		<Tabs.Content value="sessions">
+			<DataTable rows={sessions} columns={sessionColumns} rowKey={(s) => s.id} {loading} />
+		</Tabs.Content>
+		<Tabs.Content value="tokens">
+			<DataTable rows={tokens} columns={tokenColumns} rowKey={(t) => t.id} {loading}>
+				{#snippet empty()}
+					No API tokens exist. Accounts create them under Account.
+				{/snippet}
+			</DataTable>
+		</Tabs.Content>
+	</Tabs>
 {/if}
 
 <Modal bind:open={createOpen} title="Create an account" busy={creating}>

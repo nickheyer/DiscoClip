@@ -125,6 +125,14 @@
 	}
 </script>
 
+{#snippet placeholders()}
+	<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" aria-busy="true">
+		{#each { length: 8 }, i (i)}
+			<div class="aspect-video placeholder animate-pulse"></div>
+		{/each}
+	</div>
+{/snippet}
+
 {#if info}
 	<FrontHeader {info} onlogout={logout} />
 {/if}
@@ -133,17 +141,10 @@
 	{#if error && !loading}
 		<ErrorState {error} onretry={load} />
 	{:else if !info}
-		<div
-			class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
-			aria-busy="true"
-		>
-			{#each { length: 8 }, i (i)}
-				<div class="aspect-video placeholder animate-pulse"></div>
-			{/each}
-		</div>
+		{@render placeholders()}
 	{:else}
 		<form
-			class="flex flex-wrap gap-2"
+			class="flex flex-wrap gap-2 card preset-filled-surface-100-900 p-3"
 			onsubmit={(event) => {
 				event.preventDefault();
 				void load();
@@ -180,14 +181,7 @@
 		</form>
 
 		{#if loading && jobs.length === 0}
-			<div
-				class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
-				aria-busy="true"
-			>
-				{#each { length: 8 }, i (i)}
-					<div class="aspect-video placeholder animate-pulse"></div>
-				{/each}
-			</div>
+			{@render placeholders()}
 		{:else if jobs.length === 0}
 			<EmptyState
 				title="Nothing to show"
@@ -198,11 +192,9 @@
 		{:else}
 			<ul class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
 				{#each jobs as job (job.id)}
-					<li class="group overflow-hidden card bg-surface-100-900">
+					<li class="group overflow-hidden card preset-filled-surface-100-900">
 						<a href={resolve('/(front)/f/[slug]/j/[id]', { slug, id: job.id })} class="block">
-							<div
-								class="relative flex aspect-video items-center justify-center bg-surface-200-800 text-surface-600-400"
-							>
+							<div class="relative flex aspect-video items-center justify-center preset-tonal">
 								{#if job.thumbnail}
 									<img
 										src={job.thumbnail}
@@ -211,18 +203,18 @@
 										loading="lazy"
 									/>
 								{:else}
-									<MediaKindIcon kind={job.media} class="size-10" />
+									<MediaKindIcon kind={job.media} class="size-10 text-surface-600-400" />
 								{/if}
 								{#if job.duration_secs !== null}
 									<span
-										class="absolute right-2 bottom-2 rounded-base bg-black/70 px-1.5 py-0.5 text-sm text-white tabular-nums"
-										>{clock(job.duration_secs)}</span
+										class="absolute right-2 bottom-2 badge preset-filled-surface-950-50 tabular-nums"
+										style="--badge-size: var(--text-xs)">{clock(job.duration_secs)}</span
 									>
 								{/if}
 								{#if job.live}
 									<span
-										class="absolute top-2 left-2 text-sm font-semibold text-white drop-shadow-md"
-										>Live</span
+										class="absolute top-2 left-2 badge preset-filled-error-500"
+										style="--badge-size: var(--text-xs)">Live</span
 									>
 								{/if}
 							</div>
@@ -246,7 +238,7 @@
 									aria-label="Download {job.title ?? 'file'}"
 									download
 								>
-									<DownloadIcon class="size-4" />
+									<DownloadIcon />
 								</a>
 							{/if}
 						</div>
@@ -256,7 +248,7 @@
 			{#if next}
 				<div bind:this={sentinel} class="flex justify-center py-6">
 					{#if loadingMore}
-						<Spinner class="size-6" />
+						<Spinner class="[--size:1.5rem]" />
 					{:else}
 						<button type="button" class="btn preset-tonal" onclick={more}>Load more</button>
 					{/if}

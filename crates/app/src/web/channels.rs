@@ -231,7 +231,7 @@ pub async fn list_channels(
             GuildChannel {
                 rule: rules
                     .iter()
-                    .find(|rule| rule.input.channel_id == id)
+                    .find(|rule| rule.input.channel_id.as_deref() == Some(id.as_str()))
                     .map(|rule| rule.id),
                 id,
                 name: channel.name,

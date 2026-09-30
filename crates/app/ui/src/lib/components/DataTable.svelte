@@ -7,13 +7,17 @@
 		/** Keep the label for assistive technology only, as on an actions column. */
 		hideLabel?: boolean;
 		sortable?: boolean;
-		/** Classes for the cells of this column. */
+		/** Classes for the body cells of this column. */
 		class?: string;
+		/** Classes for the header cell, such as a width. */
+		headerClass?: string;
 		align?: 'left' | 'right' | 'center';
 		/** The plain value, for text cells and local sorting. */
 		value?: (row: T) => string | number | null | undefined;
 		/** Custom cell content. */
 		cell?: Snippet<[T]>;
+		/** Leave the column out when no row has a value for it. */
+		optional?: boolean;
 	}
 
 	export type SortDir = 'asc' | 'desc';
@@ -22,7 +26,6 @@
 <script lang="ts" generics="T">
 	import ArrowDownIcon from '@lucide/svelte/icons/arrow-down';
 	import ArrowUpIcon from '@lucide/svelte/icons/arrow-up';
-
 	import { EMPTY } from '$lib/format';
 
 	interface Props {
@@ -39,12 +42,13 @@
 		onsort?: (key: string | null, dir: SortDir) => void;
 		selectable?: boolean;
 		selected?: string[];
-		/** Destination of the row's Edit button. */
+		/** Destination of the row's button. */
 		rowHref?: (row: T) => string;
-		/** Label of that button, for rows that open a read-only page. */
+		/** Label of that button: Edit, or View for rows that open a read-only page. */
 		rowLabel?: string;
 		rowClass?: (row: T) => string;
-		dense?: boolean;
+		/** Drop the card around the table: it sits inside a card already. */
+		flush?: boolean;
 		class?: string;
 	}
 
@@ -63,11 +67,24 @@
 		rowHref,
 		rowLabel = 'Edit',
 		rowClass,
-		dense = false,
+		flush = false,
 		class: className = ''
 	}: Props = $props();
 
 	const ALIGN = { left: 'text-left', right: 'text-right', center: 'text-center' };
+
+	const blank = (v: string | number | null | undefined) =>
+		v === null || v === undefined || v === '';
+
+	/** The columns with something to show: optional ones go when every row is blank in them. */
+	const shownColumns = $derived(
+		rows.length === 0
+			? columns
+			: columns.filter(
+					(column) =>
+						!column.optional || !column.value || rows.some((row) => !blank(column.value!(row)))
+				)
+	);
 
 	const shown = $derived.by(() => {
 		if (onsort || !sortKey) return rows;
@@ -114,19 +131,19 @@
 		selected = selected.includes(key) ? selected.filter((k) => k !== key) : [...selected, key];
 	}
 
-	const cellPad = $derived(dense ? 'px-4 py-3' : 'px-5 py-4');
-	const colSpan = $derived(columns.length + (selectable ? 1 : 0) + (rowHref ? 1 : 0));
+	const colSpan = $derived(shownColumns.length + (selectable ? 1 : 0) + (rowHref ? 1 : 0));
 </script>
 
+<!-- Skeleton's table inside its table-wrap, with the row hover the docs use. -->
 <div
-	class="table-wrap min-w-0 rounded-container border border-surface-200-800 bg-surface-100-900 {className}"
+	class="table-wrap {flush ? '' : 'card preset-filled-surface-100-900 p-2'} {className}"
 	aria-busy={loading}
 >
-	<table class="table w-full {columns.length > 4 ? 'min-w-[44rem]' : ''}">
-		<thead class="bg-surface-200-800/60">
+	<table class="table">
+		<thead>
 			<tr>
 				{#if selectable}
-					<th class="w-10 {cellPad}">
+					<th class="w-9">
 						<input
 							class="checkbox"
 							type="checkbox"
@@ -138,10 +155,9 @@
 						/>
 					</th>
 				{/if}
-				{#each columns as column (column.key)}
+				{#each shownColumns as column (column.key)}
 					<th
-						class="{cellPad} {ALIGN[column.align ?? 'left']} {column.class ??
-							''} font-medium whitespace-nowrap text-surface-950-50"
+						class="{ALIGN[column.align ?? 'left']} {column.headerClass ?? ''} whitespace-nowrap"
 						scope="col"
 						aria-sort={sortKey === column.key
 							? sortDir === 'asc'
@@ -152,7 +168,7 @@
 						{#if column.sortable}
 							<button
 								type="button"
-								class="inline-flex items-center gap-1 font-semibold hover:underline"
+								class="inline-flex items-center gap-1 hover:text-surface-950-50"
 								onclick={() => sortBy(column)}
 							>
 								{column.label}
@@ -171,34 +187,33 @@
 						{/if}
 					</th>
 				{/each}
-				{#if rowHref}<th scope="col" class="w-24 {cellPad} text-right"
-						><span class="sr-only">{rowLabel}</span></th
-					>{/if}
+				{#if rowHref}
+					<th scope="col" class="w-20 text-right"><span class="sr-only">{rowLabel}</span></th>
+				{/if}
 			</tr>
 		</thead>
-		<tbody>
+		<tbody class="[&>tr]:hover:preset-tonal">
 			{#if loading && rows.length === 0}
 				{#each { length: placeholderRows }, i (i)}
 					<tr aria-hidden="true">
 						{#if selectable}
-							<td class={cellPad}><div class="h-5 placeholder w-5 animate-pulse"></div></td>
+							<td><div class="size-4 placeholder animate-pulse"></div></td>
 						{/if}
-						{#each columns as column (column.key)}
-							<td class="{cellPad} {column.class ?? ''}">
+						{#each shownColumns as column (column.key)}
+							<td class={column.class ?? ''}>
 								<div
-									class="h-5 placeholder animate-pulse"
+									class="h-4 placeholder animate-pulse"
 									style="width: {45 + ((i * 17 + column.key.length * 13) % 45)}%"
 								></div>
 							</td>
 						{/each}
-						{#if rowHref}<td class={cellPad}
-								><div class="ml-auto h-9 placeholder w-16 animate-pulse"></div></td
+						{#if rowHref}<td><div class="ml-auto h-7 placeholder w-14 animate-pulse"></div></td
 							>{/if}
 					</tr>
 				{/each}
 			{:else if rows.length === 0}
 				<tr>
-					<td colspan={colSpan} class="px-5 py-14 text-center text-sm text-surface-600-400">
+					<td colspan={colSpan} class="py-10 text-center text-surface-600-400">
 						{#if empty}
 							{@render empty()}
 						{:else}
@@ -210,12 +225,10 @@
 				{#each shown as row (rowKey(row))}
 					{@const key = rowKey(row)}
 					<tr
-						class="hover:bg-surface-200-800/30 {selected.includes(key)
-							? 'bg-primary-50-950/50'
-							: ''} {rowClass?.(row) ?? ''}"
+						class="{selected.includes(key) ? 'preset-tonal-primary' : ''} {rowClass?.(row) ?? ''}"
 					>
 						{#if selectable}
-							<td class={cellPad}>
+							<td>
 								<input
 									class="checkbox"
 									type="checkbox"
@@ -225,13 +238,13 @@
 								/>
 							</td>
 						{/if}
-						{#each columns as column (column.key)}
-							<td class="{cellPad} {ALIGN[column.align ?? 'left']} {column.class ?? ''}">
+						{#each shownColumns as column (column.key)}
+							<td class="{ALIGN[column.align ?? 'left']} {column.class ?? ''}">
 								{#if column.cell}
 									{@render column.cell(row)}
 								{:else if column.value}
 									{@const v = column.value(row)}
-									{#if v === null || v === undefined || v === ''}
+									{#if blank(v)}
 										<span class="text-surface-600-400">{EMPTY}</span>
 									{:else}
 										{v}
@@ -240,7 +253,7 @@
 							</td>
 						{/each}
 						{#if rowHref}
-							<td class="{cellPad} text-right">
+							<td class="text-right">
 								<a
 									href={rowHref(row)}
 									class="btn preset-tonal btn-sm"

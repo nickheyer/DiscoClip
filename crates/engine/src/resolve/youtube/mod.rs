@@ -803,7 +803,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires live YouTube and media CDN access"]
+
     async fn live_reported_video_downloads_media() {
         let http = Http::new(crate::http::HttpConfig::default());
         let resolver = YoutubeResolver::new(http.clone());

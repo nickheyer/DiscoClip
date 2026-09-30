@@ -40,6 +40,9 @@
 			pending = false;
 		}
 	}
+
+	const animModal =
+		'transition transition-discrete opacity-0 scale-95 starting:data-[state=open]:opacity-0 starting:data-[state=open]:scale-95 data-[state=open]:opacity-100 data-[state=open]:scale-100';
 </script>
 
 <Dialog
@@ -52,23 +55,27 @@
 	closeOnEscape={!pending}
 >
 	<Portal>
-		<Dialog.Backdrop class="fixed inset-0 z-50 bg-surface-950/60 backdrop-blur-sm" />
+		<Dialog.Backdrop
+			class="fixed inset-0 z-50 backdrop-blur-sm {danger
+				? 'bg-error-50-950/50'
+				: 'bg-surface-50-950/60'}"
+		/>
 		<Dialog.Positioner class="fixed inset-0 z-50 flex items-center justify-center p-4">
 			<Dialog.Content
-				class="max-h-[calc(100dvh-2rem)] w-full max-w-lg space-y-5 overflow-y-auto card border border-surface-200-800 bg-surface-100-900 p-6 shadow-xl"
+				class="w-full max-w-md space-y-4 card preset-filled-surface-100-900 p-4 shadow-xl {animModal}"
 			>
-				<Dialog.Title class="h4 text-xl">{title}</Dialog.Title>
+				<Dialog.Title class="h5">{title}</Dialog.Title>
 				{#if message}
-					<Dialog.Description class="text-surface-600-400">{message}</Dialog.Description>
+					<Dialog.Description class="text-sm text-surface-600-400">{message}</Dialog.Description>
 				{/if}
 				{@render children?.()}
-				<footer class="flex flex-wrap justify-end gap-3 pt-2">
+				<footer class="flex flex-wrap justify-end gap-2">
 					<Dialog.CloseTrigger class="btn preset-tonal" disabled={pending}>
 						{cancelLabel}
 					</Dialog.CloseTrigger>
 					<button
 						type="button"
-						class="btn {danger ? 'preset-filled-error-600-400' : 'preset-filled-primary-500'}"
+						class="btn {danger ? 'preset-filled-error-500' : 'preset-filled-primary-500'}"
 						onclick={confirm}
 						disabled={pending}
 					>

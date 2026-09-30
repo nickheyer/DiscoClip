@@ -4,12 +4,13 @@
 	import { onMount } from 'svelte';
 	import { logs as logsApi, streams } from '$lib/api/endpoints';
 	import type { LogLevel, LogLine, LogQuery, Skipped } from '$lib/api/types';
+	import Card from '$lib/components/Card.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import Toolbar from '$lib/components/Toolbar.svelte';
 	import SearchInput from '$lib/components/SearchInput.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
+	import Status, { type Tone } from '$lib/components/Status.svelte';
 	import { absolute, number } from '$lib/format';
 	import { reportError } from '$lib/toast.svelte';
 
@@ -146,72 +147,80 @@
 	});
 
 	const LEVEL_CLASS: Record<LogLevel, string> = {
-		trace: 'text-surface-400',
-		debug: 'text-secondary-800-200',
-		info: 'text-success-800-200',
-		warn: 'text-warning-800-200',
-		error: 'text-error-700-300'
+		trace: 'text-surface-500',
+		debug: 'text-secondary-600-400',
+		info: 'text-success-600-400',
+		warn: 'text-warning-600-400',
+		error: 'text-error-600-400'
 	};
-	const STREAM = {
-		connecting: { label: 'Connecting', dot: 'bg-warning-500' },
-		live: { label: 'Live', dot: 'bg-success-500' },
-		offline: { label: 'Reconnecting', dot: 'bg-error-500' }
-	} as const;
+	const STREAM: Record<typeof streamState, { label: string; tone: Tone }> = {
+		connecting: { label: 'Connecting', tone: 'warning' },
+		live: { label: 'Live', tone: 'success' },
+		offline: { label: 'Reconnecting', tone: 'error' }
+	};
 </script>
 
-<PageHeader title="Server log" />
+<PageHeader title="Server log" description="The lines the server has kept, with live updates." />
 
-<form
-	class="flex flex-wrap gap-3 card border border-surface-200-800 bg-surface-100-900 p-5 sm:p-6"
-	onsubmit={(event) => {
-		event.preventDefault();
-		void load();
-	}}
->
-	<select
-		class="select w-full sm:w-40"
-		bind:value={level}
-		onchange={() => void load()}
-		aria-label="Minimum level"
+<Card label="Filters">
+	<form
+		class="grid gap-3 sm:grid-cols-[10rem_16rem_minmax(0,1fr)]"
+		onsubmit={(event) => {
+			event.preventDefault();
+			void load();
+		}}
 	>
-		<option value="">Every level</option>
-		{#each LEVELS as l (l)}<option value={l}>{l} and above</option>{/each}
-	</select>
-	<input
-		class="input w-full font-mono text-sm sm:w-64"
-		type="text"
-		placeholder="Target, such as discoclip_engine"
-		aria-label="Target"
-		bind:value={target}
-		onchange={() => void load()}
-	/>
-	<SearchInput
-		bind:value={q}
-		placeholder="Message text"
-		onsearch={() => void load()}
-		class="w-full sm:min-w-56 sm:flex-1"
-	/>
-</form>
+		<label class="label">
+			<span class="label-text">Minimum level</span>
+			<select class="select" bind:value={level} onchange={() => void load()}>
+				<option value="">Every level</option>
+				{#each LEVELS as l (l)}<option value={l}>{l} and above</option>{/each}
+			</select>
+		</label>
+		<label class="label">
+			<span class="label-text">Target</span>
+			<input
+				class="input font-mono"
+				type="text"
+				placeholder="Such as discoclip_engine"
+				bind:value={target}
+				onchange={() => void load()}
+			/>
+		</label>
+		<div class="label">
+			<label class="label-text" for="log-search">Message text</label>
+			<SearchInput
+				id="log-search"
+				bind:value={q}
+				placeholder="Message text"
+				onsearch={() => void load()}
+			/>
+		</div>
+	</form>
+</Card>
 
-<Toolbar description="The lines the server has kept, with live updates.">
-	<p class="mr-auto flex flex-wrap gap-x-4 text-sm text-surface-600-400">
+<div class="flex flex-wrap items-center justify-between gap-3 text-sm">
+	<p class="flex flex-wrap items-center gap-x-4 gap-y-1 text-surface-600-400">
 		<span>{number(buffered)} of {number(capacity)} lines retained</span>
 		<span>{number(lines.length)} shown</span>
 		{#if paused && pendingLines.length > 0}<span>{number(pendingLines.length)} waiting</span>{/if}
 		{#if skipped > 0}
-			<span class="text-warning-800-200" role="status"
-				>{number(skipped)} lines skipped while the browser could not keep up</span
-			>
+			<span class="text-warning-600-400" role="status">
+				{number(skipped)} lines skipped while the browser could not keep up
+			</span>
 		{/if}
 	</p>
-	<span class="inline-flex items-center gap-2 text-sm text-surface-600-400">
-		<span class="size-2 rounded-full {STREAM[streamState].dot}" aria-hidden="true"></span>
-		{STREAM[streamState].label}
-	</span>
-	<button type="button" class="btn preset-tonal" onclick={togglePause} aria-pressed={paused}>
-		{#if paused}<PlayIcon class="size-4" />Resume{:else}<PauseIcon class="size-4" />Pause{/if}
-	</button>
-</Toolbar>
+	<div class="flex items-center gap-3">
+		<Status
+			label={STREAM[streamState].label}
+			tone={STREAM[streamState].tone}
+			pulse={streamState !== 'live'}
+		/>
+		<button type="button" class="btn preset-tonal" onclick={togglePause} aria-pressed={paused}>
+			{#if paused}<PlayIcon class="size-4" />Resume{:else}<PauseIcon class="size-4" />Pause{/if}
+		</button>
+	</div>
+</div>
 
 {#if error && !loading}
 	<ErrorState {error} onretry={load} />
@@ -226,7 +235,7 @@
 	<div
 		bind:this={list}
 		onscroll={onScroll}
-		class="h-[65vh] overflow-auto rounded-container border border-surface-200-800 bg-surface-950 font-mono text-sm text-surface-100"
+		class="h-[65vh] overflow-auto card preset-filled-surface-100-900 p-2 font-mono text-xs"
 		role="log"
 		aria-live={paused ? 'off' : 'polite'}
 	>
@@ -243,26 +252,30 @@
 				</button>
 			</div>
 		{/if}
+		<!-- Skeleton disclosures: each line unfolds into its fields. -->
 		{#each lines as line (line.id)}
-			<details class="group border-b border-surface-800/60 px-4 py-2 open:bg-surface-900">
+			<details class="disclosure [--disclosure-size:var(--text-xs)]">
 				<summary
-					class="grid cursor-pointer list-none grid-cols-[auto_auto_auto_1fr] items-baseline gap-3 whitespace-nowrap"
+					class="grid grid-cols-[auto_auto_auto_minmax(0,1fr)] items-baseline gap-3 whitespace-nowrap"
 				>
-					<time datetime={line.at} class="text-surface-400">{absolute(line.at)}</time>
+					<time datetime={line.at} class="text-surface-600-400">{absolute(line.at)}</time>
 					<span class="w-12 font-semibold uppercase {LEVEL_CLASS[line.level]}">{line.level}</span>
-					<span class="max-w-48 truncate text-surface-400" title={line.target}>{line.target}</span>
-					<span class="truncate whitespace-pre-wrap group-open:whitespace-normal"
-						>{line.message}</span
+					<span class="max-w-48 truncate text-surface-600-400" title={line.target}
+						>{line.target}</span
 					>
+					<span class="truncate">{line.message}</span>
 				</summary>
-				{#if Object.keys(line.fields).length > 0}
-					<dl class="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 pl-6 text-surface-300">
-						{#each Object.entries(line.fields) as [key, value] (key)}
-							<dt class="text-surface-400">{key}</dt>
-							<dd class="break-all">{value}</dd>
-						{/each}
-					</dl>
-				{/if}
+				<div class="space-y-2 disclosure-content">
+					<p class="whitespace-pre-wrap">{line.message}</p>
+					{#if Object.keys(line.fields).length > 0}
+						<dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5">
+							{#each Object.entries(line.fields) as [key, value] (key)}
+								<dt class="text-surface-600-400">{key}</dt>
+								<dd class="break-all">{value}</dd>
+							{/each}
+						</dl>
+					{/if}
+				</div>
 			</details>
 		{/each}
 	</div>

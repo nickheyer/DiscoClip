@@ -861,7 +861,7 @@ html5player.setUploaderName('skakdjskdk');
     /// Every example link resolves live: videos with renditions and files, listings
     /// with entries.
     #[tokio::test]
-    #[ignore = "requires live XVideos access"]
+
     async fn live_examples_resolve() {
         let resolver = XvideosResolver::new(Http::new(crate::http::HttpConfig::default()));
         for link in resolver.platform().examples {

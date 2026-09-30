@@ -15,7 +15,7 @@ use super::{
 use crate::http::Http;
 use crate::media::{AudioCodec, Container, VideoCodec};
 
-const MAX_MANIFEST: usize = 16 * 1024 * 1024;
+pub(super) const MAX_MANIFEST: usize = 16 * 1024 * 1024;
 
 pub struct Expanded {
     pub variants: Vec<Variant>,

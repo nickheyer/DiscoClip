@@ -31,15 +31,17 @@
 
 <button
 	type="button"
-	class="{withText ? 'btn btn-sm' : 'btn-icon btn-icon-sm'} hover:preset-tonal {className}"
+	class="{withText
+		? 'btn preset-tonal btn-sm'
+		: 'btn-icon btn-icon-sm hover:preset-tonal'} {className}"
 	onclick={copy}
 	title={copied ? 'Copied' : label}
 	aria-label={copied ? 'Copied' : label}
 >
 	{#if copied}
-		<CheckIcon class="size-4 text-success-500" />
+		<CheckIcon class="text-success-500" />
 	{:else}
-		<CopyIcon class="size-4" />
+		<CopyIcon />
 	{/if}
 	{#if withText}<span>{copied ? 'Copied' : label}</span>{/if}
 </button>

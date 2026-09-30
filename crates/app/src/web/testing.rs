@@ -113,6 +113,9 @@ pub async fn app_with_settings(
     if settings.local.dir == crate::settings::LocalConfig::default().dir {
         settings.local.dir = test_dir("local");
     }
+    if settings.backup.dir == crate::backup::BackupConfig::default().dir {
+        settings.backup.dir = test_dir("backups");
+    }
     let mut tree = std::collections::BTreeMap::new();
     crate::config::json_leaves(&serde_json::to_value(&settings).unwrap(), "", &mut tree);
     let defaults = {
@@ -220,15 +223,23 @@ pub async fn app_with_settings(
             frontends,
             public_url,
             discord,
-            engine: handle,
+            engine: handle.clone(),
             fixtures,
             settings: store,
             log,
             ffmpeg,
             local,
-            data_dir: std::path::PathBuf::from("data"),
+            discord_settings: Arc::new(std::sync::RwLock::new(settings.discord.clone())),
+            data_dir: test_dir("data"),
             provisioning_file: None,
             started_at: jiff::Timestamp::now(),
+            backups: Arc::new(crate::backup::Backups::new(
+                db.clone(),
+                test_dir("data"),
+                Arc::new(std::sync::RwLock::new(settings.backup.clone())),
+            )),
+            retention: Arc::new(crate::retention::Retention::new(handle.clone())),
+            shutdown: CancellationToken::new(),
         },
     )
     .await
@@ -419,7 +430,7 @@ fn stub_engine(
             _: &Target,
             _: &std::path::Path,
             _: ProgressSender,
-        ) -> Result<LocalFile, TranscodeError> {
+        ) -> Result<discoclip_engine::transcode::Transcoded, TranscodeError> {
             unreachable!("the stub engine never runs a job")
         }
     }
@@ -433,7 +444,12 @@ fn stub_engine(
         })
         .downloader(Nothing)
         .transcoder(Nothing)
-        .publisher(DiscordPublisher::new(clients, directories, Arc::new(links)))
+        .publisher(DiscordPublisher::new(
+            clients,
+            directories,
+            Arc::new(links),
+            Arc::new(std::sync::RwLock::new(settings.discord.clone())),
+        ))
         .publisher(crate::local::LocalPublisher::with_config(
             settings.local.dir.clone(),
             settings.local.max_bytes,

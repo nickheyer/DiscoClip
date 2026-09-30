@@ -176,6 +176,16 @@ impl SqliteStore {
         .await
     }
 
+    /// Closes the shared connection, including every outstanding clone. Used after
+    /// services stop so a restore cannot be written to by an old background task.
+    pub async fn close(&self) -> Result<(), StoreError> {
+        self.conn
+            .clone()
+            .close()
+            .await
+            .map_err(|error| StoreError::Database(error.to_string()))
+    }
+
     /// The size of the database file and its write-ahead log, when it lives on disk.
     pub async fn size_on_disk(&self) -> Result<u64, StoreError> {
         self.call(|conn| {

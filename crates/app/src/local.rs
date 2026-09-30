@@ -31,7 +31,11 @@ impl LocalPublisher {
 
     /// A publisher with settings of its own, for tests and for one-off use.
     pub fn with_config(dir: PathBuf, max_bytes: u64) -> Self {
-        Self::new(Arc::new(RwLock::new(LocalConfig { dir, max_bytes })))
+        Self::new(Arc::new(RwLock::new(LocalConfig {
+            dir,
+            max_bytes,
+            target: Default::default(),
+        })))
     }
 
     fn config(&self) -> LocalConfig {
@@ -62,7 +66,8 @@ impl Publisher for LocalPublisher {
     }
 
     async fn constraints(&self, _job: &Job) -> Result<Constraints, PublishError> {
-        Ok(Constraints::universal(self.config().max_bytes))
+        let config = self.config();
+        Ok(config.target.constraints(config.max_bytes))
     }
 
     async fn publish(&self, job: &Job, file: &LocalFile) -> Result<Published, PublishError> {

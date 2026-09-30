@@ -757,7 +757,7 @@ mod tests {
     /// Every example link resolves live: talks with renditions by height and subtitles,
     /// lists with entries.
     #[tokio::test]
-    #[ignore = "requires live TED access"]
+
     async fn live_examples_resolve() {
         let resolver = TedResolver::new(Http::new(crate::http::HttpConfig::default()));
         for link in resolver.platform().examples {

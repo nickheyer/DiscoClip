@@ -8,10 +8,13 @@ use tokio::sync::{broadcast, mpsc, watch};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::WatchStream;
 use tokio_util::sync::CancellationToken;
+use url::Url;
 
 use crate::archive::Archiver;
 use crate::config::EngineConfig;
-use crate::download::{DownloadContext, Downloaded, Downloader, SubtitleChoice, subtitles};
+use crate::download::{
+    DownloadContext, Downloaded, Downloader, LocalSubtitle, SubtitleChoice, subtitles,
+};
 use crate::error::StageError;
 use crate::event::{EngineEvent, EventKind, Progress, ProgressSender};
 use crate::http::Http;
@@ -21,10 +24,12 @@ use crate::job::{
 use crate::media::{LocalFile, MediaInfo, MediaKind};
 use crate::plan::{self, Plan};
 use crate::publish::{self, Constraints, Publisher, QualityFloor};
+use crate::resolve::SubtitleFormat;
 use crate::resolve::{Resolution, Resolved, ResolverRegistry};
 use crate::store::{JobStore, StoreError};
 use crate::transcode::{
-    AudioTarget, ImageTarget, Target, TranscodeError, Transcoder, VideoTarget, clipped_duration,
+    AudioTarget, BurnSource, ImageTarget, StillSource, Target, TranscodeError, Transcoder,
+    VideoTarget, clipped_duration,
 };
 
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
@@ -144,17 +149,20 @@ fn failed(stage: Stage) -> impl Fn(StageError) -> Interrupt {
     }
 }
 
+/// Runs `job` to its end. `cancel` stops it at any point, as a person asked. `interrupt`
+/// is the engine stopping with no more time to give: it stops the job wherever it is,
+/// except in the publish stage, which runs to its end so a destination never gets the
+/// same media twice.
 pub(crate) async fn run_job(
     ctx: Arc<Context>,
     mut job: Job,
     cancel: CancellationToken,
-    shutdown: CancellationToken,
+    interrupt: CancellationToken,
 ) {
     let job_dir = ctx.job_dir(job.id);
     let outcome = tokio::select! {
-        result = execute(&ctx, &mut job, &job_dir) => result,
+        result = execute(&ctx, &mut job, &job_dir, &interrupt) => result,
         _ = cancel.cancelled() => Err(Interrupt::Cancelled),
-        _ = shutdown.cancelled() => Err(Interrupt::Shutdown),
     };
     let status = match outcome {
         Ok(()) => JobStatus::Done,
@@ -327,7 +335,23 @@ fn effective_duration(
     })
 }
 
-async fn execute(ctx: &Context, job: &mut Job, job_dir: &Path) -> Result<(), Interrupt> {
+/// `work` until it is done, or the engine stops with no more time to give.
+async fn unless_interrupted<T>(
+    interrupt: &CancellationToken,
+    work: impl std::future::Future<Output = T>,
+) -> Result<T, Interrupt> {
+    tokio::select! {
+        result = work => Ok(result),
+        _ = interrupt.cancelled() => Err(Interrupt::Shutdown),
+    }
+}
+
+async fn execute(
+    ctx: &Context,
+    job: &mut Job,
+    job_dir: &Path,
+    interrupt: &CancellationToken,
+) -> Result<(), Interrupt> {
     let config = ctx.config();
     let limits = job.request.limits.applied_to(&config.limits);
     let url = job.request.url.clone();
@@ -338,11 +362,13 @@ async fn execute(ctx: &Context, job: &mut Job, job_dir: &Path) -> Result<(), Int
     ctx.transition(job, JobStatus::Running { stage })
         .await
         .map_err(|e| failed(stage)(e.into()))?;
-    let resolution = ctx
-        .resolvers
-        .resolve_without(&url, &job.request.disabled_platforms)
-        .await
-        .map_err(|e| failed(stage)(e.into()))?;
+    let resolution = unless_interrupted(
+        interrupt,
+        ctx.resolvers
+            .resolve_without(&url, &job.request.disabled_platforms),
+    )
+    .await?
+    .map_err(|e| failed(stage)(e.into()))?;
     let resolved = match resolution {
         Resolution::Media(resolved) => *resolved,
         Resolution::Playlist(playlist) => return expand_playlist(ctx, job, playlist).await,
@@ -422,10 +448,13 @@ async fn execute(ctx: &Context, job: &mut Job, job_dir: &Path) -> Result<(), Int
         }),
     };
     let (progress, forwarder) = ctx.progress(job.id, stage);
-    let downloaded = downloader
-        .download(&variant, job_dir, &context, progress)
-        .await;
+    let downloaded = unless_interrupted(
+        interrupt,
+        downloader.download(&variant, job_dir, &context, progress),
+    )
+    .await;
     let _ = forwarder.await;
+    let downloaded = downloaded?;
     let Downloaded {
         file: mut source,
         subtitles: mut local_subtitles,
@@ -460,7 +489,12 @@ async fn execute(ctx: &Context, job: &mut Job, job_dir: &Path) -> Result<(), Int
         })
         .unwrap_or_default();
     if !remaining.is_empty() {
-        match subtitles::fetch_all(&ctx.http, &resolved.resolver, &remaining, job_dir).await {
+        match unless_interrupted(
+            interrupt,
+            subtitles::fetch_all(&ctx.http, &resolved.resolver, &remaining, job_dir),
+        )
+        .await?
+        {
             Ok(fetched) => local_subtitles.extend(fetched),
             Err(error) => {
                 ctx.note(job, Some(stage), format!("subtitles not fetched: {error}"))
@@ -536,25 +570,79 @@ async fn execute(ctx: &Context, job: &mut Job, job_dir: &Path) -> Result<(), Int
             duration.as_secs()
         ))));
     }
+    // What the platform said about the picture's shape fills in what the file does not.
+    let info = info.map(|mut info| {
+        if let Some(video) = info.video.as_mut() {
+            if video.projection.is_none() {
+                video.projection = variant.projection;
+            }
+            if video.stereo.is_none() {
+                video.stereo = variant.stereo;
+            }
+        }
+        info
+    });
     source.info = info.clone();
     job.artifacts.source = Some(source.clone());
-    let burn = match job.request.options.subtitles {
-        SubtitleMode::Burn => local_subtitles.first().map(|s| s.path.clone()),
+    let burn = match (job.request.options.subtitles, info.as_ref()) {
+        (SubtitleMode::Burn, Some(info)) if kind == MediaKind::Video => {
+            match burn_source(
+                &local_subtitles,
+                info,
+                job.request.options.subtitle_language.as_deref(),
+                job_dir,
+            )
+            .await
+            {
+                Ok(burn) => burn,
+                Err(problem) => {
+                    ctx.note(job, Some(stage), problem)
+                        .await
+                        .map_err(|e| failed(stage)(e.into()))?;
+                    None
+                }
+            }
+        }
         _ => None,
     };
-    let produced = produce(
-        ctx,
-        job,
-        job_dir,
-        &source,
-        info.as_ref(),
-        kind,
-        &constraints,
-        &limits,
-        clip,
-        burn.clone(),
+    if job.request.options.subtitles == SubtitleMode::Burn
+        && kind == MediaKind::Video
+        && burn.is_none()
+    {
+        ctx.note(
+            job,
+            Some(stage),
+            "No subtitles to burn in: the source offers none.",
+        )
+        .await
+        .map_err(|e| failed(stage)(e.into()))?;
+    }
+    // Sound alone becomes a video when the destination asks for one or takes no sound
+    // as such. The picture is the cover art, else the platform's thumbnail, else a
+    // waveform.
+    let still = match info.as_ref() {
+        Some(info) if kind == MediaKind::Audio && constraints.renders_audio_as_video() => {
+            Some(still_source(ctx, job, job_dir, info, resolved.thumbnail.as_ref()).await)
+        }
+        _ => None,
+    };
+    let produced = unless_interrupted(
+        interrupt,
+        produce(
+            ctx,
+            job,
+            job_dir,
+            &source,
+            info.as_ref(),
+            kind,
+            &constraints,
+            &limits,
+            clip,
+            burn.clone(),
+            still.clone(),
+        ),
     )
-    .await;
+    .await?;
     // A destination with a link to fall back on gets one when the upload cannot be
     // made, or would be too reduced. The output is then made for the page instead.
     let output = match produced {
@@ -570,19 +658,23 @@ async fn execute(ctx: &Context, job: &mut Job, job_dir: &Path) -> Result<(), Int
                 .map_err(|e| failed(stage)(e.into()))?;
             match output {
                 Some(output) => output,
-                None => match produce(
-                    ctx,
-                    job,
-                    job_dir,
-                    &source,
-                    info.as_ref(),
-                    kind,
-                    &link,
-                    &limits,
-                    clip,
-                    burn,
+                None => match unless_interrupted(
+                    interrupt,
+                    produce(
+                        ctx,
+                        job,
+                        job_dir,
+                        &source,
+                        info.as_ref(),
+                        kind,
+                        &link,
+                        &limits,
+                        clip,
+                        burn,
+                        still,
+                    ),
                 )
-                .await
+                .await?
                 .map_err(|e| failed(stage)(e))?
                 {
                     Produced::Upload(output)
@@ -631,9 +723,8 @@ async fn execute(ctx: &Context, job: &mut Job, job_dir: &Path) -> Result<(), Int
         ctx.transition(job, JobStatus::Running { stage })
             .await
             .map_err(|e| failed(stage)(e.into()))?;
-        let entry = archiver
-            .archive(job)
-            .await
+        let entry = unless_interrupted(interrupt, archiver.archive(job))
+            .await?
             .map_err(|e| failed(stage)(e.into()))?;
         ctx.note(
             job,
@@ -717,7 +808,8 @@ async fn produce(
     constraints: &Constraints,
     limits: &crate::config::Limits,
     clip: Option<crate::resolve::ClipRange>,
-    burn: Option<PathBuf>,
+    burn: Option<BurnSource>,
+    still: Option<StillSource>,
 ) -> Result<Produced, StageError> {
     let stage = Stage::Transcode;
     let max_height = limits
@@ -733,8 +825,22 @@ async fn produce(
                 constraints.max_bytes,
                 max_height,
             );
+            target.max_fps = constraints.max_fps;
             target.clip = clip;
-            target.burn_subtitles = burn;
+            target.burn = burn;
+            Target::Video(target)
+        }
+        MediaKind::Audio if still.is_some() => {
+            let mut target = VideoTarget::new(
+                constraints.preferred_container(),
+                constraints.preferred_video(),
+                Some(constraints.preferred_audio()),
+                constraints.max_bytes,
+                max_height,
+            );
+            target.max_fps = constraints.max_fps;
+            target.clip = clip;
+            target.still = still;
             Target::Video(target)
         }
         MediaKind::Audio => {
@@ -829,6 +935,7 @@ async fn produce(
             source.clone()
         }
         Plan::Transcode(target) => {
+            let target = *target;
             ctx.note(
                 job,
                 Some(stage),
@@ -858,7 +965,12 @@ async fn produce(
                 .await;
             let _ = forwarder.await;
             match output {
-                Ok(output) => output,
+                Ok(transcoded) => {
+                    for note in transcoded.notes {
+                        ctx.note(job, Some(stage), note).await?;
+                    }
+                    transcoded.file
+                }
                 Err(TranscodeError::BudgetUnreachable {
                     max_bytes,
                     duration_secs,
@@ -889,6 +1001,161 @@ async fn produce(
         });
     }
     Ok(Produced::Upload(output))
+}
+
+/// The subtitles to render into the picture: the track fetched beside the media in the
+/// preferred language when there is one, else a stream inside the file, the preferred
+/// language's, else the one marked default, else the first. A TTML file is written out
+/// as SubRip first, since ffmpeg draws that and not TTML. The reason when a track was
+/// there but could not be prepared.
+async fn burn_source(
+    local: &[LocalSubtitle],
+    info: &MediaInfo,
+    language: Option<&str>,
+    job_dir: &Path,
+) -> Result<Option<BurnSource>, String> {
+    let same_language = |candidate: &str| {
+        language.is_some_and(|wanted| {
+            let wanted = wanted.to_ascii_lowercase();
+            let candidate = candidate.to_ascii_lowercase();
+            candidate == wanted
+                || candidate.starts_with(&format!("{wanted}-"))
+                || wanted.starts_with(&format!("{candidate}-"))
+        })
+    };
+    let external = local
+        .iter()
+        .find(|s| same_language(&s.language))
+        .or_else(|| local.first());
+    if let Some(track) = external {
+        let label = track.name.clone().unwrap_or_else(|| track.language.clone());
+        let path = match track.format {
+            SubtitleFormat::Ttml => {
+                let text = tokio::fs::read_to_string(&track.path)
+                    .await
+                    .map_err(|e| format!("subtitles not burnt in: {e}"))?;
+                let srt = subtitles::ttml_to_srt(&text).ok_or_else(|| {
+                    format!(
+                        "subtitles not burnt in: {} holds no cues ffmpeg can draw",
+                        track.path.display()
+                    )
+                })?;
+                let converted = job_dir.join(format!(
+                    "{}.burn.srt",
+                    track
+                        .path
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "subtitles".into())
+                ));
+                tokio::fs::write(&converted, srt)
+                    .await
+                    .map_err(|e| format!("subtitles not burnt in: {e}"))?;
+                converted
+            }
+            _ => track.path.clone(),
+        };
+        return Ok(Some(BurnSource::File { path, label }));
+    }
+    let embedded = info
+        .subtitles
+        .iter()
+        .enumerate()
+        .find(|(_, s)| s.language.as_deref().is_some_and(same_language))
+        .or_else(|| info.subtitles.iter().enumerate().find(|(_, s)| s.default))
+        .or_else(|| info.subtitles.iter().enumerate().next());
+    Ok(embedded.map(|(position, stream)| BurnSource::Embedded {
+        index: stream.index,
+        position,
+        bitmap: stream.bitmap,
+        label: stream
+            .name
+            .clone()
+            .or_else(|| stream.language.clone())
+            .unwrap_or_else(|| stream.codec.clone()),
+    }))
+}
+
+/// The picture sound alone plays over: the file's own cover art, else the platform's
+/// thumbnail fetched beside it, else a waveform the transcoder draws.
+async fn still_source(
+    ctx: &Context,
+    job: &mut Job,
+    job_dir: &Path,
+    info: &MediaInfo,
+    thumbnail: Option<&Url>,
+) -> StillSource {
+    if info.cover.is_some() {
+        return StillSource::Cover;
+    }
+    let Some(thumbnail) = thumbnail else {
+        return StillSource::Waveform;
+    };
+    let platform = job.resolver().unwrap_or("web").to_string();
+    match fetch_thumbnail(ctx, &platform, thumbnail, job_dir).await {
+        Ok(path) => StillSource::Picture { path },
+        Err(error) => {
+            tracing::info!(job = %job.id, %thumbnail, "thumbnail not fetched: {error}");
+            let _ = ctx
+                .note(
+                    job,
+                    Some(Stage::Transcode),
+                    format!("Thumbnail not fetched ({error}). Drawing a waveform instead."),
+                )
+                .await;
+            StillSource::Waveform
+        }
+    }
+}
+
+/// How large a thumbnail may be.
+const MAX_THUMBNAIL: usize = 16 * 1024 * 1024;
+
+async fn fetch_thumbnail(
+    ctx: &Context,
+    platform: &str,
+    url: &Url,
+    job_dir: &Path,
+) -> Result<PathBuf, String> {
+    let response = ctx
+        .http
+        .get(url.clone())
+        .platform(platform)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !response.is_success() {
+        return Err(format!("HTTP {}", response.status.as_u16()));
+    }
+    let content_type = response
+        .header("content-type")
+        .map(|value| value.to_string());
+    let bytes = response
+        .bytes(MAX_THUMBNAIL)
+        .await
+        .map_err(|e| e.to_string())?;
+    if bytes.is_empty() {
+        return Err("empty response".into());
+    }
+    let extension = content_type
+        .as_deref()
+        .and_then(crate::media::Container::from_mime)
+        .map(|c| c.extension().to_string())
+        .or_else(|| crate::resolve::path_extension(url))
+        .unwrap_or_else(|| "jpg".into());
+    let path = job_dir.join(format!("thumbnail.{extension}"));
+    tokio::fs::write(&path, &bytes)
+        .await
+        .map_err(|e| e.to_string())?;
+    let probed = ctx
+        .transcoder
+        .probe(&path)
+        .await
+        .map_err(|e| e.to_string())?;
+    if probed.kind != MediaKind::Image {
+        return Err(format!("{} is not a picture", url));
+    }
+    Ok(path)
 }
 
 fn describe_variant(v: &crate::resolve::Variant) -> String {
@@ -954,12 +1221,16 @@ fn describe_constraints(c: &Constraints, kind: MediaKind) -> String {
 fn describe_target(target: &Target) -> String {
     match target {
         Target::Video(t) => format!(
-            "{:?}/{:?} under {} bytes{}",
+            "{:?}/{:?} under {} bytes{}{}",
             t.container,
             t.video,
             t.max_bytes,
-            if t.burn_subtitles.is_some() {
-                ", burning subtitles in"
+            match &t.burn {
+                Some(burn) => format!(", burning in the {} subtitles", burn.label()),
+                None => String::new(),
+            },
+            if t.still.is_some() {
+                ", playing the sound over a still"
             } else {
                 ""
             }
@@ -976,8 +1247,7 @@ fn describe_target(target: &Target) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::resolve::{ClipRange, SubtitleFormat, SubtitleTrack};
-    use url::Url;
+    use crate::resolve::{ClipRange, SubtitleTrack};
 
     fn track(language: &str, auto: bool) -> SubtitleTrack {
         SubtitleTrack {

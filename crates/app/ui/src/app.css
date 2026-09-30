@@ -21,72 +21,7 @@
 	}
 
 	body {
-		margin: 0;
-		line-height: 1.5;
-	}
-}
-
-/* Keep Skeleton's controls on a consistent, usable interaction scale. */
-@layer components {
-	.btn,
-	.btn-icon {
-		min-height: 2.75rem;
-		font-weight: 500;
-	}
-
-	.btn-icon {
-		min-width: 2.75rem;
-	}
-
-	.btn-sm,
-	.btn-icon-sm {
-		min-height: 2.25rem;
-	}
-
-	.btn-icon-sm {
-		min-width: 2.25rem;
-	}
-
-	.input:not([type='range'], [type='color']),
-	.select {
-		min-height: 2.75rem;
-	}
-
-	.textarea {
-		line-height: 1.5;
-	}
-
-	/* Links inside tables and key-value lists read as body text, never as the brand colour. */
-	.link-body {
-		color: var(--color-surface-950-50);
-		text-decoration-line: none;
-	}
-
-	/* Buttons carrying the class keep their own flat surface, so the underline skips them. */
-	.link-body:not(.btn, .btn-icon):hover {
-		text-decoration-line: underline;
-	}
-
-	/* An icon beside the label, such as the external-link arrow, stays muted. */
-	.link-body > svg:not(:only-child) {
-		color: var(--color-surface-600-400);
-	}
-}
-
-/* Skeleton's `table` and `label-text` are Tailwind utilities that pin their own text sizes
-   below the sans floor. The utilities layer wins over the components layer, so these
-   overrides join that layer after them. */
-@layer utilities {
-	/* Tables carry the page's primary content, so they read at body size. */
-	.table {
-		font-size: var(--text-base);
-		line-height: var(--text-base--line-height);
-	}
-
-	/* Field labels and legends read at secondary-text size. */
-	.label-text {
-		font-size: var(--text-sm);
-		line-height: var(--text-sm--line-height);
+		font-feature-settings: 'cv11', 'ss01';
 	}
 }
 

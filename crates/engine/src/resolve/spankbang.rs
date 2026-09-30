@@ -3,8 +3,9 @@
 //! through, so every page is read as Safari. A video page names
 //! its stream key, which the stream API turns into MP4 files by height, an HLS master
 //! and, when the site offers one, a DASH manifest. Playlist and profile pages list their
-//! videos a page at a time, with how many there are in all. spankbang.party serves the
-//! same site.
+//! videos a page at a time, with how many there are in all. spankbang.party mirrors the
+//! site behind a Cloudflare challenge no client passes, so a mirror's link is read at
+//! spankbang.com.
 
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -27,7 +28,9 @@ pub const PLATFORM: &str = "spankbang";
 const LISTING_PAGES: u32 = 3;
 
 static RE_HOST: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(?:[a-z0-9-]+\.)*spankbang\.(com|party)$").unwrap());
+    LazyLock::new(|| Regex::new(r"^(?:[a-z0-9-]+\.)*spankbang\.(?:com|party)$").unwrap());
+/// Where every page is read, whichever host the link names.
+const SITE: &str = "https://spankbang.com";
 /// `/{id}/video/{slug}`, `/{id}/play/{slug}`, `/{id}/embed/`.
 static RE_VIDEO: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^/([0-9a-z]+)/(?:video|play|embed)(?:/|$)").unwrap());
@@ -112,8 +115,10 @@ pub fn parse_link(url: &Url) -> Option<Link> {
         return None;
     }
     let host = url.host_str()?.to_ascii_lowercase();
-    let tld = RE_HOST.captures(&host)?[1].to_string();
-    let site = format!("https://spankbang.{tld}");
+    if !RE_HOST.is_match(&host) {
+        return None;
+    }
+    let site = SITE.to_string();
     let path = url.path();
     if let Some(caps) = RE_VIDEO.captures(path) {
         return Some(Link::Video {
@@ -636,10 +641,27 @@ mod tests {
             })
         );
         assert_eq!(
+            link("https://spankbang.com/2y3td/embed/"),
+            Some(Link::Video {
+                site: site("https://spankbang.com"),
+                path: "/2y3td/video/".into()
+            })
+        );
+        // A mirror's link is read at the main site.
+        assert_eq!(
             link("https://spankbang.party/2y3td/embed/"),
             Some(Link::Video {
-                site: site("https://spankbang.party"),
+                site: site("https://spankbang.com"),
                 path: "/2y3td/video/".into()
+            })
+        );
+        assert_eq!(
+            link("https://www.spankbang.party/ug0k/playlist/big+ass+titties/2/"),
+            Some(Link::Playlist {
+                site: site("https://spankbang.com"),
+                id: "ug0k".into(),
+                slug: "big+ass+titties".into(),
+                page: 2
             })
         );
         assert_eq!(
@@ -940,7 +962,7 @@ mod tests {
     /// Every example link resolves live: videos to files and renditions, listings to
     /// entries.
     #[tokio::test]
-    #[ignore = "requires live SpankBang access"]
+
     async fn live_examples_resolve() {
         let resolver = SpankbangResolver::new(Http::new(crate::http::HttpConfig::default()));
         for link in resolver.platform().examples {

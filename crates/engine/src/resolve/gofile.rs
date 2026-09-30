@@ -452,7 +452,7 @@ impl Resolver for GofileResolver {
             examples: &[
                 "https://gofile.io/d/b4Ds9u",
                 "https://gofile.io/d/65pGBWhc",
-                "https://gofile.io/d/00392f69-ab02-473b-8a1a-5951d443c2d7",
+                "https://gofile.io/d/027131e2-0d3a-4aa2-936a-362e022d76dc",
             ],
         }
     }
@@ -805,7 +805,7 @@ mod tests {
     /// Every example link resolves live: the single-file folder as a file, the folder of
     /// videos as a playlist whose first entry is a video.
     #[tokio::test]
-    #[ignore = "requires live Gofile access"]
+
     async fn live_examples_resolve() {
         let resolver = GofileResolver::new(Http::new(crate::http::HttpConfig::default()));
         let mut playlist_entry = None;

@@ -24,8 +24,8 @@ pub use reqwest;
 pub use rusqlite;
 
 pub use config::{
-    BrowserConfig, DownloadConfig, EngineConfig, Limits, LiveConfig, PlaylistConfig,
-    RetentionConfig,
+    BrowserConfig, DownloadConfig, EncoderChoice, EngineConfig, Limits, LiveConfig, PlaylistConfig,
+    RetentionConfig, ShutdownConfig, TranscodeConfig,
 };
 pub use engine::{
     CancelError, DeleteError, Engine, EngineBuilder, EngineError, EngineHandle, PlatformSession,
@@ -37,5 +37,6 @@ pub use job::{
     Job, JobId, JobStatus, LogEntry, Origin, Request, RequestLimits, RequestOptions, SourceId,
     Stage, StatusKind, SubtitleMode,
 };
+pub use publish::{Constraints, DestinationTarget, TargetOverride};
 pub use resolve::{Platform, Resolution, Resolved, SessionCheck, SessionSupport};
 pub use store::{JobFilter, JobStore, Order, ResolverStats, Stats, StoreError};

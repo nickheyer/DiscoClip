@@ -3,6 +3,7 @@
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import XIcon from '@lucide/svelte/icons/x';
+	import { Switch } from '@skeletonlabs/skeleton-svelte';
 	import { onMount } from 'svelte';
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import { goto } from '$app/navigation';
@@ -18,6 +19,7 @@
 		StatusKind
 	} from '$lib/api/types';
 	import Bytes from '$lib/components/Bytes.svelte';
+	import Card from '$lib/components/Card.svelte';
 	import Confirm from '$lib/components/Confirm.svelte';
 	import DataTable, { type Column } from '$lib/components/DataTable.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
@@ -26,11 +28,11 @@
 	import MediaKindIcon from '$lib/components/MediaKindIcon.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Pager from '$lib/components/Pager.svelte';
+	import PlaceLine from '$lib/components/PlaceLine.svelte';
 	import RelativeTime from '$lib/components/RelativeTime.svelte';
 	import SearchInput from '$lib/components/SearchInput.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import Status from '$lib/components/Status.svelte';
-	import Toolbar from '$lib/components/Toolbar.svelte';
 	import { feed } from '$lib/events.svelte';
 	import { mediaLabel, number } from '$lib/format';
 	import { mergeJobEvent } from '$lib/live';
@@ -226,13 +228,7 @@
 		{ key: 'job', label: 'Job', cell: jobCell, class: 'min-w-64' },
 		{ key: 'media', label: 'Media', cell: mediaCell },
 		{ key: 'status', label: 'Status', cell: statusCell },
-		{ key: 'origin', label: 'Origin', cell: originCell },
-		{
-			key: 'destination',
-			label: 'Destination',
-			value: (job) => job.destination,
-			class: 'max-w-40 truncate'
-		},
+		{ key: 'origin', label: 'From', cell: originCell },
 		{ key: 'size', label: 'Size', align: 'right', cell: sizeCell },
 		{ key: 'age', label: 'Submitted', cell: ageCell }
 	];
@@ -244,23 +240,26 @@
 	<JobTitle {job} />
 {/snippet}
 {#snippet mediaCell(job: JobSummary)}
-	<span class="inline-flex items-center gap-1.5 text-sm" title={mediaLabel(job.media)}>
+	<span class="inline-flex items-center gap-1.5" title={mediaLabel(job.media)}>
 		<MediaKindIcon kind={job.media} />
-		{#if job.live}<span class="text-error-700-300">Live</span>{/if}
-		{#if job.children > 0}<span class="text-surface-600-400">{number(job.children)} entries</span
-			>{/if}
+		{#if job.live}<span class="text-error-600-400">Live</span>{/if}
+		{#if job.children > 0}
+			<span class="text-surface-600-400">{number(job.children)} entries</span>
+		{/if}
 	</span>
 {/snippet}
 {#snippet statusCell(job: JobSummary)}
 	<Status job={job.status} />
 {/snippet}
 {#snippet originCell(job: JobSummary)}
-	<div class="text-sm">
-		<p>{job.source}</p>
-		<p class="max-w-40 truncate text-sm text-surface-600-400" title={job.origin.reference}>
-			{job.submitted_by ?? job.origin.reference}
-		</p>
-	</div>
+	<PlaceLine
+		origin={job.origin}
+		place={job.place}
+		destination={job.destination}
+		submittedBy={job.submitted_by}
+		compact
+		class="max-w-72"
+	/>
 {/snippet}
 {#snippet sizeCell(job: JobSummary)}
 	<Bytes value={job.output_bytes} />
@@ -269,76 +268,92 @@
 	<RelativeTime at={job.created_at} class="whitespace-nowrap" />
 {/snippet}
 
-<PageHeader title="Jobs" />
+<PageHeader title="Jobs" description="Every link the server has been asked to fetch.">
+	{#snippet actions()}
+		{#if canManage}
+			<button
+				type="button"
+				class="btn preset-filled-primary-500"
+				onclick={() => (submitDialog.open = true)}
+			>
+				<PlusIcon class="size-4" />
+				Submit a link
+			</button>
+		{/if}
+	{/snippet}
+</PageHeader>
 
-<form
-	class="grid gap-4 card border border-surface-200-800 bg-surface-100-900 p-5 sm:grid-cols-2 sm:p-6 xl:grid-cols-4"
-	onsubmit={(event) => {
-		event.preventDefault();
-		void apply();
-	}}
->
-	<Field label="Search jobs" for="job-search" class="sm:col-span-2">
-		<SearchInput
-			id="job-search"
-			bind:value={q}
-			placeholder="Title, link, or uploader"
-			onsearch={() => void apply()}
-		/>
-	</Field>
-	<Field label="Status" for="job-status">
-		<select id="job-status" class="select" bind:value={status}>
-			<option value="">Any status</option>
-			{#each STATUSES as kind (kind)}<option value={kind}
-					>{kind[0].toUpperCase() + kind.slice(1)}</option
-				>{/each}
-		</select>
-	</Field>
-	<Field label="Sort by" for="job-order">
-		<select id="job-order" class="select" bind:value={order}>
-			<option value="newest">Newest first</option>
-			<option value="oldest">Oldest first</option>
-		</select>
-	</Field>
-	<Field label="Resolver" for="job-resolver">
-		<input
-			id="job-resolver"
-			class="input"
-			list="resolvers"
-			placeholder="Any resolver"
-			bind:value={resolver}
-		/>
-	</Field>
-	<datalist id="resolvers">
-		{#each coverage as platform (platform.id)}<option value={platform.id}>{platform.name}</option
-			>{/each}
-	</datalist>
-	<Field label="Source" for="job-source">
-		<input id="job-source" class="input" placeholder="For example, Discord" bind:value={source} />
-	</Field>
-	<Field label="Submitted after" for="job-after">
-		<input id="job-after" class="input" type="datetime-local" bind:value={after} />
-	</Field>
-	<Field label="Submitted before" for="job-before">
-		<input id="job-before" class="input" type="datetime-local" bind:value={before} />
-	</Field>
-	<div
-		class="flex flex-wrap items-center justify-between gap-4 border-t border-surface-200-800 pt-4 sm:col-span-2 xl:col-span-4"
+<Card label="Filters">
+	<form
+		class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+		onsubmit={(event) => {
+			event.preventDefault();
+			void apply();
+		}}
 	>
-		<label class="flex min-h-11 items-center gap-3 text-sm">
-			<input class="checkbox" type="checkbox" bind:checked={topLevel} />
-			Hide playlist entries
-		</label>
-		<div class="flex gap-3">
-			<button type="button" class="btn preset-tonal" onclick={clear}>Clear filters</button>
-			<button type="submit" class="btn preset-filled">Apply filters</button>
+		<Field label="Search jobs" for="job-search" class="sm:col-span-2">
+			<SearchInput
+				id="job-search"
+				bind:value={q}
+				placeholder="Title, link, or uploader"
+				onsearch={() => void apply()}
+			/>
+		</Field>
+		<Field label="Status" for="job-status">
+			<select id="job-status" class="select" bind:value={status}>
+				<option value="">Any status</option>
+				{#each STATUSES as kind (kind)}
+					<option value={kind}>{kind[0].toUpperCase() + kind.slice(1)}</option>
+				{/each}
+			</select>
+		</Field>
+		<Field label="Sort by" for="job-order">
+			<select id="job-order" class="select" bind:value={order}>
+				<option value="newest">Newest first</option>
+				<option value="oldest">Oldest first</option>
+			</select>
+		</Field>
+		<Field label="Resolver" for="job-resolver">
+			<input
+				id="job-resolver"
+				class="input"
+				list="resolvers"
+				placeholder="Any resolver"
+				bind:value={resolver}
+			/>
+		</Field>
+		<datalist id="resolvers">
+			{#each coverage as platform (platform.id)}
+				<option value={platform.id}>{platform.name}</option>
+			{/each}
+		</datalist>
+		<Field label="Source" for="job-source">
+			<input id="job-source" class="input" placeholder="For example, Discord" bind:value={source} />
+		</Field>
+		<Field label="Submitted after" for="job-after">
+			<input id="job-after" class="input" type="datetime-local" bind:value={after} />
+		</Field>
+		<Field label="Submitted before" for="job-before">
+			<input id="job-before" class="input" type="datetime-local" bind:value={before} />
+		</Field>
+		<hr class="hr sm:col-span-2 xl:col-span-4" />
+		<div class="flex flex-wrap items-center justify-between gap-4 sm:col-span-2 xl:col-span-4">
+			<Switch checked={topLevel} onCheckedChange={(details) => (topLevel = details.checked)}>
+				<Switch.Control><Switch.Thumb /></Switch.Control>
+				<Switch.Label>Hide playlist entries</Switch.Label>
+				<Switch.HiddenInput />
+			</Switch>
+			<div class="flex gap-2">
+				<button type="button" class="btn preset-tonal" onclick={clear}>Clear filters</button>
+				<button type="submit" class="btn preset-filled">Apply filters</button>
+			</div>
 		</div>
-	</div>
-</form>
+	</form>
+</Card>
 
 {#if canManage && selected.length > 0}
 	<div
-		class="flex flex-wrap items-center gap-2 card bg-primary-50-950 p-3 text-sm"
+		class="flex flex-wrap items-center gap-2 card preset-tonal-primary p-3"
 		role="toolbar"
 		aria-label="Selected jobs"
 	>
@@ -376,19 +391,6 @@
 		</button>
 	</div>
 {/if}
-
-<Toolbar description="Every link the server has been asked to fetch.">
-	{#if canManage}
-		<button
-			type="button"
-			class="btn preset-filled-primary-500"
-			onclick={() => (submitDialog.open = true)}
-		>
-			<PlusIcon class="size-4" />
-			Submit a link
-		</button>
-	{/if}
-</Toolbar>
 
 {#if error && !loading}
 	<ErrorState {error} onretry={load} />

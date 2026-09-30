@@ -7,7 +7,7 @@ use crate::transcode::{Target, TranscodeError};
 #[derive(Debug, Clone, PartialEq)]
 pub enum Plan {
     Passthrough,
-    Transcode(Target),
+    Transcode(Box<Target>),
 }
 
 /// Check whether media can be published without conversion. Validate video and audio
@@ -23,14 +23,27 @@ pub fn plan(
     target: Target,
 ) -> Result<Plan, TranscodeError> {
     match &target {
+        Target::Video(video_target) if video_target.still.is_some() => {
+            // Sound made into a picture is always encoded.
+            let info = info.ok_or(TranscodeError::NoAudio)?;
+            info.audio.as_ref().ok_or(TranscodeError::NoAudio)?;
+            Ok(Plan::Transcode(Box::new(target)))
+        }
         Target::Video(video_target) => {
             let info = info.ok_or(TranscodeError::NoVideo)?;
             let video = info.video.as_ref().ok_or(TranscodeError::NoVideo)?;
             if info.kind != MediaKind::Video {
                 return Err(TranscodeError::NoVideo);
             }
-            let untouched = video_target.clip.is_none() && video_target.burn_subtitles.is_none();
+            let untouched = video_target.clip.is_none() && video_target.burn.is_none();
+            let (width, height) = video.display_size();
+            let slow_enough = match (video_target.max_fps, video.fps) {
+                (Some(max_fps), Some(fps)) => fps <= max_fps as f64 + 0.5,
+                _ => true,
+            };
             let fits = untouched
+                && !video.needs_processing()
+                && slow_enough
                 && file.size <= constraints.max_bytes
                 && constraints.accepts_container(&info.container)
                 && constraints.accepts_video(&video.codec)
@@ -38,12 +51,12 @@ pub fn plan(
                     .audio
                     .as_ref()
                     .is_none_or(|a| constraints.accepts_audio(&a.codec))
-                && video.height <= limits.max_height
-                && video.width <= limits.max_height * 16 / 9 + 2;
+                && height <= limits.max_height
+                && width <= limits.max_height * 16 / 9 + 2;
             if fits {
                 return Ok(Plan::Passthrough);
             }
-            Ok(Plan::Transcode(target))
+            Ok(Plan::Transcode(Box::new(target)))
         }
         Target::Audio(audio_target) => {
             let info = info.ok_or(TranscodeError::NoAudio)?;
@@ -58,7 +71,7 @@ pub fn plan(
             if fits {
                 return Ok(Plan::Passthrough);
             }
-            Ok(Plan::Transcode(target))
+            Ok(Plan::Transcode(Box::new(target)))
         }
         Target::Image(_) => {
             let info = info.ok_or(TranscodeError::NoPicture)?;
@@ -73,7 +86,7 @@ pub fn plan(
             if fits {
                 return Ok(Plan::Passthrough);
             }
-            Ok(Plan::Transcode(target))
+            Ok(Plan::Transcode(Box::new(target)))
         }
         Target::File { max_bytes } => {
             if !constraints.accepts(MediaKind::File) {

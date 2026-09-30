@@ -659,7 +659,7 @@ mod tests {
     /// Every example link resolves live: files of their kinds, the list and the share
     /// directories with entries.
     #[tokio::test]
-    #[ignore = "requires live Pixeldrain access"]
+
     async fn live_examples_resolve() {
         use std::time::Duration;
 

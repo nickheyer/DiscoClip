@@ -6,13 +6,22 @@ This file is the system every page follows.
 
 ## Stack
 
-| Piece      | Choice                                                                                                                                                                              |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Framework  | SvelteKit 2 on Svelte 5 runes, `ssr = false`, adapter-static with an `index.html` fallback                                                                                          |
-| Styling    | Tailwind 4 through `@tailwindcss/vite`, with `@tailwindcss/forms` for Skeleton's native form controls                                                                               |
-| Components | Skeleton 5: `@skeletonlabs/skeleton` for the Tailwind layer, `@skeletonlabs/skeleton-svelte` for Dialog, Menu, Navigation, AppBar, Toast, Combobox, TreeView, TagsInput, Pagination |
-| Icons      | `@lucide/svelte`, imported one icon at a time from `@lucide/svelte/icons/<name>`                                                                                                    |
-| Fonts      | Inter Variable for text, JetBrains Mono Variable for identifiers, links and logs. Both ship in the bundle because the server's CSP allows `font-src 'self'` only                    |
+| Piece      | Choice                                                                                                                                                     |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Framework  | SvelteKit 2 on Svelte 5 runes, `ssr = false`, adapter-static with an `index.html` fallback                                                                 |
+| Styling    | Tailwind 4 through `@tailwindcss/vite`, with `@tailwindcss/forms` for Skeleton's native form controls                                                      |
+| Components | Skeleton 5: `@skeletonlabs/skeleton` for the Tailwind components and presets, `@skeletonlabs/skeleton-svelte` for the framework components listed below    |
+| Icons      | `@lucide/svelte`, imported one icon at a time from `@lucide/svelte/icons/<name>`                                                                           |
+| Fonts      | Inter Variable for text, JetBrains Mono Variable for identifiers, keys and logs. Both ship in the bundle because the server's CSP allows `font-src 'self'` |
+
+The rule of the design is that Skeleton's already-styled parts do the styling. A page composes
+Skeleton's Tailwind components (`card`, `btn`, `badge`, `chip`, `table`, `input`, `select`,
+`switch`, `hr`, `placeholder`, `pre`, `anchor`, the `h1` to `h6` classes and the `preset-*`
+presets) and its Svelte components (AppBar, Navigation, Dialog, Menu, Tabs, Accordion,
+Collapsible, Combobox, Listbox, TagsInput, Switch, SegmentedControl, Steps, Progress, Avatar,
+Pagination, FileUpload, Toast). `app.css` adds no component styles of its own: it
+imports Tailwind, Skeleton, the theme and the fonts, sets the two font families, the focus
+ring and the reduced-motion rule, and nothing else. There is no `<style>` block anywhere.
 
 ## Brand
 
@@ -22,132 +31,130 @@ wedge drawn again shifted outward along its own bisector by 14% of the diameter.
 primary-500 beside "DiscoClip" in Inter 700 with `-0.03em` tracking. The SVG sources and a
 512 px avatar live in `brand/` at the repository root; the favicon and PWA icons in `static/`.
 
-## Palette
+## Palette and type
 
 The theme is `discoclip` in `src/lib/brand/theme.css`, generated from these anchors. Every
 colour is an OKLCH scale from 50 to 950 with Skeleton's contrast tokens.
 
-| Token     | Anchor                           | Use                                                            |
-| --------- | -------------------------------- | -------------------------------------------------------------- |
-| primary   | `#f2542d` coral                  | The page's main action, the active navigation accent, the mark |
-| secondary | `#2ec4b6` teal                   | Informational states, Discord links, config-sourced values     |
-| tertiary  | `#f5b700` amber                  | Reserved for highlights                                        |
-| success   | `#22c55e`                        | Done, connected, passing                                       |
-| warning   | `#f59e0b`                        | Retrying, cancelled, login required, disabled views            |
-| error     | `#ef4444`                        | Failed, destructive actions, live markers                      |
-| surface   | `#f7f7f8` to `#0b0b0e` cool grey | Backgrounds, borders, muted text                               |
+| Token     | Anchor                           | Use                                                           |
+| --------- | -------------------------------- | ------------------------------------------------------------- |
+| primary   | `#f2542d` coral                  | The page's main action, the active navigation entry, the mark |
+| secondary | `#2ec4b6` teal                   | Informational states, such as an inherited platform           |
+| tertiary  | `#f5b700` amber                  | Reserved for highlights                                       |
+| success   | `#22c55e`                        | Done, connected, passing, on                                  |
+| warning   | `#f59e0b`                        | Retrying, cancelled, login required, disabled views, secrets  |
+| error     | `#ef4444`                        | Failed, destructive actions, live markers                     |
+| surface   | `#f7f7f8` to `#0b0b0e` cool grey | Backgrounds, cards, borders, muted text                       |
 
-Primary is rationed. Only three things wear it: the one filled button that is the page's main
-action, the 3px accent and icon on the active navigation entry, and the brand mark. Links in
-tables and key-value lists take body colour instead, so orange always means "this is the thing
-to press here".
+The type scale is Skeleton's own: the theme sets `--text-scaling: 1` and leaves the sizes to
+Skeleton, so body text is 16px and every component is the size Skeleton designed it at.
+Headings use the theme's weight 650 with `-0.02em` tracking through the `h1` to `h6` classes.
+Page titles are `h3`, card titles `h6`, dialog titles `h5`, auth page titles `h4`.
 
 Light mode sits on surface-50, dark mode on surface-950. The mode follows the system until the
-person switches it from the account menu; the choice is kept in
-`localStorage['discoclip.mode']` and applied by the inline script in `app.html` before paint. Use Skeleton's paired classes
-(`bg-surface-100-900`, `text-surface-600-400`) so both modes come from one class.
+person switches it with the Switch in the app bar; the choice is kept in
+`localStorage['discoclip.mode']` and applied by the inline script in `app.html` before paint.
+Colours use Skeleton's paired classes (`bg-surface-100-900`, `text-surface-600-400`) so both
+modes come from one class. Muted text is `text-surface-600-400`.
 
-## Type, spacing, radius
-
-- The type scale is set in `theme.css` as the Tailwind `--text-*` tokens: `text-xs` 14px,
-  `text-sm` 16px, `text-base` 18px, `text-lg` 20px, `text-xl` 22px, `text-2xl` 26px,
-  `text-3xl` 32px. Body text is `text-base`, Inter, weight 400. Headings use weight 650 with
-  `-0.02em` tracking through Skeleton's heading classes. The breadcrumb uses 26px on small
-  screens and 32px from `sm`. The page title shows from `lg` at 32px; below that the breadcrumb
-  alone names the page. Section titles use 20px.
-- Primary content reads at body size: table cells and headers, navigation entries, menu
-  items, form controls and buttons. `app.css` sets Skeleton's `table` to
-  `text-base` so every table follows without a class.
-- Secondary text is `text-sm`: descriptions, help text, captions, group labels, field labels,
-  status lines and flags. `app.css` sets Skeleton's `label-text` to that size.
-- 16px is the floor for text in the sans family. Nothing outside `font-mono` goes below it.
-  `text-xs` is only for the mono family: identifiers, URLs, keys, tokens and log lines.
-- Spacing is Tailwind's 4px scale. Panels use 20px padding, increasing to 24px from `sm`.
-  Page sections use a 24px gap, increasing to 32px on desktop. Panels use a subtle
-  `border-surface-200-800` border to separate them from the page background.
-- Standard buttons and single-line fields have a minimum height of 44px. Compact row
-  actions use 36px. Icon buttons use the same minimum width and height.
-- `--radius-base` is 6px (buttons, inputs); `--radius-container` is 12px (cards, dialogs,
-  tables).
+Primary is rationed. Only three things wear it: the one filled button that is the page's main
+action, the active navigation entry's tonal tint and icon, and the brand mark. Links use the
+`anchor` class, which the theme colours primary-700 in light mode and primary-400 in dark.
 
 ## Layout
 
-- The operator shell in `src/routes/(app)/+layout.svelte` uses Skeleton Navigation in
-  `sidebar` mode from `lg`. The 256px sidebar groups destinations into Workspace,
-  Configuration, Administration, and Monitoring. Its links scroll independently when
-  needed; the brand and live connection status stay visible.
-- Below `lg`, a bottom bar provides Dashboard, Jobs, Profiles, and More. More and the
-  AppBar menu button open the same Skeleton Dialog drawer with all navigation groups.
-  The bar, drawer footer, and page clearance account for the device's safe area.
-- The active navigation entry is a neutral highlight, never a coloured block: background
-  `bg-surface-200-800`, label `text-surface-950-50` at weight 600, icon in primary-500, and a
-  3px primary left border in the sidebar and drawer. Inactive entries carry a transparent 3px
-  border so the label never shifts. The bottom bar uses the same background and icon without
-  the border.
-- The AppBar is 64px high on small screens and 80px on desktop. Padding belongs to its
-  toolbar only. It holds exactly two things on every page: the breadcrumb on the left, at
-  page-title size, and the account menu on the right. Nothing else goes in it. The breadcrumb
-  reads Group, then the section entry as a link, then the page on show with `aria-current`.
-  The group comes from the navigation entry whose href is the longest match for the path;
-  a page outside the navigation shows its own name alone.
-- The account menu opens with a row holding the name and role on the left and the Account
-  button on the right, then the light or dark mode switch, then Log out.
-- A page's actions never sit in its header. They sit in a `Toolbar`, right-aligned and
-  directly above the block they act on, so a list's New button sits on the top-right corner
-  of its table. `Toolbar` pulls the block after it up to a 12px gap. The page's description
-  is the toolbar's `description` and opens the same row from `lg`; below that it is hidden,
-  and a toolbar holding nothing else is hidden with it. A line of context, such as a count
-  or a refresh time, goes before the actions with `mr-auto`.
-- Operator pages fill the available column with `minmax(0, 1fr)` and use 16px, 24px,
-  then 32px gutters. `main` is centered with `mx-auto w-full max-w-[100rem]`, so content stops
-  growing at 1600px and sits in the middle of wider displays.
-  Tables keep horizontal overflow inside their wrapper and use normal page scrolling.
-- The dashboard uses two, three, or six statistic columns and a wide active-job panel
-  beside a 352px column for applications and health at `xl`. Loading placeholders are
-  distinct from empty results. Queued and running jobs both load into the active list.
-- Dialogs use Skeleton's headless Dialog and Portal with explicit overlay layers. Headers
-  and footers stay visible while the body scrolls. Forms use full-screen dialogs on phones.
+- The operator shell in `src/routes/(app)/+layout.svelte` is Skeleton Navigation in
+  `sidebar` layout from `lg`, with Skeleton's own width, padding and trigger styling. Its
+  header holds the wordmark, its content the four groups (Workspace, Configuration,
+  Administration, Monitoring) as `Navigation.Group`s with a `Navigation.Label` each, and its
+  footer the live-updates `Status` badge. The active entry gets `preset-tonal-primary` and its
+  icon `text-primary-500`.
+- Below `lg`, Skeleton Navigation in `bar` layout is fixed to the bottom with Dashboard, Jobs,
+  Profiles and More. More and the app bar's menu button open the same Skeleton Dialog, used
+  as a drawer, holding the sidebar Navigation with every group plus Account.
+- The Skeleton AppBar is sticky at the top. Its toolbar holds the drawer button (below `lg`),
+  the breadcrumb, and a trail with the light switch (a Skeleton Switch with sun and moon on
+  the thumb) and the account Menu (the name and role as a group label, Account, Log out). The
+  breadcrumb reads Group, then the section entry as an `anchor`, then the page on show.
+- A page's actions sit in its `PageHeader`, on the right of the title. The one filled primary
+  button goes last. A long form (a profile, a view) has its Cancel and Save in one action bar
+  that sticks to the bottom instead, so they appear once and stay reachable.
+- `main` is `mx-auto w-full max-w-[100rem]` with a `gap-6` column and 16px, 24px, then 32px
+  gutters, so content stops growing at 1600px and sits in the middle of wider displays.
+- Every block of content is a `Card`: Skeleton's `card` with `preset-filled-surface-100-900`,
+  a `p-4` body, and an optional header with the title as `h6`, a count badge, a description
+  and actions. `flush` drops the body padding for a table or a list that runs edge to edge.
 - Auth pages (`(auth)`) are a centered card under the wordmark. Public views (`(front)`)
-  have their own slim header and no operator navigation.
+  have their own AppBar and no operator navigation.
 
 ## Components in use
 
-| Component                        | For                                                                                                           |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `PageHeader`                     | Every page's title, shown from `lg`, and the meta line under it. It also sets the tab title                   |
-| `DataTable`                      | Every list: columns with snippets, sorting, selection, placeholders, empty states, and an Edit button per row |
-| `Status`                         | Job, bot, health, fixture, session and on/off states as a coloured dot and text                               |
-| `Toolbar`                        | A page's description and actions, right-aligned on the top corner of the block below                          |
-| `Modal`, `Confirm`               | Forms in dialogs and yes-or-no questions. Destructive confirms are red                                        |
-| `EmptyState`, `ErrorState`       | What a list shows when it has nothing or could not load                                                       |
-| `Field`                          | A label, control, help text and error message                                                                 |
-| `RelativeTime`, `Bytes`, `Clock` | Numbers people read: times relative with the absolute time on hover                                           |
-| `SearchInput`, `Pager`           | Filtering and offset paging                                                                                   |
-| `CopyButton`                     | Anything someone pastes elsewhere: ids, links, tokens                                                         |
-| `StatTile`                       | Dashboard and metrics numbers                                                                                 |
+Skeleton parts, and what each is for:
 
-Buttons: `preset-filled-primary-500` for the one main action on a page, `preset-filled` for
-secondary submits, `preset-tonal` for everything else, `preset-tonal-error` for destructive
-actions. Icon buttons are `btn-icon` with `hover:preset-tonal`. A page has one filled primary
-button, and it sits in the page's `Toolbar`.
+| Skeleton part                       | For                                                                                                             |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `card` + presets                    | Every panel, stat tile, filter form, banner and dialog surface. Anchors that are cards get hover styling        |
+| `badge` + `preset-tonal-*`          | Every state and count. `Status` renders one; the size is `--badge-size: var(--text-xs)`                         |
+| `chip`                              | Removable picks (members, channels) and filter picks (presets)                                                  |
+| `btn`, `btn-icon`, `btn-sm`         | Every button. See the presets below                                                                             |
+| `table`, `table-wrap`               | Every list, through `DataTable`, with `[&>tr]:hover:preset-tonal` on the body                                   |
+| `input`, `select`, `textarea`       | Every text control, through `Field` for the label, help and error                                               |
+| `checkbox`, `radio`                 | Multiple picks in a short list, and the rows of a table that pick: a view's scope, command servers              |
+| `fieldset`, `legend`, `field-group` | Grouped controls, and an input with a unit or a button beside it                                                |
+| `placeholder`                       | Loading blocks, with `animate-pulse`                                                                            |
+| `hr`                                | Dividers, including the "or" between login methods                                                              |
+| `pre`                               | Logs and JSON, through `CodeBlock`                                                                              |
+| `disclosure`                        | A log line that opens to show its fields                                                                        |
+| `meter`                             | Disk use on the metrics page                                                                                    |
+| AppBar                              | The operator app bar and the public view header                                                                 |
+| Navigation                          | The sidebar, the bottom bar and the drawer's contents                                                           |
+| Dialog                              | `Modal`, `Confirm` and the navigation drawer, styled as cards                                                   |
+| Menu                                | The account menu, the job download menu and the settings export menu                                            |
+| Tabs                                | Applications and watch rules, the users page, the account page                                                  |
+| Accordion                           | Settings sections, audit entries, role descriptions, a job's description and variants                           |
+| Collapsible                         | The submit dialog's options                                                                                     |
+| Switch                              | Every on/off value: watching a channel, enabled flags, downloads, links, booleans in settings, the light switch |
+| SegmentedControl                    | One of a few short choices: cookie format, platform access, who gets into a view                                |
+| Listbox                             | Picking several from a list with search: the roles a rule allows                                                |
+| Combobox                            | Searching a server's members                                                                                    |
+| TagsInput                           | Discord user ids on a view                                                                                      |
+| Steps                               | A job's five stages, and the three phases of a restore                                                          |
+| Progress                            | Job progress bars, and `Spinner` as the circular indeterminate form                                             |
+| Avatar                              | `GuildIcon` and `DiscordAvatar`, with initials as the fallback                                                  |
+| Pagination                          | `Pager` under the jobs table                                                                                    |
+| FileUpload                          | Choosing a cookies file or a settings file to import                                                            |
+| Toast                               | The one `Toast.Group` in the root layout; pages speak through `notify` and `reportError`                        |
 
-There are no badges, chips or pills. A state is `Status`: a coloured dot and plain text in the
-tone's 700-300 colour. Flags, tags, counts and options are plain text, muted where they are
-secondary, separated by middle dots when several share a line.
+The app's own components in `src/lib/components` compose those parts: `Card`, `PageHeader`,
+`Status`, `StatTile`, `DataTable`, `Pager`, `SearchInput`, `Field`, `Modal`, `Confirm`,
+`EmptyState`, `ErrorState`, `KeyValue` and `KeyValueRow`, `Identifier`, `CopyButton`,
+`CodeBlock`, `Spinner`, `RelativeTime`, `Bytes`, `Clock`, `MediaKindIcon`, `JobTitle`,
+`PlaceLine`, `PlatformSummary`, `GuildIcon`, `DiscordAvatar`, `ModeToggle`, `SubmitDialog`,
+`CookiesDialog`, `SettingField`, and the guild set (`ChannelTable`, `RuleDialog`,
+`MemberProfiles`, `MemberPicker`, `ChannelKindIcon`, `ScopePicker`, with `watching.ts` for
+what the switches do).
+`ChannelTable` is one table of a server's channels under their category headings, each row
+carrying a switch that watches the channel, an Options button on a watched one, and a select
+for its profile. With the server watched whole, every row is on unless switched off.
+`ScopePicker` is one table of the servers the bots are in, each opening to its channels, with
+a checkbox on every row: ticking a server takes every channel in it, and unticking channels
+narrows it to the rest.
 
-Links inside tables and key-value lists use `link-body`: body colour, no underline until hover,
-and any trailing external-link icon in `text-surface-600-400`. `DataTable`'s Edit button is a
-`btn-sm preset-tonal` link labelled Edit, or View for rows that open a read-only page.
+Buttons: `preset-filled-primary-500` for the one main action on a page or in a dialog,
+`preset-filled` for a secondary submit, `preset-tonal` for everything else,
+`preset-tonal-error` for destructive actions, `preset-filled-error-500` to confirm a
+destructive dialog. Icon buttons are `btn-icon hover:preset-tonal`; row actions are `btn-sm`.
+Every mutating button disables while its request is in flight and shows a `Spinner`.
+
+Identifiers, keys, hosts and URLs are `font-mono text-xs`. Times are `RelativeTime` with the
+absolute time on hover. Sizes go through `Bytes`, durations through `Clock`.
 
 Use Skeleton components through their composed parts and style the part that owns the
-property. For example, text size belongs on `Navigation.TriggerText`, and overlay stacking
-belongs on `Menu.Positioner`. Use native links for table navigation so keyboard access,
-copying links, and opening new tabs work normally.
+property: a Menu's stacking on `Menu.Positioner`, a Progress bar's height on `Progress.Track`.
+Use native links for table navigation so keyboard access, copying links, and opening new tabs
+work normally.
 
-The implementation follows the official [Skeleton v5 Svelte reference](https://www.skeleton.dev/llms-svelte.txt),
-particularly [Navigation](https://www.skeleton.dev/docs/svelte/framework-components/navigation),
-[Layouts](https://www.skeleton.dev/docs/svelte/guides/layouts), and
-[Forms](https://www.skeleton.dev/docs/svelte/tailwind-components/forms).
+The implementation follows the official [Skeleton v5 Svelte reference](https://www.skeleton.dev/llms-svelte.txt).
 
 ## Behaviour
 
@@ -156,9 +163,13 @@ particularly [Navigation](https://www.skeleton.dev/docs/svelte/framework-compone
 - One `EventSource` per browser (`src/lib/events.svelte.ts`), elected with a Web Lock and
   shared over a BroadcastChannel. Pages subscribe to job events and read `feed.stats` and
   `feed.bots`.
-- Every mutating button disables while its request is in flight and shows a `Spinner`.
 - Every list shows placeholder rows while loading, an `EmptyState` when empty and an
   `ErrorState` with Retry on failure.
+- Each fact appears once on a page. The `PageHeader` line carries a record's state and
+  identifiers; cards below it hold what the header does not say. A count sits on the tab or
+  the card, not both. Rows that share a shape share one table, so a job in flight and a job
+  finished sit in the same table on the dashboard, and a health check is one row of one
+  table.
 - Internal links and `goto` calls use `resolve()` from `$app/paths`. Parameterised routes use
   their full id including the group, such as `/(app)/jobs/[id]`.
 - Filters that people share live in the URL query (jobs).

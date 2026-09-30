@@ -6,13 +6,15 @@ use std::sync::Arc;
 
 use discoclip_bot::{
     BotControl, BotRuntime, BotStatus, Clients, ControlError, Directories, Directory,
-    DiscordConfig, DiscordEndpoints, GuildEvent, http_client, supervise,
+    DiscordConfig, DiscordEndpoints, GuildEvent, rest_clients, supervise,
 };
 use discoclip_engine::EngineHandle;
 use serde::Serialize;
 use tokio::sync::{Mutex, broadcast, mpsc};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
+use twilight_model::id::Id;
+use twilight_model::id::marker::{ChannelMarker, GuildMarker};
 
 use crate::applications::{Application, ApplicationId};
 use crate::discord::{BotGuildStore, JoinedGuild};
@@ -146,13 +148,22 @@ impl BotManager {
             .cloned()
     }
 
-    /// The REST client of a running application's bot.
+    /// The guild a channel belongs to, from whichever running bot sees the channel.
+    pub fn guild_of_channel(&self, channel: Id<ChannelMarker>) -> Option<Id<GuildMarker>> {
+        self.directories
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .values()
+            .find_map(|directory| directory.channel(channel).and_then(|info| info.guild_id))
+    }
+
+    /// The REST client of a running application's bot, for lookups and short posts.
     pub fn client(&self, id: ApplicationId) -> Option<Arc<twilight_http::Client>> {
         self.clients
             .read()
             .unwrap_or_else(|e| e.into_inner())
             .get(&id.0)
-            .cloned()
+            .map(|clients| clients.lookups.clone())
     }
 
     /// Supervises the bot of `application` with `bot_token`, replacing one already
@@ -162,11 +173,12 @@ impl BotManager {
         if let Some(previous) = bots.remove(&application.id) {
             Self::end(previous).await;
         }
-        let http = http_client(bot_token, &self.endpoints);
+        let clients = rest_clients(bot_token, &self.endpoints);
+        let http = clients.lookups.clone();
         self.clients
             .write()
             .unwrap_or_else(|e| e.into_inner())
-            .insert(application.id.0, http.clone());
+            .insert(application.id.0, clients);
         let stop = self.shutdown.child_token();
         let config = DiscordConfig {
             token: bot_token.into(),

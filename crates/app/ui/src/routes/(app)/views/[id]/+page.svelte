@@ -1,7 +1,7 @@
 <script lang="ts">
-	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
-	import { TagsInput } from '@skeletonlabs/skeleton-svelte';
+	import XIcon from '@lucide/svelte/icons/x';
+	import { SegmentedControl, Switch, TagsInput } from '@skeletonlabs/skeleton-svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -17,35 +17,40 @@
 		Frontend,
 		FrontendInput,
 		FrontendUser,
-		GuildChannel,
 		Profile,
 		ProviderInfo,
 		SecretKind,
 		Snowflake,
 		ViewerSession
 	} from '$lib/api/types';
+	import Card from '$lib/components/Card.svelte';
 	import Confirm from '$lib/components/Confirm.svelte';
 	import CopyButton from '$lib/components/CopyButton.svelte';
 	import DataTable, { type Column } from '$lib/components/DataTable.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
 	import Field from '$lib/components/Field.svelte';
-	import GuildIcon from '$lib/components/GuildIcon.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import RelativeTime from '$lib/components/RelativeTime.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
-	import { channelLabel, watchable } from '$lib/components/guild/channels';
+	import Status from '$lib/components/Status.svelte';
+	import ScopePicker from '$lib/components/guild/ScopePicker.svelte';
 	import { number } from '$lib/format';
 	import { notify, reportError } from '$lib/toast.svelte';
 
 	const id = $derived(page.params.id ?? 'new');
 	const isNew = $derived(id === 'new');
 
+	const SECRET_KINDS: [SecretKind, string][] = [
+		['pin', 'PIN'],
+		['password', 'Password'],
+		['token', 'Access token']
+	];
+
 	let view = $state<Frontend | null>(null);
 	let profiles = $state<Profile[]>([]);
 	let providers = $state<ProviderInfo[]>([]);
 	let botGuilds = $state<{ guild: BotGuild; applicationId: string }[]>([]);
-	let channelsByGuild = $state<Record<Snowflake, GuildChannel[]>>({});
 	let loading = $state(true);
 	let error = $state<unknown>(null);
 	let saving = $state(false);
@@ -62,8 +67,6 @@
 	// Scope
 	let scopeGuilds = $state<Snowflake[]>([]);
 	let scopeChannels = $state<Snowflake[]>([]);
-	let pickGuild = $state('');
-	let loadingChannels = $state(false);
 	// Access
 	let open = $state(false);
 	let secretKind = $state<SecretKind | ''>('');
@@ -78,10 +81,13 @@
 	let maxMb = $state(String(2048));
 	let signedDays = $state('30');
 
-	// Panels
+	// The secret, set apart from the form: at once on a saved view, and right after
+	// creating a new one.
 	let secret = $state('');
 	let secretPending = $state(false);
 	let confirmClearSecret = $state(false);
+
+	// Accounts and sessions
 	let users = $state<FrontendUser[]>([]);
 	let sessions = $state<ViewerSession[]>([]);
 	let userDialog = $state(false);
@@ -90,6 +96,7 @@
 	let userPending = $state(false);
 	let passwordFor = $state<FrontendUser | null>(null);
 	let deletingUser = $state<FrontendUser | null>(null);
+	let deleteUserOpen = $state(false);
 	let confirmRevokeAll = $state(false);
 	let revoking = $state<string | null>(null);
 
@@ -146,9 +153,6 @@
 				return true;
 			});
 			fill(loaded);
-			if (loaded && (loaded.scope?.channels?.length ?? 0) > 0) {
-				await Promise.all(botGuilds.map((entry) => loadChannels(entry.guild.guild_id)));
-			}
 			if (!isNew && loaded) await loadPanels();
 		} catch (err) {
 			if (current !== requestId) return;
@@ -167,24 +171,6 @@
 		void load();
 	});
 
-	async function loadChannels(guild: Snowflake) {
-		if (channelsByGuild[guild]) return;
-		const entry = botGuilds.find((e) => e.guild.guild_id === guild);
-		if (!entry) return;
-		try {
-			const list = await applications.channels(entry.applicationId, guild);
-			channelsByGuild = { ...channelsByGuild, [guild]: list };
-		} catch (err) {
-			reportError(err, `Could not list the channels of ${entry.guild.name}`);
-		}
-	}
-
-	$effect(() => {
-		if (!pickGuild) return;
-		loadingChannels = true;
-		void loadChannels(pickGuild).finally(() => (loadingChannels = false));
-	});
-
 	const slugify = (text: string) =>
 		text
 			.toLowerCase()
@@ -195,20 +181,13 @@
 		if (!slugTouched) slug = slugify(name);
 	});
 
-	function channelName(channelId: Snowflake): string {
-		for (const [guild, list] of Object.entries(channelsByGuild)) {
-			const channel = list.find((c) => c.id === channelId);
-			if (channel) {
-				const guildName = botGuilds.find((e) => e.guild.guild_id === guild)?.guild.name ?? guild;
-				return `${guildName} / ${channelLabel(channel)}`;
-			}
-		}
-		return channelId;
-	}
-
-	function toggle(list: Snowflake[], value: Snowflake): Snowflake[] {
+	function toggle(list: string[], value: string): string[] {
 		return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
 	}
+
+	const secretPlaceholder = $derived(
+		secretKind === 'pin' ? 'New PIN' : secretKind === 'token' ? 'New access token' : 'New password'
+	);
 
 	function build(): FrontendInput | null {
 		const found: Record<string, string> = {};
@@ -227,6 +206,9 @@
 		if (!Number.isInteger(days) || days <= 0) found.signedDays = 'Whole days above zero.';
 		for (const user of discordUsers) {
 			if (!/^\d{5,25}$/.test(user)) found.discordUsers = `${user} is not a Discord user id.`;
+		}
+		if (!open && secretKind && isNew && !secret) {
+			found.secret = `Enter the ${secretKind === 'pin' ? 'PIN' : secretKind === 'token' ? 'token' : 'password'} viewers will use.`;
 		}
 		errors = found;
 		if (Object.keys(found).length > 0) return null;
@@ -264,6 +246,7 @@
 		try {
 			if (isNew) {
 				const created = await frontends.create(input);
+				if (secret) await frontends.setSecret(created.id, secret);
 				notify.success('View created', created.name);
 				await goto(resolve('/(app)/views/[id]', { id: created.id }));
 			} else {
@@ -317,6 +300,11 @@
 		}
 	}
 
+	function askDeleteUser(user: FrontendUser) {
+		deletingUser = user;
+		deleteUserOpen = true;
+	}
+
 	async function deleteUser() {
 		if (!deletingUser) return;
 		await frontends.removeUser(id, deletingUser.id);
@@ -357,11 +345,13 @@
 			key: 'agent',
 			label: 'Browser',
 			value: (s) => s.user_agent,
-			class: 'max-w-48 truncate text-sm'
+			class: 'max-w-48 truncate text-xs text-surface-600-400'
 		},
 		{ key: 'seen', label: 'Last seen', cell: sessionSeen },
 		{ key: 'actions', label: 'Actions', hideLabel: true, cell: sessionActions, align: 'right' }
 	];
+
+	const back = { href: resolve('/views'), label: 'Views' };
 </script>
 
 {#snippet userCreated(user: FrontendUser)}
@@ -371,17 +361,15 @@
 	<span class="flex justify-end gap-1">
 		<button
 			type="button"
-			class="btn btn-sm hover:preset-tonal"
+			class="btn preset-tonal btn-sm"
 			onclick={() => {
 				passwordFor = user;
 				newPassword = '';
 				userDialog = true;
 			}}>Set password</button
 		>
-		<button
-			type="button"
-			class="btn btn-sm hover:preset-tonal-error"
-			onclick={() => (deletingUser = user)}>Remove</button
+		<button type="button" class="btn preset-tonal-error btn-sm" onclick={() => askDeleteUser(user)}
+			>Remove</button
 		>
 	</span>
 {/snippet}
@@ -397,7 +385,7 @@
 {#snippet sessionActions(s: ViewerSession)}
 	<button
 		type="button"
-		class="btn btn-sm hover:preset-tonal-error"
+		class="btn preset-tonal-error btn-sm"
 		onclick={() => revoke(s)}
 		disabled={revoking !== null}
 	>
@@ -406,446 +394,387 @@
 	</button>
 {/snippet}
 
+{#snippet toggleSwitch(label: string, checked: boolean, onchange: (checked: boolean) => void)}
+	<Switch {checked} onCheckedChange={(details) => onchange(details.checked)}>
+		<Switch.Control><Switch.Thumb /></Switch.Control>
+		<Switch.Label>{label}</Switch.Label>
+		<Switch.HiddenInput />
+	</Switch>
+{/snippet}
+
 {#if error && !loading}
-	<PageHeader title="Content view" />
+	<PageHeader title="Content view" {back} />
 	<ErrorState {error} title="This view could not be loaded" onretry={load} />
 {:else if loading}
-	<PageHeader title="Content view" />
+	<PageHeader title="Content view" {back} />
 	<div class="space-y-3" aria-busy="true">
-		<div class="h-10 placeholder w-1/2 animate-pulse"></div>
+		<div class="h-8 placeholder w-1/2 animate-pulse"></div>
 		<div class="h-64 placeholder animate-pulse"></div>
 	</div>
 {:else}
-	<a
-		href={resolve('/views')}
-		class="link-body inline-flex items-center gap-1 text-sm text-surface-700-300 hover:text-surface-950-50"
+	<PageHeader
+		title={isNew ? 'New content view' : (view?.name ?? 'Content view')}
+		{back}
+		description={isNew
+			? 'A page that shows finished media to people outside this app, at its own address.'
+			: undefined}
 	>
-		<ArrowLeftIcon class="size-4" />
-		All views
-	</a>
-
-	<PageHeader title={isNew ? 'New content view' : (view?.name ?? 'Content view')}>
 		{#if view}
-			<p class="flex flex-wrap items-center gap-2 text-sm text-surface-600-400">
-				<a href={shareUrl} class="anchor font-mono text-xs" target="_blank" rel="noreferrer"
-					>{shareUrl} <ExternalLinkIcon class="inline size-3" /></a
-				>
-				<CopyButton text={shareUrl} label="Copy share link" />
-			</p>
+			<div class="flex flex-wrap items-center gap-3 text-sm">
+				<Status enabled={view.enabled} />
+				<span class="inline-flex min-w-0 items-center gap-1">
+					<a
+						href={shareUrl}
+						class="truncate anchor font-mono text-xs"
+						target="_blank"
+						rel="noreferrer">{shareUrl} <ExternalLinkIcon class="inline size-3" /></a
+					>
+					<CopyButton text={shareUrl} label="Copy share link" />
+				</span>
+			</div>
 		{/if}
 	</PageHeader>
 
-	<form class="space-y-6" onsubmit={save}>
-		<section
-			class="grid gap-4 card border border-surface-200-800 bg-surface-100-900 p-5 sm:p-6 md:grid-cols-2"
-			aria-label="General"
-		>
-			<h2 class="h6 md:col-span-2">General</h2>
-			<Field label="Name" for="view-name" required error={errors.name}>
-				<input id="view-name" class="input" type="text" bind:value={name} required />
-			</Field>
-			<Field
-				label="Slug"
-				for="view-slug"
-				required
-				help="The address: /f/<slug>"
-				error={errors.slug}
-			>
-				<input
-					id="view-slug"
-					class="input font-mono"
-					type="text"
-					bind:value={slug}
-					oninput={() => (slugTouched = true)}
-					required
-					pattern="[a-z0-9-]+"
-				/>
-			</Field>
-			<Field label="Description" for="view-description" class="md:col-span-2">
-				<input id="view-description" class="input" type="text" bind:value={description} />
-			</Field>
-			<Field
-				label="Profile"
-				for="view-profile"
-				help="Only media from platforms the profile enables is shown."
-			>
-				<select id="view-profile" class="select" bind:value={profileId}>
-					<option value="">Built-in default</option>
-					{#each profiles as profile (profile.id)}
-						<option value={profile.id}>{profile.name}</option>
-					{/each}
-				</select>
-			</Field>
-			<div class="space-y-2 self-end">
-				<label class="flex items-center gap-2 text-sm">
-					<input class="checkbox" type="checkbox" bind:checked={enabled} />
-					Enabled
-				</label>
-				<label class="flex items-center gap-2 text-sm">
-					<input class="checkbox" type="checkbox" bind:checked={downloads} />
-					Allow downloads
-				</label>
-			</div>
-		</section>
-
-		<section
-			class="space-y-4 card border border-surface-200-800 bg-surface-100-900 p-5 sm:p-6"
-			aria-label="Scope"
-		>
-			<h2 class="h6">What it shows</h2>
-			<p class="text-sm text-surface-600-400">
-				Media from any listed server or channel. With nothing picked, every finished job shows.
-			</p>
-			<div class="grid gap-4 md:grid-cols-2">
-				<fieldset class="space-y-1">
-					<legend class="label-text">Servers</legend>
-					{#if botGuilds.length === 0}
-						<p class="text-sm text-surface-600-400">No bot is in a server yet.</p>
-					{/if}
-					<div class="max-h-56 space-y-1 overflow-y-auto">
-						{#each botGuilds as { guild } (guild.guild_id)}
-							<label
-								class="flex items-center gap-2 rounded-base px-1 py-0.5 text-sm hover:bg-surface-200-800"
-							>
-								<input
-									class="checkbox"
-									type="checkbox"
-									checked={scopeGuilds.includes(guild.guild_id)}
-									onchange={() => (scopeGuilds = toggle(scopeGuilds, guild.guild_id))}
-								/>
-								<GuildIcon guild={guild.guild_id} hash={guild.icon} name={guild.name} size={20} />
-								<span class="truncate">{guild.name}</span>
-								{#if !guild.present}<span class="text-surface-600-400">left</span>{/if}
-							</label>
-						{/each}
-						{#each scopeGuilds.filter((g) => !botGuilds.some((e) => e.guild.guild_id === g)) as unknown (unknown)}
-							<label class="flex items-center gap-2 rounded-base px-1 py-0.5 text-sm">
-								<input
-									class="checkbox"
-									type="checkbox"
-									checked
-									onchange={() => (scopeGuilds = toggle(scopeGuilds, unknown))}
-								/>
-								<span class="font-mono text-xs">{unknown}</span>
-							</label>
-						{/each}
-					</div>
-				</fieldset>
-				<fieldset class="space-y-2">
-					<legend class="label-text">Channels</legend>
-					<select class="select" bind:value={pickGuild} aria-label="Server to pick channels from">
-						<option value="">Pick a server…</option>
-						{#each botGuilds as { guild } (guild.guild_id)}
-							<option value={guild.guild_id}>{guild.name}</option>
-						{/each}
-					</select>
-					{#if pickGuild}
-						{#if loadingChannels && !channelsByGuild[pickGuild]}
-							<p class="flex items-center gap-2 text-sm text-surface-600-400">
-								<Spinner /> Loading channels…
-							</p>
-						{:else}
-							<div
-								class="max-h-40 space-y-1 overflow-y-auto rounded-base border border-surface-200-800 p-2"
-							>
-								{#each watchable(channelsByGuild[pickGuild] ?? []) as { channel, category } (channel.id)}
-									<label class="flex items-center gap-2 text-sm">
-										<input
-											class="checkbox"
-											type="checkbox"
-											checked={scopeChannels.includes(channel.id)}
-											onchange={() => (scopeChannels = toggle(scopeChannels, channel.id))}
-										/>
-										<span class="truncate"
-											>{category ? `${category} / ` : ''}{channelLabel(channel)}</span
-										>
-									</label>
-								{/each}
-							</div>
-						{/if}
-					{/if}
-					{#if scopeChannels.length > 0}
-						<ul class="flex flex-wrap gap-1">
-							{#each scopeChannels as channelId (channelId)}
-								<li>
-									<button
-										type="button"
-										class="chip preset-tonal"
-										onclick={() => (scopeChannels = toggle(scopeChannels, channelId))}
-										title="Remove"
-									>
-										{channelName(channelId)} ×
-									</button>
-								</li>
-							{/each}
-						</ul>
-					{/if}
-				</fieldset>
-			</div>
-		</section>
-
-		<section
-			class="space-y-4 card border border-surface-200-800 bg-surface-100-900 p-5 sm:p-6"
-			aria-label="Access"
-		>
-			<h2 class="h6">Who gets in</h2>
-			<label class="flex items-center gap-2 text-sm">
-				<input class="checkbox" type="checkbox" bind:checked={open} />
-				Open to everyone, no login
-			</label>
-			<div class="grid gap-4 md:grid-cols-2" class:opacity-50={open}>
-				<Field
-					label="Shared secret"
-					for="view-secret-kind"
-					help={view?.has_secret ? 'A secret is set below.' : 'Set the secret below after saving.'}
-				>
-					<select id="view-secret-kind" class="select" bind:value={secretKind} disabled={open}>
-						<option value="">None</option>
-						<option value="pin">PIN</option>
-						<option value="password">Password</option>
-						<option value="token">Access token</option>
-					</select>
-				</Field>
-				<div class="space-y-2 self-end">
-					<label class="flex items-center gap-2 text-sm">
-						<input class="checkbox" type="checkbox" bind:checked={accounts} disabled={open} />
-						View accounts may log in
-					</label>
-				</div>
-				<fieldset class="space-y-1">
-					<legend class="label-text">Login providers</legend>
-					{#if providers.length === 0}
-						<p class="text-sm text-surface-600-400">
-							No provider is configured in Settings or Applications.
-						</p>
-					{/if}
-					{#each providers as provider (provider.id)}
-						<label class="flex items-center gap-2 text-sm">
-							<input
-								class="checkbox"
-								type="checkbox"
-								checked={accessProviders.includes(provider.id)}
-								onchange={() => (accessProviders = toggle(accessProviders, provider.id))}
-								disabled={open}
-							/>
-							{provider.name}
-						</label>
-					{/each}
-				</fieldset>
-				<div class="space-y-3">
-					<label class="flex items-center gap-2 text-sm">
-						<input
-							class="checkbox"
-							type="checkbox"
-							bind:checked={discordMembers}
-							disabled={open || !accessProviders.includes('discord')}
-						/>
-						A Discord login must belong to every server in the scope
-					</label>
-					<Field
-						label="Allowed Discord users"
-						for="view-discord-users"
-						help="User ids. Leave empty to allow any Discord login."
-						error={errors.discordUsers}
-					>
-						<TagsInput
-							value={discordUsers}
-							onValueChange={(details) => (discordUsers = details.value)}
-							validate={(details) =>
-								/^\d{5,25}$/.test(details.inputValue) &&
-								!details.value.includes(details.inputValue)}
-							disabled={open || !accessProviders.includes('discord')}
-						>
-							<TagsInput.Control class="input flex min-h-10 flex-wrap items-center gap-1 py-1">
-								<TagsInput.Context>
-									{#snippet children(tagsInput)}
-										{#each tagsInput().value as value, index (value)}
-											<TagsInput.Item {value} {index}>
-												<TagsInput.ItemPreview class="chip preset-tonal font-mono text-xs">
-													<TagsInput.ItemText>{value}</TagsInput.ItemText>
-													<TagsInput.ItemDeleteTrigger aria-label="Remove {value}"
-														>×</TagsInput.ItemDeleteTrigger
-													>
-												</TagsInput.ItemPreview>
-												<TagsInput.ItemInput class="font-mono text-xs" />
-											</TagsInput.Item>
-										{/each}
-									{/snippet}
-								</TagsInput.Context>
-								<TagsInput.Input
-									id="view-discord-users"
-									class="min-w-32 flex-1 bg-transparent font-mono text-xs outline-none"
-									placeholder="Add a user id and press Enter"
-								/>
-							</TagsInput.Control>
-							<TagsInput.HiddenInput />
-						</TagsInput>
+	<div class="grid items-start gap-6 {view ? 'xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]' : ''}">
+		<form id="view-form" class="grid gap-6" onsubmit={save}>
+			<Card title="General">
+				<div class="grid gap-4 md:grid-cols-2">
+					<Field label="Name" for="view-name" required error={errors.name}>
+						<input id="view-name" class="input" type="text" bind:value={name} required />
 					</Field>
+					<Field
+						label="Slug"
+						for="view-slug"
+						required
+						help="The address: /f/<slug>"
+						error={errors.slug}
+					>
+						<input
+							id="view-slug"
+							class="input font-mono"
+							type="text"
+							bind:value={slug}
+							oninput={() => (slugTouched = true)}
+							required
+							pattern="[a-z0-9\-]+"
+						/>
+					</Field>
+					<Field label="Description" for="view-description" class="md:col-span-2">
+						<input id="view-description" class="input" type="text" bind:value={description} />
+					</Field>
+					<Field
+						label="Profile"
+						for="view-profile"
+						help="Only media from platforms the profile enables is shown."
+					>
+						<select id="view-profile" class="select" bind:value={profileId}>
+							<option value="">Built-in default</option>
+							{#each profiles as profile (profile.id)}
+								<option value={profile.id}>{profile.name}</option>
+							{/each}
+						</select>
+					</Field>
+					<div class="flex flex-col justify-center gap-3 md:pt-6">
+						{@render toggleSwitch('Enabled', enabled, (value) => (enabled = value))}
+						{@render toggleSwitch(
+							'Viewers may download files',
+							downloads,
+							(value) => (downloads = value)
+						)}
+					</div>
 				</div>
-			</div>
-		</section>
+			</Card>
 
-		<section
-			class="space-y-4 card border border-surface-200-800 bg-surface-100-900 p-5 sm:p-6"
-			aria-label="Discord links"
-		>
-			<h2 class="h6">Discord links</h2>
-			<p class="text-sm text-surface-600-400">
-				Post a page from this view instead of the file when an upload is too large or the output
-				falls below these thresholds. Needs web.public_url in Settings.
-			</p>
-			<label class="flex items-center gap-2 text-sm">
-				<input class="checkbox" type="checkbox" bind:checked={linksEnabled} />
-				Post links
-			</label>
-			<div class="grid gap-4 md:grid-cols-4">
-				<Field label="Min height" for="view-min-height" help="Pixels" error={errors.minHeight}>
-					<input
-						id="view-min-height"
-						class="input"
-						type="number"
-						min="1"
-						bind:value={minHeight}
-						disabled={!linksEnabled}
-					/>
-				</Field>
-				<Field label="Min bitrate" for="view-min-bitrate" help="kbps" error={errors.minBitrate}>
-					<input
-						id="view-min-bitrate"
-						class="input"
-						type="number"
-						min="1"
-						bind:value={minBitrateKbps}
-						disabled={!linksEnabled}
-					/>
-				</Field>
-				<Field label="Max page output" for="view-max-mb" help="MB" error={errors.maxMb}>
-					<input
-						id="view-max-mb"
-						class="input"
-						type="number"
-						min="1"
-						bind:value={maxMb}
-						disabled={!linksEnabled}
-					/>
-				</Field>
-				<Field
-					label="Signed links last"
-					for="view-signed-days"
-					help="Days"
-					error={errors.signedDays}
-				>
-					<input
-						id="view-signed-days"
-						class="input"
-						type="number"
-						min="1"
-						bind:value={signedDays}
-					/>
-				</Field>
-			</div>
-		</section>
-
-		<div class="flex justify-end gap-2">
-			<a href={resolve('/views')} class="btn preset-tonal">Cancel</a>
-			<button type="submit" class="btn preset-filled-primary-500" disabled={saving}>
-				{#if saving}<Spinner />{/if}
-				{isNew ? 'Create view' : 'Save view'}
-			</button>
-		</div>
-	</form>
-
-	{#if view}
-		<div class="grid gap-6 lg:grid-cols-2">
-			<section
-				class="space-y-4 card border border-surface-200-800 bg-surface-100-900 p-5 sm:p-6"
-				aria-label="Shared secret"
+			<Card
+				title="What it shows"
+				description="Tick a server to show every channel in it, including channels made later. Open it and untick channels to narrow. With nothing ticked, every finished job shows."
 			>
-				<h2 class="h6">Shared secret</h2>
-				<p class="text-sm text-surface-600-400">
-					{view.has_secret
-						? 'A secret is set. It cannot be shown again; enter a new one to replace it.'
-						: 'No secret is set.'}
-					{#if !secretKind}Choose how it is asked for under Access.{/if}
-				</p>
-				<form
-					class="flex gap-2"
-					onsubmit={(event) => {
-						event.preventDefault();
-						void setSecret(secret);
-					}}
-				>
-					<input
-						class="input font-mono"
-						type={secretKind === 'pin' ? 'text' : 'password'}
-						inputmode={secretKind === 'pin' ? 'numeric' : undefined}
-						placeholder={secretKind === 'pin'
-							? 'New PIN'
-							: secretKind === 'token'
-								? 'New access token'
-								: 'New password'}
-						bind:value={secret}
-						aria-label="New secret"
-						autocomplete="off"
-					/>
-					<button type="submit" class="btn preset-filled" disabled={secretPending || !secret}>
-						{#if secretPending}<Spinner />{/if}
-						Set
-					</button>
-					{#if view.has_secret}
+				<ScopePicker servers={botGuilds} bind:guilds={scopeGuilds} bind:channels={scopeChannels} />
+			</Card>
+
+			<Card title="Who gets in">
+				<div class="space-y-4">
+					<!-- Skeleton's SegmentedControl: open to all, or only after a login. -->
+					<SegmentedControl
+						value={open ? 'open' : 'login'}
+						onValueChange={(details) => {
+							if (details.value === 'open' || details.value === 'login')
+								open = details.value === 'open';
+						}}
+						class="w-full"
+					>
+						<SegmentedControl.Label class="sr-only">Access</SegmentedControl.Label>
+						<SegmentedControl.Control class="flex-wrap">
+							<SegmentedControl.Indicator />
+							<SegmentedControl.Item value="open">
+								<SegmentedControl.ItemText>Anyone with the link</SegmentedControl.ItemText>
+								<SegmentedControl.ItemHiddenInput />
+							</SegmentedControl.Item>
+							<SegmentedControl.Item value="login">
+								<SegmentedControl.ItemText>Only people who log in</SegmentedControl.ItemText>
+								<SegmentedControl.ItemHiddenInput />
+							</SegmentedControl.Item>
+						</SegmentedControl.Control>
+					</SegmentedControl>
+
+					{#if !open}
+						<hr class="hr" />
+						<div class="grid gap-4 md:grid-cols-2">
+							<div class="space-y-4">
+								<Field
+									label="Shared secret"
+									for="view-secret-kind"
+									help="One code every viewer enters. Its kind decides how the login page asks for it."
+								>
+									<select id="view-secret-kind" class="select" bind:value={secretKind}>
+										<option value="">Not used</option>
+										{#each SECRET_KINDS as [value, label] (value)}
+											<option {value}>{label}</option>
+										{/each}
+									</select>
+								</Field>
+								{#if secretKind}
+									<div class="space-y-1">
+										<div
+											class="field-group {view
+												? view.has_secret
+													? 'grid-cols-[1fr_auto_auto]'
+													: 'grid-cols-[1fr_auto]'
+												: 'grid-cols-1'}"
+										>
+											<input
+												class="input font-mono"
+												type={secretKind === 'pin' ? 'text' : 'password'}
+												inputmode={secretKind === 'pin' ? 'numeric' : undefined}
+												placeholder={secretPlaceholder}
+												bind:value={secret}
+												aria-label={secretPlaceholder}
+												autocomplete="off"
+											/>
+											{#if view}
+												<button
+													type="button"
+													class="btn preset-filled"
+													onclick={() => setSecret(secret)}
+													disabled={secretPending || !secret}
+												>
+													{#if secretPending}<Spinner />{/if}
+													Set
+												</button>
+												{#if view.has_secret}
+													<button
+														type="button"
+														class="btn preset-tonal-error"
+														onclick={() => (confirmClearSecret = true)}
+														disabled={secretPending}>Remove</button
+													>
+												{/if}
+											{/if}
+										</div>
+										{#if errors.secret}
+											<p class="text-xs text-error-600-400" role="alert">{errors.secret}</p>
+										{:else if view}
+											<p class="text-xs text-surface-600-400">
+												{view.has_secret
+													? 'A secret is set. Set takes effect at once and replaces it.'
+													: 'No secret is set yet. Set takes effect at once.'}
+											</p>
+										{:else}
+											<p class="text-xs text-surface-600-400">Stored when the view is created.</p>
+										{/if}
+									</div>
+								{/if}
+								{@render toggleSwitch(
+									'View accounts may log in',
+									accounts,
+									(value) => (accounts = value)
+								)}
+							</div>
+							<div class="space-y-4">
+								<fieldset class="fieldset space-y-2">
+									<legend class="legend">Login providers</legend>
+									{#if providers.length === 0}
+										<p class="text-sm text-surface-600-400">
+											No provider is configured in Settings or Applications.
+										</p>
+									{/if}
+									{#each providers as provider (provider.id)}
+										<label class="flex items-center gap-2 text-sm">
+											<input
+												class="checkbox"
+												type="checkbox"
+												checked={accessProviders.includes(provider.id)}
+												onchange={() => (accessProviders = toggle(accessProviders, provider.id))}
+											/>
+											{provider.name}
+										</label>
+									{/each}
+								</fieldset>
+								{#if accessProviders.includes('discord')}
+									{@render toggleSwitch(
+										'A Discord login must belong to every server in the scope',
+										discordMembers,
+										(value) => (discordMembers = value)
+									)}
+									<Field
+										label="Allowed Discord users"
+										for="view-discord-users"
+										help="User ids. Leave empty to allow any Discord login."
+										error={errors.discordUsers}
+									>
+										<!-- Skeleton's TagsInput: one id per tag, checked as it is typed. -->
+										<TagsInput
+											value={discordUsers}
+											onValueChange={(details) => (discordUsers = details.value)}
+											validate={(details) =>
+												/^\d{5,25}$/.test(details.inputValue) &&
+												!details.value.includes(details.inputValue)}
+										>
+											<TagsInput.Control>
+												<TagsInput.Context>
+													{#snippet children(tagsInput)}
+														{#each tagsInput().value as value, index (value)}
+															<TagsInput.Item {value} {index}>
+																<TagsInput.ItemPreview class="font-mono">
+																	<TagsInput.ItemText>{value}</TagsInput.ItemText>
+																	<TagsInput.ItemDeleteTrigger aria-label="Remove {value}">
+																		<XIcon />
+																	</TagsInput.ItemDeleteTrigger>
+																</TagsInput.ItemPreview>
+																<TagsInput.ItemInput class="font-mono" />
+															</TagsInput.Item>
+														{/each}
+													{/snippet}
+												</TagsInput.Context>
+												<TagsInput.Input
+													id="view-discord-users"
+													class="font-mono"
+													placeholder="Add a user id and press Enter"
+												/>
+											</TagsInput.Control>
+											<TagsInput.HiddenInput />
+										</TagsInput>
+									</Field>
+								{/if}
+							</div>
+						</div>
+					{/if}
+				</div>
+			</Card>
+
+			<Card
+				title="Discord links"
+				description="Post a page from this view instead of the file when an upload is too large or the output falls below these thresholds. Needs web.public_url in Settings."
+			>
+				<div class="space-y-4">
+					{@render toggleSwitch('Post links', linksEnabled, (value) => (linksEnabled = value))}
+					<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+						<Field label="Min height" for="view-min-height" help="Pixels" error={errors.minHeight}>
+							<input
+								id="view-min-height"
+								class="input"
+								type="number"
+								min="1"
+								bind:value={minHeight}
+								disabled={!linksEnabled}
+							/>
+						</Field>
+						<Field label="Min bitrate" for="view-min-bitrate" help="kbps" error={errors.minBitrate}>
+							<input
+								id="view-min-bitrate"
+								class="input"
+								type="number"
+								min="1"
+								bind:value={minBitrateKbps}
+								disabled={!linksEnabled}
+							/>
+						</Field>
+						<Field label="Max page output" for="view-max-mb" help="MB" error={errors.maxMb}>
+							<input
+								id="view-max-mb"
+								class="input"
+								type="number"
+								min="1"
+								bind:value={maxMb}
+								disabled={!linksEnabled}
+							/>
+						</Field>
+						<Field
+							label="Signed links last"
+							for="view-signed-days"
+							help="Days"
+							error={errors.signedDays}
+						>
+							<input
+								id="view-signed-days"
+								class="input"
+								type="number"
+								min="1"
+								bind:value={signedDays}
+							/>
+						</Field>
+					</div>
+				</div>
+			</Card>
+
+			<div
+				class="sticky bottom-[calc(5rem+env(safe-area-inset-bottom))] z-20 flex flex-wrap items-center justify-end gap-3 card preset-filled-surface-100-900 p-3 shadow-lg lg:bottom-4"
+			>
+				<a href={resolve('/views')} class="btn preset-tonal">Cancel</a>
+				<button type="submit" class="btn preset-filled-primary-500" disabled={saving}>
+					{#if saving}<Spinner />{/if}
+					{isNew ? 'Create view' : 'Save view'}
+				</button>
+			</div>
+		</form>
+
+		{#if view}
+			<div class="grid gap-6">
+				<Card title="View accounts" count={number(users.length)} flush>
+					{#snippet actions()}
 						<button
 							type="button"
-							class="btn preset-tonal-error"
-							onclick={() => (confirmClearSecret = true)}
-							disabled={secretPending}>Remove</button
+							class="btn preset-tonal btn-sm"
+							onclick={() => {
+								passwordFor = null;
+								newUsername = '';
+								newPassword = '';
+								userDialog = true;
+							}}>Add account</button
 						>
-					{/if}
-				</form>
-			</section>
-
-			<section
-				class="space-y-4 card border border-surface-200-800 bg-surface-100-900 p-5 sm:p-6"
-				aria-label="View accounts"
-			>
-				<div class="flex items-center justify-between">
-					<h2 class="h6">View accounts ({number(users.length)})</h2>
-					<button
-						type="button"
-						class="btn preset-filled btn-sm"
-						onclick={() => {
-							passwordFor = null;
-							newUsername = '';
-							newPassword = '';
-							userDialog = true;
-						}}>Add account</button
-					>
-				</div>
-				<DataTable rows={users} columns={userColumns} rowKey={(u) => u.id} dense>
-					{#snippet empty()}
-						No accounts. They exist only on this view.
 					{/snippet}
-				</DataTable>
-			</section>
-		</div>
+					<DataTable rows={users} columns={userColumns} rowKey={(u) => u.id} flush class="p-2">
+						{#snippet empty()}
+							No accounts. They exist only on this view.
+						{/snippet}
+					</DataTable>
+				</Card>
 
-		<section class="space-y-3" aria-label="Viewer sessions">
-			<div class="flex items-center justify-between">
-				<h2 class="h6">Viewer sessions ({number(sessions.length)})</h2>
-				{#if sessions.length > 0}
-					<button
-						type="button"
-						class="btn preset-tonal-error btn-sm"
-						onclick={() => (confirmRevokeAll = true)}>End all</button
+				<Card title="Viewer sessions" count={number(sessions.length)} flush>
+					{#snippet actions()}
+						{#if sessions.length > 0}
+							<button
+								type="button"
+								class="btn preset-tonal-error btn-sm"
+								onclick={() => (confirmRevokeAll = true)}>End all</button
+							>
+						{/if}
+					{/snippet}
+					<DataTable
+						rows={sessions}
+						columns={sessionColumns}
+						rowKey={(s) => s.id}
+						flush
+						class="p-2"
 					>
-				{/if}
+						{#snippet empty()}
+							Nobody is logged in to this view.
+						{/snippet}
+					</DataTable>
+				</Card>
 			</div>
-			<DataTable rows={sessions} columns={sessionColumns} rowKey={(s) => s.id} dense>
-				{#snippet empty()}
-					Nobody is logged in to this view.
-				{/snippet}
-			</DataTable>
-		</section>
-	{/if}
+		{/if}
+	</div>
 {/if}
 
 <Modal
@@ -905,7 +834,7 @@
 	onconfirm={() => setSecret(null)}
 />
 <Confirm
-	open={deletingUser !== null}
+	bind:open={deleteUserOpen}
 	title="Remove {deletingUser?.username ?? 'this account'}?"
 	message="Its sessions end."
 	confirmLabel="Remove"

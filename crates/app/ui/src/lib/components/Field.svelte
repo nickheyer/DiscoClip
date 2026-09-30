@@ -23,15 +23,16 @@
 	}: Props = $props();
 </script>
 
-<div class="label min-w-0 gap-2 {className}">
-	<label class="label-text text-sm font-medium" for={htmlFor}>
+<!-- Skeleton's label and label-text, with the help or error line beneath the control. -->
+<div class="label min-w-0 {className}">
+	<label class="label-text" for={htmlFor}>
 		{label}
-		{#if required}<span class="text-error-700-300" aria-hidden="true">*</span>{/if}
+		{#if required}<span class="text-error-500" aria-hidden="true">*</span>{/if}
 	</label>
 	{@render children()}
 	{#if error}
-		<p class="text-sm text-error-700-300" role="alert">{error}</p>
+		<p class="text-xs text-error-600-400" role="alert">{error}</p>
 	{:else if help}
-		<p class="text-sm text-surface-600-400">{help}</p>
+		<p class="text-xs text-surface-600-400">{help}</p>
 	{/if}
 </div>

@@ -75,6 +75,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 twilight-cache-inmemory = "0.17"
 twilight-gateway = { version = "0.17", default-features = false, features = ["rustls-platform-verifier", "twilight-http"] }
 twilight-http = "0.17"
+twilight-http-ratelimiting = "0.17"
 twilight-model = "0.17"
 twilight-util = { version = "0.17", features = ["builder"] }
 url = { version = "2", features = ["serde"] }

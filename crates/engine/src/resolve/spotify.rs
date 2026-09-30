@@ -833,7 +833,7 @@ mod tests {
     /// Every example link resolves live: the episodes with Spotify's own audio and the
     /// shows with their episodes.
     #[tokio::test]
-    #[ignore = "requires live Spotify access"]
+
     async fn live_examples_resolve() {
         let resolver = SpotifyResolver::new(Http::new(crate::http::HttpConfig::default()));
         for link in resolver.platform().examples {

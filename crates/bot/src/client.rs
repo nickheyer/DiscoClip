@@ -13,6 +13,8 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use twilight_gateway::{CloseFrame, ConfigBuilder, Event, EventTypeFlags, Intents, Message, Shard};
 use twilight_http::Client;
+use twilight_http::client::ClientBuilder;
+use twilight_http_ratelimiting::RateLimiter;
 use twilight_model::application::interaction::{Interaction, InteractionData, InteractionType};
 use twilight_model::channel::message::MessageFlags;
 use twilight_model::gateway::CloseCode;
@@ -28,6 +30,7 @@ use crate::config::{DiscordConfig, DiscordEndpoints};
 use crate::directory::{Directories, Directory};
 use crate::origin::DiscordOrigin;
 use crate::profile::{ProfileSource, turned_off};
+use crate::publish::DiscordClients;
 use crate::supervisor::BotRuntime;
 use crate::watch::{RuleSource, Watcher};
 
@@ -50,6 +53,10 @@ const WANTED: EventTypeFlags = EventTypeFlags::READY
     .union(EventTypeFlags::MEMBER_UPDATE)
     .union(EventTypeFlags::USER_UPDATE);
 const CLOSE_GRACE: Duration = Duration::from_secs(5);
+/// The ceiling the upload client puts on one request. The publisher bounds every upload
+/// by the file's size well inside it, so this only has to hold a file of any size the
+/// settings allow.
+const UPLOAD_CLIENT_TIMEOUT: Duration = Duration::from_secs(6 * 60 * 60);
 
 #[derive(Debug, thiserror::Error)]
 pub enum BotError {
@@ -85,13 +92,40 @@ pub enum GuildEvent {
     Left { guild: Id<GuildMarker> },
 }
 
-/// A REST client for `token`, sent to Discord or to the stand-in `endpoints` name.
+/// A REST client for `token`, sent to Discord or to the stand-in `endpoints` name, with
+/// twilight's ten-second timeout for the lookups and short posts a bot makes.
 pub fn http_client(token: &str, endpoints: &DiscordEndpoints) -> Arc<Client> {
-    let mut builder = Client::builder().token(token.to_string());
+    Arc::new(client_builder(token, endpoints, RateLimiter::default()).build())
+}
+
+/// The REST clients of one bot: `lookups` for what Discord answers within seconds, and
+/// `uploads` for attachments, which the publisher gives time in proportion to the file.
+/// Both draw on one rate limiter, so together they stay within what Discord allows the
+/// token.
+pub fn rest_clients(token: &str, endpoints: &DiscordEndpoints) -> DiscordClients {
+    let limiter = RateLimiter::default();
+    DiscordClients {
+        lookups: Arc::new(client_builder(token, endpoints, limiter.clone()).build()),
+        uploads: Arc::new(
+            client_builder(token, endpoints, limiter)
+                .timeout(UPLOAD_CLIENT_TIMEOUT)
+                .build(),
+        ),
+    }
+}
+
+fn client_builder(
+    token: &str,
+    endpoints: &DiscordEndpoints,
+    limiter: RateLimiter,
+) -> ClientBuilder {
+    let mut builder = Client::builder()
+        .token(token.to_string())
+        .ratelimiter(Some(limiter));
     if let Some(proxy) = &endpoints.http_proxy {
         builder = builder.proxy(proxy.clone(), true);
     }
-    Arc::new(builder.build())
+    builder
 }
 
 pub struct Bot {

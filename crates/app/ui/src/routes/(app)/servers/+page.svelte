@@ -4,14 +4,15 @@
 	import { resolve } from '$app/paths';
 	import { guilds as guildsApi } from '$lib/api/endpoints';
 	import type { Guild, GuildApplication, Snowflake } from '$lib/api/types';
+	import Card from '$lib/components/Card.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
 	import GuildIcon from '$lib/components/GuildIcon.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import Toolbar from '$lib/components/Toolbar.svelte';
-	import Status from '$lib/components/Status.svelte';
 	import RelativeTime from '$lib/components/RelativeTime.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
+	import Status from '$lib/components/Status.svelte';
+	import { number } from '$lib/format';
 	import { reportError } from '$lib/toast.svelte';
 
 	let guilds = $state<Guild[]>([]);
@@ -67,28 +68,27 @@
 	const fetchedAt = $derived(guilds[0]?.fetched_at ?? null);
 </script>
 
-<PageHeader title="Servers" />
-
-<Toolbar
+<PageHeader
+	title="Servers"
 	description="The Discord servers your linked account belongs to. Servers you manage on Discord open their watch rules here."
 >
 	{#if fetchedAt}
-		<span class="mr-auto text-sm text-surface-600-400"
-			>Fetched <RelativeTime at={fetchedAt} />.</span
-		>
+		<p class="text-sm text-surface-600-400">Fetched <RelativeTime at={fetchedAt} />.</p>
 	{/if}
-	<button type="button" class="btn preset-tonal" onclick={refresh} disabled={refreshing}>
-		{#if refreshing}<Spinner />{:else}<RefreshCwIcon class="size-4" />{/if}
-		Refresh from Discord
-	</button>
-</Toolbar>
+	{#snippet actions()}
+		<button type="button" class="btn preset-tonal" onclick={refresh} disabled={refreshing}>
+			{#if refreshing}<Spinner />{:else}<RefreshCwIcon class="size-4" />{/if}
+			Refresh from Discord
+		</button>
+	{/snippet}
+</PageHeader>
 
 {#if error && !loading}
 	<ErrorState {error} onretry={load} />
 {:else if loading}
 	<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3" aria-busy="true">
 		{#each { length: 3 }, i (i)}
-			<div class="h-28 placeholder animate-pulse"></div>
+			<div class="h-32 placeholder animate-pulse"></div>
 		{/each}
 	</div>
 {:else if guilds.length === 0}
@@ -100,7 +100,7 @@
 	</EmptyState>
 {:else}
 	<section class="space-y-3" aria-label="Servers you manage">
-		<h2 class="h6">You manage ({manageable.length})</h2>
+		<h2 class="h6">You manage ({number(manageable.length)})</h2>
 		{#if manageable.length === 0}
 			<p class="text-sm text-surface-600-400">
 				You do not manage any of these servers on Discord. Managing a server means owning it or
@@ -110,54 +110,57 @@
 			<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
 				{#each manageable as guild (guild.id)}
 					{@const bots = apps[guild.id] ?? []}
-					<div class="space-y-4 card border border-surface-200-800 bg-surface-100-900 p-5 sm:p-6">
-						<div class="flex items-center gap-3">
-							<GuildIcon guild={guild.id} hash={guild.icon} name={guild.name} size={40} />
-							<div class="min-w-0">
-								<p class="truncate font-semibold">{guild.name}</p>
-								<p class="font-mono text-xs text-surface-600-400">{guild.id}</p>
+					<Card label={guild.name}>
+						<div class="space-y-4">
+							<div class="flex items-center gap-3">
+								<GuildIcon guild={guild.id} hash={guild.icon} name={guild.name} size={40} />
+								<div class="min-w-0 flex-1">
+									<p class="truncate font-semibold">{guild.name}</p>
+									<p class="font-mono text-xs text-surface-600-400">{guild.id}</p>
+								</div>
+								{#if guild.owner}
+									<span class="badge preset-tonal" style="--badge-size: var(--text-xs)">Owner</span>
+								{/if}
 							</div>
-							{#if guild.owner}<span class="ml-auto text-sm text-surface-600-400">Owner</span>{/if}
+							{#if bots.length === 0}
+								<p class="text-sm text-surface-600-400">No DiscoClip bot has joined this server.</p>
+							{:else}
+								<ul class="divide-y divide-surface-200-800">
+									{#each bots as bot (bot.application_id)}
+										<li>
+											<a
+												href={resolve('/(app)/applications/[id]/guilds/[guild]', {
+													id: bot.application_id,
+													guild: guild.id
+												})}
+												class="flex items-center justify-between gap-2 py-2 anchor text-sm"
+											>
+												<span class="truncate">{bot.name}</span>
+												<Status present={bot.present} />
+											</a>
+										</li>
+									{/each}
+								</ul>
+							{/if}
 						</div>
-						{#if bots.length === 0}
-							<p class="text-sm text-surface-600-400">No DiscoClip bot has joined this server.</p>
-						{:else}
-							<ul class="space-y-1">
-								{#each bots as bot (bot.application_id)}
-									<li>
-										<a
-											href={resolve('/(app)/applications/[id]/guilds/[guild]', {
-												id: bot.application_id,
-												guild: guild.id
-											})}
-											class="flex items-center justify-between rounded-base px-2 py-1.5 text-sm hover:preset-tonal"
-										>
-											<span class="truncate">{bot.name}</span>
-											<Status present={bot.present} />
-										</a>
-									</li>
-								{/each}
-							</ul>
-						{/if}
-					</div>
+					</Card>
 				{/each}
 			</div>
 		{/if}
 	</section>
 
 	{#if others.length > 0}
-		<section class="space-y-3" aria-label="Other servers">
-			<h2 class="h6">Member of ({others.length})</h2>
+		<Card title="Member of" count={number(others.length)}>
 			<ul class="flex flex-wrap gap-2">
 				{#each others as guild (guild.id)}
-					<li
-						class="flex items-center gap-2 rounded-full bg-surface-100-900 py-1 pr-3 pl-1 text-sm"
-					>
-						<GuildIcon guild={guild.id} hash={guild.icon} name={guild.name} size={24} />
-						{guild.name}
+					<li>
+						<span class="chip preset-tonal">
+							<GuildIcon guild={guild.id} hash={guild.icon} name={guild.name} size={18} />
+							{guild.name}
+						</span>
 					</li>
 				{/each}
 			</ul>
-		</section>
+		</Card>
 	{/if}
 {/if}

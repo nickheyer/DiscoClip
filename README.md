@@ -46,13 +46,15 @@ Follow [the UI and writing standards](crates/app/ui/DESIGN.md) when changing the
 ## Discord
 
 1. Open **Applications** and add a bot token from the Discord Developer Portal.
-2. Use **Add to server** to install the bot.
-3. Open a server and choose a channel to watch.
-4. Set the destination and allowed members in its watch rule.
+2. Use **Add to a server** to invite the bot.
+3. Switch the server on to watch every channel in it, or open it and switch on single
+   channels. A server watched whole can still have channels switched off.
+4. **Options** on the server or a channel set where the media goes and who may post links.
 
-Each application runs its own bot. Its page controls the bot, credentials and
-registration of `/clip` and `/status`. Commands can be registered globally or in
-selected servers. A stopped bot stays stopped until you start it.
+Each application runs its own bot. Its page controls the bot, its settings and the
+servers it is in. `/clip` and `/status` are registered globally when the application
+is added; the API can move them to chosen servers or turn them off. A stopped bot
+stays stopped until you start it.
 
 The bot supplies channel and role names. Member searches use the Discord API with
 a timeout. When a bot stops, its directory keeps the last known data.
@@ -77,8 +79,8 @@ Individual platform exceptions override that choice. The built-in Default profil
 enables all platforms and cannot be deleted.
 
 Admins edit profiles and select the global default. Server managers and operators
-assign profiles from the server page. The profile preview shows the effective
-settings for a channel or member.
+assign profiles to a server, its channels and its members from the server page.
+`GET /api/profiles/effective` reports what applies to a channel or member.
 
 Jobs retain the limits and platform restrictions used when submitted. Retries use
 current profiles. Playlist entries inherit the parent job settings. Older watch
@@ -137,6 +139,39 @@ Admins can import browser cookies from a Netscape `cookies.txt` file or a Cookie
 header. Cookies and provider tokens are encrypted under `secret.key` and are not
 shown again. The Platforms page can check or clear each saved session.
 
+## Transcoding
+
+Every container and codec ffmpeg decodes is taken as a source. The picture is
+made to fit the destination:
+
+| Source | Handling |
+| --- | --- |
+| HDR10, HLG and Dolby Vision profiles 7 and 8 | Tone-mapped to SDR |
+| Dolby Vision profile 5 | Rendered with an ffmpeg build that has libplacebo, and refused by name without one |
+| Interlaced pictures, flagged, or found by looking when the file does not say | Deinterlaced |
+| Variable frame rates | Converted to a constant rate |
+| 360° pictures: equirectangular, cubemap and YouTube's equi-angular cubemap | Rendered as a flat 100° view |
+| Stereoscopic pictures | One eye is kept |
+| Anamorphic pixels | Squared |
+| Transparency | Laid over black |
+| Subtitles, when a request asks to burn them in | Drawn into the picture from the fetched track, or from a stream inside the file |
+| Sound alone, when the destination asks for video | Played over the cover art, the platform's thumbnail, or a waveform |
+
+Every job's log says what was done and which encoder made the output.
+
+Each destination has a target: the container, the video and audio codecs, a height
+and frame-rate cap, whether sound alone becomes a video, and which audio, image and
+other files are taken as they are. `local.target` covers web submissions and
+`discord.target` covers Discord. A server can have its own upload limit and target
+under `discord.guilds` by server id. Discord upload limits follow the server's boost
+level under `discord.limits`; Nitro raises limits for people, not for bots.
+
+Video is encoded with the embedded ffmpeg build in software. Set `engine.ffmpeg` to an
+installed build and `engine.transcode.encoder` to `auto` or a family to use NVENC,
+VA-API, Quick Sync, AMF, VideoToolbox or V4L2 encoders. Each encoder is tried at
+startup and when the settings change. The Health page reports the encoder in use. A
+hardware encode that fails during a job is redone in software and the job's log says so.
+
 ## Accounts
 
 | Role | Access |
@@ -177,9 +212,64 @@ List proxy addresses or CIDR networks in `web.trusted_proxies` to accept
 Proxies must pass `text/event-stream` responses without buffering. The web app
 shares one event stream across browser tabs.
 
+## Retention and backups
+
+Retention runs on `engine.retention`: done jobs older than `jobs_days` and failed or
+cancelled jobs older than `failed_jobs_days` are removed with their cached files, and
+the cache is trimmed under `cache_max_bytes`, oldest jobs first. A sweep runs shortly
+after startup and then every `sweep_interval_secs`. **Backups** shows the last sweep
+and runs one on request.
+
+The database is backed up on `backup`: one consistent copy every `interval_secs`, and one
+at startup when the newest is older than that, into `backup.dir`, keeping the newest
+`keep`. `secret.key` is copied beside the backups, since the secrets in a backup cannot be
+read without it. **Backups** lists them, makes one on request and hands each out as a
+file. To put one back:
+
+```sh
+discoclip restore data/backups/discoclip-20260924T171500Z.db
+```
+
+The restore checks the backup, refuses to run while the server holds the database, and
+puts the key beside the database when it is missing there. Start the server afterwards.
+
+## Deploying
+
+The [Dockerfile](Dockerfile) builds the server with the web app embedded and runs it as an
+unprivileged user with Chromium and fonts beside it. The [compose file](compose.yaml)
+runs it with volumes for the data and cache directories:
+
+```sh
+docker compose up -d
+```
+
+For a host install, build the release binary and use the
+[systemd unit](packaging/discoclip.service). Its comments carry the install steps. Both
+set the data directory to `/var/lib/discoclip` and the cache to `/var/cache/discoclip`,
+and both stop the server with a signal and a timeout that lets the graceful shutdown
+finish.
+
+A stop signal starts a graceful shutdown. The web listener stops taking connections
+and closes its live feeds, jobs under way get `engine.shutdown.grace_secs` to finish,
+and a job publishing its output finishes regardless. Jobs still running after the
+grace period are queued again and picked up at the next start. Then the bots close
+their gateway connections, the database is checkpointed, and the process exits. During
+the shutdown `GET /healthz` answers `503` with `stopping`. A second signal exits at once.
+
+`GET /healthz` takes no credentials and answers `200` while the server works, `503` when
+a part has failed or the server is stopping. The container's health check and the
+readiness probe of an orchestrator use it.
+
+`GET /metrics` serves the Prometheus text exposition to anything that does not ask for
+HTML: job counts by status, resolver outcomes, outgoing requests, bots, cache, database,
+encoder, retention, backups and every health check. It takes the same credentials as the
+API, so Prometheus scrapes it with an API token, as in the
+[example scrape config](packaging/prometheus.yml). Browsers at the same address get the
+Metrics page.
+
 ## Monitoring
 
-- **Health** checks the database, engine, storage, ffmpeg, bots and platform tests.
+- **Health** checks the database, engine, storage, ffmpeg, the video encoder, subtitle fonts, bots, platform tests, retention and backups.
 - **Metrics** shows resource use, job counts, requests and storage, refreshed every five seconds.
 - **Server log** shows up to 5,000 retained lines with filters and live updates.
 - **Audit log** records who changed settings, applications, rules, profiles and access.

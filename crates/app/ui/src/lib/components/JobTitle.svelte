@@ -20,19 +20,19 @@
 <div class="flex min-w-0 items-center gap-3">
 	{#if thumbnail}
 		<div
-			class="flex h-12 w-20 shrink-0 items-center justify-center overflow-hidden rounded-base bg-surface-200-800 text-surface-600-400"
+			class="flex h-9 w-14 shrink-0 items-center justify-center overflow-hidden rounded-base preset-tonal"
 		>
 			{#if job.thumbnail}
 				<img src={job.thumbnail} alt="" class="h-full w-full object-cover" loading="lazy" />
 			{:else}
-				<MediaKindIcon kind={job.media} class="size-5" />
+				<MediaKindIcon kind={job.media} class="size-4" />
 			{/if}
 		</div>
 	{/if}
-	<div class="min-w-0 space-y-1">
+	<div class="min-w-0">
 		<p class="truncate font-medium" title={job.url}>{title}</p>
 		{#if subtitle}
-			<p class="truncate text-sm text-surface-600-400">{subtitle}</p>
+			<p class="truncate text-xs text-surface-600-400">{subtitle}</p>
 		{/if}
 	</div>
 </div>

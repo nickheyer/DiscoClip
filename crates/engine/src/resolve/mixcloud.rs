@@ -866,7 +866,7 @@ mod tests {
     /// Every example link resolves live: shows to audio with a playable variant, lists
     /// to entries.
     #[tokio::test]
-    #[ignore = "requires live Mixcloud access"]
+
     async fn live_examples_resolve() {
         let resolver = MixcloudResolver::new(Http::new(crate::http::HttpConfig::default()));
         for link in resolver.platform().examples {

@@ -1106,7 +1106,7 @@ mod tests {
     /// Every example link resolves live: the video, the short and the embed to media
     /// with playable streams, the channels and the article to entries.
     #[tokio::test]
-    #[ignore = "requires live Dzen access"]
+
     async fn live_examples_resolve() {
         let resolver = DzenResolver::new(Http::new(crate::http::HttpConfig::default()));
         for link in resolver.platform().examples {

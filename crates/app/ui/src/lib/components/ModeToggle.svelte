@@ -1,20 +1,25 @@
 <script lang="ts">
 	import MoonIcon from '@lucide/svelte/icons/moon';
 	import SunIcon from '@lucide/svelte/icons/sun';
+	import { Switch } from '@skeletonlabs/skeleton-svelte';
 	import { mode } from '$lib/mode.svelte';
 </script>
 
-<button
-	type="button"
-	class="btn min-w-11 gap-2 hover:preset-tonal"
-	onclick={() => mode.toggle()}
-	title={mode.action}
+<!-- Skeleton's Switch as the light switch: on is dark mode, with the icon on the thumb. -->
+<Switch
+	checked={mode.current === 'dark'}
+	onCheckedChange={() => mode.toggle()}
 	aria-label={mode.action}
+	title={mode.action}
 >
-	{#if mode.current === 'dark'}
-		<SunIcon class="size-5" />
-	{:else}
-		<MoonIcon class="size-5" />
-	{/if}
-	<span class="hidden lg:inline">{mode.label}</span>
-</button>
+	<Switch.Control>
+		<Switch.Thumb>
+			{#if mode.current === 'dark'}
+				<MoonIcon class="size-3" />
+			{:else}
+				<SunIcon class="size-3" />
+			{/if}
+		</Switch.Thumb>
+	</Switch.Control>
+	<Switch.HiddenInput />
+</Switch>

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import UploadIcon from '@lucide/svelte/icons/upload';
+	import { FileUpload, SegmentedControl } from '@skeletonlabs/skeleton-svelte';
 	import { platforms as platformsApi } from '$lib/api/endpoints';
 	import type { CookieFormat, PlatformCoverage, SessionOutcome } from '$lib/api/types';
 	import { notify, reportError } from '$lib/toast.svelte';
@@ -29,9 +31,7 @@
 		}
 	});
 
-	async function pickFile(event: Event) {
-		const input = event.currentTarget as HTMLInputElement;
-		const file = input.files?.[0];
+	async function pickFile(file: File | undefined) {
 		if (!file) return;
 		fileName = file.name;
 		text = await file.text();
@@ -73,39 +73,48 @@
 	size="lg"
 >
 	<form id="cookies-form" class="space-y-4" onsubmit={submit}>
-		<fieldset class="flex gap-4">
-			<legend class="mb-1 label-text">Format</legend>
-			<label class="flex items-center gap-2 text-sm">
-				<input
-					class="radio"
-					type="radio"
-					name="cookie-format"
-					value="netscape"
-					bind:group={format}
-				/>
-				Netscape cookies.txt
-			</label>
-			<label class="flex items-center gap-2 text-sm">
-				<input class="radio" type="radio" name="cookie-format" value="header" bind:group={format} />
-				Cookie header
-			</label>
-		</fieldset>
+		<SegmentedControl
+			value={format}
+			onValueChange={(details) => {
+				if (details.value === 'netscape' || details.value === 'header') format = details.value;
+			}}
+		>
+			<SegmentedControl.Label>Format</SegmentedControl.Label>
+			<SegmentedControl.Control>
+				<SegmentedControl.Indicator />
+				<SegmentedControl.Item value="netscape">
+					<SegmentedControl.ItemText>Netscape cookies.txt</SegmentedControl.ItemText>
+					<SegmentedControl.ItemHiddenInput />
+				</SegmentedControl.Item>
+				<SegmentedControl.Item value="header">
+					<SegmentedControl.ItemText>Cookie header</SegmentedControl.ItemText>
+					<SegmentedControl.ItemHiddenInput />
+				</SegmentedControl.Item>
+			</SegmentedControl.Control>
+		</SegmentedControl>
 
 		{#if format === 'netscape'}
-			<Field
-				label="File"
-				for="cookies-file"
-				help="Exported by a browser extension such as Get cookies.txt."
-			>
-				<input
-					id="cookies-file"
-					class="input"
-					type="file"
-					accept=".txt,text/plain"
-					onchange={pickFile}
-				/>
-				{#if fileName}<p class="text-sm text-surface-600-400">{fileName}</p>{/if}
-			</Field>
+			<div class="label">
+				<span class="label-text">File</span>
+				<div class="flex flex-wrap items-center gap-3">
+					<FileUpload
+						class="w-fit"
+						accept={{ 'text/plain': ['.txt'] }}
+						maxFiles={1}
+						onFileAccept={(details) => void pickFile(details.files[0])}
+					>
+						<FileUpload.Trigger class="btn preset-tonal">
+							<UploadIcon class="size-4" />
+							Choose a file
+						</FileUpload.Trigger>
+						<FileUpload.HiddenInput />
+					</FileUpload>
+					{#if fileName}<span class="text-sm text-surface-600-400">{fileName}</span>{/if}
+				</div>
+				<p class="text-xs text-surface-600-400">
+					Exported by a browser extension such as Get cookies.txt.
+				</p>
+			</div>
 			<Field label="Or paste the file" for="cookies-text">
 				<textarea
 					id="cookies-text"

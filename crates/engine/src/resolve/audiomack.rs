@@ -803,7 +803,6 @@ mod tests {
     /// Every example link resolves live: songs to audio with a playable variant, lists
     /// to entries.
     #[tokio::test]
-    #[ignore = "requires live Audiomack access"]
     async fn live_examples_resolve() {
         let resolver = AudiomackResolver::new(Http::new(crate::http::HttpConfig::default()));
         for link in resolver.platform().examples {

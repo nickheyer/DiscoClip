@@ -26,6 +26,8 @@
 		label?: string;
 		tone?: Tone;
 		pulse?: boolean;
+		/** A longer explanation, shown on hover. */
+		title?: string;
 		class?: string;
 	}
 
@@ -40,16 +42,17 @@
 		label,
 		tone,
 		pulse,
+		title,
 		class: className = ''
 	}: Props = $props();
 
-	const TONE: Record<Tone, string> = {
-		success: 'text-success-700-300',
-		error: 'text-error-700-300',
-		warning: 'text-warning-700-300',
-		primary: 'text-primary-700-300',
-		secondary: 'text-secondary-700-300',
-		surface: 'text-surface-600-400'
+	const PRESET: Record<Tone, string> = {
+		success: 'preset-tonal-success',
+		error: 'preset-tonal-error',
+		warning: 'preset-tonal-warning',
+		primary: 'preset-tonal-primary',
+		secondary: 'preset-tonal-secondary',
+		surface: 'preset-tonal'
 	};
 
 	interface View {
@@ -128,16 +131,18 @@
 		if (present !== undefined) {
 			return present ? { label: 'In server', tone: 'success' } : { label: 'Left', tone: 'surface' };
 		}
-		return { label: label ?? '', tone: tone ?? 'surface', pulse };
+		return { label: label ?? '', tone: tone ?? 'surface', pulse, title };
 	});
 </script>
 
+<!-- A Skeleton badge in the tone's tonal preset, with a dot that pulses while something runs. -->
 <span
-	class="inline-flex items-center gap-2 whitespace-nowrap {TONE[view.tone]} {className}"
-	title={view.title}
+	class="badge {PRESET[view.tone]} {className}"
+	style="--badge-size: var(--text-xs)"
+	title={title ?? view.title}
 >
 	<span
-		class="size-2.5 shrink-0 rounded-full bg-current {view.pulse ? 'animate-pulse' : ''}"
+		class="size-1.5 shrink-0 rounded-full bg-current {view.pulse ? 'animate-pulse' : ''}"
 		aria-hidden="true"
 	></span>
 	{view.label}

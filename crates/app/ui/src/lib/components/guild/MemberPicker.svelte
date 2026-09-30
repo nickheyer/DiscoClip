@@ -62,6 +62,7 @@
 	}
 </script>
 
+<!-- Skeleton's Combobox searching the server as the person types. -->
 <Combobox
 	{collection}
 	{placeholder}
@@ -74,27 +75,24 @@
 		if (member) onpick(member);
 	}}
 >
-	<Combobox.Control class="relative">
-		<Combobox.Input class="input" aria-label={placeholder} />
+	<Combobox.Control>
+		<Combobox.Input aria-label={placeholder} />
+		<Combobox.Trigger aria-label="Show members" />
 	</Combobox.Control>
 	<Portal>
 		<Combobox.Positioner class="z-[60]">
-			<Combobox.Content
-				class="max-h-72 min-w-64 overflow-y-auto card border border-surface-200-800 bg-surface-100-900 p-2 shadow-xl"
-			>
+			<Combobox.Content class="max-h-72 min-w-64 overflow-y-auto shadow-xl">
 				{#if searching && items.length === 0}
-					<p class="px-3 py-2 text-sm text-surface-600-400">Searching…</p>
+					<p class="px-2 py-1 text-sm text-surface-600-400">Searching…</p>
 				{:else if items.length === 0}
-					<p class="px-3 py-2 text-sm text-surface-600-400">Type a name to search the server.</p>
+					<p class="px-2 py-1 text-sm text-surface-600-400">Type a name to search the server.</p>
 				{/if}
 				{#each collection.items as member (member.id)}
-					<Combobox.Item
-						item={member}
-						class="flex min-h-11 items-center gap-3 rounded-base px-3 py-2 text-sm"
-					>
+					<Combobox.Item item={member} class="justify-start gap-3">
 						<DiscordAvatar user={member.id} hash={member.avatar} name={member.username} size={20} />
-						<Combobox.ItemText>{label(member)}</Combobox.ItemText>
-						{#if member.bot}<span class="text-surface-600-400">bot</span>{/if}
+						<Combobox.ItemText class="flex-1">{label(member)}</Combobox.ItemText>
+						{#if member.bot}<span class="text-xs text-surface-600-400">bot</span>{/if}
+						<Combobox.ItemIndicator />
 					</Combobox.Item>
 				{/each}
 			</Combobox.Content>

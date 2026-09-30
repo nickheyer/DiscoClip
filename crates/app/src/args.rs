@@ -25,4 +25,16 @@ pub struct Args {
     /// Provisioning file (TOML, YAML or JSON)
     #[arg(short, long, env = CONFIG_PATH_VAR, value_name = "FILE")]
     pub config: Option<PathBuf>,
+    #[command(subcommand)]
+    pub command: Option<Command>,
+}
+
+#[derive(Debug, clap::Subcommand)]
+pub enum Command {
+    /// Put a backup in place of the database. Stop the server first.
+    Restore {
+        /// A backup file from the backup directory, such as discoclip-20260924T171500Z.db
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+    },
 }

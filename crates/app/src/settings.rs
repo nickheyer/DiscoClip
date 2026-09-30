@@ -9,6 +9,8 @@ use std::collections::BTreeMap;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 
+use discoclip_bot::DiscordSettings;
+use discoclip_engine::publish::DestinationTarget;
 use discoclip_engine::rusqlite::{self, Connection, params};
 use discoclip_engine::store::sqlite::SqliteStore;
 use discoclip_engine::{EngineConfig, HttpConfig, StoreError};
@@ -20,6 +22,7 @@ use serde_json::Value as Json;
 use url::Url;
 
 use crate::audit::{self, Action, Actor, Target};
+use crate::backup::BackupConfig;
 use crate::config::{ConfigError, Format, Provisioning};
 use crate::db::{nanos, timestamp, transact};
 use crate::fixtures::FixtureConfig;
@@ -34,10 +37,15 @@ pub struct Settings {
     /// per-host rate limits and proxies.
     pub http: HttpConfig,
     pub local: LocalConfig,
+    /// What Discord takes: upload limits by boost level, the target media posted there
+    /// is made to, and the servers with limits or targets of their own.
+    pub discord: DiscordSettings,
     /// How often every platform's fixture links are resolved, and how long one may take.
     pub fixtures: FixtureConfig,
     pub web: WebConfig,
     pub auth: AuthConfig,
+    /// When and where the database is backed up, and how many backups are kept.
+    pub backup: BackupConfig,
 }
 
 impl Settings {
@@ -49,6 +57,7 @@ impl Settings {
             client_secret: SecretString::from(String::new()),
         };
         let mut settings = Settings::default();
+        settings.engine.ffmpeg = Some(PathBuf::from("/usr/bin/ffmpeg"));
         settings.engine.archive = Some(discoclip_engine::archive::ArchiveConfig {
             dir: PathBuf::from("archive"),
             keep: discoclip_engine::archive::Keep::Output,
@@ -123,6 +132,27 @@ impl Settings {
         if self.engine.cache_dir.as_os_str().is_empty() {
             return Err(invalid("engine.cache_dir", "cannot be empty".into()));
         }
+        if self
+            .engine
+            .ffmpeg
+            .as_ref()
+            .is_some_and(|path| path.as_os_str().is_empty())
+        {
+            return Err(invalid("engine.ffmpeg", "cannot be empty".into()));
+        }
+        if self.engine.transcode.vaapi_device.as_os_str().is_empty() {
+            return Err(invalid(
+                "engine.transcode.vaapi_device",
+                "cannot be empty".into(),
+            ));
+        }
+        self.local
+            .target
+            .check()
+            .map_err(|message| invalid("local.target", message))?;
+        self.discord
+            .check()
+            .map_err(|(path, message)| invalid(&path, message))?;
         if let Some(archive) = &self.engine.archive
             && archive.dir.as_os_str().is_empty()
         {
@@ -181,6 +211,15 @@ impl Settings {
         }
         if self.local.max_bytes == 0 {
             return Err(invalid("local.max_bytes", "must be at least 1".into()));
+        }
+        if self.backup.dir.as_os_str().is_empty() {
+            return Err(invalid("backup.dir", "cannot be empty".into()));
+        }
+        if self.backup.keep == 0 {
+            return Err(invalid("backup.keep", "must be at least 1".into()));
+        }
+        if self.backup.interval_secs == 0 {
+            return Err(invalid("backup.interval_secs", "must be at least 1".into()));
         }
         if self.local.dir.as_os_str().is_empty() {
             return Err(invalid("local.dir", "cannot be empty".into()));
@@ -280,6 +319,8 @@ impl Default for LogConfig {
 pub struct LocalConfig {
     pub dir: PathBuf,
     pub max_bytes: u64,
+    /// What the media published there is made to.
+    pub target: DestinationTarget,
 }
 
 impl Default for LocalConfig {
@@ -287,6 +328,7 @@ impl Default for LocalConfig {
         Self {
             dir: PathBuf::from("data/local"),
             max_bytes: 100 * 1024 * 1024,
+            target: DestinationTarget::default(),
         }
     }
 }
@@ -366,11 +408,13 @@ pub struct Entry {
 }
 
 /// Keys whose values are stored whole rather than split into the paths beneath them:
-/// maps keyed by host names, whose keys carry dots of their own.
-pub const ATOMIC_KEYS: [&str; 3] = [
+/// maps keyed by host names, whose keys carry dots of their own, and by Discord server
+/// ids, which are edited as one piece.
+pub const ATOMIC_KEYS: [&str; 4] = [
     "http.rate_limits.hosts",
     "http.proxies.platforms",
     "http.proxies.hosts",
+    "discord.guilds",
 ];
 
 /// The atomic key `path` is, or lies beneath.

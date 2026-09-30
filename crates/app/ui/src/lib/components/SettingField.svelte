@@ -1,6 +1,7 @@
 <script lang="ts">
 	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
+	import { Switch } from '@skeletonlabs/skeleton-svelte';
 	import type { Json } from '$lib/api/types';
 	import { EMPTY } from '$lib/format';
 	import {
@@ -30,7 +31,7 @@
 	let checked = $state(false);
 	/** The text of each value of a section being edited, by its name. */
 	let parts = $state<Record<string, string>>({});
-	/** The checkboxes of a section being edited, by name. */
+	/** The switches of a section being edited, by name. */
 	let flags = $state<Record<string, boolean>>({});
 	let error = $state<string | null>(null);
 
@@ -202,109 +203,119 @@
 </script>
 
 <div
-	class="grid gap-3 py-3 xl:grid-cols-[minmax(16rem,24rem)_minmax(0,1fr)_auto] xl:items-baseline xl:gap-6"
+	class="grid gap-3 py-3 xl:grid-cols-[minmax(16rem,24rem)_minmax(0,1fr)_auto] xl:items-start xl:gap-6"
 >
-	<div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+	<div class="flex min-w-0 flex-wrap items-center gap-2">
 		{#if field.kind === 'section'}
 			<span id={inputId} class="font-mono text-sm break-all">{field.key}</span>
 		{:else}
 			<label for={inputId} class="font-mono text-sm break-all">{field.key}</label>
 		{/if}
 		{#if field.stored}
-			<span class="text-sm text-surface-600-400">
+			<span class="badge preset-tonal" style="--badge-size: var(--text-xs)">
 				{field.stored.source === 'provisioning' ? 'From config' : 'Saved in app'}
 			</span>
 		{/if}
-		{#if field.secret}<span class="text-sm text-warning-700-300">Secret</span>{/if}
+		{#if field.secret}
+			<span class="badge preset-tonal-warning" style="--badge-size: var(--text-xs)">Secret</span>
+		{/if}
 		{#if field.stored}
-			<RelativeTime at={field.stored.updated_at} class="text-sm text-surface-600-400" />
+			<RelativeTime at={field.stored.updated_at} class="text-xs text-surface-600-400" />
 		{/if}
 	</div>
 
 	<div class="min-w-0 text-sm">
 		{#if editing}
-			<div class="space-y-1">
+			<div class="space-y-2">
 				{#if field.kind === 'section'}
 					<div class="grid gap-3 sm:grid-cols-2" role="group" aria-labelledby={inputId}>
 						{#each field.leaves ?? [] as leaf (leaf.key)}
 							{@const leafId = `${inputId}-${leaf.name.replace(/[^a-z0-9]+/gi, '-')}`}
-							<Field
-								label={leaf.name}
-								for={leafId}
-								help={leaf.secret && leaf.set
-									? 'Leave blank to keep the stored secret.'
-									: undefined}
-								class={leaf.kind === 'list' || leaf.kind === 'json' ? 'sm:col-span-2' : ''}
-							>
-								{#if leaf.kind === 'boolean'}
-									<label class="flex items-center gap-2 text-sm">
+							{#if leaf.kind === 'boolean'}
+								<Switch
+									checked={flags[leaf.name] === true}
+									onCheckedChange={(details) =>
+										(flags = { ...flags, [leaf.name]: details.checked })}
+									class="self-end"
+								>
+									<Switch.Control><Switch.Thumb /></Switch.Control>
+									<Switch.Label>{leaf.name}</Switch.Label>
+									<Switch.HiddenInput id={leafId} />
+								</Switch>
+							{:else}
+								<Field
+									label={leaf.name}
+									for={leafId}
+									help={leaf.secret && leaf.set
+										? 'Leave blank to keep the stored secret.'
+										: undefined}
+									class={leaf.kind === 'list' || leaf.kind === 'json' ? 'sm:col-span-2' : ''}
+								>
+									{#if leaf.choices}
+										<select id={leafId} class="select" bind:value={parts[leaf.name]}>
+											<option value="">Default</option>
+											{#each leaf.choices as choice (choice)}<option value={choice}>{choice}</option
+												>{/each}
+										</select>
+									{:else if leaf.kind === 'number'}
+										<div class="field-group grid-cols-[1fr_auto]">
+											<input
+												id={leafId}
+												class="input"
+												type="number"
+												step="any"
+												placeholder={leaf.placeholder}
+												bind:value={parts[leaf.name]}
+											/>
+											{#if leaf.unit}<div class="label label-text preset-tonal">
+													{leaf.unit.label}
+												</div>{/if}
+										</div>
+									{:else if leaf.kind === 'list'}
+										<textarea
+											id={leafId}
+											class="textarea font-mono text-xs"
+											rows="3"
+											placeholder="One entry per line"
+											bind:value={parts[leaf.name]}></textarea>
+									{:else if leaf.kind === 'json'}
+										<textarea
+											id={leafId}
+											class="textarea font-mono text-xs"
+											rows="4"
+											spellcheck="false"
+											bind:value={parts[leaf.name]}></textarea>
+									{:else}
 										<input
 											id={leafId}
-											class="checkbox"
-											type="checkbox"
-											bind:checked={flags[leaf.name]}
-										/>
-										{flags[leaf.name] ? 'On' : 'Off'}
-									</label>
-								{:else if leaf.choices}
-									<select id={leafId} class="select" bind:value={parts[leaf.name]}>
-										<option value="">Default</option>
-										{#each leaf.choices as choice (choice)}<option value={choice}>{choice}</option
-											>{/each}
-									</select>
-								{:else if leaf.kind === 'number'}
-									<div class="field-group grid-cols-[1fr_auto]">
-										<input
-											id={leafId}
-											class="input"
-											type="number"
-											step="any"
-											placeholder={leaf.placeholder}
+											class="input {leaf.secret ? 'font-mono' : ''}"
+											type={leaf.secret ? 'password' : 'text'}
+											autocomplete="off"
+											placeholder={leaf.secret ? (leaf.set ? 'Unchanged' : '') : leaf.placeholder}
 											bind:value={parts[leaf.name]}
 										/>
-										{#if leaf.unit}<div class="label preset-tonal text-sm">
-												{leaf.unit.label}
-											</div>{/if}
-									</div>
-								{:else if leaf.kind === 'list'}
-									<textarea
-										id={leafId}
-										class="textarea font-mono text-xs"
-										rows="3"
-										placeholder="One entry per line"
-										bind:value={parts[leaf.name]}></textarea>
-								{:else if leaf.kind === 'json'}
-									<textarea
-										id={leafId}
-										class="textarea font-mono text-xs"
-										rows="4"
-										spellcheck="false"
-										bind:value={parts[leaf.name]}></textarea>
-								{:else}
-									<input
-										id={leafId}
-										class="input {leaf.secret ? 'font-mono' : ''}"
-										type={leaf.secret ? 'password' : 'text'}
-										autocomplete="off"
-										placeholder={leaf.secret ? (leaf.set ? 'Unchanged' : '') : leaf.placeholder}
-										bind:value={parts[leaf.name]}
-									/>
-								{/if}
-							</Field>
+									{/if}
+								</Field>
+							{/if}
 						{/each}
 					</div>
 				{:else if field.kind === 'boolean'}
-					<label class="flex items-center gap-2">
-						<input id={inputId} class="checkbox" type="checkbox" bind:checked />
-						{checked ? 'On' : 'Off'}
-					</label>
+					<Switch {checked} onCheckedChange={(details) => (checked = details.checked)}>
+						<Switch.Control><Switch.Thumb /></Switch.Control>
+						<Switch.Label>{checked ? 'On' : 'Off'}</Switch.Label>
+						<Switch.HiddenInput id={inputId} />
+					</Switch>
 				{:else if field.kind === 'number'}
 					<div class="field-group grid-cols-[1fr_auto]">
 						<input id={inputId} class="input" type="number" step="any" bind:value={text} />
 						{#if field.unit}
-							<div class="label preset-tonal text-sm">{field.unit.label}</div>
+							<div class="label label-text preset-tonal">{field.unit.label}</div>
 						{/if}
 					</div>
+				{:else if field.kind === 'string' && field.choices}
+					<select id={inputId} class="select" bind:value={text}>
+						{#each field.choices as choice (choice)}<option value={choice}>{choice}</option>{/each}
+					</select>
 				{:else if field.kind === 'string'}
 					<input
 						id={inputId}
@@ -329,8 +340,8 @@
 						bind:value={text}
 						spellcheck="false"></textarea>
 				{/if}
-				{#if error}<p class="text-sm text-error-700-300" role="alert">{error}</p>{/if}
-				<p class="text-sm text-surface-600-400">Default: {fallback}</p>
+				{#if error}<p class="text-xs text-error-600-400" role="alert">{error}</p>{/if}
+				<p class="text-xs text-surface-600-400">Default: {fallback}</p>
 			</div>
 		{:else}
 			<p class="break-all {field.kind === 'json' ? 'font-mono text-xs' : ''}">
@@ -348,7 +359,7 @@
 				{/if}
 			</p>
 			{#if field.stored && !field.secret && fallback !== shown}
-				<p class="text-sm text-surface-600-400">Default: {fallback}</p>
+				<p class="text-xs text-surface-600-400">Default: {fallback}</p>
 			{/if}
 		{/if}
 	</div>
@@ -386,7 +397,7 @@
 			{/if}
 			<button
 				type="button"
-				class="btn btn-sm hover:preset-tonal"
+				class="btn preset-tonal btn-sm"
 				onclick={begin}
 				disabled={pending !== null}
 			>

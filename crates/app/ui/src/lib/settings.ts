@@ -47,9 +47,29 @@ export function unitOf(key: string): Unit | null {
 	return null;
 }
 
+const VIDEO_CONTAINERS = ['mp4', 'mov', 'mkv', 'webm'];
+const VIDEO_CODECS = ['h264', 'h265', 'vp9', 'vp8', 'av1'];
+const AUDIO_CODECS = ['aac', 'mp3', 'opus', 'vorbis', 'flac'];
+
 /** Keys that take one of a fixed set of words. */
 const CHOICES: Record<string, string[]> = {
-	'engine.archive.keep': ['output', 'source', 'both']
+	'engine.archive.keep': ['output', 'source', 'both'],
+	'engine.transcode.encoder': [
+		'auto',
+		'software',
+		'nvenc',
+		'vaapi',
+		'qsv',
+		'videotoolbox',
+		'amf',
+		'v4l2m2m'
+	],
+	'local.target.container': VIDEO_CONTAINERS,
+	'local.target.video_codec': VIDEO_CODECS,
+	'local.target.audio_codec': AUDIO_CODECS,
+	'discord.target.container': VIDEO_CONTAINERS,
+	'discord.target.video_codec': VIDEO_CODECS,
+	'discord.target.audio_codec': AUDIO_CODECS
 };
 
 /** What is stored for a key: the row at it, or the rows beneath it when it holds a section. */
@@ -91,6 +111,8 @@ export interface SettingField {
 	secret: boolean;
 	/** What is stored over the default, when anything is. */
 	stored: Stored | null;
+	/** The words the key takes, where it takes a fixed set. */
+	choices: string[] | null;
 	/** The values an optional section holds, in key order. Only a section has them. */
 	leaves: Leaf[] | null;
 }
@@ -251,6 +273,7 @@ export function fieldsOf(view: SettingsView): SettingField[] {
 				unit: null,
 				secret: false,
 				stored,
+				choices: null,
 				leaves
 			};
 		}
@@ -263,6 +286,7 @@ export function fieldsOf(view: SettingsView): SettingField[] {
 			unit: unitOf(f.key),
 			secret: view.secret_keys.includes(f.key),
 			stored,
+			choices: CHOICES[f.key] ?? null,
 			leaves: null
 		};
 	});

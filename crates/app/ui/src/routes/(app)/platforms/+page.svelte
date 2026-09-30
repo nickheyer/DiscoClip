@@ -4,10 +4,10 @@
 	import { resolve } from '$app/paths';
 	import { platforms as platformsApi } from '$lib/api/endpoints';
 	import type { MediaKind, PlatformCoverage, SessionSupport } from '$lib/api/types';
+	import Card from '$lib/components/Card.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import Toolbar from '$lib/components/Toolbar.svelte';
 	import PlatformSummary from '$lib/components/PlatformSummary.svelte';
 	import SearchInput from '$lib/components/SearchInput.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
@@ -84,67 +84,75 @@
 	);
 	const running = $derived(platforms.filter((p) => p.running).length);
 	const failing = $derived(platforms.filter((p) => p.failed > 0).length);
+	const busy = $derived(checking || running > 0);
 </script>
 
-<PageHeader title="Platforms" />
+<PageHeader
+	title="Platforms"
+	description="Every site the server can fetch from, with its latest link checks."
+>
+	{#snippet actions()}
+		{#if session.can('manage_jobs')}
+			<button
+				type="button"
+				class="btn preset-filled-primary-500"
+				onclick={checkAll}
+				disabled={busy}
+				aria-busy={busy}
+			>
+				{#if busy}<Spinner />{:else}<PlayIcon class="size-4" />{/if}
+				{busy ? 'Running checks…' : 'Run all checks'}
+			</button>
+		{/if}
+	{/snippet}
+</PageHeader>
 
-<div class="flex flex-wrap gap-2 card bg-surface-100-900 p-3">
-	<SearchInput
-		bind:value={filter}
-		placeholder="Name or host"
-		debounce={0}
-		class="min-w-56 flex-1"
-	/>
-	<select class="select w-40" bind:value={tag} aria-label="Tag">
-		<option value="">Every tag</option>
-		{#each tags as t (t)}<option value={t}>{t}</option>{/each}
-	</select>
-	<select class="select w-36" bind:value={media} aria-label="Media">
-		<option value="">Any media</option>
-		{#each ['video', 'audio', 'image', 'file'] as const as kind (kind)}<option value={kind}
-				>{mediaLabel(kind)}</option
-			>{/each}
-	</select>
-	<select class="select w-40" bind:value={sessionFilter} aria-label="Login">
-		<option value="">Any login</option>
-		<option value="none">No login</option>
-		<option value="optional">Login optional</option>
-		<option value="required">Login required</option>
-	</select>
-	<select class="select w-36" bind:value={health} aria-label="Link check result">
-		<option value="">Any result</option>
-		<option value="failing">Failing</option>
-		<option value="passing">All pass</option>
-		<option value="never">Never run</option>
-	</select>
-</div>
-
-<Toolbar description="Every site the server can fetch from, with its latest link checks.">
-	<p class="mr-auto text-sm text-surface-600-400">
-		{number(shown.length)} of {number(platforms.length)} platforms
-		{#if running > 0}· {number(running)} running checks{/if}
-		{#if failing > 0}· <span class="text-error-700-300">{number(failing)} failing</span>{/if}
-	</p>
-	{#if session.can('manage_jobs')}
-		<button
-			type="button"
-			class="btn preset-filled-primary-500"
-			onclick={checkAll}
-			disabled={checking || running > 0}
-			aria-busy={checking || running > 0}
-		>
-			{#if checking || running > 0}<Spinner />{:else}<PlayIcon class="size-4" />{/if}
-			{checking || running > 0 ? 'Running checks…' : 'Run all checks'}
-		</button>
-	{/if}
-</Toolbar>
+<Card label="Filters">
+	<form class="space-y-3" onsubmit={(event) => event.preventDefault()}>
+		<div class="flex flex-wrap gap-2">
+			<SearchInput
+				bind:value={filter}
+				placeholder="Name or host"
+				debounce={0}
+				class="min-w-56 flex-1"
+			/>
+			<select class="select w-40" bind:value={tag} aria-label="Tag">
+				<option value="">Every tag</option>
+				{#each tags as t (t)}<option value={t}>{t}</option>{/each}
+			</select>
+			<select class="select w-36" bind:value={media} aria-label="Media">
+				<option value="">Any media</option>
+				{#each ['video', 'audio', 'image', 'file'] as const as kind (kind)}
+					<option value={kind}>{mediaLabel(kind)}</option>
+				{/each}
+			</select>
+			<select class="select w-40" bind:value={sessionFilter} aria-label="Login">
+				<option value="">Any login</option>
+				<option value="none">No login</option>
+				<option value="optional">Login optional</option>
+				<option value="required">Login required</option>
+			</select>
+			<select class="select w-36" bind:value={health} aria-label="Link check result">
+				<option value="">Any result</option>
+				<option value="failing">Failing</option>
+				<option value="passing">All pass</option>
+				<option value="never">Never run</option>
+			</select>
+		</div>
+		<p class="text-sm text-surface-600-400">
+			{number(shown.length)} of {number(platforms.length)} platforms
+			{#if running > 0}· {number(running)} running checks{/if}
+			{#if failing > 0}· <span class="text-error-600-400">{number(failing)} failing</span>{/if}
+		</p>
+	</form>
+</Card>
 
 {#if error && !loading}
 	<ErrorState {error} onretry={() => load()} />
 {:else if loading && platforms.length === 0}
 	<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3" aria-busy="true">
 		{#each { length: 6 }, i (i)}
-			<div class="h-32 placeholder animate-pulse"></div>
+			<div class="h-36 placeholder animate-pulse"></div>
 		{/each}
 	</div>
 {:else if shown.length === 0}
@@ -154,7 +162,7 @@
 		{#each shown as platform (platform.id)}
 			<a
 				href={resolve('/(app)/platforms/[id]', { id: platform.id })}
-				class="card border border-surface-200-800 bg-surface-100-900 p-5 transition hover:bg-surface-200-800 sm:p-6"
+				class="min-w-0 card preset-filled-surface-100-900 p-4"
 			>
 				<PlatformSummary {platform} />
 			</a>

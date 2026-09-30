@@ -689,7 +689,7 @@ mod tests {
     /// Every example link resolves live, and the image and the PDF among them come back
     /// as what they are.
     #[tokio::test]
-    #[ignore = "requires live Dropbox access"]
+
     async fn live_examples_resolve_to_their_kinds() {
         use std::time::Duration;
 

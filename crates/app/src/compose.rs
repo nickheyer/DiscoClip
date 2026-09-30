@@ -5,7 +5,7 @@
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use discoclip_bot::{Clients, DiscordEndpoints, DiscordPublisher};
+use discoclip_bot::{Clients, DiscordEndpoints, DiscordPublisher, SharedDiscordSettings};
 use discoclip_engine::archive::FsArchiver;
 use discoclip_engine::download::HttpDownloader;
 use discoclip_engine::download::dash::DashDownloader;
@@ -22,7 +22,8 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
 use crate::applications::ApplicationStore;
-use crate::args::Args;
+use crate::args::{Args, Command};
+use crate::backup::{self, Backups};
 use crate::bots::BotManager;
 use crate::config;
 use crate::cookies::CookieStore;
@@ -33,6 +34,7 @@ use crate::local::{LocalPublisher, SharedLocalConfig};
 use crate::migrations;
 use crate::oauth::Registry;
 use crate::profiles::{PlatformFacts, ProfileStore};
+use crate::retention::Retention;
 use crate::rules::RuleStore;
 use crate::secrets::{KEY_FILE, Keyring, SecretError};
 use crate::settings::{self, Settings, SettingsStore};
@@ -70,52 +72,130 @@ enum Error {
 }
 
 pub fn run(args: Args) -> ExitCode {
-    let runtime = match tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-    {
-        Ok(rt) => rt,
-        Err(e) => {
-            eprintln!("could not start runtime: {e}");
+    if let Some(Command::Restore { file }) = &args.command {
+        return restore(args.config.as_deref(), file);
+    }
+    let restores = Arc::new(crate::restore::Restores::default());
+    let process_shutdown = CancellationToken::new();
+    let mut log: Option<LogHandle> = None;
+    let mut restarting = false;
+    let mut recovery: Option<crate::restore::PreparedRestore> = None;
+    loop {
+        let runtime = match tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(runtime) => runtime,
+            Err(error) => {
+                eprintln!("could not start runtime: {error}");
+                return ExitCode::FAILURE;
+            }
+        };
+        let result = runtime.block_on(async {
+            let provisioning = config::load(args.config.as_deref())?;
+            let data_dir = provisioning.data_dir()?;
+            let store = SqliteStore::open(&data_dir.join(backup::DATABASE_FILE)).await?;
+            let keyring = Keyring::load_or_create(&data_dir.join(KEY_FILE))?;
+            migrations::apply(&store).await?;
+            let settings = if restarting {
+                // Provisioning is applied once per process. Reapplying it here could
+                // overwrite values that the user just restored.
+                SettingsStore::new(store.clone()).load().await?
+            } else {
+                let boot = settings::bootstrap(&store, &provisioning).await?;
+                for key in &boot.kept {
+                    tracing::warn!(
+                        key,
+                        "provisioned value not applied: it was changed in the app"
+                    );
+                }
+                boot.settings
+            };
+            let log = log
+                .get_or_insert_with(|| telemetry::init(&settings.log.level))
+                .clone();
+            let _ = log.set(&settings.log.level);
+            serve(Startup {
+                settings,
+                store,
+                keyring,
+                log,
+                data_dir,
+                provisioning_file: provisioning.file.clone(),
+                restores: restores.clone(),
+                process_shutdown: process_shutdown.clone(),
+            })
+            .await
+        });
+        // Drop detached fixture tasks and bot supervisors as well as the joined
+        // services. No task from the previous runtime may reach the restored DB.
+        runtime.shutdown_timeout(std::time::Duration::from_secs(10));
+        if process_shutdown.is_cancelled() {
+            return finish(result);
+        }
+        if let Some(prepared) = restores.take_pending() {
+            restarting = true;
+            if !matches!(&result, Ok(code) if *code == ExitCode::SUCCESS) {
+                restores.fail("The restore was cancelled because services could not stop cleanly. Your current database is unchanged.");
+                continue;
+            }
+            match restores.apply(&prepared) {
+                Ok(()) => recovery = Some(prepared),
+                Err(error) => {
+                    tracing::error!("database restore failed: {error}");
+                    restores.fail(
+                        "The backup could not be restored. Your current database is unchanged.",
+                    );
+                }
+            }
+            continue;
+        }
+        // A backup can be structurally valid yet contain unusable runtime settings.
+        // If startup fails, bring back the safety copy so the UI remains available.
+        if restores.starting()
+            && let Some(prepared) = recovery.take()
+        {
+            tracing::error!("restored services could not start; recovering the previous database");
+            if let Err(error) = backup::restore(&prepared.data_dir, &prepared.safety) {
+                eprintln!("could not recover the previous database: {error}");
+                return ExitCode::FAILURE;
+            }
+            restores.fail("DiscoClip could not start with that backup. Your previous database has been recovered.");
+            continue;
+        }
+        return finish(result);
+    }
+}
+
+fn finish(result: Result<ExitCode, Error>) -> ExitCode {
+    match result {
+        Ok(code) => code,
+        Err(error) => {
+            eprintln!("error: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// `discoclip restore <file>`: the backup checked and put in place of the database under
+/// the data directory the provisioning names.
+fn restore(config: Option<&std::path::Path>, file: &std::path::Path) -> ExitCode {
+    let data_dir = match config::load(config).and_then(|p| p.data_dir()) {
+        Ok(dir) => dir,
+        Err(error) => {
+            eprintln!("error: {error}");
             return ExitCode::FAILURE;
         }
     };
-    let result = runtime.block_on(async {
-        // Provisioning names where the database lives. Everything else the server runs on
-        // is read from that database after provisioning has been written into it.
-        let provisioning = config::load(args.config.as_deref())?;
-        let data_dir = provisioning.data_dir()?;
-        let store = SqliteStore::open(&data_dir.join("discoclip.db")).await?;
-        let keyring = Keyring::load_or_create(&data_dir.join(KEY_FILE))?;
-        let migrated = migrations::apply(&store).await?;
-        let boot = settings::bootstrap(&store, &provisioning).await?;
-        let log = telemetry::init(&boot.settings.log.level);
-        if migrated > 0 {
-            tracing::info!(count = migrated, "database migrated");
-        }
-        match &provisioning.file {
-            Some(path) => tracing::info!(file = %path.display(), "provisioning file applied"),
-            None => tracing::info!("No config file found. Using database settings."),
-        }
-        for key in &boot.kept {
-            tracing::warn!(
-                key,
-                "provisioned value not applied: it was changed in the app"
+    match backup::restore(&data_dir, file) {
+        Ok(()) => {
+            println!(
+                "Restored {} to {}. Start the server to use it.",
+                file.display(),
+                data_dir.join(backup::DATABASE_FILE).display()
             );
+            ExitCode::SUCCESS
         }
-        serve(Startup {
-            settings: boot.settings,
-            store,
-            keyring,
-            log,
-            data_dir,
-            provisioning_file: provisioning.file.clone(),
-        })
-        .await
-    });
-    runtime.shutdown_timeout(std::time::Duration::from_secs(10));
-    match result {
-        Ok(code) => code,
         Err(error) => {
             eprintln!("error: {error}");
             ExitCode::FAILURE
@@ -135,6 +215,16 @@ async fn builder(
     let engine_config = settings.engine.clone();
     tokio::fs::create_dir_all(&engine_config.cache_dir).await?;
     let ffmpeg = Ffmpeg::provision(&engine_config.cache_dir).await?;
+    // The build and encoders the settings name. A choice the machine cannot meet is
+    // reported on the health page, and video is encoded in software until it can.
+    ffmpeg
+        .configure(
+            &engine_config.cache_dir,
+            engine_config.ffmpeg.as_deref(),
+            engine_config.transcode.encoder,
+            &engine_config.transcode.vaapi_device,
+        )
+        .await?;
     let store = Arc::new(store);
     let http = Http::new(settings.http.clone());
     let mut builder = Engine::builder(engine_config.clone(), store, http.clone())
@@ -151,6 +241,9 @@ async fn builder(
     builder = builder.archiver(FsArchiver::new(engine_config.archive));
     Ok((builder, ffmpeg))
 }
+
+/// How long the bots get to close their gateway connections at shutdown.
+const BOT_STOP: std::time::Duration = std::time::Duration::from_secs(15);
 
 /// Cancels `token` on the first shutdown signal and forces exit on the second.
 fn cancel_on_signal(token: CancellationToken) -> std::io::Result<()> {
@@ -197,6 +290,8 @@ struct Startup {
     log: LogHandle,
     data_dir: std::path::PathBuf,
     provisioning_file: Option<std::path::PathBuf>,
+    restores: Arc<crate::restore::Restores>,
+    process_shutdown: CancellationToken,
 }
 
 /// Runs the server: the engine and the web app are the process, and end it when they fail.
@@ -211,6 +306,8 @@ async fn serve(startup: Startup) -> Result<ExitCode, Error> {
         log,
         data_dir,
         provisioning_file,
+        restores,
+        process_shutdown,
     } = startup;
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "starting discoclip");
 
@@ -219,6 +316,8 @@ async fn serve(startup: Startup) -> Result<ExitCode, Error> {
     let directories = discoclip_bot::Directories::default();
     let (mut builder, ffmpeg) = builder(&settings, store.clone()).await?;
     let local: SharedLocalConfig = Arc::new(std::sync::RwLock::new(settings.local.clone()));
+    let discord_settings: SharedDiscordSettings =
+        Arc::new(std::sync::RwLock::new(settings.discord.clone()));
     // The stores the publishers read are built before the engine, from the resolvers
     // it will carry.
     let profiles = ProfileStore::new(
@@ -250,6 +349,7 @@ async fn serve(startup: Startup) -> Result<ExitCode, Error> {
             clients.clone(),
             directories.clone(),
             Arc::new(frontends.cache()),
+            discord_settings.clone(),
         ));
     let engine = builder.build()?;
     let handle = engine.handle();
@@ -261,8 +361,8 @@ async fn serve(startup: Startup) -> Result<ExitCode, Error> {
         handle.http().set_jar(&platform, jar);
     }
 
-    let shutdown = CancellationToken::new();
-    cancel_on_signal(shutdown.clone())?;
+    let shutdown = process_shutdown.child_token();
+    cancel_on_signal(process_shutdown)?;
 
     let fixtures = Arc::new(FixtureRunner::new(
         handle.clone(),
@@ -294,11 +394,33 @@ async fn serve(startup: Startup) -> Result<ExitCode, Error> {
         bots.launch(application, &credentials.bot_token).await;
     }
 
+    let retention = Arc::new(Retention::new(handle.clone()));
+    let backups = Arc::new(
+        Backups::new(
+            store.clone(),
+            data_dir.clone(),
+            Arc::new(std::sync::RwLock::new(settings.backup.clone())),
+        )
+        .with_restores(restores),
+    );
+
     let mut tasks: JoinSet<Result<&'static str, Error>> = JoinSet::new();
     let token = shutdown.clone();
     tasks.spawn(async move {
         engine.run(token).await?;
         Ok("engine")
+    });
+    let token = shutdown.clone();
+    let sweeper = retention.clone();
+    tasks.spawn(async move {
+        sweeper.schedule(token).await;
+        Ok("retention")
+    });
+    let token = shutdown.clone();
+    let scheduler = backups.clone();
+    tasks.spawn(async move {
+        scheduler.schedule(token).await;
+        Ok("backups")
     });
     let token = shutdown.clone();
     let schedule = fixtures.clone();
@@ -321,13 +443,17 @@ async fn serve(startup: Startup) -> Result<ExitCode, Error> {
             discord: endpoints,
             engine: handle,
             fixtures,
-            settings: SettingsStore::new(store),
+            settings: SettingsStore::new(store.clone()),
             log,
             ffmpeg,
             local,
+            discord_settings,
             data_dir,
             provisioning_file,
             started_at,
+            backups,
+            retention,
+            shutdown: shutdown.clone(),
         },
     )
     .await?;
@@ -337,7 +463,11 @@ async fn serve(startup: Startup) -> Result<ExitCode, Error> {
     });
 
     let mut code = ExitCode::SUCCESS;
+    let mut stopping_since: Option<std::time::Instant> = None;
     while let Some(result) = tasks.join_next().await {
+        if stopping_since.is_none() && shutdown.is_cancelled() {
+            stopping_since = Some(std::time::Instant::now());
+        }
         match result {
             Ok(Ok(name)) => tracing::info!("{name} stopped"),
             Ok(Err(error)) => {
@@ -353,7 +483,30 @@ async fn serve(startup: Startup) -> Result<ExitCode, Error> {
         }
     }
     shutdown.cancel();
-    bots.stop_all().await;
+    let began = stopping_since.unwrap_or_else(std::time::Instant::now);
+    // The bots go last: the engine's jobs post through their clients until the grace
+    // period is over. A gateway that will not close is left behind after a while.
+    match tokio::time::timeout(BOT_STOP, bots.stop_all()).await {
+        Ok(()) => tracing::info!("bots stopped"),
+        Err(_) => tracing::warn!(
+            "some bots did not stop within {}s and are left to the runtime",
+            BOT_STOP.as_secs()
+        ),
+    }
+    // Everything the database holds is folded into its main file, so a copy of the file
+    // alone is whole.
+    match store
+        .call(|conn| {
+            conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")?;
+            Ok(())
+        })
+        .await
+    {
+        Ok(()) => tracing::info!("database checkpointed"),
+        Err(error) => tracing::warn!("database not checkpointed: {error}"),
+    }
+    store.close().await?;
+    tracing::info!(took_secs = began.elapsed().as_secs(), "shutdown complete");
     Ok(code)
 }
 

@@ -1,16 +1,19 @@
 <script lang="ts">
 	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
+	import { Accordion } from '@skeletonlabs/skeleton-svelte';
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { audit, users as usersApi } from '$lib/api/endpoints';
 	import type { Action, AuditQuery, Entry, TargetKind, User } from '$lib/api/types';
+	import Card from '$lib/components/Card.svelte';
 	import CodeBlock from '$lib/components/CodeBlock.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
+	import KeyValue from '$lib/components/KeyValue.svelte';
+	import KeyValueRow from '$lib/components/KeyValueRow.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import RelativeTime from '$lib/components/RelativeTime.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
-	import Toolbar from '$lib/components/Toolbar.svelte';
 	import { absolute, number } from '$lib/format';
 	import { reportError } from '$lib/toast.svelte';
 
@@ -46,7 +49,9 @@
 		'frontend.user.create',
 		'frontend.user.password',
 		'frontend.user.delete',
-		'frontend.sessions.revoke'
+		'frontend.sessions.revoke',
+		'backup.run',
+		'backup.delete'
 	];
 	const TARGETS: TargetKind[] = [
 		'setting',
@@ -54,7 +59,8 @@
 		'rule',
 		'platform',
 		'profile',
-		'frontend'
+		'frontend',
+		'backup'
 	];
 
 	let entries = $state<Entry[]>([]);
@@ -63,7 +69,7 @@
 	let loading = $state(true);
 	let loadingMore = $state(false);
 	let error = $state<unknown>(null);
-	let expanded = $state<string | null>(null);
+	let expanded = $state<string[]>([]);
 
 	let actor = $state('');
 	let action = $state<Action | ''>('');
@@ -101,6 +107,7 @@
 			if (current !== requestId) return;
 			entries = page.entries;
 			next = page.next;
+			expanded = [];
 		} catch (err) {
 			if (current !== requestId) return;
 			error = err;
@@ -159,6 +166,8 @@
 					? resolve('/(app)/applications/[id]/guilds/[guild]', { id: app, guild })
 					: null;
 			}
+			case 'backup':
+				return resolve('/(app)/backups');
 			case 'setting':
 				return null;
 		}
@@ -171,48 +180,64 @@
 	}
 </script>
 
-<PageHeader title="Audit log" />
-
-<form
-	class="grid gap-3 card border border-surface-200-800 bg-surface-100-900 p-5 sm:p-6 md:grid-cols-3"
-	onsubmit={(event) => {
-		event.preventDefault();
-		void load();
-	}}
->
-	<select class="select" bind:value={actor} aria-label="Actor">
-		<option value="">Any actor</option>
-		{#each users as user (user.id)}<option value={user.id}>{user.username}</option>{/each}
-	</select>
-	<select class="select" bind:value={action} aria-label="Action">
-		<option value="">Any action</option>
-		{#each ACTIONS as a (a)}<option value={a}>{a}</option>{/each}
-	</select>
-	<div class="flex gap-2">
-		<select class="select" bind:value={targetKind} aria-label="Target kind">
-			<option value="">Any target</option>
-			{#each TARGETS as t (t)}<option value={t}>{t}</option>{/each}
-		</select>
-		<input
-			class="input font-mono"
-			type="text"
-			placeholder="Target id"
-			aria-label="Target id"
-			bind:value={targetId}
-			disabled={!targetKind}
-		/>
-	</div>
-	<input class="input" type="datetime-local" aria-label="Since" bind:value={since} />
-	<input class="input" type="datetime-local" aria-label="Until" bind:value={until} />
-	<div class="flex justify-end gap-2">
-		<button type="button" class="btn preset-tonal" onclick={clear}>Clear</button>
-		<button type="submit" class="btn preset-filled">Apply</button>
-	</div>
-</form>
-
-<Toolbar
+<PageHeader
+	title="Audit log"
 	description="Who changed settings, applications, rules, profiles and views. Secrets are redacted."
 />
+
+<Card label="Filters">
+	<form
+		class="grid gap-3 md:grid-cols-3"
+		onsubmit={(event) => {
+			event.preventDefault();
+			void load();
+		}}
+	>
+		<label class="label">
+			<span class="label-text">Actor</span>
+			<select class="select" bind:value={actor}>
+				<option value="">Any actor</option>
+				{#each users as user (user.id)}<option value={user.id}>{user.username}</option>{/each}
+			</select>
+		</label>
+		<label class="label">
+			<span class="label-text">Action</span>
+			<select class="select" bind:value={action}>
+				<option value="">Any action</option>
+				{#each ACTIONS as a (a)}<option value={a}>{a}</option>{/each}
+			</select>
+		</label>
+		<div class="label">
+			<span class="label-text">Target</span>
+			<div class="field-group grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+				<select class="select" bind:value={targetKind} aria-label="Target kind">
+					<option value="">Any target</option>
+					{#each TARGETS as t (t)}<option value={t}>{t}</option>{/each}
+				</select>
+				<input
+					class="input font-mono"
+					type="text"
+					placeholder="Target id"
+					aria-label="Target id"
+					bind:value={targetId}
+					disabled={!targetKind}
+				/>
+			</div>
+		</div>
+		<label class="label">
+			<span class="label-text">Since</span>
+			<input class="input" type="datetime-local" bind:value={since} />
+		</label>
+		<label class="label">
+			<span class="label-text">Until</span>
+			<input class="input" type="datetime-local" bind:value={until} />
+		</label>
+		<div class="flex items-end justify-end gap-2">
+			<button type="button" class="btn preset-tonal" onclick={clear}>Clear</button>
+			<button type="submit" class="btn preset-filled">Apply</button>
+		</div>
+	</form>
+</Card>
 
 {#if error && !loading}
 	<ErrorState {error} onretry={load} />
@@ -223,58 +248,58 @@
 {:else if entries.length === 0}
 	<EmptyState title="No entries" description="Nothing matches these filters." />
 {:else}
-	<ul
-		class="divide-y divide-surface-200-800 rounded-container border border-surface-200-800 bg-surface-100-900"
-	>
-		{#each entries as entry (entry.id)}
-			{@const href = targetHref(entry)}
-			{@const open = expanded === entry.id}
-			<li>
-				<button
-					type="button"
-					class="grid w-full grid-cols-[auto_1fr_auto] items-center gap-3 px-3 py-2 text-left text-sm hover:bg-surface-200-800"
-					onclick={() => (expanded = open ? null : entry.id)}
-					aria-expanded={open}
-				>
-					<ChevronDownIcon
-						class="size-4 text-surface-600-400 transition {open ? 'rotate-180' : ''}"
-					/>
-					<span class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-						<span class="font-medium">
-							{#if entry.actor.kind === 'user'}{entry.actor.username}{:else}Provisioning{/if}
-						</span>
-						<span class="font-mono text-sm">{entry.action}</span>
-						<span class="truncate text-surface-600-400">
-							{entry.target.kind} · {entry.target.name ?? entry.target.id}
-						</span>
-					</span>
-					<RelativeTime at={entry.at} class="text-sm whitespace-nowrap text-surface-600-400" />
-				</button>
-				{#if open}
-					<div
-						class="space-y-3 border-t border-surface-200-800 bg-surface-50-950 px-4 py-3 text-sm"
-					>
-						<dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-							<dt class="text-surface-600-400">When</dt>
-							<dd>{absolute(entry.at)}</dd>
-							<dt class="text-surface-600-400">Actor</dt>
-							<dd>
+	<Card flush label="Entries">
+		<!-- Skeleton's Accordion: one item per entry, opening on its details. -->
+		<Accordion
+			multiple
+			collapsible
+			value={expanded}
+			onValueChange={(details) => (expanded = details.value)}
+			class="gap-0"
+		>
+			{#each entries as entry, i (entry.id)}
+				{@const href = targetHref(entry)}
+				{#if i > 0}
+					<hr class="hr" />
+				{/if}
+				<Accordion.Item value={entry.id}>
+					<h3>
+						<Accordion.ItemTrigger class="flex items-center gap-3 text-sm">
+							<Accordion.ItemIndicator class="group shrink-0">
+								<ChevronDownIcon
+									class="size-4 text-surface-600-400 transition group-data-[state=open]:rotate-180"
+								/>
+							</Accordion.ItemIndicator>
+							<span class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5">
+								<span class="font-medium">
+									{#if entry.actor.kind === 'user'}{entry.actor.username}{:else}Provisioning{/if}
+								</span>
+								<span class="font-mono text-xs">{entry.action}</span>
+								<span class="truncate text-surface-600-400">
+									{entry.target.kind} · {entry.target.name ?? entry.target.id}
+								</span>
+							</span>
+							<RelativeTime at={entry.at} class="shrink-0 whitespace-nowrap text-surface-600-400" />
+						</Accordion.ItemTrigger>
+					</h3>
+					<Accordion.ItemContent class="space-y-3">
+						<KeyValue>
+							<KeyValueRow label="When" value={absolute(entry.at)} />
+							<KeyValueRow label="Actor">
 								{#if entry.actor.kind === 'user'}
 									{entry.actor.username} via {entry.actor.via} from
-									<span class="font-mono">{entry.actor.ip}</span>
+									<span class="font-mono text-xs">{entry.actor.ip}</span>
 								{:else}
 									Provisioning{entry.actor.file ? ` file ${entry.actor.file}` : ' environment'}
 								{/if}
-							</dd>
-							<dt class="text-surface-600-400">Target</dt>
-							<dd>
-								{entry.target.kind} <span class="font-mono">{entry.target.id}</span>
+							</KeyValueRow>
+							<KeyValueRow label="Target">
+								{entry.target.kind} <span class="font-mono text-xs">{entry.target.id}</span>
 								{#if entry.target.name}· {entry.target.name}{/if}
-								{#if href}· <a class="link-body underline" {href}>Open</a>{/if}
-							</dd>
-							<dt class="text-surface-600-400">Entry</dt>
-							<dd class="font-mono">{entry.id}</dd>
-						</dl>
+								{#if href}· <a class="anchor" {href}>Open</a>{/if}
+							</KeyValueRow>
+							<KeyValueRow label="Entry" value={entry.id} mono />
+						</KeyValue>
 						{#if 'value' in entry.details || 'previous' in entry.details}
 							<div class="grid gap-3 md:grid-cols-2">
 								<div>
@@ -293,11 +318,11 @@
 								<CodeBlock code={pretty(Object.fromEntries(otherDetails(entry)))} wrap />
 							</div>
 						{/if}
-					</div>
-				{/if}
-			</li>
-		{/each}
-	</ul>
+					</Accordion.ItemContent>
+				</Accordion.Item>
+			{/each}
+		</Accordion>
+	</Card>
 	<div class="flex items-center justify-between text-sm text-surface-600-400">
 		<span>{number(entries.length)} entries shown</span>
 		{#if next}

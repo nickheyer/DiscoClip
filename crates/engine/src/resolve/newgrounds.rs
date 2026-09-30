@@ -431,7 +431,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires live Newgrounds and media CDN access"]
+
     async fn live_reported_movies_download_media() {
         use std::time::Duration;
 

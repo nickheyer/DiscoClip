@@ -1758,7 +1758,7 @@ mod tests {
     /// streams, the programme and its season to episodes. A live channel Rai keeps for
     /// Italy answers with its stream from Italy and with the geo gate from elsewhere.
     #[tokio::test]
-    #[ignore = "requires live Rai access"]
+
     async fn live_examples_resolve() {
         let resolver = RaiplayResolver::new(Http::new(crate::http::HttpConfig::default()));
         for link in resolver.platform().examples {

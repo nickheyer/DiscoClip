@@ -43,13 +43,13 @@
 	}
 </script>
 
-<div class="relative min-w-0 {className}">
-	<SearchIcon
-		class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-surface-600-400"
-	/>
+<!-- A Skeleton field group: the search icon, the input, and a clear button once there is text. -->
+<div class="field-group grid-cols-[auto_1fr_auto] {className}">
+	<span class="label label-text preset-tonal" aria-hidden="true"><SearchIcon class="size-4" /></span
+	>
 	<input
 		{id}
-		class="input pr-12 pl-10"
+		class="input"
 		type="search"
 		{placeholder}
 		aria-label={id ? undefined : placeholder}
@@ -64,12 +64,7 @@
 		}}
 	/>
 	{#if value}
-		<button
-			type="button"
-			class="absolute top-1/2 right-1 btn-icon -translate-y-1/2 text-surface-600-400 btn-icon-sm hover:preset-tonal"
-			onclick={clear}
-			aria-label="Clear search"
-		>
+		<button type="button" class="btn preset-tonal" onclick={clear} aria-label="Clear search">
 			<XIcon class="size-4" />
 		</button>
 	{/if}

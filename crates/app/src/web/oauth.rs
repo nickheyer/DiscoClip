@@ -233,7 +233,8 @@ pub async fn callback(
 
 /// Lets a provider login into a front end: the provider must be one the front end names,
 /// and a Discord login must be a listed user, or a member of every guild in the front
-/// end's scope, when the front end asks for that.
+/// end's scope, when the front end asks for that. A listed channel stands for its guild,
+/// which a running bot names; with no bot naming it the login is refused.
 #[allow(clippy::too_many_arguments)]
 async fn front_login(
     state: &AppState,
@@ -284,10 +285,27 @@ async fn front_login(
                     return Ok((jar, failed(&intent, "guilds")));
                 }
             };
-            let member_of_all = frontend
-                .input
-                .scope
-                .guilds
+            let mut wanted: Vec<String> = frontend.input.scope.guilds.clone();
+            for channel in &frontend.input.scope.channels {
+                let guild = channel
+                    .parse::<u64>()
+                    .ok()
+                    .and_then(twilight_model::id::Id::new_checked)
+                    .and_then(|id| state.bots.guild_of_channel(id));
+                let Some(guild) = guild else {
+                    tracing::warn!(
+                        frontend = slug,
+                        channel,
+                        "front end login refused: no bot names the channel's server"
+                    );
+                    return Ok((jar, failed(&intent, "channels")));
+                };
+                let guild = guild.to_string();
+                if !wanted.contains(&guild) {
+                    wanted.push(guild);
+                }
+            }
+            let member_of_all = wanted
                 .iter()
                 .all(|wanted| guilds.iter().any(|g| &g.id == wanted));
             if !member_of_all {

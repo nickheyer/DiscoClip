@@ -1,6 +1,6 @@
 // Formatting shared by every page.
 
-import type { Duration, MediaKind, Snowflake, Stage, Timestamp } from './api/types';
+import type { Duration, MediaKind, RequestLimits, Snowflake, Stage, Timestamp } from './api/types';
 
 /** The word shown where a value is not set. */
 export const EMPTY = 'None';
@@ -133,6 +133,29 @@ export function span(secs: number | null | undefined): string {
 	return `${s}s`;
 }
 
+const EVERY_UNITS: [string, number][] = [
+	['day', 86400],
+	['hour', 3600],
+	['minute', 60],
+	['second', 1]
+];
+
+/** `Every day`, `Every 6 hours`, `Every 1 hour 30 minutes`: how often something runs. */
+export function every(secs: number | null | undefined): string {
+	if (secs === null || secs === undefined || !Number.isFinite(secs)) return '';
+	let rest = Math.max(0, Math.round(secs));
+	const parts: [number, string][] = [];
+	for (const [unit, seconds] of EVERY_UNITS) {
+		const count = Math.floor(rest / seconds);
+		if (count === 0) continue;
+		rest -= count * seconds;
+		parts.push([count, unit]);
+	}
+	if (parts.length === 0) return 'Every 0 seconds';
+	if (parts.length === 1 && parts[0][0] === 1) return `Every ${parts[0][1]}`;
+	return `Every ${parts.map(([count, unit]) => `${number(count)} ${unit}${count === 1 ? '' : 's'}`).join(' ')}`;
+}
+
 const CDN = 'https://cdn.discordapp.com';
 
 /** The guild's icon on Discord's CDN, or nothing when it has none. */
@@ -180,6 +203,28 @@ const STAGE_LABELS: Record<Stage, string> = {
 /** The word for a pipeline stage, capitalised for labels and states. */
 export function stageLabel(stage: Stage): string {
 	return STAGE_LABELS[stage];
+}
+
+/** The limits in force as one line: each one set, or word that the engine's own apply. */
+export function limitsText(limits: RequestLimits): string {
+	const parts: string[] = [];
+	if (limits.max_source_bytes !== null)
+		parts.push(`Source up to ${bytes(limits.max_source_bytes)}`);
+	if (limits.max_duration_secs !== null) {
+		parts.push(
+			limits.max_duration_secs === 0
+				? 'No live streams'
+				: `Length up to ${clock(limits.max_duration_secs)}`
+		);
+	}
+	if (limits.max_height !== null) parts.push(`Height up to ${limits.max_height} px`);
+	return parts.length > 0 ? parts.join(' · ') : 'The engine’s own';
+}
+
+/** The first block of a UUID, or the whole of any other identifier, for showing beside a copy button. */
+export function shortId(id: string): string {
+	const match = /^([0-9a-f]{8})-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.exec(id);
+	return match ? match[1] : id;
 }
 
 /** The first letters of a name, for avatars without a picture. */

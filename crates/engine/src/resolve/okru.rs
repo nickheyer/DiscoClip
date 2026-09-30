@@ -1015,7 +1015,7 @@ mod tests {
     /// Every example link resolves live: the video, the embed and the broadcast to
     /// media with playable streams, the group to entries.
     #[tokio::test]
-    #[ignore = "requires live OK.ru access"]
+
     async fn live_examples_resolve() {
         use std::time::Duration;
 

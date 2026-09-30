@@ -10,8 +10,8 @@
 	import DataTable, { type Column } from '$lib/components/DataTable.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import Toolbar from '$lib/components/Toolbar.svelte';
 	import RelativeTime from '$lib/components/RelativeTime.svelte';
+	import Status from '$lib/components/Status.svelte';
 	import { notify } from '$lib/toast.svelte';
 
 	let views = $state<Frontend[]>([]);
@@ -19,6 +19,7 @@
 	let loading = $state(true);
 	let error = $state<unknown>(null);
 	let deleting = $state<Frontend | null>(null);
+	let deleteOpen = $state(false);
 
 	async function load() {
 		loading = true;
@@ -33,6 +34,11 @@
 	}
 
 	onMount(() => void load());
+
+	function askDelete(view: Frontend) {
+		deleting = view;
+		deleteOpen = true;
+	}
 
 	async function remove() {
 		if (!deleting) return;
@@ -102,9 +108,9 @@
 
 {#snippet nameCell(view: Frontend)}
 	<div class="min-w-0">
-		<p class="flex flex-wrap items-center gap-x-2.5 gap-y-1 font-medium">
+		<p class="flex flex-wrap items-center gap-2 font-medium">
 			<span>{view.name}</span>
-			{#if !view.enabled}<span class="text-sm text-warning-700-300">Disabled</span>{/if}
+			{#if !view.enabled}<Status label="Disabled" tone="warning" />{/if}
 		</p>
 		<p class="flex items-center gap-1 font-mono text-xs text-surface-600-400">
 			/f/{view.slug}
@@ -119,21 +125,24 @@
 	<button
 		type="button"
 		class="btn-icon btn-icon-sm hover:preset-tonal-error"
-		onclick={() => (deleting = view)}
+		onclick={() => askDelete(view)}
 		aria-label="Delete {view.name}"
 	>
-		<Trash2Icon class="size-4" />
+		<Trash2Icon />
 	</button>
 {/snippet}
 
-<PageHeader title="Content views" />
-
-<Toolbar description="Share finished media at /f/<slug> with the audience you choose.">
-	<a href={resolve('/(app)/views/[id]', { id: 'new' })} class="btn preset-filled-primary-500">
-		<PlusIcon class="size-4" />
-		New view
-	</a>
-</Toolbar>
+<PageHeader
+	title="Content views"
+	description="Share finished media at /f/<slug> with the audience you choose."
+>
+	{#snippet actions()}
+		<a href={resolve('/(app)/views/[id]', { id: 'new' })} class="btn preset-filled-primary-500">
+			<PlusIcon class="size-4" />
+			New view
+		</a>
+	{/snippet}
+</PageHeader>
 
 {#if error && !loading}
 	<ErrorState {error} onretry={load} />
@@ -152,7 +161,7 @@
 {/if}
 
 <Confirm
-	open={deleting !== null}
+	bind:open={deleteOpen}
 	title="Delete {deleting?.name ?? 'this view'}?"
 	message="Its accounts and viewer sessions go with it. Shared links stop working."
 	confirmLabel="Delete"

@@ -1,12 +1,14 @@
 <script lang="ts">
-	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
+	import CheckIcon from '@lucide/svelte/icons/check';
+	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
 	import DownloadIcon from '@lucide/svelte/icons/download';
 	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import XIcon from '@lucide/svelte/icons/x';
-	import { Menu, Portal } from '@skeletonlabs/skeleton-svelte';
+	import { Accordion, Menu, Portal, Progress, Steps } from '@skeletonlabs/skeleton-svelte';
 	import { onMount } from 'svelte';
+	import { MediaQuery } from 'svelte/reactivity';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
@@ -16,33 +18,34 @@
 		Job,
 		JobSummary,
 		LogEntry,
-		Progress,
+		Progress as JobProgress,
 		Stage,
-		StageTiming,
-		Variant
+		SubtitleMode,
+		Variant,
+		VideoTrack
 	} from '$lib/api/types';
 	import Bytes from '$lib/components/Bytes.svelte';
+	import Card from '$lib/components/Card.svelte';
 	import CodeBlock from '$lib/components/CodeBlock.svelte';
 	import Confirm from '$lib/components/Confirm.svelte';
-	import CopyButton from '$lib/components/CopyButton.svelte';
 	import DataTable, { type Column } from '$lib/components/DataTable.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
+	import Identifier from '$lib/components/Identifier.svelte';
 	import JobTitle from '$lib/components/JobTitle.svelte';
 	import KeyValue from '$lib/components/KeyValue.svelte';
 	import KeyValueRow from '$lib/components/KeyValueRow.svelte';
 	import MediaKindIcon from '$lib/components/MediaKindIcon.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import PlaceLine from '$lib/components/PlaceLine.svelte';
 	import RelativeTime from '$lib/components/RelativeTime.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import Status from '$lib/components/Status.svelte';
-	import Toolbar from '$lib/components/Toolbar.svelte';
 	import { feed } from '$lib/events.svelte';
 	import {
 		absolute,
 		bytes,
-		clock,
 		duration,
-		EMPTY,
+		limitsText,
 		mediaLabel,
 		number,
 		percent,
@@ -54,11 +57,45 @@
 
 	const STAGES: Stage[] = ['resolve', 'download', 'transcode', 'publish', 'archive'];
 
+	/** Wide enough for the five stages in a row; below it they stack. */
+	const wide = new MediaQuery('(min-width: 40rem)');
+
+	const SUBTITLES: Record<SubtitleMode, string> = {
+		keep: 'Kept as tracks',
+		burn: 'Burnt into the picture',
+		skip: 'Skipped'
+	};
+
+	type StepState = 'pending' | 'running' | 'done' | 'failed' | 'skipped';
+
+	interface Step {
+		stage: Stage;
+		state: StepState;
+		/** What the step's second line reads: a duration, a percentage, "Skipped". */
+		detail: string;
+	}
+
+	/** How each stage's indicator is coloured. */
+	const INDICATOR: Record<StepState, string> = {
+		pending: 'preset-outlined-surface-300-700',
+		running: 'preset-filled-primary-500 animate-pulse',
+		done: 'preset-filled-success-500',
+		failed: 'preset-filled-error-500',
+		skipped: 'preset-tonal opacity-60'
+	};
+	const STEP_TEXT: Record<StepState, string> = {
+		pending: 'text-surface-600-400',
+		running: 'text-primary-600-400',
+		done: '',
+		failed: 'text-error-600-400',
+		skipped: 'text-surface-600-400 line-through'
+	};
+
 	const id = $derived(page.params.id ?? '');
 
 	let job = $state<Job | null>(null);
 	let children = $state<JobSummary[]>([]);
-	let progress = $state<{ stage: Stage; progress: Progress } | null>(null);
+	let progress = $state<{ stage: Stage; progress: JobProgress } | null>(null);
 	let loading = $state(true);
 	let error = $state<unknown>(null);
 	let pending = $state<'retry' | 'cancel' | 'delete' | null>(null);
@@ -125,40 +162,9 @@
 		})
 	);
 
-	const summary = $derived.by((): JobSummary | null => {
-		if (!job) return null;
-		const resolved = job.artifacts.resolved;
-		return {
-			id: job.id,
-			url: job.request.url,
-			status: job.status,
-			source: job.request.origin.source,
-			origin: job.request.origin,
-			destination: job.request.destination,
-			submitted_by: job.request.submitted_by,
-			parent: job.request.parent,
-			retry_of: job.request.retry_of,
-			title: resolved?.title ?? null,
-			resolver: resolved?.resolver ?? null,
-			media: job.artifacts.output?.info?.kind ?? resolved?.media ?? 'video',
-			uploader: resolved?.uploader ?? null,
-			webpage_url: resolved?.webpage_url ?? null,
-			thumbnail: resolved?.thumbnail ?? null,
-			duration_secs: resolved?.duration
-				? resolved.duration.secs + resolved.duration.nanos / 1e9
-				: null,
-			live: resolved?.live ?? false,
-			output_bytes: job.artifacts.output?.size ?? null,
-			published_url: job.artifacts.published?.url ?? null,
-			published_reference: job.artifacts.published?.reference ?? null,
-			children: job.artifacts.children.length,
-			archived_files: job.artifacts.archived?.files.length ?? 0,
-			created_at: job.created_at,
-			updated_at: job.updated_at,
-			started_at: job.started_at,
-			finished_at: job.finished_at
-		};
-	});
+	const resolved = $derived(job?.artifacts.resolved ?? null);
+	const title = $derived(resolved?.title ?? job?.request.url ?? 'Job');
+	const media = $derived(job?.artifacts.output?.info?.kind ?? resolved?.media ?? 'video');
 
 	const finished = $derived(
 		job !== null &&
@@ -171,10 +177,14 @@
 	);
 	const canManage = $derived(session.can('manage_jobs'));
 
-	interface Step {
-		stage: Stage;
-		state: 'pending' | 'running' | 'done' | 'failed' | 'skipped';
-		timing: StageTiming | null;
+	/** What each stage's line reads while it runs. */
+	function runningDetail(stage: Stage): string {
+		if (progress && progress.stage === stage) {
+			return progress.progress.total
+				? percent(progress.progress.done / progress.progress.total)
+				: `${number(progress.progress.done)} so far`;
+		}
+		return 'Running';
 	}
 
 	const steps = $derived.by((): Step[] => {
@@ -186,34 +196,90 @@
 		const failedIndex = failedAt ? STAGES.indexOf(failedAt) : -1;
 		return STAGES.map((stage, index) => {
 			const timing = timings.get(stage) ?? null;
-			let state: Step['state'] = 'pending';
+			const secs = timing
+				? ((timing.ended_at ? Date.parse(timing.ended_at) : Date.now()) -
+						Date.parse(timing.started_at)) /
+					1000
+				: null;
+			let state: StepState = 'pending';
 			if (stage === failedAt) state = 'failed';
 			else if (stage === runningAt) state = 'running';
 			else if (timing?.ended_at) state = 'done';
 			else if (failedIndex >= 0 && index > failedIndex) state = 'skipped';
 			else if (status.status === 'cancelled' && !timing) state = 'skipped';
 			else if (status.status === 'done' && !timing) state = 'skipped';
-			return { stage, state, timing };
+			const detail =
+				state === 'running'
+					? runningDetail(stage)
+					: state === 'skipped'
+						? 'Skipped'
+						: state === 'pending'
+							? 'Waiting'
+							: secs !== null
+								? span(secs)
+								: '';
+			return { stage, state, detail };
 		});
 	});
 
-	function stepSeconds(step: Step): number | null {
-		if (!step.timing) return null;
-		const end = step.timing.ended_at ? Date.parse(step.timing.ended_at) : Date.now();
-		return (end - Date.parse(step.timing.started_at)) / 1000;
-	}
+	/** Which step the stepper stands on: the one running or failed, past the end once done. */
+	const currentStep = $derived.by((): number => {
+		if (!job) return 0;
+		if (job.status.status === 'done') return STAGES.length;
+		if (job.status.status === 'running' || job.status.status === 'failed') {
+			return STAGES.indexOf(job.status.stage);
+		}
+		const firstOpen = steps.findIndex((step) => step.state !== 'done');
+		return firstOpen === -1 ? STAGES.length : firstOpen;
+	});
 
-	const STEP_CLASS: Record<Step['state'], string> = {
-		pending: 'preset-outlined-surface-300-700 text-surface-600-400',
-		running: 'preset-filled-primary-500',
-		done: 'preset-filled-success-500',
-		failed: 'preset-filled-error-600-400',
-		skipped: 'preset-tonal-surface line-through text-surface-600-400'
-	};
+	/** How long the job ran, from its first stage to its last. */
+	const took = $derived.by((): string | null => {
+		if (!job?.started_at) return null;
+		const end = job.finished_at ? Date.parse(job.finished_at) : Date.now();
+		return span((end - Date.parse(job.started_at)) / 1000);
+	});
 
 	function codec(value: Codec | null | undefined): string {
 		if (!value) return '';
 		return typeof value === 'string' ? value : value.other;
+	}
+
+	/** What a picture needed on its way out, as words after its size. */
+	function pictureFlags(track: VideoTrack): string {
+		const flags: string[] = [];
+		if (track.hdr) {
+			flags.push(
+				track.hdr.format === 'pq'
+					? 'HDR10'
+					: track.hdr.format === 'hlg'
+						? 'HLG'
+						: `Dolby Vision ${track.hdr.profile}`
+			);
+		}
+		if (track.field_order === 'top_first' || track.field_order === 'bottom_first') {
+			flags.push('interlaced');
+		}
+		if (track.projection) flags.push('360°');
+		if (track.stereo) flags.push('3D');
+		if (track.vfr) flags.push('variable rate');
+		if (track.alpha) flags.push('transparent');
+		if (track.sample_aspect)
+			flags.push(`${track.sample_aspect[0]}:${track.sample_aspect[1]} pixels`);
+		return flags.length > 0 ? ` · ${flags.join(' · ')}` : '';
+	}
+
+	function variantFlags(v: Variant): string {
+		return [
+			v.live ? 'live' : null,
+			v.video_only ? 'video only' : null,
+			v.audio_only ? 'audio only' : null,
+			v.drm ? 'DRM' : null,
+			v.cipher ? v.cipher.scheme : null,
+			v.language || null
+		]
+			.filter((flag) => flag !== null)
+			.join(' · ');
 	}
 
 	async function retry() {
@@ -251,27 +317,42 @@
 	const variantColumns: Column<Variant>[] = [
 		{ key: 'kind', label: 'Kind', value: (v) => v.kind },
 		{ key: 'label', label: 'Label', value: (v) => v.label ?? v.format_id },
-		{ key: 'container', label: 'Container', value: (v) => codec(v.container) },
+		{ key: 'container', label: 'Container', value: (v) => codec(v.container), optional: true },
 		{
 			key: 'codecs',
 			label: 'Codecs',
-			value: (v) => v.codecs ?? [codec(v.video), codec(v.audio)].filter(Boolean).join(' / ')
+			value: (v) => v.codecs ?? [codec(v.video), codec(v.audio)].filter(Boolean).join(' / '),
+			optional: true
 		},
 		{
 			key: 'size',
 			label: 'Size',
 			align: 'right',
-			value: (v) => (v.size === null ? null : bytes(v.size))
+			value: (v) => (v.size === null ? null : bytes(v.size)),
+			optional: true
 		},
-		{ key: 'height', label: 'Height', align: 'right', value: (v) => v.height },
-		{ key: 'fps', label: 'FPS', align: 'right', value: (v) => v.fps },
+		{
+			key: 'height',
+			label: 'Height',
+			align: 'right',
+			value: (v) => (v.height === null ? null : `${v.height} px`),
+			optional: true
+		},
+		{ key: 'fps', label: 'FPS', align: 'right', value: (v) => v.fps, optional: true },
 		{
 			key: 'bitrate',
 			label: 'Bitrate',
 			align: 'right',
-			value: (v) => (v.bitrate === null ? null : `${Math.round(v.bitrate / 1000)} kbps`)
+			value: (v) => (v.bitrate === null ? null : `${Math.round(v.bitrate / 1000)} kbps`),
+			optional: true
 		},
-		{ key: 'flags', label: 'Flags', cell: flagsCell }
+		{
+			key: 'flags',
+			label: 'Flags',
+			value: variantFlags,
+			class: 'text-surface-600-400',
+			optional: true
+		}
 	];
 
 	const childColumns: Column<JobSummary>[] = [
@@ -316,22 +397,10 @@
 		const item = downloads.find((entry) => entry.value === value);
 		if (item) location.assign(item.url);
 	}
+
+	const back = { href: resolve('/jobs'), label: 'Jobs' };
 </script>
 
-{#snippet flagsCell(v: Variant)}
-	<span class="text-surface-600-400" title={v.drm || undefined}>
-		{[
-			v.live ? 'live' : null,
-			v.video_only ? 'video only' : null,
-			v.audio_only ? 'audio only' : null,
-			v.drm ? 'DRM' : null,
-			v.cipher ? v.cipher.scheme : null,
-			v.language || null
-		]
-			.filter((flag) => flag !== null)
-			.join(' · ')}
-	</span>
-{/snippet}
 {#snippet childTitle(child: JobSummary)}
 	<JobTitle job={child} />
 {/snippet}
@@ -342,135 +411,159 @@
 	<Bytes value={child.output_bytes} />
 {/snippet}
 
+{#snippet external(href: string, text: string)}
+	<a
+		{href}
+		class="inline-flex max-w-full items-center gap-1 anchor"
+		target="_blank"
+		rel="noreferrer"
+	>
+		<span class="truncate">{text}</span>
+		<ExternalLinkIcon class="size-3 shrink-0" />
+	</a>
+{/snippet}
+
 {#if error && !loading}
-	<PageHeader title="Job" />
+	<PageHeader title="Job" {back} />
 	<ErrorState {error} title="This job could not be loaded" onretry={load} />
-{:else if !job || !summary}
-	<PageHeader title="Job" />
-	<div class="space-y-3" aria-busy="true">
-		<div class="h-10 placeholder w-2/3 animate-pulse"></div>
-		<div class="h-40 placeholder animate-pulse"></div>
+{:else if !job}
+	<PageHeader title="Job" {back} />
+	<div class="space-y-4" aria-busy="true">
+		<div class="h-8 placeholder w-2/3 animate-pulse"></div>
+		<div class="h-32 placeholder animate-pulse"></div>
 	</div>
 {:else}
-	<a
-		href={resolve('/jobs')}
-		class="link-body inline-flex items-center gap-1 text-sm text-surface-700-300 hover:text-surface-950-50"
-	>
-		<ArrowLeftIcon class="size-4" />
-		All jobs
-	</a>
-
-	<PageHeader title={summary.title ?? summary.url}>
-		<div class="flex flex-wrap items-center gap-2 text-sm text-surface-600-400">
+	<PageHeader {title} {back}>
+		<div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-surface-600-400">
 			<Status job={job.status} />
+			{#if job.status.status === 'failed'}
+				<span class="min-w-0 break-words text-error-600-400" role="alert">{job.status.message}</span
+				>
+			{/if}
 			<span class="inline-flex items-center gap-1">
-				<MediaKindIcon kind={summary.media} />
-				{mediaLabel(summary.media)}
+				<MediaKindIcon kind={media} class="size-4" />
+				{mediaLabel(media)}
 			</span>
-			{#if summary.resolver}<span>{summary.resolver}</span>{/if}
-			{#if summary.live}<span class="text-error-700-300">Live</span>{/if}
-			<span class="font-mono text-xs">{job.id}</span>
-			<CopyButton text={job.id} label="Copy job id" />
+			{#if resolved?.resolver}<span>{resolved.resolver}</span>{/if}
+			{#if resolved?.uploader_url}
+				{@render external(resolved.uploader_url, resolved.uploader ?? resolved.uploader_url)}
+			{:else if resolved?.uploader}
+				<span>{resolved.uploader}</span>
+			{/if}
+			{#if resolved?.duration}<span>{duration(resolved.duration)}</span>{/if}
+			{#if resolved?.live}<span class="text-error-600-400">Live</span>{/if}
+			<Identifier value={job.id} label="Copy job id" />
 		</div>
+		{#snippet actions()}
+			{#if downloads.length > 0}
+				<Menu onSelect={(details) => download(details.value)}>
+					<Menu.Trigger class="btn preset-tonal">
+						<DownloadIcon class="size-4" />
+						Download
+					</Menu.Trigger>
+					<Portal>
+						<Menu.Positioner class="z-40">
+							<Menu.Content>
+								{#each downloads as item (item.value)}
+									<Menu.Item value={item.value}>
+										<Menu.ItemText>{item.label}</Menu.ItemText>
+									</Menu.Item>
+								{/each}
+							</Menu.Content>
+						</Menu.Positioner>
+					</Portal>
+				</Menu>
+			{/if}
+			{#if canManage}
+				{#if active}
+					<button
+						type="button"
+						class="btn preset-tonal"
+						onclick={cancel}
+						disabled={pending !== null}
+					>
+						{#if pending === 'cancel'}<Spinner />{:else}<XIcon class="size-4" />{/if}
+						Cancel
+					</button>
+				{/if}
+				{#if finished}
+					<button
+						type="button"
+						class="btn preset-tonal-error"
+						onclick={() => (confirmDelete = true)}
+						disabled={pending !== null}
+					>
+						<Trash2Icon class="size-4" />
+						Delete
+					</button>
+					<button
+						type="button"
+						class="btn preset-filled-primary-500"
+						onclick={retry}
+						disabled={pending !== null}
+					>
+						{#if pending === 'retry'}<Spinner />{:else}<RotateCcwIcon class="size-4" />{/if}
+						Retry
+					</button>
+				{/if}
+			{/if}
+		{/snippet}
 	</PageHeader>
 
-	<Toolbar>
-		{#if downloads.length > 0}
-			<Menu onSelect={(details) => download(details.value)}>
-				<Menu.Trigger class="btn preset-tonal">
-					<DownloadIcon class="size-4" />
-					Download
-				</Menu.Trigger>
-				<Portal>
-					<Menu.Positioner>
-						<Menu.Content class="min-w-56 card bg-surface-100-900 p-2 shadow-xl">
-							{#each downloads as item (item.value)}
-								<Menu.Item value={item.value}>
-									<Menu.ItemText>{item.label}</Menu.ItemText>
-								</Menu.Item>
-							{/each}
-						</Menu.Content>
-					</Menu.Positioner>
-				</Portal>
-			</Menu>
-		{/if}
-		{#if canManage}
-			{#if active}
-				<button type="button" class="btn preset-tonal" onclick={cancel} disabled={pending !== null}>
-					{#if pending === 'cancel'}<Spinner />{:else}<XIcon class="size-4" />{/if}
-					Cancel
-				</button>
-			{/if}
-			{#if finished}
-				<button type="button" class="btn preset-tonal" onclick={retry} disabled={pending !== null}>
-					{#if pending === 'retry'}<Spinner />{:else}<RotateCcwIcon class="size-4" />{/if}
-					Retry
-				</button>
-				<button
-					type="button"
-					class="btn preset-tonal-error"
-					onclick={() => (confirmDelete = true)}
-					disabled={pending !== null}
-				>
-					<Trash2Icon class="size-4" />
-					Delete
-				</button>
-			{/if}
-		{/if}
-	</Toolbar>
-
-	{#if job.status.status === 'failed'}
-		<div class="card preset-tonal-error p-4 text-sm" role="alert">
-			<p class="font-semibold">Failed during {job.status.stage}</p>
-			<p class="mt-1 break-words">{job.status.message}</p>
-		</div>
-	{/if}
-
-	<section
-		class="space-y-4 card border border-surface-200-800 bg-surface-100-900 p-5 sm:p-6"
-		aria-label="Stages"
-	>
-		<ol class="grid gap-2 sm:grid-cols-5">
-			{#each steps as step (step.stage)}
-				{@const secs = stepSeconds(step)}
-				<li class="space-y-1 rounded-base px-3 py-2 text-sm {STEP_CLASS[step.state]}">
-					<p class="font-medium">{stageLabel(step.stage)}</p>
-					<p class="text-sm opacity-80">
-						{#if step.state === 'running'}
-							{#if progress && progress.stage === step.stage}
-								{#if progress.progress.total}
-									{percent(progress.progress.done / progress.progress.total)}
-								{:else}
-									{number(progress.progress.done)} so far
-								{/if}
-							{:else}
-								Running
+	<Card label="Stages">
+		<div class="space-y-4">
+			<!-- Skeleton's Steps: one step per pipeline stage, coloured by how it went. -->
+			<Steps
+				count={STAGES.length}
+				step={currentStep}
+				orientation={wide.current ? 'horizontal' : 'vertical'}
+				class="w-full"
+			>
+				<Steps.List>
+					{#each steps as step, index (step.stage)}
+						<Steps.Item {index}>
+							<Steps.Trigger class="pointer-events-none">
+								<Steps.Indicator class={INDICATOR[step.state]}>
+									{#if step.state === 'done'}
+										<CheckIcon class="size-4" />
+									{:else if step.state === 'failed'}
+										<XIcon class="size-4" />
+									{:else}
+										{index + 1}
+									{/if}
+								</Steps.Indicator>
+								<span class="flex flex-col items-start text-sm">
+									<span class="font-medium {STEP_TEXT[step.state]}">{stageLabel(step.stage)}</span>
+									<span class="text-xs text-surface-600-400 tabular-nums">{step.detail}</span>
+								</span>
+							</Steps.Trigger>
+							{#if index < steps.length - 1}
+								<Steps.Separator />
 							{/if}
-						{:else if secs !== null}
-							{span(secs)}
-						{:else if step.state === 'skipped'}
-							Skipped
-						{:else}
-							Waiting
-						{/if}
-					</p>
-				</li>
-			{/each}
-		</ol>
-		{#if progress && job.status.status === 'running' && progress.progress.total}
-			<progress class="progress" value={progress.progress.done} max={progress.progress.total}
-			></progress>
-		{:else if job.status.status === 'running'}
-			<progress class="progress"></progress>
-		{/if}
-	</section>
+						</Steps.Item>
+					{/each}
+				</Steps.List>
+			</Steps>
+			{#if job.status.status === 'running'}
+				<Progress
+					value={progress && progress.progress.total ? progress.progress.done : null}
+					max={progress?.progress.total ?? 100}
+					aria-label="Job progress"
+				>
+					<Progress.Track class="h-1.5">
+						<Progress.Range class="bg-primary-500" />
+					</Progress.Track>
+				</Progress>
+			{/if}
+		</div>
+	</Card>
 
 	{#if job.artifacts.output && job.artifacts.output.info}
 		{@const info = job.artifacts.output.info}
-		<section class="overflow-hidden card bg-surface-100-900" aria-label="Output">
+		<section class="overflow-hidden card preset-filled-surface-100-900" aria-label="Output">
 			{#if info.kind === 'video'}
 				<!-- svelte-ignore a11y_media_has_caption -->
-				<video class="max-h-[70vh] w-full bg-black" controls preload="metadata" src={outputInline}
+				<video class="max-h-[60vh] w-full bg-black" controls preload="metadata" src={outputInline}
 				></video>
 			{:else if info.kind === 'audio'}
 				<div class="p-4">
@@ -478,13 +571,13 @@
 				</div>
 			{:else if info.kind === 'image'}
 				<img
-					class="max-h-[70vh] w-full object-contain"
+					class="max-h-[60vh] w-full object-contain"
 					src={outputInline}
-					alt={summary.title ?? 'Output'}
+					alt={resolved?.title ?? 'Output'}
 				/>
 			{:else}
 				<div class="flex items-center gap-3 p-4 text-sm">
-					<MediaKindIcon kind="file" class="size-6" />
+					<MediaKindIcon kind="file" class="size-5" />
 					<span>{job.artifacts.output.path.split('/').pop()}</span>
 					<span class="text-surface-600-400"><Bytes value={job.artifacts.output.size} /></span>
 				</div>
@@ -492,60 +585,40 @@
 		</section>
 	{/if}
 
-	<div class="grid gap-6 lg:grid-cols-2">
-		<section
-			class="space-y-4 card border border-surface-200-800 bg-surface-100-900 p-5 sm:p-6"
-			aria-label="Request"
-		>
-			<h2 class="h6">Request</h2>
+	<div class="grid items-start gap-6 lg:grid-cols-2">
+		<Card title="Request">
 			<KeyValue>
 				<KeyValueRow label="Link">
-					<a href={job.request.url} class="link-body break-all" target="_blank" rel="noreferrer">
-						{job.request.url}
-						<ExternalLinkIcon class="inline size-3" />
-					</a>
+					{@render external(job.request.url, job.request.url)}
 				</KeyValueRow>
-				<KeyValueRow
-					label="Origin"
-					value="{job.request.origin.source} · {job.request.origin.reference}"
-				/>
-				{#if job.request.origin.url}
-					<KeyValueRow label="Origin link">
-						<a
-							href={job.request.origin.url}
-							class="link-body break-all"
-							target="_blank"
-							rel="noreferrer"
-							>{job.request.origin.url} <ExternalLinkIcon class="inline size-3" /></a
-						>
-					</KeyValueRow>
-				{/if}
-				<KeyValueRow label="Destination" value={job.request.destination} />
-				<KeyValueRow label="Submitted by" value={job.request.submitted_by} />
-				<KeyValueRow label="Submitted"
-					><RelativeTime at={job.created_at} />
-					<span class="text-surface-600-400">({absolute(job.created_at)})</span></KeyValueRow
-				>
-				<KeyValueRow label="Started"><RelativeTime at={job.started_at} /></KeyValueRow>
-				<KeyValueRow label="Finished"><RelativeTime at={job.finished_at} /></KeyValueRow>
-				<KeyValueRow
-					label="Max source"
-					value={job.request.limits.max_source_bytes === null
-						? 'Engine limit'
-						: bytes(job.request.limits.max_source_bytes)}
-				/>
-				<KeyValueRow
-					label="Max duration"
-					value={job.request.limits.max_duration_secs === null
-						? 'Engine limit'
-						: clock(job.request.limits.max_duration_secs)}
-				/>
-				<KeyValueRow
-					label="Max height"
-					value={job.request.limits.max_height === null
-						? 'Engine limit'
-						: `${job.request.limits.max_height} px`}
-				/>
+				<KeyValueRow label="From">
+					<span class="flex flex-wrap items-center gap-x-3 gap-y-1">
+						<PlaceLine
+							origin={job.request.origin}
+							place={job.place}
+							destination={job.request.destination}
+							submittedBy={job.request.submitted_by}
+						/>
+						{#if job.request.origin.url}
+							{@render external(job.request.origin.url, 'Open message')}
+						{/if}
+					</span>
+				</KeyValueRow>
+				<KeyValueRow label="Submitted"><RelativeTime at={job.created_at} /></KeyValueRow>
+				<KeyValueRow label="Ran">
+					{#if job.started_at}
+						<span>Started <RelativeTime at={job.started_at} /></span>
+						{#if job.finished_at}
+							<span class="text-surface-600-400"
+								>· finished <RelativeTime at={job.finished_at} /></span
+							>
+						{/if}
+						{#if took}<span class="text-surface-600-400">· took {took}</span>{/if}
+					{:else}
+						<span class="text-surface-600-400">Not started</span>
+					{/if}
+				</KeyValueRow>
+				<KeyValueRow label="Limits" value={limitsText(job.request.limits)} />
 				<KeyValueRow
 					label="Clip"
 					value={job.request.options.clip
@@ -554,97 +627,86 @@
 				/>
 				<KeyValueRow
 					label="Subtitles"
-					value="{job.request.options.subtitles}{job.request.options.subtitle_language
+					value="{SUBTITLES[job.request.options.subtitles]}{job.request.options.subtitle_language
 						? ` · ${job.request.options.subtitle_language}`
 						: ''}"
 				/>
 				{#if job.request.parent}
 					<KeyValueRow label="Playlist">
-						<a
+						<Identifier
+							value={job.request.parent}
 							href={resolve('/(app)/jobs/[id]', { id: job.request.parent })}
-							class="link-body font-mono text-xs">{job.request.parent}</a
-						>
+							label="Copy playlist job id"
+						/>
 					</KeyValueRow>
 				{/if}
 				{#if job.request.retry_of}
 					<KeyValueRow label="Retry of">
-						<a
+						<Identifier
+							value={job.request.retry_of}
 							href={resolve('/(app)/jobs/[id]', { id: job.request.retry_of })}
-							class="link-body font-mono text-xs">{job.request.retry_of}</a
-						>
+							label="Copy the earlier job’s id"
+						/>
 					</KeyValueRow>
 				{/if}
 			</KeyValue>
-		</section>
+		</Card>
 
-		<section
-			class="space-y-4 card border border-surface-200-800 bg-surface-100-900 p-5 sm:p-6"
-			aria-label="Result"
-		>
-			<h2 class="h6">Result</h2>
+		<Card title="Result">
 			<KeyValue>
-				<KeyValueRow
-					label="Delivery"
-					value={job.artifacts.delivery === 'link' ? 'Link to a view page' : 'Upload'}
-				/>
-				{#if job.artifacts.link_reason}
-					<KeyValueRow label="Linked because" value={job.artifacts.link_reason} />
-				{/if}
-				{#if job.artifacts.published}
-					<KeyValueRow label="Published">
+				<KeyValueRow label="Posted">
+					{#if job.artifacts.published}
 						{#if job.artifacts.published.url}
-							<a
-								href={job.artifacts.published.url}
-								class="link-body break-all"
-								target="_blank"
-								rel="noreferrer"
-								>{job.artifacts.published.reference} <ExternalLinkIcon class="inline size-3" /></a
-							>
+							{@render external(
+								job.artifacts.published.url,
+								job.artifacts.delivery === 'link' ? 'A link to the view page' : 'The file'
+							)}
 						{:else}
-							{job.artifacts.published.reference}
+							{job.artifacts.delivery === 'link' ? 'A link to the view page' : 'The file'}
 						{/if}
 						<span class="text-surface-600-400">
 							· <RelativeTime at={job.artifacts.published.at} /></span
 						>
-					</KeyValueRow>
-				{/if}
-				{#if job.artifacts.archived}
-					<KeyValueRow
-						label="Archived"
-						value="{number(job.artifacts.archived.files.length)} files · {bytes(
-							job.artifacts.archived.bytes
-						)}"
-					/>
+					{:else if job.status.status === 'failed' || job.status.status === 'cancelled'}
+						<span class="text-surface-600-400">Nothing was posted</span>
+					{:else}
+						<span class="text-surface-600-400">Not yet</span>
+					{/if}
+				</KeyValueRow>
+				{#if job.artifacts.link_reason}
+					<KeyValueRow label="Linked because" value={job.artifacts.link_reason} />
 				{/if}
 				{#if job.artifacts.output}
 					{@const out = job.artifacts.output}
-					<KeyValueRow label="Output" value="{out.path.split('/').pop()} · {bytes(out.size)}" />
+					<KeyValueRow label="Output">
+						{out.path.split('/').pop()}
+						<span class="text-surface-600-400">
+							· {bytes(out.size)}{out.info?.duration ? ` · ${duration(out.info.duration)}` : ''}
+						</span>
+					</KeyValueRow>
 					{#if out.info}
 						<KeyValueRow
-							label="Output format"
+							label="Format"
 							value="{codec(out.info.container)}{out.info.video
-								? ` · ${codec(out.info.video.codec)} ${out.info.video.width}×${out.info.video.height}${out.info.video.fps ? ` @ ${out.info.video.fps} fps` : ''}`
+								? ` · ${codec(out.info.video.codec)} ${out.info.video.width}×${out.info.video.height}${out.info.video.fps ? ` at ${out.info.video.fps} fps` : ''}`
 								: ''}{out.info.audio
-								? ` · ${codec(out.info.audio.codec)} ${out.info.audio.channels}ch ${out.info.audio.sample_rate} Hz`
+								? ` · ${codec(out.info.audio.codec)} ${out.info.audio.channels} ch ${(out.info.audio.sample_rate / 1000).toLocaleString()} kHz`
 								: ''}"
 						/>
-						<KeyValueRow label="Output length" value={duration(out.info.duration)} />
 					{/if}
+				{:else}
+					<KeyValueRow label="Output" empty="Not made" />
 				{/if}
 				{#if job.artifacts.source}
 					{@const src = job.artifacts.source}
-					<KeyValueRow
-						label="Source file"
-						value="{src.path.split('/').pop()} · {bytes(src.size)}"
-					/>
-					{#if src.info}
-						<KeyValueRow
-							label="Source format"
-							value="{codec(src.info.container)}{src.info.video
-								? ` · ${codec(src.info.video.codec)} ${src.info.video.width}×${src.info.video.height}`
-								: ''}{src.info.audio ? ` · ${codec(src.info.audio.codec)}` : ''}"
-						/>
-					{/if}
+					<KeyValueRow label="Source">
+						{src.path.split('/').pop()}
+						<span class="text-surface-600-400">
+							· {bytes(src.size)}{src.info
+								? ` · ${codec(src.info.container)}${src.info.video ? ` · ${codec(src.info.video.codec)} ${src.info.video.width}×${src.info.video.height}${pictureFlags(src.info.video)}` : ''}${src.info.audio ? ` · ${codec(src.info.audio.codec)}` : ''}${src.info.subtitles.length > 0 ? ` · ${src.info.subtitles.length} subtitle ${src.info.subtitles.length === 1 ? 'stream' : 'streams'}` : ''}`
+								: ''}
+						</span>
+					</KeyValueRow>
 				{/if}
 				{#if job.artifacts.subtitles.length > 0}
 					<KeyValueRow
@@ -654,90 +716,125 @@
 							.join(', ')}
 					/>
 				{/if}
+				{#if job.artifacts.archived}
+					<KeyValueRow
+						label="Archived"
+						value="{number(job.artifacts.archived.files.length)} files · {bytes(
+							job.artifacts.archived.bytes
+						)}"
+					/>
+				{/if}
 			</KeyValue>
-		</section>
+		</Card>
 	</div>
 
-	{#if job.artifacts.resolved}
-		{@const resolved = job.artifacts.resolved}
-		<section
-			class="space-y-4 card border border-surface-200-800 bg-surface-100-900 p-5 sm:p-6"
-			aria-label="Resolved"
-		>
-			<h2 class="h6">Resolved</h2>
-			<KeyValue>
-				<KeyValueRow label="Title" value={resolved.title} />
-				<KeyValueRow label="Uploader">
-					{#if resolved.uploader_url}
-						<a href={resolved.uploader_url} class="link-body" target="_blank" rel="noreferrer"
-							>{resolved.uploader ?? resolved.uploader_url}
-							<ExternalLinkIcon class="inline size-3" /></a
-						>
-					{:else}
-						{resolved.uploader ?? EMPTY}
-					{/if}
-				</KeyValueRow>
-				<KeyValueRow label="Page">
+	{#if resolved}
+		<Card title="Resolved" description="What {resolved.resolver} said about the link.">
+			<div class="space-y-4">
+				<KeyValue>
 					{#if resolved.webpage_url}
-						<a
-							href={resolved.webpage_url}
-							class="link-body break-all"
-							target="_blank"
-							rel="noreferrer">{resolved.webpage_url} <ExternalLinkIcon class="inline size-3" /></a
-						>
-					{:else}
-						<span class="text-surface-600-400">{EMPTY}</span>
+						<KeyValueRow label="Page">
+							{@render external(resolved.webpage_url, resolved.webpage_url)}
+						</KeyValueRow>
 					{/if}
-				</KeyValueRow>
-				<KeyValueRow
-					label="Uploaded"
-					value={resolved.uploaded_at ? absolute(resolved.uploaded_at) : null}
-				/>
-				<KeyValueRow label="Length" value={duration(resolved.duration)} />
-				<KeyValueRow label="Age limit" value={resolved.age_limit} />
-				<KeyValueRow
-					label="Subtitle tracks"
-					value={resolved.subtitles.length > 0
-						? resolved.subtitles.map((s) => `${s.language}${s.auto ? ' (auto)' : ''}`).join(', ')
-						: null}
-				/>
-			</KeyValue>
-			{#if resolved.description}
-				<details class="text-sm">
-					<summary class="cursor-pointer text-surface-600-400">Description</summary>
-					<p class="mt-2 whitespace-pre-wrap">{resolved.description}</p>
-				</details>
-			{/if}
-			{#if resolved.variants.length > 0}
-				<h3 class="text-sm font-semibold">Variants</h3>
-				<DataTable rows={resolved.variants} columns={variantColumns} rowKey={(v) => v.url} dense />
-			{/if}
-		</section>
+					{#if resolved.uploaded_at}
+						<KeyValueRow label="Uploaded" value={absolute(resolved.uploaded_at)} />
+					{/if}
+					{#if resolved.age_limit}
+						<KeyValueRow label="Age limit" value="{resolved.age_limit}+" />
+					{/if}
+					{#if resolved.subtitles.length > 0}
+						<KeyValueRow
+							label="Subtitle tracks"
+							value={resolved.subtitles
+								.map((s) => `${s.language}${s.auto ? ' (auto)' : ''}`)
+								.join(', ')}
+						/>
+					{/if}
+				</KeyValue>
+				{#if resolved.description || resolved.variants.length > 0}
+					<!-- Skeleton's Accordion folds the long parts away: the description and the variants offered. -->
+					<Accordion
+						multiple
+						collapsible
+						defaultValue={resolved.variants.length <= 6 ? ['variants'] : []}
+					>
+						{#if resolved.description}
+							<Accordion.Item value="description">
+								<h3>
+									<Accordion.ItemTrigger
+										class="flex items-center justify-between gap-2 font-semibold"
+									>
+										Description
+										<Accordion.ItemIndicator class="group">
+											<ChevronDownIcon
+												class="size-5 transition group-data-[state=open]:rotate-180"
+											/>
+										</Accordion.ItemIndicator>
+									</Accordion.ItemTrigger>
+								</h3>
+								<Accordion.ItemContent>
+									<p class="text-sm whitespace-pre-wrap">{resolved.description}</p>
+								</Accordion.ItemContent>
+							</Accordion.Item>
+						{/if}
+						{#if resolved.description && resolved.variants.length > 0}
+							<hr class="hr" />
+						{/if}
+						{#if resolved.variants.length > 0}
+							<Accordion.Item value="variants">
+								<h3>
+									<Accordion.ItemTrigger
+										class="flex items-center justify-between gap-2 font-semibold"
+									>
+										<span>
+											{number(resolved.variants.length)}
+											{resolved.variants.length === 1 ? 'variant' : 'variants'} offered
+										</span>
+										<Accordion.ItemIndicator class="group">
+											<ChevronDownIcon
+												class="size-5 transition group-data-[state=open]:rotate-180"
+											/>
+										</Accordion.ItemIndicator>
+									</Accordion.ItemTrigger>
+								</h3>
+								<Accordion.ItemContent>
+									<DataTable
+										rows={resolved.variants}
+										columns={variantColumns}
+										rowKey={(v) => v.url}
+										flush
+									/>
+								</Accordion.ItemContent>
+							</Accordion.Item>
+						{/if}
+					</Accordion>
+				{/if}
+			</div>
+		</Card>
 	{/if}
 
 	{#if job.artifacts.children.length > 0}
-		<section class="space-y-3" aria-label="Playlist entries">
-			<h2 class="h6">Playlist entries ({number(job.artifacts.children.length)})</h2>
+		<Card title="Playlist entries" count={number(job.artifacts.children.length)} flush>
 			<DataTable
 				rows={children}
 				columns={childColumns}
 				rowKey={(c) => c.id}
 				rowHref={(c) => resolve('/(app)/jobs/[id]', { id: c.id })}
 				rowLabel="View"
+				flush
+				class="p-2"
 			/>
-		</section>
+		</Card>
 	{/if}
 
-	<section
-		class="space-y-4 card border border-surface-200-800 bg-surface-100-900 p-5 sm:p-6"
-		aria-label="Log"
-	>
-		<h2 class="h6">Log</h2>
+	<Card title="Log" count={job.log.length > 0 ? number(job.log.length) : undefined} flush>
 		{#if job.log.length === 0}
-			<p class="text-sm text-surface-600-400">Nothing logged yet.</p>
+			<p class="p-6 text-center text-sm text-surface-600-400">Nothing logged yet.</p>
 		{:else}
 			<CodeBlock
 				wrap
+				class="max-h-80 rounded-t-none"
 				code={job.log
 					.map(
 						(entry: LogEntry) =>
@@ -746,7 +843,7 @@
 					.join('\n')}
 			/>
 		{/if}
-	</section>
+	</Card>
 {/if}
 
 <Confirm

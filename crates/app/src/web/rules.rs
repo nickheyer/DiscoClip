@@ -80,9 +80,11 @@ async fn check_channels(
     guild: &str,
     input: &RuleInput,
 ) -> Result<(), ApiError> {
-    check_channel(state, application, guild, &input.channel_id).await?;
+    if let Some(channel) = &input.channel_id {
+        check_channel(state, application, guild, channel).await?;
+    }
     if let Some(post_to) = &input.post_to
-        && post_to != &input.channel_id
+        && input.channel_id.as_ref() != Some(post_to)
     {
         check_channel(state, application, guild, post_to).await?;
     }
@@ -122,7 +124,7 @@ pub async fn create(
         .rules
         .create(&identity.actor(), id, &guild, input)
         .await?;
-    tracing::info!(by = identity.user.username, rule = %rule.id, guild, channel = rule.input.channel_id, "watch rule added");
+    tracing::info!(by = identity.user.username, rule = %rule.id, guild, channel = rule.input.channel_id.as_deref().unwrap_or("every channel"), "watch rule added");
     Ok((StatusCode::CREATED, Json(rule)))
 }
 
@@ -460,6 +462,66 @@ mod tests {
             .await;
         assert_eq!(status, StatusCode::OK);
         discord.emit(message_create("10", "100", "9", &[], &link));
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        assert_eq!(db.list(&JobFilter::default()).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_rule_without_a_channel_watches_every_channel_of_the_guild() {
+        let (discord, _app, db, mut admin, id) = setup().await;
+        wait_connected(&mut admin, &id).await;
+        let guild_rules = format!("/api/discord/applications/{id}/guilds/100/rules");
+
+        // The channel has to be named, even as null.
+        let (status, _) = admin.post(&guild_rules, json!({"post_to": "11"})).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        let (status, body) = admin
+            .post(&guild_rules, json!({"channel_id": null, "post_to": "11"}))
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+        assert!(body["channel_id"].is_null());
+        assert_eq!(body["post_to"], "11");
+        let whole = body["id"].as_str().unwrap().to_string();
+        let (status, body) = admin.post(&guild_rules, json!({"channel_id": null})).await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        assert!(body["error"].as_str().unwrap().contains("every channel"));
+
+        // A channel with no rule of its own is watched, and results go where the guild's
+        // rule says.
+        let link = format!("https://{SUPPORTED_HOST}/clip");
+        discord.emit(message_create("10", "100", "9", &[], &link));
+        let jobs = wait_for("the link to become a job", || {
+            let db = db.clone();
+            async move {
+                let jobs = db.list(&JobFilter::default()).await.unwrap();
+                (!jobs.is_empty()).then_some(jobs)
+            }
+        })
+        .await;
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].request.destination.as_deref(), Some("11"));
+
+        // A channel whose own rule is off is left alone, and another guild is not this
+        // rule's.
+        let (status, body) = admin
+            .post(&guild_rules, json!({"channel_id": "10", "enabled": false}))
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+        discord.emit(message_create("10", "100", "9", &[], &link));
+        discord.emit(message_create("20", "200", "9", &[], &link));
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        assert_eq!(db.list(&JobFilter::default()).await.unwrap().len(), 1);
+
+        // The guild's rule turned off ends the watch for channels without their own.
+        let (status, body) = admin
+            .send(
+                Method::PUT,
+                &format!("/api/discord/rules/{whole}"),
+                Some(json!({"channel_id": null, "enabled": false})),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        discord.emit(message_create("11", "100", "9", &[], &link));
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         assert_eq!(db.list(&JobFilter::default()).await.unwrap().len(), 1);
     }

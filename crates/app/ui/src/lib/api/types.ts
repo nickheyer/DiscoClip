@@ -94,7 +94,8 @@ export type HealthStatus = 'ok' | 'warn' | 'fail';
 export type SessionState = 'unsupported' | 'logged_out' | 'logged_in';
 export type ActorKind = 'user' | 'provisioning';
 export type Via = 'session' | 'token';
-export type TargetKind = 'setting' | 'application' | 'rule' | 'platform' | 'profile' | 'frontend';
+export type TargetKind =
+	'setting' | 'application' | 'rule' | 'platform' | 'profile' | 'frontend' | 'backup';
 export type Action =
 	| 'settings.set'
 	| 'settings.reset'
@@ -126,7 +127,10 @@ export type Action =
 	| 'frontend.user.create'
 	| 'frontend.user.password'
 	| 'frontend.user.delete'
-	| 'frontend.sessions.revoke';
+	| 'frontend.sessions.revoke'
+	| 'backup.run'
+	| 'backup.delete'
+	| 'backup.restore';
 export type SecretKind = 'pin' | 'password' | 'token';
 export type PresetId =
 	| 'basic'
@@ -217,7 +221,8 @@ export interface CommandScope {
 }
 
 export interface RuleInput {
-	channel_id: Snowflake;
+	/** The channel watched, or `null` for every channel of the server. */
+	channel_id: Snowflake | null;
 	post_to?: Snowflake | null;
 	allow_users?: Snowflake[];
 	allow_roles?: Snowflake[];
@@ -772,6 +777,8 @@ export interface JobSummary {
 	status: JobStatus;
 	source: string;
 	origin: Origin;
+	/** The origin in the names people know, for a request from Discord. */
+	place: Place | null;
 	destination: string | null;
 	submitted_by: string | null;
 	parent: Uuid | null;
@@ -807,6 +814,38 @@ export interface Origin {
 	source: string;
 	reference: string;
 	url: Url | null;
+	/** The Discord server the link was seen in. */
+	guild: Snowflake | null;
+	/** The Discord channel the link was seen in. */
+	channel: Snowflake | null;
+}
+
+/** A Discord server as a job's place names it. */
+export interface PlaceGuild {
+	id: Snowflake;
+	name: string;
+	icon: string | null;
+}
+
+/** A Discord channel as a job's place names it. */
+export interface PlaceChannel {
+	id: Snowflake;
+	name: string;
+	kind: ChannelKind;
+}
+
+/**
+ * Where on Discord a job came from and where its result goes, in the names people know.
+ * Each part is there when the application's bot has learned it over its gateway.
+ */
+export interface Place {
+	guild: PlaceGuild | null;
+	/** Where the link was posted. */
+	channel: PlaceChannel | null;
+	/** Where the result is posted, when a rule sends it to another channel. */
+	destination: PlaceChannel | null;
+	/** Who posted the link. */
+	author: GuildMember | null;
 }
 
 export interface JobStats {
@@ -897,6 +936,8 @@ export interface Duration {
 export interface Job {
 	id: Uuid;
 	request: JobRequest;
+	/** The request's origin in the names people know, for a request from Discord. */
+	place: Place | null;
 	status: JobStatus;
 	artifacts: Artifacts;
 	log: LogEntry[];
@@ -993,6 +1034,27 @@ export interface MediaInfo {
 	duration: Duration | null;
 	video: VideoTrack | null;
 	audio: AudioTrack | null;
+	/** Cover art or a poster frame carried beside the streams. */
+	cover: AttachedPicture | null;
+	/** The subtitle streams inside the file, in order. */
+	subtitles: EmbeddedSubtitle[];
+}
+
+export type FieldOrder = 'unknown' | 'progressive' | 'top_first' | 'bottom_first';
+export type HdrFormat =
+	{ format: 'pq' } | { format: 'hlg' } | { format: 'dolby_vision'; profile: number };
+export type Projection =
+	| { layout: 'equirectangular' }
+	| { layout: 'cubemap'; padding: number }
+	| { layout: 'equi_angular_cubemap' }
+	| { layout: 'equirectangular_tile'; left: number; top: number; right: number; bottom: number };
+export type StereoLayout = 'side_by_side' | 'top_bottom';
+
+export interface ColorInfo {
+	primaries: string | null;
+	transfer: string | null;
+	matrix: string | null;
+	range: string | null;
 }
 
 export interface VideoTrack {
@@ -1001,6 +1063,24 @@ export interface VideoTrack {
 	height: number;
 	fps: number | null;
 	bitrate: number | null;
+	/** The stream's index in the file. */
+	index: number;
+	pix_fmt: string | null;
+	color: ColorInfo;
+	/** The high dynamic range format, when the picture is not SDR. */
+	hdr: HdrFormat | null;
+	field_order: FieldOrder;
+	/** The pixel aspect ratio as `[num, den]` when pixels are not square. */
+	sample_aspect: [number, number] | null;
+	/** Whether frames arrive at varying intervals. */
+	vfr: boolean;
+	/** Whether the pixel format carries transparency. */
+	alpha: boolean;
+	/** How a 360° picture is laid out, when it is one. */
+	projection: Projection | null;
+	stereo: StereoLayout | null;
+	/** The initial view of a 360° picture as `[yaw, pitch, roll]` in degrees. */
+	view: [number, number, number] | null;
 }
 
 export interface AudioTrack {
@@ -1008,6 +1088,26 @@ export interface AudioTrack {
 	channels: number;
 	sample_rate: number;
 	bitrate: number | null;
+	/** The stream's index in the file. */
+	index: number;
+	language: string | null;
+}
+
+export interface AttachedPicture {
+	index: number;
+	width: number;
+	height: number;
+}
+
+export interface EmbeddedSubtitle {
+	index: number;
+	codec: string;
+	language: string | null;
+	name: string | null;
+	/** Pictures rather than text. */
+	bitmap: boolean;
+	default: boolean;
+	forced: boolean;
 }
 
 export interface LocalSubtitle {
@@ -1135,6 +1235,77 @@ export interface Metrics {
 	database: DatabaseMetrics;
 	fixtures: FixtureMetrics;
 	logs: LogMetrics;
+	transcode: TranscodeMetrics;
+	retention: RetentionStatus;
+	backups: BackupMetrics;
+}
+
+export interface BackupMetrics {
+	enabled: boolean;
+	count: number;
+	/** Bytes of every backup kept. */
+	bytes: number;
+	newest_at: Timestamp | null;
+	last_error: string | null;
+	runs: number;
+}
+
+export interface BackupEntry {
+	name: string;
+	bytes: number;
+	/** When it was made, from its name. */
+	at: Timestamp;
+}
+
+export interface RestoreStatus {
+	id: string;
+	phase: 'stopping' | 'restoring' | 'starting' | 'complete' | 'failed';
+	error: string | null;
+}
+
+export interface BackupStatus {
+	last_at: Timestamp | null;
+	last_bytes: number | null;
+	last_error: string | null;
+	runs: number;
+}
+
+export interface BackupsView {
+	enabled: boolean;
+	dir: string;
+	interval_secs: number;
+	keep: number;
+	status: BackupStatus;
+	/** Newest first. */
+	backups: BackupEntry[];
+}
+
+export interface SweepReport {
+	at: Timestamp;
+	jobs_removed: number;
+	failed_removed: number;
+	bytes_freed: number;
+	/** What went wrong along the way. The other steps still ran. */
+	error: string | null;
+}
+
+export interface RetentionStatus {
+	last: SweepReport | null;
+	sweeps: number;
+	jobs_removed_total: number;
+	bytes_freed_total: number;
+}
+
+export interface RetentionConfig {
+	jobs_days: number;
+	failed_jobs_days: number;
+	cache_max_bytes: number;
+	sweep_interval_secs: number;
+}
+
+export interface RetentionView {
+	config: RetentionConfig;
+	status: RetentionStatus;
 }
 
 export interface ProcessMetrics {
@@ -1201,6 +1372,24 @@ export interface FixtureMetrics {
 export interface LogMetrics {
 	buffered: number;
 	capacity: number;
+}
+
+export type EncoderChoice =
+	'auto' | 'software' | 'nvenc' | 'vaapi' | 'qsv' | 'videotoolbox' | 'amf' | 'v4l2m2m';
+
+export interface TranscodeMetrics {
+	/** The first line of `ffmpeg -version`. */
+	ffmpeg: string;
+	source: 'embedded' | 'external';
+	/** The path of an external build. */
+	path: string | null;
+	choice: EncoderChoice;
+	/** The hardware family in use, when one is. */
+	hardware: Exclude<EncoderChoice, 'auto' | 'software'> | null;
+	/** The encoder H.264 is made with. */
+	h264_encoder: string | null;
+	/** Why the choice is not in use, when it is not. */
+	shortfall: string | null;
 }
 
 export interface LogPage {

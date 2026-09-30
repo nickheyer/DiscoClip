@@ -1219,7 +1219,7 @@ mod tests {
     /// Every example link resolves live: the trailers as a playlist and one trailer with
     /// its streams, the screenshot as an image, and both hub listings with entries.
     #[tokio::test]
-    #[ignore = "requires live Steam access"]
+
     async fn live_examples_resolve() {
         let resolver = SteamResolver::new(Http::new(crate::http::HttpConfig::default()));
         let mut kinds = Vec::new();

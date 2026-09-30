@@ -272,6 +272,21 @@ export const metrics = {
 	get: () => get<T.Metrics>('/metrics')
 };
 
+// ---- Backups and retention ----
+
+export const backups = {
+	list: () => get<T.BackupsView>('/backups'),
+	run: () => post<T.BackupEntry>('/backups'),
+	restore: (name: string) => post<T.RestoreStatus>(`/backups/${enc(name)}/restore`),
+	downloadUrl: (name: string) => fileUrl(`/backups/${enc(name)}`),
+	remove: (name: string) => del<void>(`/backups/${enc(name)}`)
+};
+
+export const retention = {
+	get: () => get<T.RetentionView>('/retention'),
+	sweep: () => post<T.SweepReport>('/retention/sweep')
+};
+
 // ---- Server log ----
 
 export const logs = {

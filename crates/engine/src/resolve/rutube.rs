@@ -1133,7 +1133,7 @@ mod tests {
     /// Every example link resolves live: videos, the broadcast and the embed to media
     /// with playable streams, the playlist and channels to entries.
     #[tokio::test]
-    #[ignore = "requires live Rutube access"]
+
     async fn live_examples_resolve() {
         use std::time::Duration;
 

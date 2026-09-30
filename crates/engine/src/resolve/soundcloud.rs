@@ -1622,7 +1622,7 @@ mod tests {
     /// Every example link resolves live: tracks to audio with a playable variant, lists
     /// to entries.
     #[tokio::test]
-    #[ignore = "requires live SoundCloud access"]
+
     async fn live_examples_resolve() {
         let resolver = SoundcloudResolver::new(Http::new(crate::http::HttpConfig::default()));
         for link in resolver.platform().examples {

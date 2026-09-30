@@ -12,7 +12,7 @@ use super::{
 };
 use crate::http::Http;
 
-const MAX_PLAYLIST: usize = 4 * 1024 * 1024;
+pub(super) const MAX_PLAYLIST: usize = 4 * 1024 * 1024;
 
 pub struct Expanded {
     pub variants: Vec<Variant>,

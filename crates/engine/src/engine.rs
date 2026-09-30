@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
+use std::time::Duration;
 
 use jiff::Timestamp;
 use serde::Serialize;
@@ -171,7 +172,10 @@ impl Engine {
         self.handle.clone()
     }
 
-    /// Recovers interrupted jobs, then dispatches queued jobs to workers until shutdown.
+    /// Recovers interrupted jobs, then dispatches queued jobs to workers until `shutdown`.
+    /// Then the jobs under way get the settings' grace period to finish. Those still
+    /// running after it are interrupted and queued again for the next start, except a
+    /// job publishing its output, which is left to finish.
     pub async fn run(mut self, shutdown: CancellationToken) -> Result<(), EngineError> {
         let ctx = self.context.clone();
         let shared = self.handle.shared.clone();
@@ -181,6 +185,7 @@ impl Engine {
         let workers = shared.workers.load(Ordering::Relaxed);
         let semaphore = shared.semaphore.clone();
         let mut tasks: JoinSet<()> = JoinSet::new();
+        let interrupt = CancellationToken::new();
         tracing::info!(workers, "engine running");
 
         loop {
@@ -229,9 +234,9 @@ impl Engine {
             };
             let ctx = ctx.clone();
             let shared = shared.clone();
-            let shutdown = shutdown.clone();
+            let interrupt = interrupt.clone();
             tasks.spawn(async move {
-                pipeline::run_job(ctx, job, token, shutdown).await;
+                pipeline::run_job(ctx, job, token, interrupt).await;
                 drop(permit);
                 shared.active.lock().expect("active jobs lock").remove(&id);
             });
@@ -242,12 +247,38 @@ impl Engine {
             }
         }
 
-        tracing::info!(in_flight = tasks.len(), "engine stopping");
-        while let Some(result) = tasks.join_next().await {
-            if let Err(error) = result {
-                tracing::error!("job task panicked: {error}");
+        let in_flight = tasks.len();
+        let grace = Duration::from_secs(ctx.config().shutdown.grace_secs);
+        if in_flight > 0 {
+            tracing::info!(
+                in_flight,
+                grace_secs = grace.as_secs(),
+                "engine stopping: jobs under way get the grace period to finish"
+            );
+        } else {
+            tracing::info!("engine stopping");
+        }
+        let deadline = tokio::time::sleep(grace);
+        tokio::pin!(deadline);
+        let mut interrupted = false;
+        loop {
+            tokio::select! {
+                next = tasks.join_next() => match next {
+                    Some(Err(error)) => tracing::error!("job task panicked: {error}"),
+                    Some(Ok(())) => {}
+                    None => break,
+                },
+                _ = &mut deadline, if !interrupted => {
+                    interrupted = true;
+                    tracing::warn!(
+                        remaining = tasks.len(),
+                        "grace period over: interrupting the jobs under way. Each is queued again for the next start, except one publishing its output, which finishes."
+                    );
+                    interrupt.cancel();
+                }
             }
         }
+        tracing::info!("engine stopped");
         Ok(())
     }
 
@@ -782,4 +813,284 @@ pub enum EngineError {
     Store(#[from] StoreError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+}
+
+#[cfg(test)]
+mod shutdown_tests {
+    use std::path::{Path, PathBuf};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::{Duration, Instant};
+
+    use async_trait::async_trait;
+    use tokio_util::sync::CancellationToken;
+    use url::Url;
+
+    use super::*;
+    use crate::config::ShutdownConfig;
+    use crate::download::{DownloadContext, DownloadError, Downloaded, Downloader};
+    use crate::event::ProgressSender;
+    use crate::http::HttpConfig;
+    use crate::job::{Origin, Stage};
+    use crate::media::{LocalFile, MediaInfo, MediaKind};
+    use crate::publish::{Constraints, PublishError, Published};
+    use crate::resolve::{Platform, ResolveError, Resolved, SessionSupport, Variant, VariantKind};
+    use crate::store::sqlite::SqliteStore;
+    use crate::transcode::{Target, TranscodeError, Transcoded};
+
+    const HOST: &str = "stub.test";
+
+    /// Resolves every link on the stub host to one file.
+    struct Stub;
+
+    #[async_trait]
+    impl Resolver for Stub {
+        fn id(&self) -> &'static str {
+            "stub"
+        }
+
+        fn platform(&self) -> Platform {
+            Platform {
+                id: "stub",
+                name: "Stub",
+                hosts: &[HOST],
+                features: &[],
+                formats: &["bin"],
+                media: &[MediaKind::File],
+                tags: &[],
+                session: SessionSupport::None,
+                examples: &[],
+            }
+        }
+
+        fn matches(&self, url: &Url) -> bool {
+            url.host_str() == Some(HOST)
+        }
+
+        async fn resolve(&self, url: &Url) -> Result<Resolution, ResolveError> {
+            let mut resolved = Resolved::of("stub", MediaKind::File);
+            resolved.title = Some("a file".into());
+            resolved.variants.push(Variant::file(url.clone()));
+            Ok(Resolution::Media(Box::new(resolved)))
+        }
+    }
+
+    /// Writes a small file after a while, as a download would.
+    struct SlowDownload(Duration);
+
+    #[async_trait]
+    impl Downloader for SlowDownload {
+        fn handles(&self, kind: VariantKind) -> bool {
+            kind == VariantKind::File
+        }
+
+        async fn download(
+            &self,
+            _: &Variant,
+            dir: &Path,
+            _: &DownloadContext,
+            _: ProgressSender,
+        ) -> Result<Downloaded, DownloadError> {
+            tokio::time::sleep(self.0).await;
+            let path = dir.join("source.bin");
+            tokio::fs::write(&path, b"payload").await?;
+            Ok(Downloaded::file(LocalFile::from_path(path).await?))
+        }
+    }
+
+    struct NoTranscode;
+
+    #[async_trait]
+    impl Transcoder for NoTranscode {
+        async fn probe(&self, _: &Path) -> Result<MediaInfo, TranscodeError> {
+            unreachable!("a file is never probed")
+        }
+
+        async fn transcode(
+            &self,
+            _: &LocalFile,
+            _: &Target,
+            _: &Path,
+            _: ProgressSender,
+        ) -> Result<Transcoded, TranscodeError> {
+            unreachable!("a file that fits is never converted")
+        }
+    }
+
+    /// Takes a while to publish, and counts what it published.
+    struct SlowPublish {
+        source: SourceId,
+        delay: Duration,
+        published: Arc<AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl Publisher for SlowPublish {
+        fn source(&self) -> &SourceId {
+            &self.source
+        }
+
+        async fn constraints(&self, _: &Job) -> Result<Constraints, PublishError> {
+            Ok(Constraints::universal(1 << 30))
+        }
+
+        async fn publish(&self, _: &Job, _: &LocalFile) -> Result<Published, PublishError> {
+            tokio::time::sleep(self.delay).await;
+            self.published.fetch_add(1, Ordering::SeqCst);
+            Ok(Published {
+                reference: "posted".into(),
+                url: None,
+                at: jiff::Timestamp::now(),
+            })
+        }
+    }
+
+    struct Harness {
+        handle: EngineHandle,
+        published: Arc<AtomicUsize>,
+        shutdown: CancellationToken,
+        running: tokio::task::JoinHandle<Result<(), EngineError>>,
+        dir: PathBuf,
+    }
+
+    async fn harness(download: Duration, publish: Duration, grace_secs: u64) -> Harness {
+        let dir = std::env::temp_dir().join(format!("discoclip-shutdown-{}", uuid::Uuid::now_v7()));
+        let config = EngineConfig {
+            cache_dir: dir.join("cache"),
+            workers: 2,
+            shutdown: ShutdownConfig { grace_secs },
+            ..EngineConfig::default()
+        };
+        let store = Arc::new(SqliteStore::open_in_memory().await.unwrap());
+        let published = Arc::new(AtomicUsize::new(0));
+        let engine = Engine::builder(config, store, Http::new(HttpConfig::default()))
+            .resolver(Stub)
+            .downloader(SlowDownload(download))
+            .transcoder(NoTranscode)
+            .publisher(SlowPublish {
+                source: SourceId::new("test"),
+                delay: publish,
+                published: published.clone(),
+            })
+            .build()
+            .unwrap();
+        let handle = engine.handle();
+        let shutdown = CancellationToken::new();
+        let running = tokio::spawn(engine.run(shutdown.clone()));
+        Harness {
+            handle,
+            published,
+            shutdown,
+            running,
+            dir,
+        }
+    }
+
+    fn request() -> Request {
+        Request::new(
+            Origin {
+                source: SourceId::new("test"),
+                reference: "r".into(),
+                url: None,
+                guild: None,
+                channel: None,
+            },
+            Url::parse("https://stub.test/file.bin").unwrap(),
+        )
+    }
+
+    async fn wait_for_stage(handle: &EngineHandle, id: JobId, wanted: Stage) {
+        let began = Instant::now();
+        loop {
+            let job = handle.get(id).await.unwrap().unwrap();
+            if job.status == (JobStatus::Running { stage: wanted }) {
+                return;
+            }
+            assert!(
+                began.elapsed() < Duration::from_secs(10),
+                "job never reached {wanted}: {:?}",
+                job.status
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn jobs_under_way_finish_within_the_grace_period() {
+        let h = harness(Duration::from_millis(400), Duration::from_millis(50), 10).await;
+        let id = h.handle.submit(request()).await.unwrap();
+        wait_for_stage(&h.handle, id, Stage::Download).await;
+        h.shutdown.cancel();
+        let began = Instant::now();
+        h.running.await.unwrap().unwrap();
+        assert!(
+            began.elapsed() < Duration::from_secs(5),
+            "{:?}",
+            began.elapsed()
+        );
+        let job = h.handle.get(id).await.unwrap().unwrap();
+        assert_eq!(job.status, JobStatus::Done, "{:?}", job.log);
+        assert_eq!(h.published.load(Ordering::SeqCst), 1);
+        let _ = std::fs::remove_dir_all(h.dir);
+    }
+
+    #[tokio::test]
+    async fn jobs_past_the_grace_period_are_queued_again() {
+        let h = harness(Duration::from_secs(30), Duration::from_millis(10), 1).await;
+        let id = h.handle.submit(request()).await.unwrap();
+        wait_for_stage(&h.handle, id, Stage::Download).await;
+        h.shutdown.cancel();
+        let began = Instant::now();
+        h.running.await.unwrap().unwrap();
+        let waited = began.elapsed();
+        assert!(
+            waited >= Duration::from_secs(1) && waited < Duration::from_secs(5),
+            "{waited:?}"
+        );
+        let job = h.handle.get(id).await.unwrap().unwrap();
+        assert_eq!(job.status, JobStatus::Queued, "{:?}", job.log);
+        assert_eq!(h.published.load(Ordering::SeqCst), 0);
+        let _ = std::fs::remove_dir_all(h.dir);
+    }
+
+    #[tokio::test]
+    async fn publishing_runs_to_its_end_past_the_grace_period() {
+        let h = harness(Duration::from_millis(10), Duration::from_secs(2), 0).await;
+        let id = h.handle.submit(request()).await.unwrap();
+        wait_for_stage(&h.handle, id, Stage::Publish).await;
+        h.shutdown.cancel();
+        let began = Instant::now();
+        h.running.await.unwrap().unwrap();
+        assert!(
+            began.elapsed() >= Duration::from_millis(500),
+            "{:?}",
+            began.elapsed()
+        );
+        let job = h.handle.get(id).await.unwrap().unwrap();
+        assert_eq!(job.status, JobStatus::Done, "{:?}", job.log);
+        assert_eq!(h.published.load(Ordering::SeqCst), 1);
+        assert_eq!(job.artifacts.published.unwrap().reference, "posted");
+        let _ = std::fs::remove_dir_all(h.dir);
+    }
+
+    #[tokio::test]
+    async fn a_person_cancels_even_during_publishing() {
+        let h = harness(Duration::from_millis(10), Duration::from_secs(30), 10).await;
+        let id = h.handle.submit(request()).await.unwrap();
+        wait_for_stage(&h.handle, id, Stage::Publish).await;
+        h.handle.cancel(id).await.unwrap();
+        let began = Instant::now();
+        loop {
+            let job = h.handle.get(id).await.unwrap().unwrap();
+            if job.status == JobStatus::Cancelled {
+                break;
+            }
+            assert!(began.elapsed() < Duration::from_secs(5));
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(h.published.load(Ordering::SeqCst), 0);
+        h.shutdown.cancel();
+        h.running.await.unwrap().unwrap();
+        let _ = std::fs::remove_dir_all(h.dir);
+    }
 }

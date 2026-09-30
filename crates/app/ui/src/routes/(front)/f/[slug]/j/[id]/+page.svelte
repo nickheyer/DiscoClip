@@ -8,6 +8,7 @@
 	import { ApiError } from '$lib/api/client';
 	import { front } from '$lib/api/endpoints';
 	import type { FrontInfo, FrontJob } from '$lib/api/types';
+	import Card from '$lib/components/Card.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
 	import KeyValue from '$lib/components/KeyValue.svelte';
 	import KeyValueRow from '$lib/components/KeyValueRow.svelte';
@@ -78,7 +79,7 @@
 	{:else if !job || !info}
 		<div class="aspect-video placeholder animate-pulse" aria-busy="true"></div>
 	{:else}
-		<section class="overflow-hidden card bg-surface-100-900" aria-label="Media">
+		<section class="overflow-hidden card preset-filled-surface-100-900" aria-label="Media">
 			{#if job.media === 'video'}
 				<!-- svelte-ignore a11y_media_has_caption -->
 				<video
@@ -137,10 +138,7 @@
 			</div>
 		</div>
 
-		<section
-			class="card border border-surface-200-800 bg-surface-100-900 p-5 sm:p-6"
-			aria-label="Details"
-		>
+		<Card title="Details">
 			<KeyValue>
 				<KeyValueRow
 					label="Kind"
@@ -158,6 +156,6 @@
 				<KeyValueRow label="Format" value={job.content_type} />
 				<KeyValueRow label="Published" value={absolute(job.published_at)} />
 			</KeyValue>
-		</section>
+		</Card>
 	{/if}
 </main>

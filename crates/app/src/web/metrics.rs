@@ -194,6 +194,37 @@ pub struct LogMetrics {
     pub capacity: usize,
 }
 
+/// The backups on disk and the last run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct BackupMetrics {
+    pub enabled: bool,
+    pub count: usize,
+    /// Bytes of every backup kept.
+    pub bytes: u64,
+    pub newest_at: Option<Timestamp>,
+    pub last_error: Option<String>,
+    pub runs: u64,
+}
+
+/// What encodes video: the ffmpeg build in use and the encoders chosen on it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TranscodeMetrics {
+    /// The first line of `ffmpeg -version`.
+    pub ffmpeg: String,
+    /// `embedded` or `external`.
+    pub source: &'static str,
+    /// The path of an external build.
+    pub path: Option<String>,
+    /// What the settings asked for.
+    pub choice: &'static str,
+    /// The hardware family in use, when one is.
+    pub hardware: Option<&'static str>,
+    /// The encoder H.264 is made with.
+    pub h264_encoder: Option<String>,
+    /// Why the choice is not in use, when it is not.
+    pub shortfall: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Metrics {
     pub at: Timestamp,
@@ -209,6 +240,9 @@ pub struct Metrics {
     pub database: DatabaseMetrics,
     pub fixtures: FixtureMetrics,
     pub logs: LogMetrics,
+    pub transcode: TranscodeMetrics,
+    pub retention: crate::retention::RetentionStatus,
+    pub backups: BackupMetrics,
 }
 
 pub async fn get(State(state): State<AppState>, Auth(_): Auth) -> Result<Json<Metrics>, ApiError> {
@@ -322,7 +356,46 @@ pub async fn read_metrics(state: &AppState) -> Result<Metrics, ApiError> {
             buffered: state.live.log.buffer.len(),
             capacity: LOG_CAPACITY,
         },
+        transcode: transcode_metrics(state),
+        retention: state.retention.status(),
+        backups: backup_metrics(state).await?,
     })
+}
+
+pub async fn backup_metrics(state: &AppState) -> Result<BackupMetrics, ApiError> {
+    let config = state.backups.config();
+    let status = state.backups.status();
+    let listed = state.backups.list().await?;
+    Ok(BackupMetrics {
+        enabled: config.enabled,
+        count: listed.len(),
+        bytes: listed.iter().map(|b| b.bytes).sum(),
+        newest_at: listed.first().map(|b| b.at),
+        last_error: status.last_error,
+        runs: status.runs,
+    })
+}
+
+pub fn transcode_metrics(state: &AppState) -> TranscodeMetrics {
+    let ffmpeg = &state.live.ffmpeg;
+    let set = ffmpeg.encoders();
+    let (source, path) = match ffmpeg.source() {
+        discoclip_engine::ffmpeg::ToolSource::Embedded { .. } => ("embedded", None),
+        discoclip_engine::ffmpeg::ToolSource::External { path } => {
+            ("external", Some(path.display().to_string()))
+        }
+    };
+    TranscodeMetrics {
+        ffmpeg: ffmpeg.capabilities().version.clone(),
+        source,
+        path,
+        choice: set.choice.as_str(),
+        hardware: set.hardware.map(|h| h.as_str()),
+        h264_encoder: set
+            .for_codec(&discoclip_engine::media::VideoCodec::H264)
+            .map(|e| e.name.clone()),
+        shortfall: set.shortfall.clone(),
+    }
 }
 
 #[cfg(test)]
@@ -359,6 +432,18 @@ mod tests {
         assert_eq!(body["fixtures"]["with_fixtures"], 1);
         assert_eq!(body["fixtures"]["never"], 1);
         assert_eq!(body["logs"]["capacity"], crate::telemetry::LOG_CAPACITY);
+        assert_eq!(body["transcode"]["source"], "embedded");
+        assert_eq!(body["transcode"]["choice"], "software");
+        assert_eq!(body["transcode"]["h264_encoder"], "libx264");
+        assert!(
+            body["transcode"]["ffmpeg"]
+                .as_str()
+                .unwrap()
+                .starts_with("ffmpeg version")
+        );
+        assert_eq!(body["retention"]["sweeps"], 0);
+        assert_eq!(body["backups"]["enabled"], true);
+        assert_eq!(body["backups"]["count"], 0);
         // The next reading has the process again, with CPU use measured since the first.
         let (status, body) = client.get("/api/metrics").await;
         assert_eq!(status, StatusCode::OK);

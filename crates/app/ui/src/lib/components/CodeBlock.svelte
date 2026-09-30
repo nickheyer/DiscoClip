@@ -1,7 +1,7 @@
 <script lang="ts">
 	interface Props {
 		code: string;
-		/** Wrap long lines instead of scrolling sideways. */
+		/** Break long tokens too, so nothing scrolls sideways. */
 		wrap?: boolean;
 		class?: string;
 	}
@@ -10,6 +10,6 @@
 </script>
 
 <pre
-	class="max-h-96 overflow-auto pre text-xs {wrap
-		? 'break-all whitespace-pre-wrap'
-		: ''} {className}">{code}</pre>
+	class="max-h-96 overflow-auto pre {wrap
+		? 'break-all'
+		: 'whitespace-pre'} {className}">{code}</pre>

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
 	import PlayIcon from '@lucide/svelte/icons/play';
 	import { onMount } from 'svelte';
@@ -7,6 +6,7 @@
 	import { page } from '$app/state';
 	import { platforms as platformsApi } from '$lib/api/endpoints';
 	import type { FixtureResult, PlatformCoverage, SessionSupport } from '$lib/api/types';
+	import Card from '$lib/components/Card.svelte';
 	import Confirm from '$lib/components/Confirm.svelte';
 	import CookiesDialog from '$lib/components/CookiesDialog.svelte';
 	import DataTable, { type Column } from '$lib/components/DataTable.svelte';
@@ -18,7 +18,6 @@
 	import RelativeTime from '$lib/components/RelativeTime.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import Status from '$lib/components/Status.svelte';
-	import Toolbar from '$lib/components/Toolbar.svelte';
 	import { host, mediaLabel, number } from '$lib/format';
 	import { session } from '$lib/session.svelte';
 	import { notify, reportError } from '$lib/toast.svelte';
@@ -153,8 +152,9 @@
 
 	const canCheck = $derived(session.can('manage_jobs'));
 	const canSession = $derived(session.can('manage_settings'));
+	const running = $derived(checking || platform?.running === true);
 
-	/** The tags worth a chip: one that repeats a media kind says nothing the kind has not. */
+	/** The tags worth a badge: one that repeats a media kind says nothing the kind has not. */
 	const tags = $derived.by(() => {
 		if (!platform) return [];
 		const kinds = new Set(platform.media.map((kind) => mediaLabel(kind).toLowerCase()));
@@ -169,13 +169,15 @@
 		if (platform.login_required > 0) text += ` · ${number(platform.login_required)} need login`;
 		return text;
 	});
+
+	const back = { href: resolve('/platforms'), label: 'Platforms' };
 </script>
 
 {#snippet urlCell(fixture: FixtureResult)}
 	<div class="min-w-0">
 		<a
 			href={fixture.url}
-			class="link-body block truncate font-medium"
+			class="block truncate anchor font-medium"
 			target="_blank"
 			rel="noreferrer"
 			title={fixture.url}
@@ -184,9 +186,9 @@
 			<ExternalLinkIcon class="inline size-3" />
 		</a>
 		<p class="truncate text-sm text-surface-600-400">{host(fixture.url)}</p>
-		{#if fixture.error}<p class="mt-1 text-sm break-words text-error-700-300">
-				{failure(fixture)}
-			</p>{/if}
+		{#if fixture.error}
+			<p class="mt-1 text-sm break-words text-error-600-400">{failure(fixture)}</p>
+		{/if}
 	</div>
 {/snippet}
 {#snippet statusCell(fixture: FixtureResult)}
@@ -204,60 +206,53 @@
 {/snippet}
 
 {#if error && !loading}
-	<PageHeader title="Platform" />
+	<PageHeader title="Platform" {back} />
 	<ErrorState {error} title="This platform could not be loaded" onretry={() => load()} />
 {:else if !platform}
-	<PageHeader title="Platform" />
+	<PageHeader title="Platform" {back} />
 	<div class="space-y-3" aria-busy="true">
 		<div class="h-10 placeholder w-1/2 animate-pulse"></div>
 		<div class="h-48 placeholder animate-pulse"></div>
 	</div>
 {:else}
-	<a
-		href={resolve('/platforms')}
-		class="link-body inline-flex items-center gap-1 text-sm text-surface-700-300 hover:text-surface-950-50"
-	>
-		<ArrowLeftIcon class="size-4" />
-		All platforms
-	</a>
-
-	<PageHeader title={platform.name}>
-		<p class="flex flex-wrap items-center gap-2 text-sm text-surface-600-400">
-			<span class="font-mono text-xs">{platform.id}</span>
+	<PageHeader title={platform.name} {back}>
+		<div class="flex flex-wrap items-center gap-1.5">
+			<span class="badge preset-tonal font-mono" style="--badge-size: var(--text-xs)">
+				{platform.id}
+			</span>
 			{#each platform.media as kind (kind)}
-				<span class="inline-flex items-center gap-1"
-					><MediaKindIcon {kind} class="size-4" />{mediaLabel(kind)}</span
-				>
+				<span class="badge preset-tonal" style="--badge-size: var(--text-xs)">
+					<MediaKindIcon {kind} />
+					{mediaLabel(kind)}
+				</span>
 			{/each}
-			{#each tags as tag (tag)}<span>{tag}</span>{/each}
-		</p>
+			{#each tags as tag (tag)}
+				<span class="badge preset-outlined-surface-300-700" style="--badge-size: var(--text-xs)">
+					{tag}
+				</span>
+			{/each}
+		</div>
+		{#snippet actions()}
+			{#if canCheck}
+				<button
+					type="button"
+					class="btn preset-filled-primary-500"
+					onclick={check}
+					disabled={running}
+					aria-busy={running}
+				>
+					{#if running}<Spinner />{:else}<PlayIcon class="size-4" />{/if}
+					{running ? 'Running checks…' : 'Run checks'}
+				</button>
+			{/if}
+		{/snippet}
 	</PageHeader>
 
-	{#if canCheck}
-		{@const running = checking || platform?.running === true}
-		<Toolbar>
-			<button
-				type="button"
-				class="btn preset-filled-primary-500"
-				onclick={check}
-				disabled={running}
-				aria-busy={running}
-			>
-				{#if running}<Spinner />{:else}<PlayIcon class="size-4" />{/if}
-				{running ? 'Running checks…' : 'Run checks'}
-			</button>
-		</Toolbar>
-	{/if}
-
 	<div class="grid items-start gap-6 lg:grid-cols-2">
-		<section
-			class="space-y-4 card border border-surface-200-800 bg-surface-100-900 p-5 sm:p-6"
-			aria-label="Capabilities"
-		>
-			<h2 class="h6">Capabilities</h2>
+		<Card title="Capabilities">
 			<KeyValue>
 				<KeyValueRow label="Hosts">
-					<span class="font-mono text-sm break-all">{platform.hosts.join(', ')}</span>
+					<span class="font-mono text-xs break-all">{platform.hosts.join(', ')}</span>
 				</KeyValueRow>
 				<KeyValueRow
 					label="Features"
@@ -267,92 +262,87 @@
 					label="Formats"
 					value={platform.formats.length > 0 ? platform.formats.join(', ') : null}
 				/>
-				<KeyValueRow label="Links" value={links} />
-				<KeyValueRow label="Last run"><RelativeTime at={platform.last_run_at} /></KeyValueRow>
-				<!-- The row carries what the platform-level date means, which `KeyValueRow` has no
-				     place for: it is set only by a run that every link came through. -->
-				<dt class="text-surface-600-400" title="The most recent run in which every link passed">
-					Last full pass
-				</dt>
-				<dd class="min-w-0 break-words"><RelativeTime at={platform.last_pass_at} /></dd>
-				<KeyValueRow label="Last fail"><RelativeTime at={platform.last_fail_at} /></KeyValueRow>
 			</KeyValue>
-		</section>
+		</Card>
 
-		<section
-			class="space-y-4 card border border-surface-200-800 bg-surface-100-900 p-5 sm:p-6"
-			aria-label="Session"
-		>
-			<h2 class="h6">Session</h2>
-			<KeyValue>
-				<KeyValueRow label="Login">
-					{LOGIN[platform.session]}
-				</KeyValueRow>
-				<KeyValueRow
-					label="Cookies"
-					value={platform.cookies === 0 ? null : `${number(platform.cookies)} saved`}
-				/>
-				<KeyValueRow label="Updated"><RelativeTime at={platform.cookies_updated_at} /></KeyValueRow>
-				<KeyValueRow label="Last verified">
-					{#if sessionPending === 'check'}
-						<span class="inline-flex items-center gap-2"
-							><Spinner class="size-3" />Verifying now</span
-						>
-					{:else if platform.session_check}
-						<span class="inline-flex flex-wrap items-center gap-2">
-							<Status session={platform.session_check.state} />
-							<RelativeTime at={platform.session_check.at} class="text-surface-600-400" />
-						</span>
-					{:else}
-						<RelativeTime at={null} />
+		<Card title="Session">
+			<div class="space-y-4">
+				<KeyValue>
+					<KeyValueRow label="Login" value={LOGIN[platform.session]} />
+					<KeyValueRow
+						label="Cookies"
+						value={platform.cookies === 0 ? null : `${number(platform.cookies)} saved`}
+					/>
+					<KeyValueRow label="Updated">
+						<RelativeTime at={platform.cookies_updated_at} />
+					</KeyValueRow>
+					<KeyValueRow label="Last verified">
+						{#if sessionPending === 'check'}
+							<span class="inline-flex items-center gap-2"><Spinner />Verifying now</span>
+						{:else if platform.session_check}
+							<span class="inline-flex flex-wrap items-center gap-2">
+								<Status session={platform.session_check.state} />
+								<RelativeTime at={platform.session_check.at} class="text-surface-600-400" />
+							</span>
+						{:else}
+							<RelativeTime at={null} />
+						{/if}
+					</KeyValueRow>
+					{#if platform.session_check?.state === 'logged_in'}
+						<KeyValueRow label="Account" value={platform.session_check.account} />
 					{/if}
-				</KeyValueRow>
-				{#if platform.session_check?.state === 'logged_in'}
-					<KeyValueRow label="Account" value={platform.session_check.account} />
+				</KeyValue>
+				{#if canSession && platform.session !== 'none'}
+					<div class="flex flex-wrap gap-2">
+						<button type="button" class="btn preset-filled" onclick={() => (cookiesOpen = true)}>
+							Import cookies
+						</button>
+						<button
+							type="button"
+							class="btn preset-tonal"
+							onclick={checkSession}
+							disabled={sessionPending !== null || platform.cookies === 0}
+							aria-busy={sessionPending === 'check'}
+							title={sessionPending === 'clear' ? WAIT : undefined}
+						>
+							{#if sessionPending === 'check'}<Spinner />{/if}
+							{sessionPending === 'check' ? 'Verifying…' : 'Verify login'}
+						</button>
+						<button
+							type="button"
+							class="btn preset-tonal-error"
+							onclick={() => (confirmClear = true)}
+							disabled={sessionPending !== null || platform.cookies === 0}
+							aria-busy={sessionPending === 'clear'}
+							title={sessionPending === 'check' ? WAIT : undefined}
+						>
+							{#if sessionPending === 'clear'}<Spinner />{/if}
+							{sessionPending === 'clear' ? 'Clearing…' : 'Clear cookies'}
+						</button>
+					</div>
 				{/if}
-			</KeyValue>
-			{#if canSession && platform.session !== 'none'}
-				<div class="flex flex-wrap gap-2">
-					<button
-						type="button"
-						class="btn preset-filled btn-sm"
-						onclick={() => (cookiesOpen = true)}>Import cookies</button
-					>
-					<button
-						type="button"
-						class="btn preset-tonal btn-sm"
-						onclick={checkSession}
-						disabled={sessionPending !== null || platform.cookies === 0}
-						aria-busy={sessionPending === 'check'}
-						title={sessionPending === 'clear' ? WAIT : undefined}
-					>
-						{#if sessionPending === 'check'}<Spinner />{/if}
-						{sessionPending === 'check' ? 'Verifying…' : 'Verify login'}
-					</button>
-					<button
-						type="button"
-						class="btn preset-tonal-error btn-sm"
-						onclick={() => (confirmClear = true)}
-						disabled={sessionPending !== null || platform.cookies === 0}
-						aria-busy={sessionPending === 'clear'}
-						title={sessionPending === 'check' ? WAIT : undefined}
-					>
-						{#if sessionPending === 'clear'}<Spinner />{/if}
-						{sessionPending === 'clear' ? 'Clearing…' : 'Clear cookies'}
-					</button>
-				</div>
-			{/if}
-		</section>
+			</div>
+		</Card>
 	</div>
 
-	<section class="space-y-3" aria-label="Link checks">
-		<h2 class="h6">Link checks</h2>
-		<DataTable rows={platform.fixtures} {columns} rowKey={(f) => f.url} dense>
+	<Card title="Link checks" count={links} flush>
+		{#snippet actions()}
+			{#if platform}
+				<span class="text-sm text-surface-600-400">
+					Run <RelativeTime at={platform.last_run_at} />
+					<span title="The most recent run in which every link passed">
+						· full pass <RelativeTime at={platform.last_pass_at} />
+					</span>
+					· fail <RelativeTime at={platform.last_fail_at} />
+				</span>
+			{/if}
+		{/snippet}
+		<DataTable rows={platform.fixtures} {columns} rowKey={(f) => f.url} flush class="p-2">
 			{#snippet empty()}
 				This platform ships no check links.
 			{/snippet}
 		</DataTable>
-	</section>
+	</Card>
 
 	<CookiesDialog
 		bind:open={cookiesOpen}

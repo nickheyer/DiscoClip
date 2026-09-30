@@ -1263,7 +1263,7 @@ mod tests {
     /// Every example link resolves live: clips and the live to media with variants, the
     /// channel and playlists to entries.
     #[tokio::test]
-    #[ignore = "requires live Naver TV access"]
+
     async fn live_examples_resolve() {
         let resolver = NaverTvResolver::new(Http::new(crate::http::HttpConfig::default()));
         for link in resolver.platform().examples {

@@ -9,12 +9,14 @@ use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, RwLock};
 
+use discoclip_bot::SharedDiscordSettings;
 use discoclip_engine::EngineHandle;
-use discoclip_engine::ffmpeg::Ffmpeg;
+use discoclip_engine::ffmpeg::{Ffmpeg, ToolSource};
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 use url::Url;
 
+use crate::backup::SharedBackupConfig;
 use crate::fixtures::SharedFixtureConfig;
 use crate::local::SharedLocalConfig;
 use crate::oauth::{OAuthService, Registry};
@@ -54,6 +56,10 @@ pub struct Live {
     pub oauth: Arc<OAuthService>,
     pub public_url: Arc<RwLock<Option<Url>>>,
     pub proxies: Arc<RwLock<Proxies>>,
+    /// The `discord` settings as the Discord publisher reads them.
+    pub discord: SharedDiscordSettings,
+    /// The `backup` settings as the backup scheduler reads them.
+    pub backups: SharedBackupConfig,
     /// The listener's settings. The web app rebinds when the address or TLS files change.
     pub web: watch::Sender<WebConfig>,
 }
@@ -78,6 +84,13 @@ impl Live {
         if next.engine.cache_dir != current.engine.cache_dir {
             check_dir("engine.cache_dir", &next.engine.cache_dir).await?;
         }
+        if next.engine.ffmpeg != current.engine.ffmpeg
+            && let Some(path) = &next.engine.ffmpeg
+        {
+            Ffmpeg::check_external(path)
+                .await
+                .map_err(|e| LiveError::rejected("engine.ffmpeg", e))?;
+        }
         if next.engine.archive != current.engine.archive
             && let Some(archive) = &next.engine.archive
         {
@@ -86,6 +99,9 @@ impl Live {
         if next.local.dir != current.local.dir {
             check_dir("local.dir", &next.local.dir).await?;
         }
+        if next.backup.enabled && next.backup.dir != current.backup.dir {
+            check_dir("backup.dir", &next.backup.dir).await?;
+        }
         Ok(())
     }
 
@@ -93,9 +109,9 @@ impl Live {
     pub async fn apply(&self, settings: &Settings) -> Result<(), LiveError> {
         self.log.set(&settings.log.level).map_err(LiveError::Log)?;
         self.engine.reconfigure(settings.engine.clone()).await?;
-        if self.ffmpeg.cache_dir() != settings.engine.cache_dir {
-            self.ffmpeg.relocate(&settings.engine.cache_dir).await?;
-        }
+        self.configure_ffmpeg(settings).await?;
+        *self.discord.write().unwrap_or_else(|e| e.into_inner()) = settings.discord.clone();
+        *self.backups.write().unwrap_or_else(|e| e.into_inner()) = settings.backup.clone();
         self.engine.http().configure(settings.http.clone());
         *self.local.write().unwrap_or_else(|e| e.into_inner()) = settings.local.clone();
         *self.fixtures.write().unwrap_or_else(|e| e.into_inner()) = settings.fixtures.clone();
@@ -112,6 +128,40 @@ impl Live {
         *self.proxies.write().unwrap_or_else(|e| e.into_inner()) =
             Proxies::new(settings.web.trusted_proxies.clone());
         self.web.send_replace(settings.web.clone());
+        Ok(())
+    }
+}
+
+impl Live {
+    /// Puts the ffmpeg build and the encoders the settings name into effect, when they
+    /// differ from what runs now. A choice of encoder the machine cannot meet is refused.
+    async fn configure_ffmpeg(&self, settings: &Settings) -> Result<(), LiveError> {
+        let engine = &settings.engine;
+        let wanted = match &engine.ffmpeg {
+            Some(path) => ToolSource::External { path: path.clone() },
+            None => ToolSource::Embedded {
+                cache_dir: engine.cache_dir.clone(),
+            },
+        };
+        let current = self.ffmpeg.encoders();
+        let unchanged = self.ffmpeg.source() == wanted
+            && current.choice == engine.transcode.encoder
+            && self.ffmpeg.vaapi_device() == engine.transcode.vaapi_device;
+        if unchanged {
+            return Ok(());
+        }
+        let set = self
+            .ffmpeg
+            .configure(
+                &engine.cache_dir,
+                engine.ffmpeg.as_deref(),
+                engine.transcode.encoder,
+                &engine.transcode.vaapi_device,
+            )
+            .await?;
+        if let Some(shortfall) = &set.shortfall {
+            return Err(LiveError::rejected("engine.transcode.encoder", shortfall));
+        }
         Ok(())
     }
 }

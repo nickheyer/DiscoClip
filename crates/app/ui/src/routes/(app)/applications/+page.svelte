@@ -1,5 +1,6 @@
 <script lang="ts">
 	import PlusIcon from '@lucide/svelte/icons/plus';
+	import { Tabs } from '@skeletonlabs/skeleton-svelte';
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { applications, rules as rulesApi } from '$lib/api/endpoints';
@@ -8,9 +9,10 @@
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
 	import Field from '$lib/components/Field.svelte';
+	import KeyValue from '$lib/components/KeyValue.svelte';
+	import KeyValueRow from '$lib/components/KeyValueRow.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import Toolbar from '$lib/components/Toolbar.svelte';
 	import RelativeTime from '$lib/components/RelativeTime.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import Status from '$lib/components/Status.svelte';
@@ -19,11 +21,13 @@
 	import { session } from '$lib/session.svelte';
 	import { notify, reportError } from '$lib/toast.svelte';
 
+	type Tab = 'applications' | 'rules';
+
 	let apps = $state<ApplicationView[]>([]);
 	let rules = $state<Rule[]>([]);
 	let loading = $state(true);
 	let error = $state<unknown>(null);
-	let tab = $state<'applications' | 'rules'>('applications');
+	let tab = $state<Tab>('applications');
 
 	let addOpen = $state(false);
 	let token = $state('');
@@ -31,13 +35,15 @@
 	let clientSecret = $state('');
 	let adding = $state(false);
 
+	const canRules = $derived(session.can('manage_watch_rules'));
+
 	async function load() {
 		loading = true;
 		error = null;
 		try {
 			const [list, all] = await Promise.all([
 				applications.list(),
-				session.can('manage_watch_rules') ? rulesApi.list() : Promise.resolve([])
+				canRules ? rulesApi.list() : Promise.resolve([])
 			]);
 			apps = list;
 			rules = all;
@@ -49,6 +55,10 @@
 	}
 
 	onMount(() => void load());
+
+	function pickTab(value: string) {
+		if (value === 'applications' || value === 'rules') tab = value;
+	}
 
 	function botOf(app: ApplicationView) {
 		return feed.bots[app.id] ?? app.bot;
@@ -78,19 +88,13 @@
 
 	const appName = (id: string) => apps.find((app) => app.id === id)?.name ?? id;
 
-	const COMMAND_MODE = {
-		off: 'Commands off',
-		global: 'Global commands',
-		guilds: 'Commands in chosen servers'
-	};
-
 	const ruleColumns: Column<Rule>[] = [
 		{ key: 'application', label: 'Application', value: (rule) => appName(rule.application_id) },
 		{ key: 'guild', label: 'Server', value: (rule) => rule.guild_id, class: 'font-mono text-xs' },
 		{
 			key: 'channel',
 			label: 'Channel',
-			value: (rule) => rule.channel_id,
+			value: (rule) => rule.channel_id ?? 'Every channel',
 			class: 'font-mono text-xs'
 		},
 		{
@@ -117,123 +121,110 @@
 	<RelativeTime at={rule.updated_at} class="whitespace-nowrap" />
 {/snippet}
 
-<PageHeader title="Applications" />
-
-<Toolbar description="Each Discord application runs its own bot.">
-	<button type="button" class="btn preset-filled-primary-500" onclick={() => (addOpen = true)}>
-		<PlusIcon class="size-4" />
-		Add application
-	</button>
-</Toolbar>
-
-<div
-	class="flex gap-1 border-b border-surface-200-800"
-	role="tablist"
-	aria-label="Applications and rules"
->
-	<button
-		type="button"
-		role="tab"
-		aria-selected={tab === 'applications'}
-		class="border-b-2 px-3 py-2 text-sm font-medium {tab === 'applications'
-			? 'border-primary-500'
-			: 'border-transparent text-surface-600-400 hover:text-surface-950-50'}"
-		onclick={() => (tab = 'applications')}
-	>
-		Applications
-	</button>
-	{#if session.can('manage_watch_rules')}
-		<button
-			type="button"
-			role="tab"
-			aria-selected={tab === 'rules'}
-			class="border-b-2 px-3 py-2 text-sm font-medium {tab === 'rules'
-				? 'border-primary-500'
-				: 'border-transparent text-surface-600-400 hover:text-surface-950-50'}"
-			onclick={() => (tab = 'rules')}
-		>
-			Watch rules
-			<span class="ml-2 text-surface-600-400">{number(rules.length)}</span>
+<PageHeader title="Applications" description="Each Discord application runs its own bot.">
+	{#snippet actions()}
+		<button type="button" class="btn preset-filled-primary-500" onclick={() => (addOpen = true)}>
+			<PlusIcon class="size-4" />
+			Add application
 		</button>
-	{/if}
-</div>
+	{/snippet}
+</PageHeader>
 
 {#if error && !loading}
 	<ErrorState {error} onretry={load} />
-{:else if tab === 'applications'}
-	{#if loading && apps.length === 0}
-		<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3" aria-busy="true">
-			{#each { length: 3 }, i (i)}
-				<div class="h-36 placeholder animate-pulse"></div>
-			{/each}
-		</div>
-	{:else if apps.length === 0}
-		<EmptyState
-			title="No applications yet"
-			description="Add a bot token from the Discord Developer Portal to run a bot."
-		>
-			<button type="button" class="btn preset-filled-primary-500" onclick={() => (addOpen = true)}>
-				<PlusIcon class="size-4" />
-				Add application
-			</button>
-		</EmptyState>
-	{:else}
-		<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3" role="tabpanel">
-			{#each apps as app (app.id)}
-				{@const bot = botOf(app)}
-				<a
-					href={resolve('/(app)/applications/[id]', { id: app.id })}
-					class="space-y-4 card border border-surface-200-800 bg-surface-100-900 p-5 transition hover:bg-surface-200-800 sm:p-6"
-				>
-					<div class="flex items-start justify-between gap-3">
-						<div class="min-w-0">
-							<p class="truncate font-semibold">{app.name}</p>
-							<p class="font-mono text-xs text-surface-600-400">{app.client_id}</p>
-						</div>
-						<Status bot={bot.state} />
-					</div>
-					<dl class="grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
-						<dt class="text-surface-600-400">Bot</dt>
-						<dd>
-							{#if bot.state === 'connected'}
-								{bot.user}
-							{:else if bot.state === 'retrying'}
-								Attempt {bot.attempt}
-							{:else if bot.state === 'failed'}
-								<span class="text-error-700-300">{bot.error}</span>
-							{:else}
-								Since <RelativeTime at={bot.since} />
-							{/if}
-						</dd>
-						<dt class="text-surface-600-400">Commands</dt>
-						<dd>{COMMAND_MODE[app.commands.mode]}</dd>
-						<dt class="text-surface-600-400">Login</dt>
-						<dd>{app.login ? 'On' : 'Off'}</dd>
-						<dt class="text-surface-600-400">Added</dt>
-						<dd><RelativeTime at={app.created_at} /></dd>
-					</dl>
-				</a>
-			{/each}
-		</div>
-	{/if}
 {:else}
-	<div role="tabpanel">
-		<DataTable
-			rows={rules}
-			columns={ruleColumns}
-			rowKey={(rule) => rule.id}
-			{loading}
-			rowHref={(rule) =>
-				resolve('/(app)/applications/[id]/guilds/[guild]', {
-					id: rule.application_id,
-					guild: rule.guild_id
-				})}
-		>
-			{#snippet empty()}
-				No watch rules yet. Open a server on an application to add one.
-			{/snippet}
-		</DataTable>
-	</div>
+	<!-- Skeleton's Tabs: applications on one, every watch rule across them on the other. -->
+	<Tabs value={tab} onValueChange={(details) => pickTab(details.value)}>
+		<Tabs.List class="overflow-x-auto">
+			<Tabs.Trigger value="applications">Applications</Tabs.Trigger>
+			{#if canRules}
+				<Tabs.Trigger value="rules">
+					Watch rules
+					<span class="badge preset-tonal" style="--badge-size: var(--text-xs)">
+						{number(rules.length)}
+					</span>
+				</Tabs.Trigger>
+			{/if}
+			<Tabs.Indicator />
+		</Tabs.List>
+
+		<Tabs.Content value="applications">
+			{#if loading && apps.length === 0}
+				<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3" aria-busy="true">
+					{#each { length: 3 }, i (i)}
+						<div class="h-40 placeholder animate-pulse"></div>
+					{/each}
+				</div>
+			{:else if apps.length === 0}
+				<EmptyState
+					title="No applications yet"
+					description="Add a bot token from the Discord Developer Portal to run a bot."
+				>
+					<button
+						type="button"
+						class="btn preset-filled-primary-500"
+						onclick={() => (addOpen = true)}
+					>
+						<PlusIcon class="size-4" />
+						Add application
+					</button>
+				</EmptyState>
+			{:else}
+				<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+					{#each apps as app (app.id)}
+						{@const bot = botOf(app)}
+						<a
+							href={resolve('/(app)/applications/[id]', { id: app.id })}
+							class="min-w-0 space-y-4 card preset-filled-surface-100-900 p-4"
+						>
+							<div class="flex items-start justify-between gap-3">
+								<div class="min-w-0">
+									<p class="truncate font-semibold">{app.name}</p>
+									<p class="font-mono text-xs text-surface-600-400">{app.client_id}</p>
+								</div>
+								<Status bot={bot.state} class="shrink-0" />
+							</div>
+							<KeyValue>
+								<KeyValueRow label="Bot">
+									{#if bot.state === 'connected'}
+										{bot.user}
+									{:else if bot.state === 'retrying'}
+										Attempt {number(bot.attempt)}
+									{:else if bot.state === 'failed'}
+										<span class="text-error-600-400">{bot.error}</span>
+									{:else}
+										Since <RelativeTime at={bot.since} />
+									{/if}
+								</KeyValueRow>
+								<KeyValueRow label="Login" value={app.login ? 'On' : 'Off'} />
+								<KeyValueRow label="Added"><RelativeTime at={app.created_at} /></KeyValueRow>
+							</KeyValue>
+						</a>
+					{/each}
+				</div>
+			{/if}
+		</Tabs.Content>
+
+		{#if canRules}
+			<Tabs.Content value="rules">
+				<DataTable
+					rows={rules}
+					columns={ruleColumns}
+					rowKey={(rule) => rule.id}
+					{loading}
+					rowHref={(rule) =>
+						resolve('/(app)/applications/[id]/guilds/[guild]', {
+							id: rule.application_id,
+							guild: rule.guild_id
+						})}
+				>
+					{#snippet empty()}
+						No watch rules yet. Open a server on an application to add one.
+					{/snippet}
+				</DataTable>
+			</Tabs.Content>
+		{/if}
+	</Tabs>
 {/if}
 
 <Modal

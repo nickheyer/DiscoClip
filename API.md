@@ -853,6 +853,10 @@ Streams initial bot states and subsequent changes as server-sent events.
 
 ### Watch rules
 
+A rule watches one channel, or with `channel_id` `null`, every channel of the server. A
+channel's own rule takes the server's place there: enabled, the channel is watched with the
+rule's own settings; disabled, the channel is left alone.
+
 #### GET /api/discord/applications/{id}/guilds/{guild}/rules
 
 Lists watch rules for an application and Discord server.
@@ -868,7 +872,7 @@ Lists watch rules for an application and Discord server.
 
 #### POST /api/discord/applications/{id}/guilds/{guild}/rules
 
-Creates a channel watch rule.
+Creates a watch rule. Returns `409` when the channel, or the server as a whole, already has one.
 
 | Field | Value |
 |---|---|
@@ -1234,7 +1238,7 @@ Authenticates a shared secret or view account and sets a session cookie. Failed 
 
 #### GET /api/f/{slug}/auth/{provider}/start
 
-Redirects to a configured login provider. Success returns to `/f/<slug>`. Failure returns to `/f/<slug>/login?error=<reason>`. Reasons: `state`, `denied`, `provider`, `exchange`, `identity`, `frontend`, `not_listed`, `not_member`, `guilds`.
+Redirects to a configured login provider. Success returns to `/f/<slug>`. Failure returns to `/f/<slug>/login?error=<reason>`. Reasons: `state`, `denied`, `provider`, `exchange`, `identity`, `frontend`, `not_listed`, `not_member`, `guilds`, `channels` (the view requires membership and no running bot names the server of a listed channel).
 
 | Field | Value |
 |---|---|
@@ -1628,6 +1632,144 @@ Returns process, host, job, HTTP and storage metrics.
 | Response | `200` `Metrics` |
 | Errors | `401` `500` |
 
+### Backups and retention
+
+#### GET /api/backups
+
+Lists the database backups on disk with the schedule and the last run.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_settings` |
+| Path | None |
+| Query | None |
+| Body | None |
+| Response | `200` `BackupsView` |
+| Errors | `401` `403` `500` |
+
+#### POST /api/backups
+
+Makes a backup of the database now and removes the ones past the kept count. This works even when the automatic schedule is off.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_settings` |
+| Path | None |
+| Query | None |
+| Body | None |
+| Response | `201` `BackupEntry` |
+| Errors | `401` `403` `409` `500` |
+
+#### GET /api/backups/{name}
+
+Downloads one backup file.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_settings` |
+| Path | `name` `string` |
+| Query | None |
+| Body | None |
+| Response | `200` `application/octet-stream` file with `Content-Disposition: attachment` |
+| Errors | `401` `403` `404` `416` |
+
+#### DELETE /api/backups/{name}
+
+Removes one backup file.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_settings` |
+| Path | `name` `string` |
+| Query | None |
+| Body | None |
+| Response | `204` |
+| Errors | `401` `403` `404` `500` |
+
+#### POST /api/backups/{name}/restore
+
+Validates a private copy of the selected backup, then stops the services, saves a safety backup, restores the database, and restarts automatically. Server connection settings (`web`) and the backup directory are preserved. Restored sessions are invalidated. If the restored services cannot start, the previous database is recovered automatically.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_settings` |
+| Path | `name` `string` |
+| Query | None |
+| Body | None |
+| Response | `202` `RestoreStatus` |
+| Errors | `401` `403` `404` `409` `500` |
+
+The response includes an unguessable receipt ID for checking progress after the connection closes. Disconnecting the client does not cancel an accepted restore. Concurrent backup creation, deletion, and restore requests are refused until the restore finishes. The safety copy is not rotated during restoration.
+
+#### GET /api/backups/restore/{id}
+
+Returns progress for a restore receipt. This endpoint works after the restored database invalidates the initiating session. It exposes only the phase and a generic failure message, not database contents. Receipts last for the process lifetime, until another restore replaces them.
+
+| Field | Value |
+|---|---|
+| Auth | possession of the restore receipt ID |
+| Path | `id` `uuid` |
+| Query | None |
+| Body | None |
+| Response | `200` `RestoreStatus` |
+| Errors | `400` `404` |
+
+#### GET /api/retention
+
+Returns the retention settings and what the sweeps have done.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_settings` |
+| Path | None |
+| Query | None |
+| Body | None |
+| Response | `200` `RetentionView` |
+| Errors | `401` `403` |
+
+#### POST /api/retention/sweep
+
+Runs a retention sweep now.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_settings` |
+| Path | None |
+| Query | None |
+| Body | None |
+| Response | `200` `SweepReport` |
+| Errors | `401` `403` |
+
+### Operations
+
+These two live at the root rather than under `/api`.
+
+#### GET /healthz
+
+Answers 200 while the server works and 503 when a part failed or it is stopping.
+
+| Field | Value |
+|---|---|
+| Auth | none |
+| Path | None |
+| Query | None |
+| Body | None |
+| Response | `200` `503` `Healthz` |
+| Errors | None |
+
+#### GET /metrics
+
+Serves the Prometheus text exposition to scrapers and the web app's Metrics page to browsers.
+
+| Field | Value |
+|---|---|
+| Auth | any for the exposition |
+| Path | None |
+| Query | None |
+| Body | None |
+| Response | `200` `text/plain; version=0.0.4` unless `Accept` includes `text/html` |
+| Errors | `401` `500` |
+
 ### Server log
 
 #### GET /api/logs
@@ -1794,8 +1936,8 @@ Rejects a command name the bot does not define.
 
 | Field | Type | Required |
 |---|---|---|
-| `channel_id` | `snowflake` | yes |
-| `post_to` | `snowflake \| null` | no |
+| `channel_id` | `snowflake \| null` | yes · `null` watches every channel of the server |
+| `post_to` | `snowflake \| null` | no · the channel the link was posted in when absent |
 | `allow_users` | `snowflake[]` | no · default `[]` |
 | `allow_roles` | `snowflake[]` | no · default `[]` |
 | `enabled` | `bool` | no · default `true` |
@@ -1856,7 +1998,7 @@ Includes jobs from any listed server or channel. Both lists empty includes all j
 | `secret_kind` | `"pin" \| "password" \| "token" \| null`: how the shared secret is asked for | no |
 | `accounts` | `bool`: the view's own accounts may log in | no |
 | `providers` | `string[]`: login provider ids | no |
-| `discord_members` | `bool`: a Discord login must belong to every guild in the scope | no |
+| `discord_members` | `bool`: a Discord login must belong to every guild in the scope, counting the guild of every listed channel | no |
 | `discord_users` | `snowflake[]`: a Discord login must be one of these | no |
 
 #### LinkPolicy
@@ -2407,6 +2549,7 @@ Includes jobs from any listed server or channel. Both lists empty includes all j
 | `status` | `JobStatus` |
 | `source` | `string` |
 | `origin` | `Origin` |
+| `place` | `Place \| null`: the origin in the names people know, for a request from Discord |
 | `destination` | `string \| null` |
 | `submitted_by` | `string \| null` |
 | `parent` | `uuid \| null` |
@@ -2444,6 +2587,37 @@ Includes jobs from any listed server or channel. Both lists empty includes all j
 | `source` | `string` |
 | `reference` | `string` |
 | `url` | `url \| null` |
+| `guild` | `snowflake \| null`: the Discord server the link was seen in |
+| `channel` | `snowflake \| null`: the Discord channel the link was seen in |
+
+#### Place
+
+Where on Discord a job came from and where its result goes, as the application's bot has
+learned the names over its gateway since the server started. Each part is `null` until the
+bot has seen it.
+
+| Field | Type |
+|---|---|
+| `guild` | `PlaceGuild \| null` |
+| `channel` | `PlaceChannel \| null`: where the link was posted |
+| `destination` | `PlaceChannel \| null`: where the result is posted, when a rule sends it to another channel |
+| `author` | `GuildMember \| null`: who posted the link |
+
+#### PlaceGuild
+
+| Field | Type |
+|---|---|
+| `id` | `snowflake` |
+| `name` | `string` |
+| `icon` | `string \| null`: the icon hash on Discord's CDN |
+
+#### PlaceChannel
+
+| Field | Type |
+|---|---|
+| `id` | `snowflake` |
+| `name` | `string` |
+| `kind` | `ChannelKind` |
 
 #### JobStats
 
@@ -2564,6 +2738,7 @@ Includes jobs from any listed server or channel. Both lists empty includes all j
 |---|---|
 | `id` | `uuid` |
 | `request` | `JobRequest` |
+| `place` | `Place \| null`: the request's origin in the names people know, for a request from Discord |
 | `status` | `JobStatus` |
 | `artifacts` | `Artifacts` |
 | `log` | `LogEntry[]` |
@@ -2678,6 +2853,8 @@ Includes jobs from any listed server or channel. Both lists empty includes all j
 | `duration` | `Duration \| null` |
 | `video` | `VideoTrack \| null` |
 | `audio` | `AudioTrack \| null` |
+| `cover` | `AttachedPicture \| null` |
+| `subtitles` | `EmbeddedSubtitle[]` |
 
 #### VideoTrack
 
@@ -2688,6 +2865,57 @@ Includes jobs from any listed server or channel. Both lists empty includes all j
 | `height` | `integer` |
 | `fps` | `number \| null` |
 | `bitrate` | `integer \| null` |
+| `index` | `integer`: the stream's index in the file |
+| `pix_fmt` | `string \| null` |
+| `color` | `ColorInfo` |
+| `hdr` | `HdrFormat \| null` |
+| `field_order` | `FieldOrder` |
+| `sample_aspect` | `[integer, integer] \| null`: the pixel aspect ratio when pixels are not square |
+| `vfr` | `bool`: frames arrive at varying intervals |
+| `alpha` | `bool`: the pixel format carries transparency |
+| `projection` | `Projection \| null` |
+| `stereo` | `StereoLayout \| null` |
+| `view` | `[number, number, number] \| null`: yaw, pitch and roll of a 360° picture's initial view in degrees |
+
+#### ColorInfo
+
+| Field | Type |
+|---|---|
+| `primaries` | `string \| null` |
+| `transfer` | `string \| null` |
+| `matrix` | `string \| null` |
+| `range` | `string \| null` |
+
+#### HdrFormat
+
+| Field | Type | Present for `format` |
+|---|---|---|
+| `format` | `pq` `hlg` `dolby_vision` | all |
+| `profile` | `integer` | `dolby_vision` |
+
+#### FieldOrder
+
+| Value | Meaning |
+|---|---|
+| `unknown` | the stream does not say |
+| `progressive` | whole frames |
+| `top_first` | interlaced, top field first |
+| `bottom_first` | interlaced, bottom field first |
+
+#### Projection
+
+| Field | Type | Present for `layout` |
+|---|---|---|
+| `layout` | `equirectangular` `cubemap` `equi_angular_cubemap` `equirectangular_tile` | all |
+| `padding` | `integer` | `cubemap` |
+| `left` `top` `right` `bottom` | `number`: fractions of the full sphere | `equirectangular_tile` |
+
+#### StereoLayout
+
+| Value | Meaning |
+|---|---|
+| `side_by_side` | two eyes side by side in one frame |
+| `top_bottom` | two eyes one above the other |
 
 #### AudioTrack
 
@@ -2697,6 +2925,28 @@ Includes jobs from any listed server or channel. Both lists empty includes all j
 | `channels` | `integer` |
 | `sample_rate` | `integer` |
 | `bitrate` | `integer \| null` |
+| `index` | `integer`: the stream's index in the file |
+| `language` | `string \| null` |
+
+#### AttachedPicture
+
+| Field | Type |
+|---|---|
+| `index` | `integer` |
+| `width` | `integer` |
+| `height` | `integer` |
+
+#### EmbeddedSubtitle
+
+| Field | Type |
+|---|---|
+| `index` | `integer` |
+| `codec` | `string` |
+| `language` | `string \| null` |
+| `name` | `string \| null` |
+| `bitmap` | `bool`: pictures rather than text |
+| `default` | `bool` |
+| `forced` | `bool` |
 
 #### LocalSubtitle
 
@@ -2831,6 +3081,14 @@ Media kinds: `"video"` (including animated GIFs), `"audio"`, `"image"` and `"fil
 | `at` | `timestamp` |
 | `checks` | `HealthCheck[]` |
 
+#### Healthz
+
+| Field | Type |
+|---|---|
+| `status` | `ok` `warn` `fail` `stopping` |
+| `version` | `string` |
+| `at` | `timestamp` |
+
 #### HealthCheck
 
 | Field | Type |
@@ -2847,8 +3105,12 @@ Media kinds: `"video"` (including animated GIFs), `"audio"`, `"image"` and `"fil
 | `cache` | the cache directory takes a file |
 | `local` | the local publishing directory takes a file |
 | `ffmpeg` | ffmpeg runs and reports its version |
+| `encoder` | the video encoders the settings chose run on this machine |
+| `fonts` | a line of subtitles renders with a font on this machine |
 | `bots` | no bot has failed or is retrying or lacks a token |
 | `fixtures` | no platform has a failing fixture |
+| `retention` | the last sweep went through |
+| `backups` | the newest backup is not older than twice the interval and the last run did not fail |
 
 #### Metrics
 
@@ -2867,6 +3129,9 @@ Media kinds: `"video"` (including animated GIFs), `"audio"`, `"image"` and `"fil
 | `database` | `DatabaseMetrics` |
 | `fixtures` | `FixtureMetrics` |
 | `logs` | `LogMetrics` |
+| `transcode` | `TranscodeMetrics` |
+| `retention` | `RetentionStatus` |
+| `backups` | `BackupMetrics` |
 
 #### ProcessMetrics
 
@@ -2954,6 +3219,112 @@ Media kinds: `"video"` (including animated GIFs), `"audio"`, `"image"` and `"fil
 | `buffered` | `integer` |
 | `capacity` | `integer` |
 
+#### TranscodeMetrics
+
+| Field | Type |
+|---|---|
+| `ffmpeg` | `string`: the first line of `ffmpeg -version` |
+| `source` | `embedded` `external` |
+| `path` | `string \| null`: the path of an external build |
+| `choice` | `EncoderChoice` |
+| `hardware` | `EncoderChoice \| null`: the family in use, never `auto` or `software` |
+| `h264_encoder` | `string \| null` |
+| `shortfall` | `string \| null`: why the choice is not in use |
+
+#### EncoderChoice
+
+| Value | Meaning |
+|---|---|
+| `auto` | the first hardware family that runs here, else software |
+| `software` | libx264 and its kin |
+| `nvenc` | NVIDIA NVENC |
+| `vaapi` | VA-API |
+| `qsv` | Intel Quick Sync Video |
+| `videotoolbox` | Apple VideoToolbox |
+| `amf` | AMD AMF |
+| `v4l2m2m` | Video4Linux memory-to-memory |
+
+#### BackupMetrics
+
+| Field | Type |
+|---|---|
+| `enabled` | `bool` |
+| `count` | `integer` |
+| `bytes` | `integer`: of every backup kept |
+| `newest_at` | `timestamp \| null` |
+| `last_error` | `string \| null` |
+| `runs` | `integer` |
+
+#### BackupsView
+
+| Field | Type |
+|---|---|
+| `enabled` | `bool` |
+| `dir` | `string` |
+| `interval_secs` | `integer` |
+| `keep` | `integer` |
+| `status` | `BackupStatus` |
+| `backups` | `BackupEntry[]`: newest first |
+
+#### BackupEntry
+
+| Field | Type |
+|---|---|
+| `name` | `string`: `discoclip-<UTC time>-<unique ID>.db`; older names without the ID remain supported |
+| `bytes` | `integer` |
+| `at` | `timestamp` |
+
+#### RestoreStatus
+
+| Field | Type |
+|---|---|
+| `id` | `uuid`: unguessable restore receipt |
+| `phase` | `stopping \| restoring \| starting \| complete \| failed` |
+| `error` | `string \| null` |
+
+#### BackupStatus
+
+| Field | Type |
+|---|---|
+| `last_at` | `timestamp \| null` |
+| `last_bytes` | `integer \| null` |
+| `last_error` | `string \| null` |
+| `runs` | `integer` |
+
+#### RetentionView
+
+| Field | Type |
+|---|---|
+| `config` | `RetentionConfig` |
+| `status` | `RetentionStatus` |
+
+#### RetentionConfig
+
+| Field | Type |
+|---|---|
+| `jobs_days` | `integer`: `0` keeps done jobs forever |
+| `failed_jobs_days` | `integer`: `0` keeps failed and cancelled jobs forever |
+| `cache_max_bytes` | `integer`: `0` never trims |
+| `sweep_interval_secs` | `integer` |
+
+#### RetentionStatus
+
+| Field | Type |
+|---|---|
+| `last` | `SweepReport \| null` |
+| `sweeps` | `integer` |
+| `jobs_removed_total` | `integer` |
+| `bytes_freed_total` | `integer` |
+
+#### SweepReport
+
+| Field | Type |
+|---|---|
+| `at` | `timestamp` |
+| `jobs_removed` | `integer`: done jobs removed for their age |
+| `failed_removed` | `integer`: failed and cancelled jobs removed for their age |
+| `bytes_freed` | `integer` |
+| `error` | `string \| null`: what went wrong along the way |
 #### LogPage
 
 | Field | Type |
@@ -3049,6 +3420,9 @@ Media kinds: `"video"` (including animated GIFs), `"audio"`, `"image"` and `"fil
 | `frontend.user.create` `frontend.user.password` `frontend.user.delete` | `username` | `string` |
 | `frontend.sessions.revoke` | `sessions` | `integer` |
 | `frontend.sessions.revoke` | `session_id` | `uuid \| null` |
+| `backup.run` | `name` | `string` |
+| `backup.run` | `bytes` | `integer` |
+| `backup.delete` | `name` | `string` |
 
 ### Enumerations
 
@@ -3316,6 +3690,7 @@ Media kinds: `"video"` (including animated GIFs), `"audio"`, `"image"` and `"fil
 | `platform` |
 | `profile` |
 | `frontend` |
+| `backup` |
 
 #### Action
 
@@ -3352,6 +3727,8 @@ Media kinds: `"video"` (including animated GIFs), `"audio"`, `"image"` and `"fil
 | `frontend.user.password` |
 | `frontend.user.delete` |
 | `frontend.sessions.revoke` |
+| `backup.run` |
+| `backup.delete` |
 
 #### Install scopes
 

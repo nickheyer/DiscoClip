@@ -1,4 +1,6 @@
 <script lang="ts">
+	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
+	import { Collapsible } from '@skeletonlabs/skeleton-svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { jobs } from '$lib/api/endpoints';
@@ -151,64 +153,67 @@
 			/>
 		</Field>
 
-		<button
-			type="button"
-			class="btn preset-tonal btn-sm"
-			onclick={() => (advanced = !advanced)}
-			aria-expanded={advanced}
+		<Collapsible
+			open={advanced}
+			onOpenChange={(details) => (advanced = details.open)}
+			class="items-start gap-4"
 		>
-			{advanced ? 'Hide options' : 'Limits and options'}
-		</button>
-
-		{#if advanced}
-			<div class="grid gap-4 sm:grid-cols-3">
-				<Field label="Max source size" for="submit-size" help="MB" error={errors.maxSourceMb}>
-					<input id="submit-size" class="input" type="number" min="1" bind:value={maxSourceMb} />
-				</Field>
-				<Field
-					label="Max duration"
-					for="submit-duration"
-					help="Seconds or h:mm:ss"
-					error={errors.maxDuration}
-				>
-					<input id="submit-duration" class="input" type="text" bind:value={maxDuration} />
-				</Field>
-				<Field label="Max height" for="submit-height" help="Pixels" error={errors.maxHeight}>
-					<input id="submit-height" class="input" type="number" min="1" bind:value={maxHeight} />
-				</Field>
-			</div>
-			<div class="grid gap-4 sm:grid-cols-2">
-				<Field
-					label="Clip start"
-					for="submit-start"
-					help="Seconds or h:mm:ss"
-					error={errors.clipStart}
-				>
-					<input id="submit-start" class="input" type="text" bind:value={clipStart} />
-				</Field>
-				<Field label="Clip end" for="submit-end" help="Seconds or h:mm:ss" error={errors.clipEnd}>
-					<input id="submit-end" class="input" type="text" bind:value={clipEnd} />
-				</Field>
-			</div>
-			<div class="grid gap-4 sm:grid-cols-2">
-				<Field label="Subtitles" for="submit-subtitles">
-					<select id="submit-subtitles" class="select" bind:value={subtitles}>
-						{#each MODES as mode (mode.value)}
-							<option value={mode.value}>{mode.label}</option>
-						{/each}
-					</select>
-				</Field>
-				<Field label="Subtitle language" for="submit-language" help="Such as en or ja">
-					<input
-						id="submit-language"
-						class="input"
-						type="text"
-						bind:value={subtitleLanguage}
-						placeholder="Any"
-					/>
-				</Field>
-			</div>
-		{/if}
+			<Collapsible.Trigger class="btn preset-tonal btn-sm">
+				Limits and options
+				<Collapsible.Indicator class="group">
+					<ChevronDownIcon class="size-4 transition group-data-[state=open]:rotate-180" />
+				</Collapsible.Indicator>
+			</Collapsible.Trigger>
+			<Collapsible.Content class="w-full space-y-4">
+				<div class="grid gap-4 sm:grid-cols-3">
+					<Field label="Max source size" for="submit-size" help="MB" error={errors.maxSourceMb}>
+						<input id="submit-size" class="input" type="number" min="1" bind:value={maxSourceMb} />
+					</Field>
+					<Field
+						label="Max duration"
+						for="submit-duration"
+						help="Seconds or h:mm:ss"
+						error={errors.maxDuration}
+					>
+						<input id="submit-duration" class="input" type="text" bind:value={maxDuration} />
+					</Field>
+					<Field label="Max height" for="submit-height" help="Pixels" error={errors.maxHeight}>
+						<input id="submit-height" class="input" type="number" min="1" bind:value={maxHeight} />
+					</Field>
+				</div>
+				<div class="grid gap-4 sm:grid-cols-2">
+					<Field
+						label="Clip start"
+						for="submit-start"
+						help="Seconds or h:mm:ss"
+						error={errors.clipStart}
+					>
+						<input id="submit-start" class="input" type="text" bind:value={clipStart} />
+					</Field>
+					<Field label="Clip end" for="submit-end" help="Seconds or h:mm:ss" error={errors.clipEnd}>
+						<input id="submit-end" class="input" type="text" bind:value={clipEnd} />
+					</Field>
+				</div>
+				<div class="grid gap-4 sm:grid-cols-2">
+					<Field label="Subtitles" for="submit-subtitles">
+						<select id="submit-subtitles" class="select" bind:value={subtitles}>
+							{#each MODES as mode (mode.value)}
+								<option value={mode.value}>{mode.label}</option>
+							{/each}
+						</select>
+					</Field>
+					<Field label="Subtitle language" for="submit-language" help="Such as en or ja">
+						<input
+							id="submit-language"
+							class="input"
+							type="text"
+							bind:value={subtitleLanguage}
+							placeholder="Any"
+						/>
+					</Field>
+				</div>
+			</Collapsible.Content>
+		</Collapsible>
 	</form>
 
 	{#snippet footer()}

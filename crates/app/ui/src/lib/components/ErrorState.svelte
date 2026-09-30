@@ -20,13 +20,13 @@
 </script>
 
 <div
-	class="flex min-h-56 flex-col items-center justify-center gap-4 rounded-container border border-error-500/40 bg-error-50-950/40 px-6 py-10 text-center"
+	class="flex min-h-40 flex-col items-center justify-center gap-3 card preset-tonal-error p-8 text-center"
 	role="alert"
 >
-	<TriangleAlertIcon class="size-6 text-error-700-300" />
-	<p class="text-lg font-semibold">{title}</p>
-	<p class="max-w-md text-sm leading-relaxed text-surface-700-300">{message}</p>
+	<TriangleAlertIcon class="size-6" />
+	<p class="font-semibold">{title}</p>
+	<p class="max-w-md text-sm">{message}</p>
 	{#if onretry}
-		<button type="button" class="btn preset-tonal" onclick={onretry}>Retry</button>
+		<button type="button" class="btn preset-filled-error-500" onclick={onretry}>Retry</button>
 	{/if}
 </div>

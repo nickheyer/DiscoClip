@@ -922,7 +922,7 @@ mod tests {
 
     /// Every example link resolves live.
     #[tokio::test]
-    #[ignore = "requires live Medal access"]
+
     async fn live_examples_resolve() {
         let resolver = MedalResolver::new(Http::new(crate::http::HttpConfig::default()));
         for link in resolver.platform().examples {

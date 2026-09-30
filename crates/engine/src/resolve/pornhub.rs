@@ -1329,7 +1329,7 @@ mod tests {
     /// Every example link resolves live: videos with a playable MP4 and HLS variant,
     /// listings with entries.
     #[tokio::test]
-    #[ignore = "requires live Pornhub access"]
+
     async fn live_examples_resolve() {
         use std::time::Duration;
 

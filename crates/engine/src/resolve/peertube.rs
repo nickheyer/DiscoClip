@@ -1121,7 +1121,7 @@ mod tests {
     /// Every example link resolves live on its server: videos with variants, the live
     /// webcam as a live stream, and the channel, account and playlist with entries.
     #[tokio::test]
-    #[ignore = "requires live PeerTube access"]
+
     async fn live_examples_resolve() {
         let resolver = PeertubeResolver::new(Http::new(crate::http::HttpConfig::default()));
         for link in resolver.platform().examples {

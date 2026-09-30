@@ -813,6 +813,7 @@ mod tests {
     }
 
     /// Every example link resolves live: albums to their media, profiles to albums.
+    #[ignore = "reaches the live site: cargo test -- --ignored"]
     #[tokio::test]
 
     async fn live_examples_resolve() {

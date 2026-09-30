@@ -1366,7 +1366,7 @@ Queues a link submitted from the web app as a local job.
 
 #### POST /api/jobs/bulk
 
-Retries, cancels or deletes multiple jobs and returns individual results.
+Retries, cancels, stops or deletes multiple jobs and returns individual results.
 
 | Field | Value |
 |---|---|
@@ -1457,7 +1457,20 @@ Queues a fresh job with the same request as a finished one.
 
 #### POST /api/jobs/{id}/cancel
 
-Stops a queued or running job.
+Stops a queued or running job. A live capture's recording is deleted with the job's directory.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_jobs` |
+| Path | `id` `uuid` |
+| Query | None |
+| Body | None |
+| Response | `204` |
+| Errors | `401` `403` `404` `409` |
+
+#### POST /api/jobs/{id}/stop
+
+Ends a running live capture, keeping what was recorded. The job goes on to make and post its output from the recording as it stands. `409` when the job is not capturing a live stream.
 
 | Field | Value |
 |---|---|
@@ -1470,7 +1483,7 @@ Stops a queued or running job.
 
 #### GET /api/jobs/{id}/download
 
-Streams an output, source or subtitle file from cache or archive.
+Streams an output, source, recording or subtitle file from cache or archive. The recording of a capture under way is served as it grows: its length is read for every request, a `Range` is answered with `Content-Range: bytes a-b/*`, and a request for bytes past its end waits up to ten seconds for them.
 
 | Field | Value |
 |---|---|
@@ -1950,6 +1963,7 @@ Rejects a command name the bot does not define.
 | `description` | `string` | no |
 | `platforms` | `PlatformToggles` | no |
 | `limits` | `ProfileLimits` | no, none named |
+| `audio_language` | `string \| null`: the language of the sound taken when a source offers several, as a language tag such as `en` or `pt-br`. Unset leaves the parent scope's | no |
 
 #### ProfileLimits
 
@@ -1958,6 +1972,7 @@ Rejects a command name the bot does not define.
 | `max_source_bytes` | `integer \| null`: above zero | no |
 | `max_duration_secs` | `integer \| null`: zero refuses live streams and accepts nothing else | no |
 | `max_height` | `integer \| null`: above zero | no |
+| `max_capture_secs` | `integer \| null`: how long a live stream is captured, above zero | no |
 
 #### PlatformToggles
 
@@ -2369,6 +2384,7 @@ Includes jobs from any listed server or channel. Both lists empty includes all j
 | `max_source_bytes` | `integer` |
 | `max_duration_secs` | `integer \| null`: `null` puts no bound on how long media may be |
 | `max_height` | `integer` |
+| `max_capture_secs` | `integer`: how long a live stream is captured at most |
 
 #### Preset
 
@@ -2404,6 +2420,7 @@ Includes jobs from any listed server or channel. Both lists empty includes all j
 |---|---|
 | `platforms` | `object` of platform id → `bool`: every platform, on or off |
 | `limits` | `RequestLimits`: effective profile limits. `null` uses the engine limit |
+| `audio_language` | `string \| null`: the language of the sound wanted, from the narrowest profile that names one |
 | `applied` | `Assignment[]`: the assignments applied, widest first |
 
 #### EffectiveView
@@ -2478,6 +2495,7 @@ Includes jobs from any listed server or channel. Both lists empty includes all j
 | `thumbnail` | `url \| null` |
 | `duration_secs` | `number \| null` |
 | `live` | `bool`: a recorded stream |
+| `recording` | `bool`: the media is the recording of a capture under way, playing while it grows |
 | `size` | `integer` |
 | `width` | `integer \| null` |
 | `height` | `integer \| null` |
@@ -2562,6 +2580,7 @@ Includes jobs from any listed server or channel. Both lists empty includes all j
 | `thumbnail` | `url \| null` |
 | `duration_secs` | `number \| null` |
 | `live` | `bool` |
+| `recording` | `bool`: a live capture is being recorded, or was |
 | `output_bytes` | `integer \| null` |
 | `published_url` | `url \| null` |
 | `published_reference` | `string \| null` |
@@ -2673,6 +2692,7 @@ bot has seen it.
 | `progress` | `Progress` | `progress` |
 | `entry` | `LogEntry` | `log` |
 | `ids` | `uuid[]` | `children` |
+| `file` | `LocalFile`: the recording a live capture writes from its first byte | `recording` |
 
 #### Progress
 
@@ -2680,6 +2700,7 @@ bot has seen it.
 |---|---|
 | `done` | `integer` |
 | `total` | `integer \| null` |
+| `bytes` | `integer \| null`: bytes on disk so far, for a capture whose recording grows as the stream goes on |
 
 #### LogEntry
 
@@ -2709,6 +2730,7 @@ bot has seen it.
 | `max_source_bytes` | `integer \| null` |
 | `max_duration_secs` | `integer \| null` |
 | `max_height` | `integer \| null` |
+| `max_capture_secs` | `integer \| null`: how long a live stream is captured |
 
 #### RequestOptions
 
@@ -2717,6 +2739,7 @@ bot has seen it.
 | `clip` | `ClipRange \| null` |
 | `subtitles` | `SubtitleMode` |
 | `subtitle_language` | `string \| null` |
+| `audio_language` | `string`: the language of the sound wanted when a source offers several, default `en`. Its track is taken when there is one, else the source's original |
 
 #### ClipRange
 
@@ -2739,6 +2762,7 @@ bot has seen it.
 | `id` | `uuid` |
 | `request` | `JobRequest` |
 | `place` | `Place \| null`: the request's origin in the names people know, for a request from Discord |
+| `limits_in_force` | `LimitsInForce`: the request's limits tightened by the engine's own |
 | `status` | `JobStatus` |
 | `artifacts` | `Artifacts` |
 | `log` | `LogEntry[]` |
@@ -2747,11 +2771,24 @@ bot has seen it.
 | `started_at` | `timestamp \| null` |
 | `finished_at` | `timestamp \| null` |
 
+#### LimitsInForce
+
+Each field is the tighter of what the request named and the engine's cap.
+
+| Field | Type |
+|---|---|
+| `max_source_bytes` | `integer` |
+| `max_duration_secs` | `integer \| null`: `null` puts no bound on how long media may be, `0` refuses live streams |
+| `max_height` | `integer` |
+| `max_capture_secs` | `integer`: how long a live stream is captured at most |
+
 #### Artifacts
 
 | Field | Type |
 |---|---|
 | `resolved` | `Resolved \| null` |
+| `recording` | `LocalFile \| null`: the recording a live capture writes from its first byte, playable while it grows |
+| `announced` | `Published \| null`: the message the destination got when the capture began, edited with the result |
 | `source` | `LocalFile \| null` |
 | `output` | `LocalFile \| null` |
 | `delivery` | `"upload" \| "link"`: whether the output was handed over or a view's page was posted |
@@ -2803,6 +2840,9 @@ bot has seen it.
 | `format_id` | `string \| null` |
 | `label` | `string \| null` |
 | `language` | `string \| null` |
+| `audio_track` | `string \| null`: the platform's own name for the audio track |
+| `audio_default` | `bool`: the platform marks the track as the original its player takes by default |
+| `audio_dubbed` | `bool`: the platform marks the track as a dub |
 | `codecs` | `string \| null` |
 | `video_only` | `bool` |
 | `audio_only` | `bool` |
@@ -3495,6 +3535,7 @@ Media kinds: `"video"` (including animated GIFs), `"audio"`, `"image"` and `"fil
 |---|
 | `retry` |
 | `cancel` |
+| `stop`: ends the live captures among the jobs, keeping their recordings |
 | `delete` |
 
 #### Artifact
@@ -3504,6 +3545,7 @@ Media kinds: `"video"` (including animated GIFs), `"audio"`, `"image"` and `"fil
 | `output` |
 | `source` |
 | `subtitle` |
+| `recording`: the recording of a live capture, served while it grows |
 
 #### JobOrder
 
@@ -3521,6 +3563,8 @@ Media kinds: `"video"` (including animated GIFs), `"audio"`, `"image"` and `"fil
 | `progress` |
 | `log` |
 | `children` |
+| `recording`: a live capture began |
+| `stop`: a person asked the live capture to stop |
 | `deleted` |
 
 #### SubtitleMode

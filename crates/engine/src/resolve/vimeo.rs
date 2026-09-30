@@ -16,11 +16,11 @@ use url::Url;
 use super::page::leading_json;
 use super::{
     ClipRange, MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved,
-    Resolver, SessionCheck, SessionSupport, SubtitleFormat, SubtitleTrack, Tag, Variant,
-    VariantKind, clean_title, fetch, hls, path_extension, timestamp_hint,
+    Resolver, SessionCheck, SessionSupport, SubtitleFormat, SubtitleTrack, Tag, clean_title, fetch,
+    hls, path_extension, timestamp_hint,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
+use crate::media::MediaKind;
 
 pub const PLATFORM: &str = "vimeo";
 const SITE: &str = "https://vimeo.com/";
@@ -508,27 +508,6 @@ impl VimeoResolver {
         resolved.live = live;
         resolved.clip = timestamp_hint(origin).map(|start| ClipRange { start, end: None });
 
-        let mut variants = Vec::new();
-        for file in files["progressive"].as_array().into_iter().flatten() {
-            let Some(url) = file["url"].as_str().and_then(|u| Url::parse(u).ok()) else {
-                continue;
-            };
-            let mut v = Variant::new(url, VariantKind::File);
-            v.container = Some(Container::Mp4);
-            v.video = Some(VideoCodec::H264);
-            v.audio = Some(AudioCodec::Aac);
-            v.width = file["width"].as_u64().map(|w| w as u32);
-            v.height = file["height"].as_u64().map(|h| h as u32);
-            v.fps = file["fps"].as_f64().filter(|f| *f > 0.0);
-            v.bitrate = file["bitrate"]
-                .as_u64()
-                .filter(|b| *b > 0)
-                .map(|b| b * 1000);
-            v.duration = resolved.duration;
-            v.format_id = file["quality"].as_str().map(|q| format!("progressive-{q}"));
-            v.label = file["quality"].as_str().map(String::from);
-            variants.push(v);
-        }
         let hls = &files["hls"];
         let master = hls["default_cdn"]
             .as_str()
@@ -538,34 +517,20 @@ impl VimeoResolver {
                     .as_object()
                     .and_then(|cdns| cdns.values().find_map(|c| c["url"].as_str()))
             })
-            .and_then(|u| Url::parse(u).ok());
-        if let Some(master) = master {
-            let expanded = hls::expand(&self.http, &master, PLATFORM, BROWSER_UA, &[]).await?;
-            if resolved.duration.is_none() {
-                resolved.duration = expanded.duration;
-            }
-            resolved.live |= expanded.live;
-            resolved.subtitles.extend(expanded.subtitles);
-            let mut streams = expanded.variants;
-            for v in &mut streams {
-                v.live |= live;
-            }
-            variants.extend(streams);
-        }
-        let archive = &live_event["archive"];
-        if archive["status"].as_str() == Some("done")
-            && let Some(source) = archive["source_url"]
-                .as_str()
-                .and_then(|u| Url::parse(u).ok())
-        {
-            let mut v = Variant::new(source, VariantKind::File);
-            v.container = Some(Container::Mp4);
-            v.duration = resolved.duration;
-            v.format_id = Some("live-archive-source".into());
-            variants.push(v);
-        }
-        if variants.is_empty() {
+            .and_then(|u| Url::parse(u).ok())
+            .ok_or_else(|| ResolveError::NotFound(origin.clone()))?;
+        let expanded = hls::expand(&self.http, &master, PLATFORM, BROWSER_UA, &[]).await?;
+        if expanded.variants.is_empty() {
             return Err(ResolveError::NotFound(origin.clone()));
+        }
+        if resolved.duration.is_none() {
+            resolved.duration = expanded.duration;
+        }
+        resolved.live |= expanded.live;
+        resolved.subtitles.extend(expanded.subtitles);
+        let mut variants = expanded.variants;
+        for v in &mut variants {
+            v.live |= live;
         }
         if locked {
             for v in &mut variants {
@@ -925,7 +890,7 @@ impl Resolver for VimeoResolver {
                 "subtitles",
                 "drm reported",
             ],
-            formats: &["hls", "mp4"],
+            formats: &["hls"],
             media: &[MediaKind::Video],
             tags: &[Tag::Basic, Tag::Video, Tag::Live],
             session: SessionSupport::Optional,
@@ -989,6 +954,7 @@ mod tests {
     use crate::http::transport::{
         Exchange, Fixture, RecordedBody, RecordedRequest, RecordedResponse,
     };
+    use crate::resolve::VariantKind;
     use serde_json::json;
 
     fn get(url: &str, status: u16, content_type: &str, body: String) -> Exchange {
@@ -1036,7 +1002,6 @@ mod tests {
             "request": {
                 "drm": if drm { json!({"user": 0, "asset": "a", "fallback_cdms": {"fairplay": {}}}) } else { Value::Null },
                 "files": {
-                    "progressive": [],
                     "hls": {"default_cdn": "akfire_interconnect_quic", "cdns": {"akfire_interconnect_quic": {"url": "https://vod-adaptive-ak.vimeocdn.com/exp=1/v2/playlist/av/primary/playlist.m3u8?pathsig=x", "origin": "gcs"}}}
                 },
                 "text_tracks": [{"id": 170, "lang": "de", "url": "/texttrack/170.vtt?token=a", "kind": "subtitles", "label": "Deutsch", "provenance": "user_uploaded"}]
@@ -1160,18 +1125,16 @@ mod tests {
         assert!(resolved.uploaded_at.is_some());
         assert_eq!(resolved.duration, Some(Duration::from_secs(185)));
         assert_eq!(resolved.clip.unwrap().start, Duration::from_secs(65));
-        assert_eq!(resolved.variants.len(), 2);
+        crate::resolve::assert_one_family(&resolved.variants);
+        assert_eq!(resolved.variants.len(), 3, "{:?}", resolved.variants);
+        assert!(resolved.variants.iter().all(|v| v.kind == VariantKind::Hls));
         let best = &resolved.variants[0];
-        assert_eq!(best.kind, VariantKind::Hls);
         assert_eq!(best.height, Some(1080));
-        assert!(
-            best.audio_url
-                .as_ref()
-                .unwrap()
-                .as_str()
-                .ends_with("/a/avf/1/media.m3u8?st=audio")
-        );
-        assert!(best.drm.is_none());
+        assert!(best.video_only);
+        let audio = resolved.variants.iter().find(|v| v.audio_only).unwrap();
+        assert!(audio.url.as_str().ends_with("/a/avf/1/media.m3u8?st=audio"));
+        assert_eq!(audio.language.as_deref(), Some("en"));
+        assert!(resolved.variants.iter().all(|v| v.drm.is_none()));
         assert_eq!(resolved.subtitles.len(), 1);
         assert_eq!(
             resolved.subtitles[0].url.as_str(),
@@ -1247,6 +1210,7 @@ mod tests {
             async move { resolver.resolve(&url).await }
         };
         let locked = resolve("76979871").await.unwrap().media().unwrap();
+        crate::resolve::assert_one_family(&locked.variants);
         assert_eq!(locked.drm(), Some(DRM));
         assert!(locked.variants.iter().all(|v| !v.is_playable()));
         assert!(matches!(
@@ -1354,6 +1318,7 @@ mod tests {
             resolved.webpage_url.unwrap().as_str(),
             "https://vimeo.com/event/4567"
         );
+        crate::resolve::assert_one_family(&resolved.variants);
         assert!(resolved.variants.iter().all(|v| v.live));
         let error = resolver
             .resolve(&Url::parse("https://vimeo.com/event/8910").unwrap())

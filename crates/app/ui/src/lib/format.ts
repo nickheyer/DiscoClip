@@ -1,12 +1,6 @@
 // Formatting shared by every page.
 
-import type { Duration, MediaKind, RequestLimits, Snowflake, Stage, Timestamp } from './api/types';
-
-/** The word shown where a value is not set. */
-export const EMPTY = 'None';
-
-/** The word shown where a time has not happened. */
-export const NEVER = 'Never';
+import type { Duration, MediaKind, Snowflake, Stage, Timestamp } from './api/types';
 
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
 
@@ -23,21 +17,16 @@ export function bytes(n: number | null | undefined): string {
 	return `${value.toFixed(digits)} ${UNITS[unit]}`;
 }
 
-/** `1:02:03` or `4:05` from seconds. */
-export function clock(secs: number | null | undefined): string {
+/** A duration in one form: `h:mm:ss`, `m:ss` under an hour, milliseconds under a second. */
+export function durationText(secs: number | null | undefined): string {
 	if (secs === null || secs === undefined || !Number.isFinite(secs)) return '';
+	if (secs < 1) return `${Math.round(Math.max(0, secs) * 1000)} ms`;
 	const total = Math.max(0, Math.round(secs));
 	const h = Math.floor(total / 3600);
 	const m = Math.floor((total % 3600) / 60);
 	const s = total % 60;
 	const mm = h > 0 ? String(m).padStart(2, '0') : String(m);
 	return `${h > 0 ? `${h}:` : ''}${mm}:${String(s).padStart(2, '0')}`;
-}
-
-/** The clock form of a wire duration. */
-export function duration(d: Duration | null | undefined): string {
-	if (!d) return '';
-	return clock(d.secs + d.nanos / 1e9);
 }
 
 /** Seconds of a wire duration. */
@@ -105,6 +94,29 @@ export function date(at: Timestamp | Date | null | undefined): string {
 	return dateOnly.format(value);
 }
 
+const timeOnly = new Intl.DateTimeFormat(undefined, {
+	hour: '2-digit',
+	minute: '2-digit',
+	second: '2-digit',
+	hour12: false
+});
+
+/** The local clock time of a moment, `HH:MM:SS`, for a line in a log. */
+export function clockTime(at: Timestamp | Date | null | undefined): string {
+	if (!at) return '';
+	const value = typeof at === 'string' ? new Date(at) : at;
+	if (Number.isNaN(value.getTime())) return '';
+	return timeOnly.format(value);
+}
+
+/** The local day a moment falls on, as a key that tells one day from the next. */
+export function dayKey(at: Timestamp | Date | null | undefined): string {
+	if (!at) return '';
+	const value = typeof at === 'string' ? new Date(at) : at;
+	if (Number.isNaN(value.getTime())) return '';
+	return `${value.getFullYear()}-${value.getMonth()}-${value.getDate()}`;
+}
+
 /** `42%` from a ratio in 0..1. */
 export function percent(ratio: number | null | undefined, digits = 0): string {
 	if (ratio === null || ratio === undefined || !Number.isFinite(ratio)) return '';
@@ -119,41 +131,9 @@ export function number(n: number | null | undefined): string {
 	return numberFormat.format(n);
 }
 
-/** Seconds as `2h 5m`, `45s`, `3d 2h`. */
-export function span(secs: number | null | undefined): string {
-	if (secs === null || secs === undefined || !Number.isFinite(secs)) return '';
-	const total = Math.max(0, Math.round(secs));
-	const d = Math.floor(total / 86400);
-	const h = Math.floor((total % 86400) / 3600);
-	const m = Math.floor((total % 3600) / 60);
-	const s = total % 60;
-	if (d > 0) return `${d}d ${h}h`;
-	if (h > 0) return `${h}h ${m}m`;
-	if (m > 0) return `${m}m ${s}s`;
-	return `${s}s`;
-}
-
-const EVERY_UNITS: [string, number][] = [
-	['day', 86400],
-	['hour', 3600],
-	['minute', 60],
-	['second', 1]
-];
-
-/** `Every day`, `Every 6 hours`, `Every 1 hour 30 minutes`: how often something runs. */
-export function every(secs: number | null | undefined): string {
-	if (secs === null || secs === undefined || !Number.isFinite(secs)) return '';
-	let rest = Math.max(0, Math.round(secs));
-	const parts: [number, string][] = [];
-	for (const [unit, seconds] of EVERY_UNITS) {
-		const count = Math.floor(rest / seconds);
-		if (count === 0) continue;
-		rest -= count * seconds;
-		parts.push([count, unit]);
-	}
-	if (parts.length === 0) return 'Every 0 seconds';
-	if (parts.length === 1 && parts[0][0] === 1) return `Every ${parts[0][1]}`;
-	return `Every ${parts.map(([count, unit]) => `${number(count)} ${unit}${count === 1 ? '' : 's'}`).join(' ')}`;
+/** `1 job`, `3 jobs`: a count with its noun, for text that cannot hold a component. */
+export function countText(n: number, noun: string, plural: string = `${noun}s`): string {
+	return `${number(n)} ${n === 1 ? noun : plural}`;
 }
 
 const CDN = 'https://cdn.discordapp.com';
@@ -203,22 +183,6 @@ const STAGE_LABELS: Record<Stage, string> = {
 /** The word for a pipeline stage, capitalised for labels and states. */
 export function stageLabel(stage: Stage): string {
 	return STAGE_LABELS[stage];
-}
-
-/** The limits in force as one line: each one set, or word that the engine's own apply. */
-export function limitsText(limits: RequestLimits): string {
-	const parts: string[] = [];
-	if (limits.max_source_bytes !== null)
-		parts.push(`Source up to ${bytes(limits.max_source_bytes)}`);
-	if (limits.max_duration_secs !== null) {
-		parts.push(
-			limits.max_duration_secs === 0
-				? 'No live streams'
-				: `Length up to ${clock(limits.max_duration_secs)}`
-		);
-	}
-	if (limits.max_height !== null) parts.push(`Height up to ${limits.max_height} px`);
-	return parts.length > 0 ? parts.join(' · ') : 'The engine’s own';
 }
 
 /** The first block of a UUID, or the whole of any other identifier, for showing beside a copy button. */

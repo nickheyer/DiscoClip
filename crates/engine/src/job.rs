@@ -79,6 +79,8 @@ pub struct RequestLimits {
     pub max_source_bytes: Option<u64>,
     pub max_duration_secs: Option<u64>,
     pub max_height: Option<u32>,
+    /// How long a live stream is captured before the capture ends.
+    pub max_capture_secs: Option<u64>,
 }
 
 impl RequestLimits {
@@ -95,6 +97,7 @@ impl RequestLimits {
             max_source_bytes: tighter(self.max_source_bytes, other.max_source_bytes),
             max_duration_secs: tighter(self.max_duration_secs, other.max_duration_secs),
             max_height: tighter(self.max_height, other.max_height),
+            max_capture_secs: tighter(self.max_capture_secs, other.max_capture_secs),
         }
     }
 
@@ -115,6 +118,16 @@ impl RequestLimits {
                 .map_or(limits.max_height, |mine| mine.min(limits.max_height)),
         }
     }
+
+    /// How long a live stream is captured under these limits: the request's own cap
+    /// tightened by the engine's `max_capture_secs`, and by the duration limit, since a
+    /// recording longer than that would be refused once made.
+    pub fn capture_secs(&self, limits: &Limits, max_capture_secs: u64) -> u64 {
+        let applied = self.applied_to(limits);
+        self.max_capture_secs
+            .map_or(max_capture_secs, |mine| mine.min(max_capture_secs))
+            .min(applied.max_duration_secs.unwrap_or(u64::MAX))
+    }
 }
 
 /// What to do with subtitles the source offers.
@@ -130,8 +143,11 @@ pub enum SubtitleMode {
     Skip,
 }
 
+/// The language of the sound a request takes unless it says otherwise.
+pub const DEFAULT_AUDIO_LANGUAGE: &str = "en";
+
 /// Choices made for one request beyond its limits.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RequestOptions {
     /// The portion of the media wanted. Overrides what the link itself names.
@@ -139,6 +155,20 @@ pub struct RequestOptions {
     pub subtitles: SubtitleMode,
     /// The subtitle language preferred when several are offered.
     pub subtitle_language: Option<String>,
+    /// The language of the sound wanted when a source offers several: its track is
+    /// taken when there is one, else the source's original.
+    pub audio_language: String,
+}
+
+impl Default for RequestOptions {
+    fn default() -> Self {
+        Self {
+            clip: None,
+            subtitles: SubtitleMode::default(),
+            subtitle_language: None,
+            audio_language: DEFAULT_AUDIO_LANGUAGE.to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -329,6 +359,13 @@ pub enum Delivery {
 #[serde(default)]
 pub struct Artifacts {
     pub resolved: Option<Resolved>,
+    /// The recording a live capture writes from its first byte: `recording.mp4` in the
+    /// job directory, playable while it grows. It becomes the source once the capture
+    /// ends.
+    pub recording: Option<LocalFile>,
+    /// The message the destination got when the capture began, for the publisher to
+    /// edit with the result rather than post again.
+    pub announced: Option<Published>,
     pub source: Option<LocalFile>,
     pub output: Option<LocalFile>,
     /// Whether the output was handed over or linked to. Decided before publishing.
@@ -451,6 +488,7 @@ mod limit_tests {
             max_source_bytes: Some(10),
             max_duration_secs: Some(5),
             max_height: Some(480),
+            max_capture_secs: None,
         }
         .applied_to(&engine);
         assert_eq!(tighter.max_source_bytes, 10);
@@ -460,6 +498,7 @@ mod limit_tests {
             max_source_bytes: Some(1000),
             max_duration_secs: Some(600),
             max_height: Some(2160),
+            max_capture_secs: None,
         }
         .applied_to(&engine);
         assert_eq!(looser, engine);
@@ -472,11 +511,41 @@ mod limit_tests {
                 max_source_bytes: None,
                 max_duration_secs: Some(5),
                 max_height: None,
+                max_capture_secs: None,
             }
             .applied_to(&unlimited_engine)
             .max_duration_secs,
             Some(5)
         );
+    }
+
+    #[test]
+    fn capture_length_is_the_tightest_of_request_engine_and_duration_limits() {
+        let engine = Limits {
+            max_source_bytes: 100,
+            max_duration_secs: Some(600),
+            max_height: 720,
+        };
+        assert_eq!(RequestLimits::default().capture_secs(&engine, 3600), 600);
+        let unlimited = Limits {
+            max_duration_secs: None,
+            ..engine.clone()
+        };
+        assert_eq!(
+            RequestLimits::default().capture_secs(&unlimited, 3600),
+            3600
+        );
+        let capped = RequestLimits {
+            max_capture_secs: Some(120),
+            ..RequestLimits::default()
+        };
+        assert_eq!(capped.capture_secs(&unlimited, 3600), 120);
+        let loose = RequestLimits {
+            max_capture_secs: Some(9000),
+            max_duration_secs: Some(60),
+            ..RequestLimits::default()
+        };
+        assert_eq!(loose.capture_secs(&unlimited, 3600), 60);
     }
 
     #[test]

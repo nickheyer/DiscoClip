@@ -731,6 +731,7 @@ fn api(state: AppState) -> Router {
         .route("/jobs/{id}/children", get(jobs::children))
         .route("/jobs/{id}/retry", post(jobs::retry))
         .route("/jobs/{id}/cancel", post(jobs::cancel))
+        .route("/jobs/{id}/stop", post(jobs::stop))
         .route("/jobs/{id}/download", get(jobs::download))
         .route("/auth/{provider}/start", get(oauth::start))
         .route("/auth/{provider}/callback", get(oauth::callback))

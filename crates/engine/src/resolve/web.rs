@@ -23,8 +23,6 @@ use super::{
 use crate::http::{BROWSER_UA, EMBED_BOT_UA, Http, WEB_PLATFORM};
 use crate::media::{Container, MediaKind};
 
-const MAX_CANDIDATES: usize = 8;
-
 pub struct WebResolver {
     http: Http,
     /// The resolvers whose players a page may embed. A page carrying one is handed to it.
@@ -299,9 +297,6 @@ pub fn extract(html: &str, base: &Url, players: &[Arc<dyn Resolver>]) -> PageMed
             height,
             declared_type: declared_type.clone(),
         });
-        if candidates.len() >= MAX_CANDIDATES {
-            break;
-        }
     }
     PageMedia {
         title,
@@ -313,6 +308,19 @@ pub fn extract(html: &str, base: &Url, players: &[Arc<dyn Resolver>]) -> PageMed
         iframes: page.iframes(),
         embeds: embedded_players(&page, players),
         player: has_media_source_player(&page),
+    }
+}
+
+/// Where a candidate's kind stands in the order candidates are fetched: files the page
+/// names outright first, then the manifests, then whatever a fetch must tell apart.
+fn kind_order(kind: &Kind) -> u8 {
+    match kind {
+        Kind::File(_, MediaKind::Video) => 0,
+        Kind::Hls => 1,
+        Kind::Dash => 2,
+        Kind::Ism => 3,
+        Kind::Sdp => 4,
+        Kind::File(_, _) | Kind::Html | Kind::Other => 5,
     }
 }
 
@@ -479,13 +487,20 @@ impl WebResolver {
                 let (body, _) = response.bytes_up_to(MAX_PAGE).await?;
                 let html = String::from_utf8_lossy(&body).into_owned();
                 let media = extract(&html, &final_url, &self.players);
+                // The candidates in the order their kind is worth fetching: a file the
+                // page names outright, then HLS, DASH, Smooth Streaming and SDP, with
+                // those whose kind only a fetch tells last. The first that fetches is
+                // the media, one family; the rest are left alone.
+                let mut ordered: Vec<&Candidate> = media.candidates.iter().collect();
+                ordered.sort_by_key(|c| kind_order(&classify(&c.url, c.declared_type.as_deref())));
                 let mut variants = Vec::new();
-                for candidate in &media.candidates {
+                for candidate in ordered {
                     if candidate.url != final_url && known_player(&self.players, &candidate.url) {
                         return Err(ResolveError::Redirect(candidate.url.clone()));
                     }
                     if let Some(found) = self.probe_candidate(candidate).await {
-                        variants.extend(found);
+                        variants = found;
+                        break;
                     }
                 }
                 if variants.is_empty() {

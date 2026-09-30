@@ -12,8 +12,21 @@ pub trait Publisher: Send + Sync {
     /// What the destination of `job` takes. The job is resolved by then, so the platform
     /// and the media are known.
     async fn constraints(&self, job: &Job) -> Result<Constraints, PublishError>;
-    /// Delivers `file`, or a link to it when the job's delivery is a link.
+    /// Delivers `file`, or a link to it when the job's delivery is a link. A job whose
+    /// capture was announced carries the message in `job.artifacts.announced`: the
+    /// result goes into that message.
     async fn publish(&self, job: &Job, file: &LocalFile) -> Result<Published, PublishError>;
+    /// Tells the destination a live capture has begun, with `recording` growing as it
+    /// goes, when the destination has somewhere to say so: a message holding a link to
+    /// the page that plays the recording. Publishers with no such place post nothing.
+    async fn announce(
+        &self,
+        job: &Job,
+        recording: &LocalFile,
+    ) -> Result<Option<Published>, PublishError> {
+        let _ = (job, recording);
+        Ok(None)
+    }
 }
 
 /// The least a video may be reduced to before a link to the full one is posted instead

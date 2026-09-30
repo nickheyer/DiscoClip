@@ -1,10 +1,9 @@
 //! Steam: a store page's trailers come from the storefront's app details API, which names
-//! each trailer with its HLS and DASH manifests, and the trailers from before the store
-//! moved to manifests still have their progressive MP4 and WebM files on the CDN. The
-//! community's shared files are screenshots, read from their page as images, and videos,
-//! which are YouTube embeds handed on to the YouTube resolver. A game's community hub
-//! lists its screenshots and videos through the endpoint the hub scrolls with. The store
-//! and community age gates are passed with the birth-date cookies the site sets.
+//! each trailer with its HLS master playlist. The community's shared files are
+//! screenshots, read from their page as images, and videos, which are YouTube embeds
+//! handed on to the YouTube resolver. A game's community hub lists its screenshots and
+//! videos through the endpoint the hub scrolls with. The store and community age gates
+//! are passed with the birth-date cookies the site sets.
 
 use std::sync::LazyLock;
 
@@ -20,14 +19,12 @@ use super::{
     navigation_headers, probe_file, status_error, util,
 };
 use crate::http::{BROWSER_UA, Cookie, Http};
-use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
+use crate::media::{Container, MediaKind};
 
 pub const PLATFORM: &str = "steam";
 const STORE: &str = "https://store.steampowered.com";
 const COMMUNITY: &str = "https://steamcommunity.com";
 const APP_DETAILS: &str = "https://store.steampowered.com/api/appdetails";
-/// Where the progressive trailer files of the store's earlier years live.
-const LEGACY_CDN: &str = "https://cdn.akamai.steamstatic.com/steam/apps";
 /// How many shared files a hub listing is read up to.
 const LISTING_LIMIT: usize = 40;
 
@@ -188,7 +185,6 @@ pub struct Trailer {
     pub name: Option<String>,
     pub thumbnail: Option<Url>,
     pub hls: Option<Url>,
-    pub dash: Vec<Url>,
 }
 
 /// The app's name and trailers from the app details answer, which is keyed by an id
@@ -205,71 +201,16 @@ pub fn app_of(answer: &Value) -> Option<(String, Vec<Trailer>)> {
         .into_iter()
         .flatten()
         .filter_map(|movie| {
-            let id = util::uint(&movie["id"])?.to_string();
-            let mut dash = Vec::new();
-            for key in ["dash_h264", "dash_av1"] {
-                if let Some(manifest) = util::url_of(&movie[key], None) {
-                    dash.push(manifest);
-                }
-            }
             Some(Trailer {
-                id,
+                id: util::uint(&movie["id"])?.to_string(),
                 name: movie["name"].as_str().and_then(clean_title),
                 thumbnail: util::url_of(&movie["thumbnail"], None),
                 hls: util::url_of(&movie["hls_h264"], None),
-                dash,
             })
         })
         .collect();
     Some((name, trailers))
 }
-
-/// A progressive file a trailer had before the store moved to manifests.
-struct LegacyFile {
-    /// The file's name on the CDN.
-    name: &'static str,
-    format_id: &'static str,
-    container: Container,
-    video: VideoCodec,
-    audio: AudioCodec,
-    /// The height the name promises, when it names one.
-    height: Option<u32>,
-}
-
-const LEGACY_FILES: [LegacyFile; 4] = [
-    LegacyFile {
-        name: "movie_max.mp4",
-        format_id: "mp4-max",
-        container: Container::Mp4,
-        video: VideoCodec::H264,
-        audio: AudioCodec::Aac,
-        height: None,
-    },
-    LegacyFile {
-        name: "movie480.mp4",
-        format_id: "mp4-480p",
-        container: Container::Mp4,
-        video: VideoCodec::H264,
-        audio: AudioCodec::Aac,
-        height: Some(480),
-    },
-    LegacyFile {
-        name: "movie_max.webm",
-        format_id: "webm-max",
-        container: Container::Webm,
-        video: VideoCodec::Vp8,
-        audio: AudioCodec::Vorbis,
-        height: None,
-    },
-    LegacyFile {
-        name: "movie480.webm",
-        format_id: "webm-480p",
-        container: Container::Webm,
-        video: VideoCodec::Vp8,
-        audio: AudioCodec::Vorbis,
-        height: Some(480),
-    },
-];
 
 /// A store link to one trailer of an app.
 fn trailer_link(app_id: &str, movie_id: &str) -> Url {
@@ -403,62 +344,25 @@ impl SteamResolver {
         app_of(&answer).ok_or_else(|| ResolveError::NotFound(origin.clone()))
     }
 
-    /// One trailer's streams: its manifests expanded, and the progressive files the CDN
-    /// still serves for it.
+    /// One trailer's streams: its HLS master playlist expanded into its renditions.
     async fn resolve_trailer(
         &self,
         app_id: &str,
         app_name: &str,
         trailer: &Trailer,
     ) -> Result<Resolution, ResolveError> {
-        let mut listed = Vec::new();
-        if let Some(hls) = &trailer.hls {
-            let mut variant = Variant::hls(hls.clone());
-            variant.format_id = Some("hls".into());
-            listed.push(variant);
-        }
-        for dash in &trailer.dash {
-            let mut variant = Variant::dash(dash.clone());
-            variant.format_id = Some(
-                if dash.path().contains("av1") {
-                    "dash-av1"
-                } else {
-                    "dash-h264"
-                }
-                .into(),
-            );
-            listed.push(variant);
-        }
-        let mut subtitles = Vec::new();
-        let mut variants =
-            manifests::expand_all(&self.http, PLATFORM, listed, &mut subtitles, None).await;
-        for file in LEGACY_FILES {
-            let file_url =
-                Url::parse(&format!("{LEGACY_CDN}/{}/{}", trailer.id, file.name)).expect("valid");
-            let probed = probe_file(&self.http, &file_url, PLATFORM, BROWSER_UA, &[]).await?;
-            if !matches!(probed.status.as_u16(), 200 | 206) {
-                continue;
-            }
-            let mut variant = Variant::new(file_url, VariantKind::File);
-            variant.container = Some(file.container);
-            variant.video = Some(file.video);
-            variant.audio = Some(file.audio);
-            variant.height = file.height;
-            variant.size = probed.size;
-            variant.format_id = Some(file.format_id.into());
-            variant.label = Some(match file.height {
-                Some(height) => format!("{height}p"),
-                None => "max".into(),
-            });
-            variants.push(variant);
-        }
         let webpage = trailer_link(app_id, &trailer.id);
-        if variants.is_empty() {
+        let Some(hls) = &trailer.hls else {
             return Err(ResolveError::unavailable(
                 &webpage,
                 "the trailer has no streams",
             ));
-        }
+        };
+        let mut master = Variant::hls(hls.clone());
+        master.format_id = Some("hls".into());
+        let mut subtitles = Vec::new();
+        let variants =
+            manifests::expand_all(&self.http, PLATFORM, vec![master], &mut subtitles, None).await;
         let mut resolved = Resolved::new(PLATFORM);
         resolved.id = Some(format!("{app_id}-{}", trailer.id));
         resolved.title = trailer
@@ -690,7 +594,7 @@ impl Resolver for SteamResolver {
                 "community screenshots",
                 "hub listings",
             ],
-            formats: &["hls", "dash", "mp4", "webm", "jpg", "png"],
+            formats: &["hls", "jpg", "png"],
             media: &[MediaKind::Video, MediaKind::Image],
             tags: &[Tag::Video, Tag::Images],
             session: SessionSupport::None,
@@ -787,10 +691,9 @@ mod tests {
     fn app_details() -> String {
         json!({"1323320": {"success": true, "data": {"name": "Terraria", "steam_appid": 105600, "movies": [
             {"id": 257274214, "name": "Terraria: Bigger & Boulder Trailer", "thumbnail": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/257274214/movie_600x337.jpg",
-             "dash_av1": "https://video.akamai.steamstatic.com/store_trailers/105600/1114648825/x/1769541214/dash_av1.mpd", "dash_h264": "https://video.akamai.steamstatic.com/store_trailers/105600/1114648825/x/1769541214/dash_h264.mpd",
              "hls_h264": "https://video.akamai.steamstatic.com/store_trailers/105600/1114648825/x/1769541214/hls_264_master.m3u8", "highlight": true},
             {"id": 81300, "name": "Terraria 1.1 Trailer", "thumbnail": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/81300/movie.293x165.jpg",
-             "dash_av1": format!("{CDN}/dash_av1.mpd"), "dash_h264": format!("{CDN}/dash_h264.mpd"), "hls_h264": format!("{CDN}/hls_264_master.m3u8"), "highlight": false}
+             "hls_h264": format!("{CDN}/hls_264_master.m3u8"), "highlight": false}
         ]}}}).to_string()
     }
 
@@ -909,7 +812,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn one_trailer_resolves_with_its_manifests_and_legacy_files() {
+    async fn one_trailer_resolves_with_its_renditions() {
         let mut fixture = Fixture::new(PLATFORM, None);
         fixture
             .exchanges
@@ -926,75 +829,28 @@ mod tests {
             "application/vnd.apple.mpegurl",
             "#EXTM3U\n#EXT-X-TARGETDURATION:3\n#EXTINF:3.0,\n0.m4s\n#EXTINF:2.5,\n1.m4s\n#EXT-X-ENDLIST\n",
         ));
-        for name in ["dash_h264.mpd", "dash_av1.mpd"] {
-            fixture.exchanges.push(get(
-                &format!("{CDN}/{name}"),
-                200,
-                "application/dash+xml",
-                r#"<?xml version="1.0"?><MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT5.5S" profiles="urn:mpeg:dash:profile:isoff-live:2011"><Period><AdaptationSet contentType="video"><Representation id="0" mimeType="video/mp4" codecs="avc1.640029" bandwidth="2600000" width="1280" height="720"><SegmentTemplate timescale="1000000" duration="3000000" initialization="init$RepresentationID$.m4s" media="chunk$RepresentationID$-$Number%05d$.m4s" startNumber="1"/></Representation></AdaptationSet><AdaptationSet contentType="audio"><Representation id="4" mimeType="audio/mp4" codecs="mp4a.40.2" bandwidth="192000"><SegmentTemplate timescale="1000000" duration="3000000" initialization="init$RepresentationID$.m4s" media="chunk$RepresentationID$-$Number%05d$.m4s" startNumber="1"/></Representation></AdaptationSet></Period></MPD>"#,
-            ));
-        }
-        fixture.exchanges.push(probe(
-            "https://cdn.akamai.steamstatic.com/steam/apps/81300/movie_max.mp4",
-            206,
-            "video/mp4",
-            60_000_000,
-        ));
-        fixture.exchanges.push(probe(
-            "https://cdn.akamai.steamstatic.com/steam/apps/81300/movie480.mp4",
-            206,
-            "video/mp4",
-            20_000_000,
-        ));
-        fixture.exchanges.push(get(
-            "https://cdn.akamai.steamstatic.com/steam/apps/81300/movie_max.webm",
-            404,
-            "text/html",
-            "",
-        ));
-        fixture.exchanges.push(get(
-            "https://cdn.akamai.steamstatic.com/steam/apps/81300/movie480.webm",
-            404,
-            "text/html",
-            "",
-        ));
         let resolver = SteamResolver::new(Http::replay(fixture));
         let url = Url::parse("https://store.steampowered.com/app/105600/?movie=81300").unwrap();
         assert!(resolver.matches(&url));
         let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
+        crate::resolve::assert_one_family(&resolved.variants);
         assert_eq!(resolved.id.as_deref(), Some("105600-81300"));
         assert_eq!(resolved.title.as_deref(), Some("Terraria 1.1 Trailer"));
         assert_eq!(resolved.uploader.as_deref(), Some("Terraria"));
         assert_eq!(resolved.duration, Some(Duration::from_secs_f64(5.5)));
         assert!(resolved.thumbnail.is_some());
-        let hls: Vec<&Variant> = resolved
-            .variants
-            .iter()
-            .filter(|v| v.kind == VariantKind::Hls)
-            .collect();
-        assert_eq!(hls.len(), 1);
-        assert_eq!(hls[0].height, Some(720));
-        let dash = resolved
-            .variants
-            .iter()
-            .filter(|v| v.kind == VariantKind::Dash)
-            .count();
-        assert_eq!(dash, 2, "one rendition from each DASH manifest");
-        let files: Vec<&Variant> = resolved
-            .variants
-            .iter()
-            .filter(|v| v.kind == VariantKind::File)
-            .collect();
         assert_eq!(
-            files.len(),
-            2,
-            "the two progressive files the CDN still has"
+            resolved.variants.len(),
+            1,
+            "the one rendition the master lists"
         );
-        assert_eq!(files[0].format_id.as_deref(), Some("mp4-max"));
-        assert_eq!(files[0].size, Some(60_000_000));
-        assert_eq!(files[0].container, Some(Container::Mp4));
-        assert_eq!(files[1].height, Some(480));
-        assert_eq!(files[1].label.as_deref(), Some("480p"));
+        let rendition = &resolved.variants[0];
+        assert_eq!(rendition.kind, VariantKind::Hls);
+        assert_eq!(rendition.height, Some(720));
+        assert_eq!(
+            rendition.url.as_str(),
+            format!("{CDN}/hls_264_1_video.m3u8")
+        );
     }
 
     #[tokio::test]
@@ -1218,6 +1074,7 @@ mod tests {
 
     /// Every example link resolves live: the trailers as a playlist and one trailer with
     /// its streams, the screenshot as an image, and both hub listings with entries.
+    #[ignore = "reaches the live site: cargo test -- --ignored"]
     #[tokio::test]
 
     async fn live_examples_resolve() {

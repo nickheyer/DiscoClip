@@ -12,9 +12,9 @@
 	import KeyValue from '$lib/components/KeyValue.svelte';
 	import KeyValueRow from '$lib/components/KeyValueRow.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import RelativeTime from '$lib/components/RelativeTime.svelte';
+	import Timestamp from '$lib/components/Timestamp.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
-	import { absolute, number } from '$lib/format';
+	import { number } from '$lib/format';
 	import { reportError } from '$lib/toast.svelte';
 
 	const LIMIT = 50;
@@ -279,12 +279,12 @@
 									{entry.target.kind} · {entry.target.name ?? entry.target.id}
 								</span>
 							</span>
-							<RelativeTime at={entry.at} class="shrink-0 whitespace-nowrap text-surface-600-400" />
+							<Timestamp at={entry.at} class="shrink-0 whitespace-nowrap text-surface-600-400" />
 						</Accordion.ItemTrigger>
 					</h3>
 					<Accordion.ItemContent class="space-y-3">
 						<KeyValue>
-							<KeyValueRow label="When" value={absolute(entry.at)} />
+							<KeyValueRow label="When"><Timestamp at={entry.at} /></KeyValueRow>
 							<KeyValueRow label="Actor">
 								{#if entry.actor.kind === 'user'}
 									{entry.actor.username} via {entry.actor.via} from

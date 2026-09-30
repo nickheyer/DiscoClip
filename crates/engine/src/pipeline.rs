@@ -13,7 +13,8 @@ use url::Url;
 use crate::archive::Archiver;
 use crate::config::EngineConfig;
 use crate::download::{
-    DownloadContext, Downloaded, Downloader, LocalSubtitle, SubtitleChoice, subtitles,
+    CaptureNotice, DownloadContext, Downloaded, Downloader, LocalSubtitle, SubtitleChoice,
+    subtitles,
 };
 use crate::error::StageError;
 use crate::event::{EngineEvent, EventKind, Progress, ProgressSender};
@@ -25,7 +26,7 @@ use crate::media::{LocalFile, MediaInfo, MediaKind};
 use crate::plan::{self, Plan};
 use crate::publish::{self, Constraints, Publisher, QualityFloor};
 use crate::resolve::SubtitleFormat;
-use crate::resolve::{Resolution, Resolved, ResolverRegistry};
+use crate::resolve::{ClipRange, Resolution, Resolved, ResolverRegistry, Variant};
 use crate::store::{JobStore, StoreError};
 use crate::transcode::{
     AudioTarget, BurnSource, ImageTarget, StillSource, Target, TranscodeError, Transcoder,
@@ -137,9 +138,14 @@ impl Context {
 }
 
 enum Interrupt {
-    Failed { stage: Stage, message: String },
+    Failed {
+        stage: Stage,
+        message: String,
+    },
     Cancelled,
     Shutdown,
+    /// The link was a playlist, expanded into jobs of its own: this job is done.
+    Expanded,
 }
 
 fn failed(stage: Stage) -> impl Fn(StageError) -> Interrupt {
@@ -149,23 +155,24 @@ fn failed(stage: Stage) -> impl Fn(StageError) -> Interrupt {
     }
 }
 
-/// Runs `job` to its end. `cancel` stops it at any point, as a person asked. `interrupt`
-/// is the engine stopping with no more time to give: it stops the job wherever it is,
-/// except in the publish stage, which runs to its end so a destination never gets the
-/// same media twice.
+/// Runs `job` to its end. `cancel` stops it at any point, as a person asked. `stop` ends
+/// a live capture early, keeping what was recorded. `interrupt` is the engine stopping
+/// with no more time to give: it stops the job wherever it is, except in the publish
+/// stage, which runs to its end so a destination never gets the same media twice.
 pub(crate) async fn run_job(
     ctx: Arc<Context>,
     mut job: Job,
     cancel: CancellationToken,
+    stop: CancellationToken,
     interrupt: CancellationToken,
 ) {
     let job_dir = ctx.job_dir(job.id);
     let outcome = tokio::select! {
-        result = execute(&ctx, &mut job, &job_dir, &interrupt) => result,
+        result = execute(&ctx, &mut job, &job_dir, &stop, &interrupt) => result,
         _ = cancel.cancelled() => Err(Interrupt::Cancelled),
     };
     let status = match outcome {
-        Ok(()) => JobStatus::Done,
+        Ok(()) | Err(Interrupt::Expanded) => JobStatus::Done,
         Err(Interrupt::Failed { stage, message }) => JobStatus::Failed { stage, message },
         Err(Interrupt::Cancelled) => JobStatus::Cancelled,
         Err(Interrupt::Shutdown) => JobStatus::Queued,
@@ -178,6 +185,9 @@ pub(crate) async fn run_job(
     }
     if job.status == JobStatus::Done {
         tidy_job_dir(&job, &job_dir).await;
+    } else if job.status == JobStatus::Queued && job.artifacts.recording.is_some() {
+        // A capture interrupted by the engine stopping keeps its recording: the next
+        // start carries on from it.
     } else if let Err(error) = tokio::fs::remove_dir_all(&job_dir).await
         && error.kind() != std::io::ErrorKind::NotFound
     {
@@ -346,14 +356,104 @@ async fn unless_interrupted<T>(
     }
 }
 
-async fn execute(
+/// What the resolve and download stages hand the rest of the job.
+struct Fetched {
+    resolved: Resolved,
+    variant: Variant,
+    clip: Option<ClipRange>,
+    source: LocalFile,
+    subtitles: Vec<LocalSubtitle>,
+}
+
+/// The recording a job interrupted mid-capture can carry on from: on disk, with bytes in
+/// it, and with the link resolved so the rest of the job knows what it is.
+async fn resumable(job: &Job) -> Option<LocalFile> {
+    let recording = job.artifacts.recording.as_ref()?;
+    job.artifacts.resolved.as_ref()?;
+    let size = tokio::fs::metadata(&recording.path)
+        .await
+        .ok()
+        .filter(|m| m.is_file())
+        .map(|m| m.len())
+        .filter(|size| *size > 0)?;
+    Some(LocalFile {
+        path: recording.path.clone(),
+        size,
+        info: None,
+    })
+}
+
+/// Takes in a live capture beginning: the recording it writes goes on the job for the
+/// web app to play and serve while it grows, and the destination is told, when it has
+/// somewhere to say so.
+async fn capture_began(
+    ctx: &Context,
+    job: &mut Job,
+    publisher: Option<&Arc<dyn Publisher>>,
+    path: PathBuf,
+) -> Result<(), Interrupt> {
+    let stage = Stage::Download;
+    let file = LocalFile {
+        path,
+        size: 0,
+        info: None,
+    };
+    job.artifacts.recording = Some(file.clone());
+    job.updated_at = Timestamp::now();
+    ctx.store
+        .update(job)
+        .await
+        .map_err(|e| failed(stage)(e.into()))?;
+    ctx.emit(
+        job.id,
+        EventKind::Recording {
+            file: Box::new(file.clone()),
+        },
+    );
+    ctx.note(
+        job,
+        Some(stage),
+        "Live capture began. The recording plays while it grows.",
+    )
+    .await
+    .map_err(|e| failed(stage)(e.into()))?;
+    let Some(publisher) = publisher else {
+        return Ok(());
+    };
+    match publisher.announce(job, &file).await {
+        Ok(Some(published)) => {
+            let reference = published.reference.clone();
+            job.artifacts.announced = Some(published);
+            ctx.note(
+                job,
+                Some(stage),
+                format!("Capture announced as {reference}."),
+            )
+            .await
+            .map_err(|e| failed(stage)(e.into()))?;
+        }
+        Ok(None) => {}
+        Err(error) => {
+            ctx.note(job, Some(stage), format!("Capture not announced: {error}"))
+                .await
+                .map_err(|e| failed(stage)(e.into()))?;
+        }
+    }
+    Ok(())
+}
+
+/// Resolves the link and fetches its media. A live capture is followed as it goes, with
+/// what it writes put on the job the moment it begins, and ends at its limit, at a
+/// person's `stop`, or when the stream ends.
+async fn resolve_and_download(
     ctx: &Context,
     job: &mut Job,
     job_dir: &Path,
+    stop: &CancellationToken,
     interrupt: &CancellationToken,
-) -> Result<(), Interrupt> {
-    let config = ctx.config();
-    let limits = job.request.limits.applied_to(&config.limits);
+    config: &EngineConfig,
+    limits: &crate::config::Limits,
+) -> Result<Fetched, Interrupt> {
     let url = job.request.url.clone();
     let origin = job.request.origin.clone();
 
@@ -371,7 +471,10 @@ async fn execute(
     .map_err(|e| failed(stage)(e.into()))?;
     let resolved = match resolution {
         Resolution::Media(resolved) => *resolved,
-        Resolution::Playlist(playlist) => return expand_playlist(ctx, job, playlist).await,
+        Resolution::Playlist(playlist) => {
+            expand_playlist(ctx, job, playlist).await?;
+            return Err(Interrupt::Expanded);
+        }
     };
     let media = resolved.media;
     let clip = job.request.options.clip.or(resolved.clip);
@@ -390,8 +493,14 @@ async fn execute(
             "live streams are not accepted here".into(),
         )));
     }
-    let variant = plan::select_variant(&resolved.variants, &limits, &resolved.resolver, media)
-        .map_err(|e| failed(stage)(e.into()))?;
+    let variant = plan::select_variant(
+        &resolved.variants,
+        limits,
+        &resolved.resolver,
+        media,
+        &job.request.options.audio_language,
+    )
+    .map_err(|e| failed(stage)(e.into()))?;
     ctx.note(
         job,
         Some(stage),
@@ -426,16 +535,19 @@ async fn execute(
     tokio::fs::create_dir_all(job_dir)
         .await
         .map_err(|e| failed(stage)(StageError::Download(e.into())))?;
+    let (capture, mut notices) = CaptureNotice::channel();
     let context = DownloadContext {
         max_bytes: limits.max_source_bytes,
         max_height: limits.max_height,
         max_live: Duration::from_secs(
-            limits
-                .max_duration_secs
-                .unwrap_or(config.live.max_capture_secs)
-                .min(config.live.max_capture_secs),
+            job.request
+                .limits
+                .capture_secs(&config.limits, config.live.max_capture_secs),
         ),
+        stop: stop.clone(),
+        capture,
         clip,
+        audio_language: job.request.options.audio_language.clone(),
         platform: resolved.resolver.clone(),
         download: config.download.clone(),
         browser: config.browser.clone(),
@@ -447,16 +559,32 @@ async fn execute(
             language: job.request.options.subtitle_language.clone(),
         }),
     };
+    let publisher = ctx.publishers.get(&origin.source);
     let (progress, forwarder) = ctx.progress(job.id, stage);
-    let downloaded = unless_interrupted(
-        interrupt,
-        downloader.download(&variant, job_dir, &context, progress),
-    )
-    .await;
+    let downloaded = {
+        let download = downloader.download(&variant, job_dir, &context, progress);
+        tokio::pin!(download);
+        let mut listening = true;
+        loop {
+            tokio::select! {
+                result = &mut download => break Ok(result),
+                _ = interrupt.cancelled() => break Err(Interrupt::Shutdown),
+                changed = notices.changed(), if listening => match changed {
+                    Ok(()) => {
+                        let path = notices.borrow_and_update().clone();
+                        if let Some(path) = path {
+                            capture_began(ctx, job, publisher, path).await?;
+                        }
+                    }
+                    Err(_) => listening = false,
+                },
+            }
+        }
+    };
     let _ = forwarder.await;
     let downloaded = downloaded?;
     let Downloaded {
-        file: mut source,
+        file: source,
         subtitles: mut local_subtitles,
         notes,
     } = downloaded.map_err(|e| failed(stage)(e.into()))?;
@@ -508,7 +636,12 @@ async fn execute(
         job,
         Some(stage),
         format!(
-            "downloaded {} bytes to {}{}",
+            "{} {} bytes to {}{}",
+            if job.artifacts.recording.is_some() {
+                "captured"
+            } else {
+                "downloaded"
+            },
             source.size,
             source.path.display(),
             if local_subtitles.is_empty() {
@@ -520,6 +653,77 @@ async fn execute(
     )
     .await
     .map_err(|e| failed(stage)(e.into()))?;
+    Ok(Fetched {
+        resolved,
+        variant,
+        clip,
+        source,
+        subtitles: local_subtitles,
+    })
+}
+
+async fn execute(
+    ctx: &Context,
+    job: &mut Job,
+    job_dir: &Path,
+    stop: &CancellationToken,
+    interrupt: &CancellationToken,
+) -> Result<(), Interrupt> {
+    let config = ctx.config();
+    let limits = job.request.limits.applied_to(&config.limits);
+    let origin = job.request.origin.clone();
+
+    // A capture the engine's stop interrupted carries on from its recording: what was
+    // recorded is the source, and the job resumes at the transcode.
+    let fetched = match resumable(job).await {
+        Some(recording) => {
+            let resolved = job
+                .artifacts
+                .resolved
+                .clone()
+                .expect("a resumable job is resolved");
+            let variant = plan::select_variant(
+                &resolved.variants,
+                &limits,
+                &resolved.resolver,
+                resolved.media,
+                &job.request.options.audio_language,
+            )
+            .map_err(|e| failed(Stage::Resolve)(e.into()))?;
+            ctx.note(
+                job,
+                Some(Stage::Download),
+                format!(
+                    "Carrying on from the recording as it stands: {} bytes.",
+                    recording.size
+                ),
+            )
+            .await
+            .map_err(|e| failed(Stage::Download)(e.into()))?;
+            Fetched {
+                clip: job.request.options.clip.or(resolved.clip),
+                resolved,
+                variant,
+                source: recording,
+                subtitles: job.artifacts.subtitles.clone(),
+            }
+        }
+        None => {
+            match resolve_and_download(ctx, job, job_dir, stop, interrupt, &config, &limits).await {
+                Ok(fetched) => fetched,
+                Err(Interrupt::Expanded) => return Ok(()),
+                Err(other) => return Err(other),
+            }
+        }
+    };
+    let Fetched {
+        resolved,
+        variant,
+        clip,
+        mut source,
+        subtitles: local_subtitles,
+    } = fetched;
+    let media = resolved.media;
 
     // Transcode
     let stage = Stage::Transcode;
@@ -871,6 +1075,13 @@ async fn produce(
             max_bytes: constraints.max_bytes,
         },
     };
+    // A recording is fragmented, for playing while it grew. What the destination gets is
+    // written whole, its index first, even when the streams go in as they are.
+    let recording = job
+        .artifacts
+        .recording
+        .as_ref()
+        .is_some_and(|r| r.path == source.path);
     let plan = match plan::plan(
         source,
         info,
@@ -879,8 +1090,9 @@ async fn produce(
             max_height,
             ..limits.clone()
         },
-        target,
+        target.clone(),
     ) {
+        Ok(Plan::Passthrough) if recording => Plan::Transcode(Box::new(target)),
         Ok(plan) => plan,
         Err(TranscodeError::CannotShrink { size, max_bytes })
             if constraints

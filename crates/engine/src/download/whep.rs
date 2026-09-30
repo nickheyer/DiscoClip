@@ -21,6 +21,7 @@ use tokio::net::UdpSocket;
 use tokio::sync::oneshot;
 use url::Url;
 
+use super::recording::{self, RECORDING, Treatment};
 use super::{DownloadContext, DownloadError, Downloaded, Downloader};
 use crate::event::{Progress, ProgressSender};
 use crate::ffmpeg::{Ending, Ffmpeg};
@@ -299,13 +300,10 @@ impl Downloader for WhepDownloader {
         let audio_port = loopback_port_pair()?;
         let feeder = UdpSocket::bind("127.0.0.1:0").await?;
         let sdp_path = dest_dir.join("session.sdp");
-        let dest = dest_dir.join("source.mkv");
+        let dest = dest_dir.join(RECORDING);
         let max_live = context.max_live;
         let quiet_after = self.quiet_after;
-        progress.send_replace(Progress {
-            done: 0,
-            total: Some(max_live.as_secs()),
-        });
+        progress.send_replace(Progress::of(0, Some(max_live.as_secs())));
         let mut video = Incoming::default();
         let mut audio = Incoming::default();
         let mut feeds: Vec<Feed> = Vec::new();
@@ -445,18 +443,34 @@ impl Downloader for WhepDownloader {
                         "-fs".into(),
                         context.max_bytes.to_string().into(),
                     ];
-                    args.extend(
-                        [
-                            "-map", "0:v:0?", "-map", "0:a:0?", "-c", "copy", "-sn", "-dn", "-f",
-                            "matroska",
-                        ]
-                        .map(OsString::from),
-                    );
-                    args.push(dest.as_os_str().to_owned());
+                    args.extend(["-map", "0:v:0?", "-map", "0:a:0?"].map(OsString::from));
+                    // The codecs the peer sends decide what MP4 takes as it is.
+                    let treatment_of = |kind: MediaKind| {
+                        feeds
+                            .iter()
+                            .find(|f| f.kind == kind)
+                            .map(|f| match f.params.spec().codec {
+                                Codec::H264 | Codec::H265 | Codec::Vp9 | Codec::Opus => {
+                                    Treatment::Copy
+                                }
+                                _ => Treatment::Encode,
+                            })
+                    };
+                    args.extend(recording::output_args(
+                        treatment_of(MediaKind::Video),
+                        treatment_of(MediaKind::Audio),
+                        None,
+                        false,
+                        None,
+                        &dest,
+                    ));
+                    context.capture.started(&dest);
                     let (tx, rx) = oneshot::channel();
                     stop = Some(tx);
                     let ffmpeg = self.ffmpeg.clone();
                     let progress = progress.clone();
+                    let asked = context.stop.clone();
+                    let recording = dest.clone();
                     recorder = Some(tokio::spawn(async move {
                         ffmpeg
                             .record(
@@ -465,10 +479,20 @@ impl Downloader for WhepDownloader {
                                     progress.send_replace(Progress {
                                         done: time.as_secs(),
                                         total: Some(max_live.as_secs()),
+                                        bytes: Some(
+                                            std::fs::metadata(&recording)
+                                                .map(|m| m.len())
+                                                .unwrap_or(0),
+                                        ),
                                     });
                                 },
                                 quiet_after,
-                                Some(rx),
+                                async move {
+                                    tokio::select! {
+                                        _ = rx => {}
+                                        _ = asked.cancelled() => {}
+                                    }
+                                },
                             )
                             .await
                     }));
@@ -599,28 +623,29 @@ impl Downloader for WhepDownloader {
         };
         let captured = output.last_time.unwrap_or(Duration::ZERO).as_secs_f64();
         let limit = max_live.as_secs_f64();
-        match ending {
-            Ending::Finished if captured + 1.0 >= limit => notes.push(format!(
-                "capture cut at the limit of {limit:.0} s while the stream goes on"
-            )),
-            Ending::Stalled => notes.push(format!(
-                "No media received for {} s. Recorded {captured:.0} s.",
-                quiet_after.as_secs()
-            )),
-            _ => notes.push(format!(
-                "{}. Recorded {captured:.0} s.",
-                ended_by.unwrap_or_else(|| "the stream ended".into())
-            )),
-        }
         let file = LocalFile::from_path(dest).await?;
         if file.size == 0 {
             return Err(DownloadError::Empty);
         }
-        if file.size > context.max_bytes {
-            return Err(DownloadError::TooLarge {
-                size: file.size,
-                limit: context.max_bytes,
-            });
+        match ending {
+            Ending::Stopped if context.stop.is_cancelled() => {
+                notes.push(format!("Capture stopped at {captured:.0} s."));
+            }
+            Ending::Finished if captured + 1.0 >= limit => {
+                notes.push(format!("Capture ended at the {limit:.0} s limit."));
+            }
+            Ending::Finished if file.size >= context.max_bytes => notes.push(format!(
+                "Capture ended at the {} byte limit.",
+                context.max_bytes
+            )),
+            Ending::Stalled => notes.push(format!(
+                "No media received for {} s. Capture ended at {captured:.0} s.",
+                quiet_after.as_secs()
+            )),
+            _ => notes.push(format!(
+                "{}. Capture ended at {captured:.0} s.",
+                ended_by.unwrap_or_else(|| "The stream ended".into())
+            )),
         }
         Ok(Downloaded {
             file,
@@ -940,7 +965,7 @@ mod tests {
             downloaded
                 .notes
                 .iter()
-                .any(|n| n.contains("capture cut at the limit")),
+                .any(|n| n.contains("Capture ended at the") && n.contains("limit")),
             "{:?}",
             downloaded.notes
         );

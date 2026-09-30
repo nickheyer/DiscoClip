@@ -1,7 +1,7 @@
 //! 20 Minuten (20min.ch) videos: the video pages' structured data names the video and
-//! its player, and the player's files come from the site's video host by the video's
-//! number: an HLS playlist with its renditions, and the high and low quality MP4 files.
-//! Player embeds (`videoplayer.20min.ch?videoId=…`) carry only the number.
+//! its player, and the player's HLS playlist comes from the site's video host by the
+//! video's number, with its renditions. Player embeds (`videoplayer.20min.ch?videoId=…`)
+//! carry only the number.
 
 use async_trait::async_trait;
 use jiff::Timestamp;
@@ -12,11 +12,10 @@ use super::page::{Page, ld_objects_of_type};
 use super::web::parse_iso_duration;
 use super::{
     MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved, Resolver,
-    SessionSupport, Tag, Variant, VariantKind, clean_title, fetch_ok, hls, navigation_headers,
-    probe_file,
+    SessionSupport, Tag, clean_title, fetch_ok, hls, navigation_headers,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
+use crate::media::MediaKind;
 
 pub const PLATFORM: &str = "20min";
 const HOST: &str = "https://unityvideo.appuser.ch/";
@@ -111,10 +110,6 @@ fn playlist_url(number: &str) -> Url {
     Url::parse(&format!("{HOST}videos/{number}/playlist.m3u8")).expect("valid")
 }
 
-fn file_url(number: &str, suffix: &str) -> Url {
-    Url::parse(&format!("{HOST}video/{number}{suffix}.mp4")).expect("valid")
-}
-
 pub struct TwentyMinResolver {
     http: Http,
 }
@@ -130,65 +125,17 @@ impl TwentyMinResolver {
         number: &str,
         record: Option<&Value>,
         page_url: Option<Url>,
-        page_size: Option<(u32, u32)>,
         link: &Url,
     ) -> Result<Resolution, ResolveError> {
         let master = playlist_url(number);
-        let mut variants = Vec::new();
-        let mut subtitles = Vec::new();
-        let mut duration = record
-            .and_then(|r| r["duration"].as_str())
-            .and_then(parse_iso_duration);
-        match hls::expand(&self.http, &master, PLATFORM, BROWSER_UA, &[]).await {
-            Ok(expanded) => {
-                duration = duration.or(expanded.duration);
-                subtitles = expanded.subtitles;
-                variants.extend(expanded.variants);
-            }
-            Err(ResolveError::Http(error)) => return Err(ResolveError::Http(error)),
-            Err(error) => {
-                tracing::debug!(url = %master, %error, "the HLS playlist could not be read");
-            }
-        }
-        let files = [("h", "high"), ("", "low")];
-        let probes = futures::future::join_all(files.iter().map(|(suffix, _)| {
-            let target = file_url(number, suffix);
-            let http = &self.http;
-            async move { probe_file(http, &target, PLATFORM, BROWSER_UA, &[]).await }
-        }))
-        .await;
-        for ((suffix, label), probe) in files.iter().zip(probes) {
-            let probed = match probe {
-                Ok(probed) if probed.status.is_success() => probed,
-                Ok(_) => continue,
-                Err(error) => return Err(error),
-            };
-            let mut v = Variant::new(file_url(number, suffix), VariantKind::File);
-            v.container = Some(Container::Mp4);
-            v.video = Some(VideoCodec::H264);
-            v.audio = Some(AudioCodec::Aac);
-            v.size = probed.size;
-            v.duration = duration;
-            v.format_id = Some(format!("mp4-{label}"));
-            v.label = Some(label.to_string());
-            if *suffix == "h" {
-                let recorded = match (
-                    record.and_then(|r| r["width"].as_u64()),
-                    record.and_then(|r| r["height"].as_u64()),
-                ) {
-                    (Some(w), Some(h)) => Some((w as u32, h as u32)),
-                    _ => None,
-                };
-                if let Some((w, h)) = recorded.or(page_size) {
-                    v.width = Some(w);
-                    v.height = Some(h);
-                }
-            }
-            variants.push(v);
-        }
-        if variants.is_empty() {
+        let expanded = hls::expand(&self.http, &master, PLATFORM, BROWSER_UA, &[]).await?;
+        if expanded.variants.is_empty() {
             return Err(ResolveError::NotFound(link.clone()));
         }
+        let duration = record
+            .and_then(|r| r["duration"].as_str())
+            .and_then(parse_iso_duration)
+            .or(expanded.duration);
         let mut resolved = Resolved::new(PLATFORM);
         resolved.id = Some(number.to_string());
         resolved.title = record
@@ -221,8 +168,8 @@ impl TwentyMinResolver {
             })
             .and_then(|u| Url::parse(u).ok());
         resolved.webpage_url = page_url.or_else(|| Some(player_url(number)));
-        resolved.subtitles = subtitles;
-        resolved.variants = variants;
+        resolved.subtitles = expanded.subtitles;
+        resolved.variants = expanded.variants;
         Ok(Resolution::from(resolved))
     }
 
@@ -237,30 +184,15 @@ impl TwentyMinResolver {
         )
         .await?;
         let html = fetched.text();
-        let (videos, title, page_size) = {
+        let (videos, title) = {
             let page = Page::parse(&html, &fetched.url);
-            let size = match (
-                page.meta("og:video:width")
-                    .and_then(|w| w.parse::<u32>().ok()),
-                page.meta("og:video:height")
-                    .and_then(|h| h.parse::<u32>().ok()),
-            ) {
-                (Some(w), Some(h)) if w > 0 && h > 0 => Some((w, h)),
-                _ => None,
-            };
-            (videos_in(&page), page.title(), size)
+            (videos_in(&page), page.title())
         };
         match videos.as_slice() {
             [] => Err(ResolveError::NotFound(link.clone())),
             [(number, record)] => {
-                self.video(
-                    number,
-                    Some(record),
-                    Some(fetched.url.clone()),
-                    page_size,
-                    link,
-                )
-                .await
+                self.video(number, Some(record), Some(fetched.url.clone()), link)
+                    .await
             }
             many => Ok(Resolution::Playlist(Playlist {
                 resolver: PLATFORM.to_string(),
@@ -292,7 +224,7 @@ impl Resolver for TwentyMinResolver {
             name: "20 Minuten",
             hosts: &["20min.ch", "videoplayer.20min.ch"],
             features: &["videos", "stories", "embeds"],
-            formats: &["hls", "mp4"],
+            formats: &["hls"],
             media: &[MediaKind::Video],
             tags: &[Tag::News],
             session: SessionSupport::None,
@@ -310,7 +242,7 @@ impl Resolver for TwentyMinResolver {
     async fn resolve(&self, url: &Url) -> Result<Resolution, ResolveError> {
         match parse_link(url).ok_or_else(|| ResolveError::NotFound(url.clone()))? {
             Link::Page(_) => self.page(url).await,
-            Link::Player(number) => self.video(&number, None, None, None, url).await,
+            Link::Player(number) => self.video(&number, None, None, url).await,
         }
     }
 }
@@ -319,6 +251,7 @@ impl Resolver for TwentyMinResolver {
 mod tests {
     use super::*;
     use crate::http::Fixture;
+    use crate::resolve::VariantKind;
     use std::time::Duration;
 
     const VIDEO: &str = "https://www.20min.ch/video/adoptions-serie-dachte-mami-liebt-mich-nicht-adoptierte-suchen-antworten-103468193";
@@ -375,7 +308,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn video_pages_resolve_to_the_playlist_and_files() {
+    async fn video_pages_resolve_to_the_playlist() {
         let resolver = resolver();
         assert!(resolver.matches(&url(VIDEO)));
         let resolved = resolver
@@ -394,38 +327,17 @@ mod tests {
         assert!(resolved.uploaded_at.is_some());
         assert!(resolved.thumbnail.is_some());
         assert_eq!(resolved.webpage_url.as_ref().map(Url::as_str), Some(VIDEO));
-        let hls: Vec<&Variant> = resolved
-            .variants
-            .iter()
-            .filter(|v| v.kind == VariantKind::Hls)
-            .collect();
-        assert_eq!(hls.len(), 2, "{:?}", resolved.variants);
-        assert!(hls.iter().all(|v| v.bitrate.is_some()));
-        let files: Vec<(&str, &str, Option<u64>)> = resolved
-            .variants
-            .iter()
-            .filter(|v| v.kind == VariantKind::File)
-            .map(|v| (v.label.as_deref().unwrap(), v.url.as_str(), v.size))
-            .collect();
-        assert_eq!(files.len(), 2);
-        assert_eq!(files[0].0, "high");
+        crate::resolve::assert_one_family(&resolved.variants);
+        assert_eq!(resolved.variants.len(), 2, "{:?}", resolved.variants);
+        assert!(resolved.variants.iter().all(|v| v.kind == VariantKind::Hls));
+        assert!(resolved.variants.iter().all(|v| v.bitrate.is_some()));
         assert_eq!(
-            files[0].1,
-            "https://unityvideo.appuser.ch/video/uv10924877h.mp4"
+            resolved.variants[0].url.as_str(),
+            "https://unityvideo.appuser.ch/video/uv10924877h/playlist.m3u8"
         );
         assert_eq!(
-            files[1].1,
-            "https://unityvideo.appuser.ch/video/uv10924877.mp4"
-        );
-        assert!(files.iter().all(|(_, _, size)| size.is_some_and(|s| s > 0)));
-        assert_eq!(
-            resolved
-                .variants
-                .iter()
-                .find(|v| v.label.as_deref() == Some("high"))
-                .unwrap()
-                .width,
-            Some(1280)
+            resolved.variants[1].url.as_str(),
+            "https://unityvideo.appuser.ch/video/uv10924877p/playlist.m3u8"
         );
     }
 
@@ -444,6 +356,7 @@ mod tests {
             resolved.webpage_url.as_ref().map(Url::as_str),
             Some("https://videoplayer.20min.ch/?videoId=uv10924877")
         );
-        assert_eq!(resolved.variants.len(), 4);
+        crate::resolve::assert_one_family(&resolved.variants);
+        assert_eq!(resolved.variants.len(), 2);
     }
 }

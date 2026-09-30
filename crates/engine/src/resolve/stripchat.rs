@@ -1,14 +1,13 @@
 //! Stripchat live rooms and the listings of who is online. A room's username is turned
 //! into its model id by the site's front API, whose cam endpoint says whether the model
 //! is streaming, in a private show, or offline. The stream is the HLS master playlist
-//! the site's player reads from its edge hosts, the ones the site's static config
-//! names. The playlists come under the "Mouflon" scheme the player implements: a media
-//! playlist has to be asked with the scheme and key id the master offers, and each of
-//! its segment lines is a placeholder whose real address stands in the
-//! `EXT-X-MOUFLON:URI` tag before it, with one part of that name encrypted under a key
-//! the player carries. The variants here carry the keyed media playlists, and
-//! [`restore_media_playlist`] turns a fetched media playlist into one with plain
-//! segment addresses, as the player does before it plays.
+//! the site's player reads from its edge host. The playlists come under the "Mouflon"
+//! scheme the player implements: a media playlist has to be asked with the scheme and
+//! key id the master offers, and each of its segment lines is a placeholder whose real
+//! address stands in the `EXT-X-MOUFLON:URI` tag before it, with one part of that name
+//! encrypted under a key the player carries. The variants here carry the keyed media
+//! playlists, and [`restore_media_playlist`] turns a fetched media playlist into one
+//! with plain segment addresses, as the player does before it plays.
 
 use std::sync::LazyLock;
 
@@ -27,8 +26,7 @@ use crate::media::MediaKind;
 pub const PLATFORM: &str = "stripchat";
 const SITE: &str = "https://stripchat.com/";
 const API: &str = "https://stripchat.com/api/front/";
-/// The edge host the player reads playlists from before it turns to the config's
-/// fallback hosts.
+/// The edge host the player reads playlists from.
 const PRIMARY_HLS_HOST: &str = "doppiocdn.com";
 /// How many rooms a listing is read up to.
 const LISTING_LIMIT: usize = 60;
@@ -321,28 +319,6 @@ impl StripchatResolver {
         .map_err(|error| error.at(origin))
     }
 
-    /// The edge hosts the player reads playlists from: the primary one, then the
-    /// fallbacks the site's config names.
-    async fn hls_hosts(&self, origin: &Url) -> Result<Vec<String>, ResolveError> {
-        let answer = self.api("v3/config/static", origin).await?;
-        if let Some(error) = status_error(answer.status, origin) {
-            return Err(error);
-        }
-        let config = answer.json(origin)?;
-        let mut hosts = vec![PRIMARY_HLS_HOST.to_string()];
-        for host in config["static"]["featureSettings"]["hlsFallback"]["fallbackDomains"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(util::text)
-        {
-            if !hosts.contains(&host) {
-                hosts.push(host);
-            }
-        }
-        Ok(hosts)
-    }
-
     async fn resolve_room(&self, username: &str, url: &Url) -> Result<Resolution, ResolveError> {
         let lookup = self
             .api(
@@ -388,36 +364,21 @@ impl StripchatResolver {
         {
             return Err(error);
         }
-        let mut master = None;
-        let mut failure = None;
-        for host in self.hls_hosts(url).await? {
-            let master_url = Url::parse(&format!(
-                "https://edge-hls.{host}/hls/{id}/master/{id}_auto.m3u8"
-            ))
-            .expect("valid");
-            match fetch(&self.http, &master_url, PLATFORM, BROWSER_UA, &[], MAX_PAGE).await {
-                Ok(fetched) if fetched.status.is_success() => {
-                    let text = fetched.text();
-                    if text.trim_start().starts_with("#EXTM3U") {
-                        master = Some((master_url, text));
-                        break;
-                    }
-                    failure = Some(ResolveError::malformed(
-                        url,
-                        format!("{host} answered no playlist"),
-                    ));
-                }
-                Ok(fetched) => {
-                    failure = status_error(fetched.status, url);
-                }
-                Err(error) => failure = Some(error),
-            }
+        let master_url = Url::parse(&format!(
+            "https://edge-hls.{PRIMARY_HLS_HOST}/hls/{id}/master/{id}_auto.m3u8"
+        ))
+        .expect("valid");
+        let fetched = fetch(&self.http, &master_url, PLATFORM, BROWSER_UA, &[], MAX_PAGE).await?;
+        if let Some(error) = status_error(fetched.status, url) {
+            return Err(error);
         }
-        let Some((master_url, master)) = master else {
-            return Err(failure.unwrap_or_else(|| {
-                ResolveError::unavailable(url, format!("{name} is not streaming right now"))
-            }));
-        };
+        let master = fetched.text();
+        if !master.trim_start().starts_with("#EXTM3U") {
+            return Err(ResolveError::malformed(
+                url,
+                format!("{PRIMARY_HLS_HOST} answered no playlist"),
+            ));
+        }
         let (scheme, key_id) = known_scheme(&master).ok_or_else(|| {
             ResolveError::malformed(url, "the playlist offers no key the player knows")
         })?;
@@ -690,10 +651,6 @@ mod tests {
         .to_string()
     }
 
-    fn config() -> String {
-        json!({"static": {"featureSettings": {"hlsFallback": {"isEnabled": true, "fallbackDomains": ["doppiocdn.media"]}}}}).to_string()
-    }
-
     #[tokio::test]
     async fn live_rooms_resolve_to_keyed_playlists() {
         let mut fixture = Fixture::new(PLATFORM, None);
@@ -708,12 +665,6 @@ mod tests {
             200,
             "application/json",
             &cam("public", true, "ENJOY MY STREAM :)"),
-        ));
-        fixture.exchanges.push(exchange(
-            "https://stripchat.com/api/front/v3/config/static",
-            200,
-            "application/json",
-            &config(),
         ));
         fixture.exchanges.push(exchange(
             "https://edge-hls.doppiocdn.com/hls/266549456/master/266549456_auto.m3u8",
@@ -731,6 +682,7 @@ mod tests {
         let url = Url::parse("https://stripchat.com/realdoll").unwrap();
         assert!(resolver.matches(&url));
         let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
+        crate::resolve::assert_one_family(&resolved.variants);
         assert_eq!(resolved.id.as_deref(), Some("realdoll"));
         assert_eq!(
             resolved.title.as_deref(),
@@ -877,6 +829,7 @@ mod tests {
 
     /// Every example link resolves live: listings with entries, the room with a live
     /// keyed playlist whose first media playlist restores to real segment addresses.
+    #[ignore = "reaches the live site: cargo test -- --ignored"]
     #[tokio::test]
 
     async fn live_examples_resolve() {
@@ -949,6 +902,7 @@ mod tests {
 
     /// A room online right now is captured through the HLS downloader: the keyed media
     /// playlist is restored to the stream's own segments and the capture plays.
+    #[ignore = "reaches the live site: cargo test -- --ignored"]
     #[tokio::test]
 
     async fn live_rooms_capture_through_the_downloader() {

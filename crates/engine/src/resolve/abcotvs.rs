@@ -1,6 +1,6 @@
 //! ABC Owned Television Stations (abc7news.com, abc7ny.com, 6abc.com…): every story and
 //! clip page names its content id, which the stations' content API answers with the
-//! featured video's HLS playlist on Uplynk and its MP4 files.
+//! featured video's HLS playlist on Uplynk.
 
 use std::sync::LazyLock;
 
@@ -10,11 +10,11 @@ use serde_json::Value;
 use url::Url;
 
 use super::{
-    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag, Variant,
+    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag,
     clean_title, fetch, hls, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
+use crate::media::MediaKind;
 
 pub const PLATFORM: &str = "abcotvs";
 const API: &str = "https://api.abcotvs.com/v2/content";
@@ -75,23 +75,6 @@ pub fn api_url(station: &str, id: &str) -> Url {
     )
 }
 
-/// An MP4 file of the video: the station's standard rendition is 640x360.
-fn mp4_variant(url: Url, format_id: &str, standard: bool) -> Variant {
-    let mut variant = Variant::file(url);
-    variant.container = Some(Container::Mp4);
-    variant.video = Some(VideoCodec::H264);
-    variant.audio = Some(AudioCodec::Aac);
-    variant.format_id = Some(format_id.to_string());
-    if standard {
-        variant.width = Some(640);
-        variant.height = Some(360);
-        variant.label = Some("360p".to_string());
-    } else {
-        variant.label = Some("hq".to_string());
-    }
-    variant
-}
-
 pub struct AbcotvsResolver {
     http: Http,
 }
@@ -123,7 +106,7 @@ impl Resolver for AbcotvsResolver {
                 "6abc.com",
             ],
             features: &["videos", "articles"],
-            formats: &["hls", "mp4"],
+            formats: &["hls"],
             media: &[MediaKind::Video],
             tags: &[Tag::News],
             session: SessionSupport::None,
@@ -156,32 +139,19 @@ impl Resolver for AbcotvsResolver {
             Value::Object(_) => &data["featuredMedia"]["video"],
             _ => data,
         };
+        // The playlist link carries ad parameters the player fills in. Without them
+        // Uplynk serves the plain programme.
+        let mut playlist = util::url_of(&video["m3u8"], None)
+            .ok_or_else(|| ResolveError::NotFound(url.clone()))?;
+        playlist.set_query(None);
+        let expanded = hls::expand(&self.http, &playlist, PLATFORM, BROWSER_UA, &[]).await?;
+        if expanded.variants.is_empty() {
+            return Err(ResolveError::NotFound(url.clone()));
+        }
         let mut resolved = Resolved::new(PLATFORM);
-        let mut failure = None;
-        if let Some(playlist) = util::url_of(&video["m3u8"], None) {
-            // The playlist link carries ad parameters the player fills in. Without them
-            // Uplynk serves the plain programme.
-            let mut plain = playlist.clone();
-            plain.set_query(None);
-            match hls::expand(&self.http, &plain, PLATFORM, BROWSER_UA, &[]).await {
-                Ok(expanded) => {
-                    resolved.variants.extend(expanded.variants);
-                    resolved.subtitles.extend(expanded.subtitles);
-                    resolved.duration = expanded.duration;
-                    resolved.live |= expanded.live;
-                }
-                Err(error) => failure = Some(error),
-            }
-        }
-        if let Some(mp4) = util::url_of(&video["hqMp4"], None) {
-            resolved.variants.push(mp4_variant(mp4, "hq-mp4", false));
-        }
-        if let Some(mp4) = util::url_of(&video["mp4"], None) {
-            resolved.variants.push(mp4_variant(mp4, "mp4", true));
-        }
-        if resolved.variants.is_empty() {
-            return Err(failure.unwrap_or_else(|| ResolveError::NotFound(url.clone())));
-        }
+        resolved.variants = expanded.variants;
+        resolved.subtitles = expanded.subtitles;
+        resolved.live = expanded.live;
         resolved.id = util::text(&video["id"])
             .or_else(|| util::text(&video["publishedKey"]))
             .or_else(|| Some(link.id.clone()));
@@ -198,7 +168,7 @@ impl Resolver for AbcotvsResolver {
         resolved.thumbnail = util::url_of(&video["image"]["source"], None)
             .or_else(|| util::url_of(&video["image"]["dynamicSource"], None));
         resolved.uploaded_at = util::epoch(&video["date"]);
-        resolved.duration = util::seconds(&video["length"]).or(resolved.duration);
+        resolved.duration = util::seconds(&video["length"]).or(expanded.duration);
         resolved.uploader = Some(link.station.to_ascii_uppercase());
         resolved.webpage_url = util::url_of(&video["link"]["canonical"], None)
             .or_else(|| util::url_of(&data["link"]["canonical"], None))
@@ -291,7 +261,6 @@ mod tests {
                     "id": 472548, "title": "East Bay museum celebrates synthesized music", "linkText": "East Bay museum", "length": 8092, "date": 1421118520,
                     "description": "A new East Bay museum dedicated to vintage synthesizers.",
                     "m3u8": "https://content.uplynk.com/ext/4413/museum.m3u8?ad._v=2&ad.preroll=1",
-                    "mp4": "https://dig.abclocal.go.com/kgo/video/2015/01/12/museum_500.mp4",
                     "image": {"source": "https://cdn.abcotvs.com/dip/images/472589.jpg"}
                 }}}}).to_string(),
         ));
@@ -330,11 +299,10 @@ mod tests {
             resolved.webpage_url.as_ref().unwrap().as_str(),
             "https://abc7news.com/east-bay-emeryville-museum-synthesizer/472581/"
         );
-        assert_eq!(resolved.variants.len(), 2);
+        crate::resolve::assert_one_family(&resolved.variants);
+        assert_eq!(resolved.variants.len(), 1);
         assert_eq!(resolved.variants[0].kind, VariantKind::Hls);
         assert_eq!(resolved.variants[0].height, Some(720));
-        assert_eq!(resolved.variants[1].kind, VariantKind::File);
-        assert_eq!(resolved.variants[1].height, Some(360));
     }
 
     #[tokio::test]
@@ -346,8 +314,20 @@ mod tests {
             "application/json",
             json!({"data": {"id": "19834888", "type": "videoClip", "linkText": "Injured climber crawls to safety", "length": "33", "date": "1789483078",
                 "caption": "A San Jose climber crawled his way to a cabin.",
-                "mp4": "https://vcl.abcotv.net/video/kgo/shasta.mp4", "hqMp4": "https://hq.vcl.abcotv.net/kgo/shasta.mp4",
+                "m3u8": "https://content.uplynk.com/ext/4413/shasta.m3u8?ad._v=2",
                 "image": {"dynamicSource": "https://cdn.abcotvs.com/dip/images/19834975.jpg"}}}).to_string(),
+        ));
+        fixture.exchanges.push(get(
+            "https://content.uplynk.com/ext/4413/shasta.m3u8",
+            200,
+            "application/vnd.apple.mpegurl",
+            "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=900000,RESOLUTION=854x480\nhttps://content.uplynk.test/y/g.m3u8\n".into(),
+        ));
+        fixture.exchanges.push(get(
+            "https://content.uplynk.test/y/g.m3u8",
+            200,
+            "application/vnd.apple.mpegurl",
+            "#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:10.0,\n0.ts\n#EXT-X-ENDLIST\n".into(),
         ));
         fixture.exchanges.push(get(
             "https://api.abcotvs.com/v2/content?id=1&key=otv.web.wpvi.story&station=wpvi",
@@ -371,9 +351,10 @@ mod tests {
             resolved.uploaded_at.map(|t| t.as_second()),
             Some(1789483078)
         );
-        assert_eq!(resolved.variants.len(), 2);
-        assert_eq!(resolved.variants[0].format_id.as_deref(), Some("hq-mp4"));
-        assert_eq!(resolved.variants[1].width, Some(640));
+        crate::resolve::assert_one_family(&resolved.variants);
+        assert_eq!(resolved.variants.len(), 1);
+        assert_eq!(resolved.variants[0].kind, VariantKind::Hls);
+        assert_eq!(resolved.variants[0].height, Some(480));
         assert!(matches!(
             resolver
                 .resolve(&Url::parse("https://6abc.com/x/1/").unwrap())

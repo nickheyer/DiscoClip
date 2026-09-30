@@ -1757,6 +1757,7 @@ mod tests {
     /// Every example link resolves live: the videos and the live channel to playable
     /// streams, the programme and its season to episodes. A live channel Rai keeps for
     /// Italy answers with its stream from Italy and with the geo gate from elsewhere.
+    #[ignore = "reaches the live site: cargo test -- --ignored"]
     #[tokio::test]
 
     async fn live_examples_resolve() {

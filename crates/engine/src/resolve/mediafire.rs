@@ -912,6 +912,7 @@ mod tests {
 
     /// Every example link resolves live, and the files among them come back as what
     /// they are.
+    #[ignore = "reaches the live site: cargo test -- --ignored"]
     #[tokio::test]
 
     async fn live_examples_resolve() {

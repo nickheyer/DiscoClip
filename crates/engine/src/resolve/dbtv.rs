@@ -181,8 +181,9 @@ mod tests {
             resolved
                 .variants
                 .iter()
-                .all(|v| v.kind == VariantKind::Hls && v.height.is_some())
+                .all(|v| v.kind == VariantKind::Hls && (v.height.is_some() || v.audio_only))
         );
+        crate::resolve::assert_one_family(&resolved.variants);
         assert!(
             resolved
                 .variants

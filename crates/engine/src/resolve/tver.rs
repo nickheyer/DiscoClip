@@ -1033,6 +1033,7 @@ mod tests {
 
     /// Every example resolves live: an episode to a playable HLS stream, or the geo gate
     /// from outside Japan, and a series to its episodes.
+    #[ignore = "reaches the live site: cargo test -- --ignored"]
     #[tokio::test]
 
     async fn live_examples_resolve() {

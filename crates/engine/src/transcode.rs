@@ -992,10 +992,10 @@ struct RemuxPlan {
 /// Progress over `passes` runs: the fraction done before this pass, and this pass's share.
 fn report(progress: &ProgressSender, total: u64, passes: u64, pass: u64, t: Duration) {
     let per_pass = total / passes.max(1);
-    progress.send_replace(Progress {
-        done: (per_pass * pass + (t.as_micros() as u64) / passes.max(1)).min(total),
-        total: Some(total),
-    });
+    progress.send_replace(Progress::of(
+        (per_pass * pass + (t.as_micros() as u64) / passes.max(1)).min(total),
+        Some(total),
+    ));
 }
 
 impl FfmpegTranscoder {
@@ -1342,10 +1342,7 @@ impl FfmpegTranscoder {
         for (w, h) in steps {
             for &q in qualities {
                 done += 1;
-                progress.send_replace(Progress {
-                    done,
-                    total: Some(attempts as u64),
-                });
+                progress.send_replace(Progress::of(done, Some(attempts as u64)));
                 let mut args: Vec<OsString> = vec![
                     "-loglevel".into(),
                     "warning".into(),

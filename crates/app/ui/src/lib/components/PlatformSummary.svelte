@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { PlatformCoverage } from '$lib/api/types';
 	import MediaKindIcon from './MediaKindIcon.svelte';
-	import RelativeTime from './RelativeTime.svelte';
+	import Timestamp from './Timestamp.svelte';
 	import Status, { type Tone } from './Status.svelte';
 	import { mediaLabel, number } from '$lib/format';
 
@@ -75,7 +75,7 @@
 	</div>
 	<p class="text-sm text-surface-600-400">
 		{#if platform.last_run_at}
-			Run <RelativeTime at={platform.last_run_at} />
+			Run <Timestamp at={platform.last_run_at} />
 		{:else}
 			Never run
 		{/if}

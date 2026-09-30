@@ -128,9 +128,9 @@ Skeleton parts, and what each is for:
 The app's own components in `src/lib/components` compose those parts: `Card`, `PageHeader`,
 `Status`, `StatTile`, `DataTable`, `Pager`, `SearchInput`, `Field`, `Modal`, `Confirm`,
 `EmptyState`, `ErrorState`, `KeyValue` and `KeyValueRow`, `Identifier`, `CopyButton`,
-`CodeBlock`, `Spinner`, `RelativeTime`, `Bytes`, `Clock`, `MediaKindIcon`, `JobTitle`,
-`PlaceLine`, `PlatformSummary`, `GuildIcon`, `DiscordAvatar`, `ModeToggle`, `SubmitDialog`,
-`CookiesDialog`, `SettingField`, and the guild set (`ChannelTable`, `RuleDialog`,
+`CodeBlock`, `Spinner`, `RelativeTime`, `Bytes`, `Clock`, `Duration`, `DurationInput`,
+`BytesInput`, `MediaKindIcon`, `JobTitle`, `PlaceLine`, `PlatformSummary`, `GuildIcon`,
+`DiscordAvatar`, `ModeToggle`, `SubmitDialog`, `CookiesDialog`, `SettingField`, and the guild set (`ChannelTable`, `RuleDialog`,
 `MemberProfiles`, `MemberPicker`, `ChannelKindIcon`, `ScopePicker`, with `watching.ts` for
 what the switches do).
 `ChannelTable` is one table of a server's channels under their category headings, each row
@@ -177,18 +177,18 @@ The implementation follows the official [Skeleton v5 Svelte reference](https://w
 
 ## Writing
 
-- Sentences, not fragments. One idea per sentence. Say what happens, not what the code does.
-- Labels are nouns ("Max height"), buttons are verbs ("Set as default", "End all").
-- Empty states say what would fill them ("Media appears here once jobs finish").
-- Errors say what went wrong and, where it helps, what to do ("Enter seconds or h:mm:ss").
-- Confirmations name the thing and its consequence ("Delete Clips? Its accounts and viewer
-  sessions go with it.").
-- Times are relative ("3 minutes ago") with the absolute time on hover.
-- An absent time reads "Never". Every other absent value reads "None". Both come from `EMPTY`
-  and `NEVER` in `src/lib/format.ts`, in `text-surface-600-400`. Dashes never stand for
-  absence.
+- No sentences in chrome. A page, card, dialog, field, table or empty state carries labels
+  and values, never prose.
+- Labels are nouns ("Max height", "Audio language"); buttons are verbs ("Stop", "End all").
+- Every duration, timestamp, size, count, height, language and identifier renders through
+  its typed component: `Duration`, `Timestamp`, `Bytes`, `Count`, `HeightSelect`,
+  `LanguageSelect`, `Identifier`. Nothing formats one of them inline.
+- A list of values is a `ChipList`.
+- An absent value renders nothing, and its row is omitted. No word stands for absence.
+- A placeholder is the literal default value that applies when the field is left empty,
+  rendered by the matching component, or there is no placeholder.
+- No description line on a page, card, dialog, field or empty state. No help line under a
+  field: a unit is an inline addon.
+- No example text anywhere.
 - State labels capitalise their first word, like every other label ("On", "Pass",
-  "Login optional").
-- Sizes use binary units (`1.5 MB`); durations use `h:mm:ss`.
-- Capitalise the first word only. Product names keep their own casing (DiscoClip, Discord).
-- No exclamation marks, no jargon a first-time operator would not know.
+  "Login optional"). Product names keep their own casing (DiscoClip, Discord).

@@ -9,8 +9,10 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Redirect, Response};
 use axum_extra::extract::CookieJar;
 use axum_extra::extract::cookie::{Cookie, SameSite};
+use std::path::PathBuf;
+
 use discoclip_engine::job::{Job, JobId, JobStatus};
-use discoclip_engine::media::{Container, MediaKind};
+use discoclip_engine::media::{Container, LocalFile, MediaKind};
 use discoclip_engine::store::{JobFilter, Order};
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
@@ -18,7 +20,7 @@ use url::Url;
 
 use super::AppState;
 use super::error::ApiError;
-use super::jobs::{DownloadQuery, locate, serve_file};
+use super::jobs::{Artifact, DownloadQuery, locate, recording_grows, serve_file};
 use super::oauth::callback_url;
 use super::proxy::{Client, ClientInfo, Scheme};
 use super::{assets, front};
@@ -328,6 +330,8 @@ pub struct FrontJob {
     pub duration_secs: Option<f64>,
     /// A recorded stream.
     pub live: bool,
+    /// The media is the recording of a capture under way, playing while it grows.
+    pub recording: bool,
     pub size: u64,
     pub width: Option<u32>,
     pub height: Option<u32>,
@@ -340,21 +344,38 @@ pub struct FrontJob {
     pub download_url: Option<String>,
 }
 
+/// The media a front end plays for `job`: its output once it has one, else the
+/// recording of its live capture while the job runs.
+fn playable(job: &Job) -> Option<(&LocalFile, bool)> {
+    if job.status == JobStatus::Done {
+        return job.artifacts.output.as_ref().map(|file| (file, false));
+    }
+    if matches!(job.status, JobStatus::Running { .. }) {
+        return job.artifacts.recording.as_ref().map(|file| (file, true));
+    }
+    None
+}
+
 fn front_job(state: &AppState, frontend: &Frontend, job: &Job) -> Option<FrontJob> {
     let resolved = job.artifacts.resolved.as_ref()?;
-    let output = job.artifacts.output.as_ref()?;
+    let (file, recording) = playable(job)?;
     let token = state.frontends.sign_media(frontend, job.id.0);
     let base = format!("/api/f/{}/jobs/{}", frontend.input.slug, job.id);
-    let info = output.info.as_ref();
+    let info = file.info.as_ref();
     let picture = info.and_then(|i| i.video.as_ref());
     let container = info.map(|i| i.container.clone()).unwrap_or_else(|| {
-        let ext = output
+        let ext = file
             .path
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("bin");
         Container::from_extension(ext).unwrap_or_else(|| Container::Other(ext.to_string()))
     });
+    let size = if recording {
+        std::fs::metadata(&file.path).map(|m| m.len()).unwrap_or(0)
+    } else {
+        file.size
+    };
     Some(FrontJob {
         id: job.id,
         title: resolved.title.clone(),
@@ -363,31 +384,56 @@ fn front_job(state: &AppState, frontend: &Frontend, job: &Job) -> Option<FrontJo
         uploader: resolved.uploader.clone(),
         webpage_url: resolved.webpage_url.clone(),
         thumbnail: resolved.thumbnail.clone(),
-        duration_secs: info
-            .and_then(|i| i.duration)
-            .or(resolved.duration)
-            .map(|d| d.as_secs_f64()),
-        live: resolved.live,
-        size: output.size,
+        duration_secs: if recording {
+            None
+        } else {
+            info.and_then(|i| i.duration)
+                .or(resolved.duration)
+                .map(|d| d.as_secs_f64())
+        },
+        live: resolved.live || recording,
+        recording,
+        size,
         width: picture.map(|p| p.width),
         height: picture.map(|p| p.height),
         content_type: container.mime().to_string(),
-        published_at: job.finished_at.unwrap_or(job.updated_at),
+        published_at: if recording {
+            job.started_at.unwrap_or(job.created_at)
+        } else {
+            job.finished_at.unwrap_or(job.updated_at)
+        },
         media_url: format!("{base}/media?t={token}"),
         download_url: frontend.input.downloads.then(|| format!("{base}/download")),
     })
 }
 
-/// Whether `frontend` shows `job`: finished with an output, in scope, on a shown platform.
+/// Whether `frontend` shows `job`: finished with an output or capturing live with a
+/// recording, in scope, on a shown platform.
 fn shown(state: &AppState, frontend: &Frontend, job: &Job) -> bool {
-    job.status == JobStatus::Done
-        && job.artifacts.output.is_some()
+    playable(job).is_some()
         && state.frontends.cache().shows(
             frontend,
             job.resolver(),
             job.request.origin.guild.as_deref(),
             job.request.origin.channel.as_deref(),
         )
+}
+
+/// Where the media a front end plays for `job` is: the output, or the recording of a
+/// capture under way, and whether that recording is still growing.
+async fn media_file(job: &Job) -> Result<(PathBuf, String, bool), ApiError> {
+    let (_, recording) = playable(job).ok_or(ApiError::NotFound)?;
+    if recording {
+        let query = DownloadQuery {
+            artifact: Artifact::Recording,
+            index: 0,
+            inline: true,
+        };
+        let (path, filename) = locate(job, &query).await?;
+        return Ok((path, filename, recording_grows(job)));
+    }
+    let (path, filename) = locate(job, &DownloadQuery::output()).await?;
+    Ok((path, filename, false))
 }
 
 #[derive(Debug, Serialize)]
@@ -505,8 +551,8 @@ pub async fn media(
     if !shown(&state, &frontend, &job) {
         return Err(ApiError::NotFound);
     }
-    let (path, filename) = locate(&job, &DownloadQuery::output()).await?;
-    serve_file(&path, &filename, true, &headers).await
+    let (path, filename, growing) = media_file(&job).await?;
+    serve_file(&path, &filename, true, &headers, growing).await
 }
 
 /// The file to keep, when the front end allows downloads.
@@ -528,8 +574,8 @@ pub async fn download(
     if !shown(&state, &frontend, &job) {
         return Err(ApiError::NotFound);
     }
-    let (path, filename) = locate(&job, &DownloadQuery::output()).await?;
-    serve_file(&path, &filename, false, &headers).await
+    let (path, filename, growing) = media_file(&job).await?;
+    serve_file(&path, &filename, false, &headers, growing).await
 }
 
 fn escape(text: &str) -> String {

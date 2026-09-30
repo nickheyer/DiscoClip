@@ -2,12 +2,21 @@
 #
 # The web app is at http://localhost:8080. Open /setup once to create the admin account.
 # Settings come from the environment here, from a config file mounted at
-# /etc/discoclip/discoclip.toml and named with DISCOCLIP_CONFIG, and from the web app.
+# /etc/discoclip/discoclip.toml, where the server looks for one, and from the web app.
+#
+# This runs the published image, which encodes video in software. For hardware
+# encoding, layer the gpu file over this one:
+#
+#   docker compose -f compose.yaml -f compose.gpu.yaml up -d
+#
+# To build the image from this checkout instead of pulling it: docker compose up -d --build
 
 services:
   discoclip:
-    build: .
-    image: discoclip:latest
+    image: ghcr.io/nickheyer/discoclip:latest
+    build:
+      context: .
+      target: cpu
     restart: unless-stopped
     ports:
       - "8080:8080"
@@ -25,10 +34,6 @@ services:
     # A stop gives running jobs their grace period (engine.shutdown.grace_secs, 30 s by
     # default) and the web listener its drain before the container is killed.
     stop_grace_period: 75s
-    # For VA-API or Quick Sync encoders, hand the render node in and point the engine at
-    # an ffmpeg build that has them (engine.ffmpeg). The embedded build encodes in software.
-    # devices:
-    #   - /dev/dri:/dev/dri
 
   # Scrapes /metrics with an API token made under Account in the web app. Put the token
   # into packaging/prometheus.yml first.

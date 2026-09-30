@@ -18,8 +18,11 @@ pub fn definitions() -> Vec<Command> {
             CommandType::ChatInput,
         )
         .option(
-            StringBuilder::new("url", "Link to a video or to a page that contains one")
-                .required(true),
+            StringBuilder::new(
+                "url",
+                "Link to a video or to a page that contains one, or stop to end the live capture running here",
+            )
+            .required(true),
         )
         .build(),
         CommandBuilder::new(STATUS, "Show DiscoClip job counts", CommandType::ChatInput).build(),
@@ -28,7 +31,12 @@ pub fn definitions() -> Vec<Command> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Invocation {
-    Clip { url: Result<Url, String> },
+    Clip {
+        url: Result<Url, String>,
+    },
+    /// `/clip stop`: ends the live captures started from this channel, keeping their
+    /// recordings.
+    Stop,
     Status,
     Unknown(String),
 }
@@ -45,6 +53,9 @@ pub fn parse(data: &CommandData) -> Invocation {
                     _ => None,
                 })
                 .unwrap_or_default();
+            if raw.eq_ignore_ascii_case("stop") {
+                return Invocation::Stop;
+            }
             let url = Url::parse(&raw)
                 .ok()
                 .filter(|u| matches!(u.scheme(), "http" | "https") && u.host_str().is_some())

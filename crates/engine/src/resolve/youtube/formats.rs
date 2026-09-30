@@ -117,8 +117,10 @@ pub fn details(response: &Value, resolved: &mut Resolved) {
 
 static RE_CODECS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"codecs="([^"]+)""#).unwrap());
 
-/// Every format of the answer as a variant, its URL unlocked with `player` where the app
-/// needs it. With why each format that could not be used was left out.
+/// Every adaptive format of the answer as a variant, its URL unlocked with `player`
+/// where the app needs it: the picture and the sound come as separate streams the job
+/// pairs. The muxed `formats` the answer lists beside them are the same media at lower
+/// quality and are not taken. With why each format that could not be used was left out.
 pub async fn variants(
     response: &Value,
     client: &Client,
@@ -127,10 +129,15 @@ pub async fn variants(
     let streaming = &response["streamingData"];
     let mut out = Vec::new();
     let mut problems = Vec::new();
-    let listed = [("formats", false), ("adaptiveFormats", true)];
+    let listed = [("adaptiveFormats", true)];
     for (key, adaptive) in listed {
         for format in streaming[key].as_array().into_iter().flatten() {
             let itag = format["itag"].as_u64().unwrap_or(0);
+            // A format listed again with its dynamic range compressed is the same
+            // sound; the one as recorded is kept.
+            if format["isDrc"].as_bool() == Some(true) {
+                continue;
+            }
             if format["type"].as_str() == Some("FORMAT_STREAM_TYPE_OTF") {
                 problems.push(format!(
                     "itag {itag} is served in a segmented form this app does not fetch"
@@ -204,10 +211,22 @@ pub async fn variants(
                 .as_str()
                 .or_else(|| format["audioQuality"].as_str())
                 .map(String::from);
-            variant.language = format["audioTrack"]["id"]
+            let track = &format["audioTrack"];
+            variant.language = track["id"]
                 .as_str()
                 .and_then(|id| id.split('.').next())
                 .map(String::from);
+            variant.audio_track = track["id"].as_str().map(String::from);
+            // `xtags` says what the sound is: `acont=original`, `acont=dubbed` or
+            // `acont=dubbed-auto`, beside the track's own default flag.
+            let content = format["xtags"]
+                .as_str()
+                .unwrap_or("")
+                .split(':')
+                .find_map(|tag| tag.strip_prefix("acont="));
+            variant.audio_default =
+                track["audioIsDefault"].as_bool().unwrap_or(false) || content == Some("original");
+            variant.audio_dubbed = matches!(content, Some("dubbed" | "dubbed-auto"));
             variant.video_only = adaptive && kind.starts_with("video/");
             variant.audio_only = kind.starts_with("audio/");
             variant.headers = vec![("user-agent".to_string(), client.user_agent.to_string())];
@@ -337,5 +356,83 @@ mod tests {
         assert!(subtitles[0].url.as_str().ends_with("&fmt=json3"));
         assert_eq!(subtitles[1].name.as_deref(), Some("German"));
         assert!(!subtitles[1].auto);
+    }
+
+    #[tokio::test]
+    async fn audio_tracks_carry_their_language_default_and_dub_marks() {
+        let response = json!({
+            "streamingData": {
+                "adaptiveFormats": [
+                    {
+                        "itag": 137, "url": "https://rr1.googlevideo.com/videoplayback?id=2",
+                        "mimeType": "video/mp4; codecs=\"avc1.640028\"", "width": 1920, "height": 1080,
+                        "bitrate": 4000000, "contentLength": "5000", "qualityLabel": "1080p"
+                    },
+                    {
+                        "itag": 140, "url": "https://rr1.googlevideo.com/videoplayback?id=3",
+                        "mimeType": "audio/mp4; codecs=\"mp4a.40.2\"", "bitrate": 128000, "contentLength": "300",
+                        "audioTrack": {"id": "es-419.3", "displayName": "Spanish (Latin America)", "audioIsDefault": false},
+                        "xtags": "acont=dubbed:lang=es-419"
+                    },
+                    {
+                        "itag": 140, "url": "https://rr1.googlevideo.com/videoplayback?id=4",
+                        "mimeType": "audio/mp4; codecs=\"mp4a.40.2\"", "bitrate": 128000, "contentLength": "300",
+                        "audioTrack": {"id": "ja.4", "displayName": "Japanese original", "audioIsDefault": true},
+                        "xtags": "acont=original:lang=ja"
+                    },
+                    {
+                        "itag": 140, "url": "https://rr1.googlevideo.com/videoplayback?id=5",
+                        "mimeType": "audio/mp4; codecs=\"mp4a.40.2\"", "bitrate": 128000, "contentLength": "300",
+                        "audioTrack": {"id": "ja.4", "displayName": "Japanese original", "audioIsDefault": true},
+                        "xtags": "acont=original:lang=ja", "isDrc": true
+                    },
+                    {
+                        "itag": 140, "url": "https://rr1.googlevideo.com/videoplayback?id=6",
+                        "mimeType": "audio/mp4; codecs=\"mp4a.40.2\"", "bitrate": 128000, "contentLength": "300",
+                        "audioTrack": {"id": "en-US.10", "displayName": "English (United States)", "audioIsDefault": false},
+                        "xtags": "acont=dubbed-auto:lang=en-US"
+                    }
+                ]
+            }
+        });
+        let (variants, problems) =
+            variants(&response, &crate::resolve::youtube::innertube::WEB, None).await;
+        assert!(problems.is_empty(), "{problems:?}");
+        // The compressed twin of the original is left out.
+        assert_eq!(variants.len(), 4);
+        let by_id = |id: &str| {
+            variants
+                .iter()
+                .find(|v| v.audio_track.as_deref() == Some(id))
+                .unwrap_or_else(|| panic!("track {id}"))
+        };
+        let spanish = by_id("es-419.3");
+        assert_eq!(spanish.language.as_deref(), Some("es-419"));
+        assert!(!spanish.audio_default);
+        assert!(spanish.audio_dubbed);
+        let original = by_id("ja.4");
+        assert!(original.audio_default);
+        assert!(!original.audio_dubbed);
+        assert!(by_id("en-US.10").audio_dubbed);
+        let limits = crate::config::Limits::default();
+        let chosen = crate::plan::select_variant(
+            &variants,
+            &limits,
+            "youtube",
+            crate::media::MediaKind::Video,
+            "en",
+        )
+        .unwrap();
+        assert_eq!(chosen.audio_track.as_deref(), Some("en-US.10"));
+        assert_eq!(chosen.language.as_deref(), Some("en-US"));
+        let chosen = crate::plan::select_variant(
+            &variants,
+            &limits,
+            "youtube",
+            crate::media::MediaKind::Video,
+            "de",
+        )
+        .unwrap();
+        assert_eq!(chosen.audio_track.as_deref(), Some("ja.4"));
     }
 }

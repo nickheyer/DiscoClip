@@ -4,7 +4,11 @@
 //! in, playback is driven to the end at the fastest rate the browser plays, and the
 //! copied streams are put back together into one file: fragments the player appended
 //! twice kept once, fragments appended out of order put in order, and a stream whose
-//! codec configuration changed along the way joined by decoding it.
+//! codec configuration changed along the way joined by decoding it. A stream without an
+//! end is recorded as it goes instead: each run of what the player appends is decoded and
+//! encoded again on its way into the growing recording, so a rendition switch mid-stream
+//! is absorbed, and the capture ends at its limit, when a person stops it, or when the
+//! stream goes quiet.
 
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
@@ -16,12 +20,15 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+use tokio::process::Command;
+use tokio::task::JoinHandle;
 
+use super::recording::{Feed, Lane, Picture, Recorder, Spec, Treatment};
 use super::segments::{Budget, mux_parts};
 use super::{DownloadContext, DownloadError, Downloaded, Downloader, mp4};
 use crate::browser::{self, Browser, BrowserError, Cdp, Event};
 use crate::event::{Progress, ProgressSender};
-use crate::ffmpeg::Ffmpeg;
+use crate::ffmpeg::{Ffmpeg, summarize};
 use crate::http::{Cookie, Http};
 use crate::media::LocalFile;
 use crate::resolve::{Variant, VariantKind};
@@ -44,6 +51,9 @@ const TICK: Duration = Duration::from_millis(500);
 const END_SLACK: f64 = 0.5;
 /// The largest box or element a media source stream may carry.
 const MAX_UNIT: usize = 512 * 1024 * 1024;
+/// How long a page whose player reports nothing gets, after its first append, before its
+/// stream counts as one without an end.
+const DECIDE: Duration = Duration::from_secs(3);
 
 pub struct BrowserDownloader {
     http: Http,
@@ -556,6 +566,253 @@ struct Stream {
     stray: usize,
 }
 
+/// How a page capture is kept: put together from what the player appended once
+/// playback ends, or recorded as it goes when the stream has no end.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Keeping {
+    Undecided,
+    Whole,
+    Live,
+}
+
+/// The ffmpeg that turns one run of a buffer into a transport stream for the recorder:
+/// what it reads on its standard input it decodes and encodes again, so the run's own
+/// codec configuration goes no further than it, and what it writes on its standard
+/// output the pump carries into the recorder's lane. Timestamps are kept, so the runs
+/// of one buffer continue one another on the media's own timeline.
+struct RunEncoder {
+    child: tokio::process::Child,
+    stdin: Option<tokio::process::ChildStdin>,
+    /// Carries the encoded stream into the lane. Hands the feed back when the stream
+    /// ends.
+    pump: JoinHandle<(Feed, Result<(), DownloadError>)>,
+    stderr: JoinHandle<Vec<u8>>,
+}
+
+impl RunEncoder {
+    async fn spawn(
+        ffmpeg: &Ffmpeg,
+        format: Format,
+        video: bool,
+        muxed: bool,
+        feed: Feed,
+    ) -> Result<Self, DownloadError> {
+        let mut args: Vec<&str> = vec![
+            "-hide_banner",
+            "-nostdin",
+            "-nostats",
+            "-loglevel",
+            "warning",
+            "-fflags",
+            "+genpts",
+            "-f",
+            match format {
+                Format::Mp4 => "mp4",
+                Format::WebM => "matroska",
+            },
+            "-i",
+            "pipe:0",
+        ];
+        args.extend(match (video, muxed) {
+            (true, true) => ["-map", "0:v:0?", "-map", "0:a:0?"],
+            (true, false) => ["-map", "0:v:0", "-an", "-sn"],
+            (false, _) => ["-vn", "-map", "0:a:0", "-sn"],
+        });
+        args.extend([
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-crf",
+            "18",
+            "-pix_fmt",
+            "yuv420p",
+            "-bf",
+            "0",
+            "-g",
+            "60",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-ar",
+            "48000",
+            "-ac",
+            "2",
+            "-copyts",
+            "-muxdelay",
+            "0",
+            "-muxpreload",
+            "0",
+            "-mpegts_copyts",
+            "1",
+            "-f",
+            "mpegts",
+            "pipe:1",
+        ]);
+        let mut child = Command::new(ffmpeg.ffmpeg_path())
+            .args(args)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| process("the run encoder has no stdin"))?;
+        let mut stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| process("the run encoder has no stdout"))?;
+        let mut stderr_pipe = child
+            .stderr
+            .take()
+            .ok_or_else(|| process("the run encoder has no stderr"))?;
+        let stderr = tokio::spawn(async move {
+            let mut buf = Vec::new();
+            let _ = stderr_pipe.read_to_end(&mut buf).await;
+            buf
+        });
+        let pump = tokio::spawn(async move {
+            let mut feed = feed;
+            let mut buf = vec![0u8; 64 * 1024];
+            loop {
+                match stdout.read(&mut buf).await {
+                    Ok(0) => break (feed, Ok(())),
+                    Ok(n) => {
+                        if let Err(error) = feed.write(&buf[..n]).await {
+                            break (feed, Err(error));
+                        }
+                    }
+                    Err(error) => break (feed, Err(error.into())),
+                }
+            }
+        });
+        Ok(Self {
+            child,
+            stdin: Some(stdin),
+            pump,
+            stderr,
+        })
+    }
+
+    async fn write(&mut self, bytes: &[u8]) -> Result<(), DownloadError> {
+        let Some(stdin) = self.stdin.as_mut() else {
+            return Err(process("the run encoder's input is closed"));
+        };
+        stdin
+            .write_all(bytes)
+            .await
+            .map_err(|error| process(format!("the run encoder stopped taking its input: {error}")))
+    }
+
+    /// Ends the run: the encoder writes out what it holds and the pump carries it into
+    /// the lane. The feed, for the next run.
+    async fn end(mut self) -> Result<Feed, DownloadError> {
+        drop(self.stdin.take());
+        let (feed, pumped) = self
+            .pump
+            .await
+            .map_err(|error| process(format!("the run encoder's pump failed: {error}")))?;
+        let status = self.child.wait().await?;
+        let stderr = self.stderr.await.unwrap_or_default();
+        if !status.success() {
+            return Err(process(format!(
+                "run encoder: exit status {}: {}",
+                status
+                    .code()
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "signal".into()),
+                summarize(&String::from_utf8_lossy(&stderr))
+            )));
+        }
+        pumped?;
+        Ok(feed)
+    }
+}
+
+/// One lane of the live recording: the buffer it carries, and the encoder of the run in
+/// hand.
+struct LiveLane {
+    buffer: usize,
+    /// Whether the buffer carries the picture.
+    video: bool,
+    /// Whether the buffer carries picture and sound both.
+    muxed: bool,
+    /// The recorder's input, held by the pump of the run being encoded while one runs.
+    feed: Option<Feed>,
+    encoder: Option<RunEncoder>,
+}
+
+impl LiveLane {
+    /// Starts a run: the one before it, if any, is written out first, so the lane
+    /// carries the runs one after another.
+    async fn begin_run(
+        &mut self,
+        ffmpeg: &Ffmpeg,
+        format: Format,
+        init: &[u8],
+    ) -> Result<(), DownloadError> {
+        self.end_run().await?;
+        let feed = self
+            .feed
+            .take()
+            .ok_or_else(|| process("the lane's feed is held by a run that did not end"))?;
+        let mut encoder = RunEncoder::spawn(ffmpeg, format, self.video, self.muxed, feed).await?;
+        encoder.write(init).await?;
+        self.encoder = Some(encoder);
+        Ok(())
+    }
+
+    async fn fragment(&mut self, bytes: &[u8]) -> Result<(), DownloadError> {
+        match self.encoder.as_mut() {
+            Some(encoder) => encoder.write(bytes).await,
+            None => Ok(()),
+        }
+    }
+
+    async fn end_run(&mut self) -> Result<(), DownloadError> {
+        if let Some(encoder) = self.encoder.take() {
+            self.feed = Some(encoder.end().await?);
+        }
+        Ok(())
+    }
+
+    /// Ends the run in hand and the lane: the recorder sees the end of the stream.
+    async fn close(&mut self) -> Result<(), DownloadError> {
+        self.end_run().await?;
+        if let Some(feed) = self.feed.as_mut() {
+            feed.close().await;
+        }
+        Ok(())
+    }
+}
+
+/// A recording made as the page plays: the recorder and the lanes that feed it.
+struct LiveRecording {
+    ffmpeg: Ffmpeg,
+    recorder: Recorder,
+    lanes: Vec<LiveLane>,
+}
+
+impl LiveRecording {
+    fn lane_of(&mut self, buffer: usize) -> Option<&mut LiveLane> {
+        self.lanes.iter_mut().find(|lane| lane.buffer == buffer)
+    }
+}
+
+/// What a finished capture hands over: the streams to put together, or the recording
+/// made as the page played, with the runs to clear away and the notes for the log.
+enum Finished {
+    Whole(Vec<Stream>),
+    Live {
+        file: Box<LocalFile>,
+        streams: Vec<Stream>,
+        notes: Vec<String>,
+    },
+}
+
 /// Every source buffer the page opened, keyed by the session and execution context it
 /// opened it in and its number there.
 struct Capture {
@@ -563,6 +820,12 @@ struct Capture {
     budget: Budget,
     buffers: Vec<Buffer>,
     index: HashMap<(String, u64, u64), usize>,
+    keeping: Keeping,
+    /// The ffmpeg a live recording runs on, once the capture is kept live.
+    ffmpeg: Option<Ffmpeg>,
+    live: Option<LiveRecording>,
+    /// Whether the byte budget could take no more of a live capture.
+    full: bool,
 }
 
 type BufferKey = (String, u64, u64);
@@ -574,7 +837,48 @@ impl Capture {
             budget: Budget::new(max_bytes),
             buffers: Vec::new(),
             index: HashMap::new(),
+            keeping: Keeping::Undecided,
+            ffmpeg: None,
+            live: None,
+            full: false,
         }
+    }
+
+    fn keeping(&self) -> Keeping {
+        self.keeping
+    }
+
+    /// Whether the capture is a live one: kept as a recording that grows as it goes.
+    fn is_live(&self) -> bool {
+        self.keeping == Keeping::Live
+    }
+
+    /// Whether the byte budget could take no more.
+    fn full(&self) -> bool {
+        self.full
+    }
+
+    /// Bytes of the recording so far, once one is being made.
+    fn recorded(&self) -> Option<u64> {
+        self.live.as_ref().map(|live| live.recorder.bytes())
+    }
+
+    /// Keeps the capture whole: the streams are put together once playback ends.
+    fn keep_whole(&mut self) {
+        if self.keeping == Keeping::Undecided {
+            self.keeping = Keeping::Whole;
+        }
+    }
+
+    /// Keeps the capture as a recording that grows as the page plays, starting from
+    /// what was appended so far.
+    async fn keep_live(&mut self, ffmpeg: Ffmpeg) -> Result<(), DownloadError> {
+        if self.keeping != Keeping::Undecided {
+            return Ok(());
+        }
+        self.keeping = Keeping::Live;
+        self.ffmpeg = Some(ffmpeg);
+        self.start_live().await
     }
 
     fn open(&mut self, key: BufferKey, mime: &str) -> Result<(), DownloadError> {
@@ -645,21 +949,41 @@ impl Capture {
         Ok(())
     }
 
+    /// Spends `bytes` of the budget. A live capture the budget cannot hold ends instead
+    /// of failing: whether the bytes were taken.
+    fn spend(&mut self, bytes: u64) -> Result<bool, DownloadError> {
+        if self.keeping == Keeping::Live && !self.budget.fits(bytes) {
+            self.full = true;
+            return Ok(false);
+        }
+        self.budget.take(bytes)?;
+        Ok(true)
+    }
+
     async fn take(&mut self, index: usize, pieces: Vec<Piece>) -> Result<(), DownloadError> {
         for piece in pieces {
+            if self.full {
+                break;
+            }
             match piece {
                 Piece::Init { bytes, codec } => {
-                    let buffer = &mut self.buffers[index];
-                    if buffer.runs.last().is_some_and(|run| run.codec == codec) {
+                    if self.buffers[index]
+                        .runs
+                        .last()
+                        .is_some_and(|run| run.codec == codec)
+                    {
                         continue;
                     }
+                    if !self.spend(bytes.len() as u64)? {
+                        break;
+                    }
+                    let buffer = &mut self.buffers[index];
                     let path = self.dir.join(format!(
                         "browser-{index}-{}.{}",
                         buffer.runs.len(),
                         buffer.format.extension()
                     ));
                     let mut file = tokio::fs::File::create(&path).await?;
-                    self.budget.take(bytes.len() as u64)?;
                     file.write_all(&bytes).await?;
                     buffer.runs.push(Run {
                         path,
@@ -669,18 +993,28 @@ impl Capture {
                         fragments: Vec::new(),
                         ordered: true,
                     });
+                    let format = buffer.format;
+                    if let Some(live) = self.live.as_mut()
+                        && let Some(lane) = live.lanes.iter_mut().find(|l| l.buffer == index)
+                    {
+                        lane.begin_run(&live.ffmpeg, format, &bytes).await?;
+                    }
                 }
                 Piece::Fragment { bytes, key } => {
                     let buffer = &mut self.buffers[index];
-                    let Some(run) = buffer.runs.last_mut() else {
+                    if buffer.runs.last().is_none() {
                         buffer.stray += 1;
                         continue;
-                    };
+                    }
                     if !buffer.seen.insert(key) {
                         buffer.duplicates += 1;
                         continue;
                     }
-                    self.budget.take(bytes.len() as u64)?;
+                    if !self.spend(bytes.len() as u64)? {
+                        break;
+                    }
+                    let buffer = &mut self.buffers[index];
+                    let run = buffer.runs.last_mut().expect("a run to take the fragment");
                     let offset =
                         run.init_len + run.fragments.iter().map(|(_, _, len)| len).sum::<u64>();
                     run.file.write_all(&bytes).await?;
@@ -692,15 +1026,122 @@ impl Capture {
                         run.ordered = false;
                     }
                     run.fragments.push((key.1, offset, bytes.len() as u64));
+                    if let Some(live) = self.live.as_mut()
+                        && let Some(lane) = live.lane_of(index)
+                    {
+                        lane.fragment(&bytes).await?;
+                    }
                 }
             }
+        }
+        if self.keeping == Keeping::Live && self.live.is_none() {
+            self.start_live().await?;
         }
         Ok(())
     }
 
+    /// Starts the recording once the buffer carrying the picture has media in a run to
+    /// read the picture's shape from: the recorder, a lane for that buffer and for the
+    /// separate sound when there is one, and everything those buffers hold so far fed
+    /// through. Until then, what arrives waits in the runs on disk.
+    async fn start_live(&mut self) -> Result<(), DownloadError> {
+        let Some(ffmpeg) = self.ffmpeg.clone() else {
+            return Ok(());
+        };
+        let video = self.buffers.iter().position(|b| b.is_video());
+        let audio = self.buffers.iter().position(|b| !b.is_video());
+        let Some(primary) = video.or(audio) else {
+            return Ok(());
+        };
+        let Some(run) = self.buffers[primary]
+            .runs
+            .iter_mut()
+            .find(|r| !r.fragments.is_empty())
+        else {
+            return Ok(());
+        };
+        run.file.flush().await?;
+        let path = run.path.clone();
+        let info = ffmpeg
+            .probe(&path)
+            .await
+            .map_err(|e| process(format!("{}: {e}", path.display())))?;
+        let picture = match video {
+            Some(_) => {
+                let track = info
+                    .video
+                    .as_ref()
+                    .ok_or_else(|| process("the video buffer's first run holds no picture"))?;
+                Some(Picture {
+                    width: track.width,
+                    height: track.height,
+                    fps: track.fps.filter(|fps| *fps > 0.0).unwrap_or(30.0),
+                })
+            }
+            None => None,
+        };
+        let muxed = video.is_some() && info.audio.is_some();
+        let separate_audio = audio.filter(|_| video.is_some() && !muxed);
+        let spec = Spec {
+            video: Treatment::Encode,
+            audio: separate_audio.map(|_| Treatment::Encode),
+            format: Some("mpegts"),
+            picture,
+            adts: false,
+            language: None,
+        };
+        let recorder = Recorder::start(&ffmpeg, &self.dir, &spec).await?;
+        let mut lanes = vec![LiveLane {
+            buffer: primary,
+            video: video.is_some(),
+            muxed,
+            feed: Some(recorder.feed(Lane::Video)),
+            encoder: None,
+        }];
+        if let Some(audio) = separate_audio {
+            lanes.push(LiveLane {
+                buffer: audio,
+                video: false,
+                muxed: false,
+                feed: Some(recorder.feed(Lane::Audio)),
+                encoder: None,
+            });
+        }
+        let mut live = LiveRecording {
+            ffmpeg,
+            recorder,
+            lanes,
+        };
+        // What the chosen buffers hold so far goes through first: every earlier run
+        // whole, and the run in hand left open for what follows.
+        for lane_index in 0..live.lanes.len() {
+            let buffer_index = live.lanes[lane_index].buffer;
+            let format = self.buffers[buffer_index].format;
+            let count = self.buffers[buffer_index].runs.len();
+            for n in 0..count {
+                let run = &mut self.buffers[buffer_index].runs[n];
+                run.file.flush().await?;
+                let init_len = usize::try_from(run.init_len).unwrap_or(usize::MAX);
+                let bytes = tokio::fs::read(&run.path).await?;
+                let lane = &mut live.lanes[lane_index];
+                lane.begin_run(&live.ffmpeg, format, &bytes[..init_len.min(bytes.len())])
+                    .await?;
+                if bytes.len() > init_len {
+                    lane.fragment(&bytes[init_len..]).await?;
+                }
+                if n + 1 < count {
+                    lane.end_run().await?;
+                }
+            }
+        }
+        self.live = Some(live);
+        Ok(())
+    }
+
     /// Closes every run, putting the fragments of a run that arrived out of order into
-    /// decode order, and describes each buffer's stream.
-    async fn finish(mut self) -> Result<Vec<Stream>, DownloadError> {
+    /// decode order, and describes each buffer's stream. A live capture's recording is
+    /// written out and handed over with them.
+    async fn finish(mut self) -> Result<Finished, DownloadError> {
         for index in 0..self.buffers.len() {
             let mut pieces = Vec::new();
             {
@@ -709,8 +1150,14 @@ impl Capture {
             }
             self.take(index, pieces).await?;
         }
+        let live = self.live.take();
+        let recorded: Vec<usize> = live
+            .as_ref()
+            .map(|live| live.lanes.iter().map(|lane| lane.buffer).collect())
+            .unwrap_or_default();
         let mut streams = Vec::new();
-        for buffer in self.buffers {
+        let mut notes = Vec::new();
+        for (index, buffer) in self.buffers.into_iter().enumerate() {
             let video = buffer.is_video();
             let mut runs = Vec::new();
             for mut run in buffer.runs {
@@ -719,13 +1166,19 @@ impl Capture {
                     let _ = tokio::fs::remove_file(&run.path).await;
                     continue;
                 }
-                if !run.ordered {
+                if !run.ordered && live.is_none() {
                     reorder(&mut run).await?;
                 }
                 runs.push(run.path);
             }
             if runs.is_empty() {
                 continue;
+            }
+            if live.is_some() && !recorded.contains(&index) {
+                notes.push(format!(
+                    "browser: a further {} stream of {} bytes was left out",
+                    buffer.mime, buffer.appended
+                ));
             }
             streams.push(Stream {
                 video,
@@ -736,7 +1189,20 @@ impl Capture {
                 stray: buffer.stray,
             });
         }
-        Ok(streams)
+        match live {
+            Some(mut live) => {
+                for lane in live.lanes.iter_mut() {
+                    lane.close().await?;
+                }
+                let file = live.recorder.finish().await?;
+                Ok(Finished::Live {
+                    file: Box::new(file),
+                    streams,
+                    notes,
+                })
+            }
+            None => Ok(Finished::Whole(streams)),
+        }
     }
 }
 
@@ -845,8 +1311,12 @@ enum Ending {
     Finished,
     /// A stream without an end stopped sending.
     Quiet,
-    /// A stream without an end was cut at the capture limit.
+    /// A stream without an end reached the capture limit.
     Cut,
+    /// A stream without an end reached the byte limit.
+    Bytes,
+    /// A person stopped the capture.
+    Stopped,
 }
 
 /// What every page and frame of the capture is set up with.
@@ -1036,7 +1506,8 @@ async fn nudge(cdp: &Cdp, sessions: &[String]) {
 }
 
 impl BrowserDownloader {
-    /// Opens the page and copies out what its player appends until playback ends.
+    /// Opens the page and copies out what its player appends until playback ends, or a
+    /// stream without an end reaches its limit, goes quiet, or is stopped.
     async fn capture(
         &self,
         browser: &mut Browser,
@@ -1056,6 +1527,9 @@ impl BrowserDownloader {
         let setup = Setup::new(browser, variant, &jar, credentials);
         prepare(&cdp, &page.session, &setup, true).await?;
         let mut capture = Capture::new(dest_dir, context.max_bytes);
+        if variant.live {
+            capture.keep_live(self.ffmpeg.clone()).await?;
+        }
         let mut playback: Option<Playback> = None;
         let mut sessions = vec![page.session.clone()];
         let mut notes = Vec::new();
@@ -1065,12 +1539,10 @@ impl BrowserDownloader {
         let mut last_advance = started;
         let mut furthest = 0.0f64;
         let mut last_nudge = started;
+        let mut announced = false;
         let mut ticker = tokio::time::interval(TICK);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-        progress.send_replace(Progress {
-            done: 0,
-            total: None,
-        });
+        progress.send_replace(Progress::of(0, None));
 
         let navigated = cdp
             .call(
@@ -1118,6 +1590,13 @@ impl BrowserDownloader {
                         &mut capture, &mut playback, &mut sessions,
                         &mut opened_at, &mut last_append, &mut last_advance, &mut furthest,
                     ).await?;
+                    if !announced && capture.recorded().is_some() {
+                        announced = true;
+                        context.capture.started(&dest_dir.join(super::recording::RECORDING));
+                    }
+                }
+                _ = context.stop.cancelled(), if capture.is_live() => {
+                    break Ending::Stopped;
                 }
                 _ = ticker.tick() => {
                     let now = Instant::now();
@@ -1137,21 +1616,21 @@ impl BrowserDownloader {
                         }
                         Some(_) => {
                             let state = playback.unwrap_or_default();
-                            let live = variant.live || state.duration.is_none();
-                            progress.send_replace(match state.duration {
-                                Some(duration) => Progress {
-                                    done: state.current.round() as u64,
-                                    total: Some(duration.round() as u64),
-                                },
-                                None if live => Progress {
+                            let live = capture.keeping() != Keeping::Whole;
+                            progress.send_replace(if live {
+                                Progress {
                                     done: elapsed.as_secs(),
                                     total: Some(context.max_live.as_secs()),
-                                },
-                                None => Progress {
-                                    done: capture.appended(),
-                                    total: None,
-                                },
+                                    bytes: capture.recorded(),
+                                }
+                            } else if let Some(duration) = state.duration {
+                                Progress::of(state.current.round() as u64, Some(duration.round() as u64))
+                            } else {
+                                Progress::of(capture.appended(), None)
                             });
+                            if capture.full() {
+                                break Ending::Bytes;
+                            }
                             if state.complete() {
                                 break Ending::Finished;
                             }
@@ -1190,25 +1669,27 @@ impl BrowserDownloader {
             }
         };
         let state = playback.unwrap_or_default();
+        let secs = started.elapsed().as_secs_f64();
         match ending {
             Ending::Finished => {
                 if let Some(duration) = state.duration {
                     let total = duration.round() as u64;
-                    progress.send_replace(Progress {
-                        done: total,
-                        total: Some(total),
-                    });
+                    progress.send_replace(Progress::of(total, Some(total)));
                 }
             }
             Ending::Quiet => notes.push(format!(
-                "browser: the stream went quiet after {}s without new media. Recorded {:.0} s.",
-                self.stall.as_secs(),
-                state.current
+                "browser: the stream went quiet after {}s without new media. Capture ended at {secs:.0} s.",
+                self.stall.as_secs()
             )),
             Ending::Cut => notes.push(format!(
-                "browser: capture cut at the limit of {:.0} s while the stream goes on",
+                "Capture ended at the {:.0} s limit.",
                 context.max_live.as_secs_f64()
             )),
+            Ending::Bytes => notes.push(format!(
+                "Capture ended at the {} byte limit.",
+                context.max_bytes
+            )),
+            Ending::Stopped => notes.push(format!("Capture stopped at {secs:.0} s.")),
         }
         Ok((capture, ending, state, notes))
     }
@@ -1253,7 +1734,18 @@ impl BrowserDownloader {
                                     process(format!("the hook sent bytes that do not decode: {e}"))
                                 })?;
                         capture.data(&key, &bytes).await?;
+                        let first = last_append.is_none();
                         *last_append = Some(Instant::now());
+                        // A player that reports nothing about its playback gets a while
+                        // after its first append; then its stream counts as one without
+                        // an end.
+                        if capture.keeping() == Keeping::Undecided
+                            && !first
+                            && opened_at.is_some_and(|at| at.elapsed() >= DECIDE)
+                            && playback.is_none()
+                        {
+                            capture.keep_live(self.ffmpeg.clone()).await?;
+                        }
                     }
                     Some("abort") => capture.abort(&key).await?,
                     Some("type") => {
@@ -1268,6 +1760,15 @@ impl BrowserDownloader {
                                 *last_advance = Instant::now();
                             }
                             *playback = Some(state);
+                            // Once media has been appended, the player knows whether its
+                            // stream has an end: one without is recorded as it goes.
+                            if capture.keeping() == Keeping::Undecided && last_append.is_some() {
+                                if state.duration.is_none() {
+                                    capture.keep_live(self.ffmpeg.clone()).await?;
+                                } else {
+                                    capture.keep_whole();
+                                }
+                            }
                         }
                     }
                     _ => {}
@@ -1507,11 +2008,12 @@ impl BrowserDownloader {
                     &[joined[&v].clone()],
                     Some(&[joined[&a].clone()]),
                     &dest,
+                    None,
                 )
                 .await?
             }
             (Some((only, _)), None) | (None, Some((only, _))) => {
-                mux_parts(&self.ffmpeg, &[joined[&only].clone()], None, &dest).await?
+                mux_parts(&self.ffmpeg, &[joined[&only].clone()], None, &dest, None).await?
             }
             (None, None) => return Err(DownloadError::Empty),
         };
@@ -1569,13 +2071,30 @@ impl Downloader for BrowserDownloader {
             .await;
         browser.close().await;
         let (capture, _, state, mut notes) = captured?;
-        let streams = capture.finish().await?;
-        if streams.is_empty() {
-            return Err(process(format!(
-                "{url}: the page's player appended no media before playback ended at {}",
-                state.describe()
-            )));
-        }
+        let (file, streams) = match capture.finish().await? {
+            Finished::Whole(streams) => {
+                if streams.is_empty() {
+                    return Err(process(format!(
+                        "{url}: the page's player appended no media before playback ended at {}",
+                        state.describe()
+                    )));
+                }
+                let file = self.assemble(&streams, dest_dir, &mut notes).await?;
+                for index in 0..streams.len() {
+                    let _ =
+                        tokio::fs::remove_file(dest_dir.join(format!("browser-{index}.mkv"))).await;
+                }
+                (file, streams)
+            }
+            Finished::Live {
+                file,
+                streams,
+                notes: left_out,
+            } => {
+                notes.extend(left_out);
+                (*file, streams)
+            }
+        };
         notes.insert(
             0,
             format!(
@@ -1588,14 +2107,10 @@ impl Downloader for BrowserDownloader {
                     .join(", ")
             ),
         );
-        let file = self.assemble(&streams, dest_dir, &mut notes).await?;
         for stream in &streams {
             for run in &stream.runs {
                 let _ = tokio::fs::remove_file(run).await;
             }
-        }
-        for index in 0..streams.len() {
-            let _ = tokio::fs::remove_file(dest_dir.join(format!("browser-{index}.mkv"))).await;
         }
         Ok(Downloaded {
             file,
@@ -1717,7 +2232,9 @@ mod tests {
         stream.extend(fragment(4000, b"eeee"));
         feed(&mut capture, &key(1), &stream, 7).await;
         assert_eq!(capture.appended(), stream.len() as u64);
-        let streams = capture.finish().await.unwrap();
+        let Finished::Whole(streams) = capture.finish().await.unwrap() else {
+            panic!("a capture kept whole");
+        };
         assert_eq!(streams.len(), 1);
         assert_eq!(streams[0].runs.len(), 1);
         assert_eq!(streams[0].duplicates, 1);
@@ -1760,7 +2277,9 @@ mod tests {
         // A media segment before any initialization section is counted and left out.
         capture.open(key(2), "audio/mp4").unwrap();
         feed(&mut capture, &key(2), &fragment(0, b"zzzz"), 100).await;
-        let streams = capture.finish().await.unwrap();
+        let Finished::Whole(streams) = capture.finish().await.unwrap() else {
+            panic!("a capture kept whole");
+        };
         assert_eq!(streams.len(), 1, "a buffer with no run is not a stream");
         assert_eq!(streams[0].runs.len(), 2);
         assert_eq!(
@@ -1799,7 +2318,9 @@ mod tests {
             &[ebml(TIMECODE, &[2]), ebml(0xA3, b"cccc")].concat(),
         ));
         feed(&mut capture, &key(1), &stream, 4).await;
-        let streams = capture.finish().await.unwrap();
+        let Finished::Whole(streams) = capture.finish().await.unwrap() else {
+            panic!("a capture kept whole");
+        };
         assert_eq!(streams.len(), 1);
         assert_eq!(streams[0].runs.len(), 1);
         assert_eq!(streams[0].duplicates, 1);
@@ -1863,7 +2384,9 @@ mod tests {
             .concat(),
         );
         feed(&mut capture, &key(1), &known[..known.len() - 2], 7).await;
-        let streams = capture.finish().await.unwrap();
+        let Finished::Whole(streams) = capture.finish().await.unwrap() else {
+            panic!("a capture kept whole");
+        };
         assert_eq!(streams.len(), 1);
         assert_eq!(streams[0].runs.len(), 1);
         assert_eq!(streams[0].duplicates, 0);
@@ -2300,7 +2823,9 @@ source.addEventListener('sourceopen', async () => {{
             30_001,
         )
         .await;
-        let streams = capture.finish().await.unwrap();
+        let Finished::Whole(streams) = capture.finish().await.unwrap() else {
+            panic!("a capture kept whole");
+        };
         assert_eq!(streams.len(), 1);
         assert_eq!(
             streams[0].runs.len(),

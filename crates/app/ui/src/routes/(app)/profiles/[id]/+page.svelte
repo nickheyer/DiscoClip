@@ -13,13 +13,15 @@
 		ServerLimits
 	} from '$lib/api/types';
 	import Card from '$lib/components/Card.svelte';
+	import DurationInput from '$lib/components/DurationInput.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
 	import Field from '$lib/components/Field.svelte';
+	import LanguageSelect from '$lib/components/LanguageSelect.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import SearchInput from '$lib/components/SearchInput.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import Status, { type Tone } from '$lib/components/Status.svelte';
-	import { EMPTY, bytes, clock, number, parseClock } from '$lib/format';
+	import { bytes, durationText, number, parseClock } from '$lib/format';
 	import { session } from '$lib/session.svelte';
 	import { notify, reportError } from '$lib/toast.svelte';
 
@@ -77,6 +79,10 @@
 	let maxDuration = $state('');
 	let refuseLive = $state(false);
 	let maxHeight = $state('');
+	/** How long a live stream is captured, in seconds. Empty takes the parent's. */
+	let maxCapture = $state<number | null>(null);
+	/** The language of the sound taken when a source offers several. Empty takes the parent's. */
+	let audioLanguage = $state<string | null>(null);
 	let access = $state<Access>('inherit');
 	let chosenPresets = $state<string[]>([]);
 	let overrides = $state<Record<string, boolean>>({});
@@ -97,6 +103,8 @@
 			maxDuration: refuseLive ? '' : maxDuration.trim(),
 			refuseLive,
 			maxHeight: maxHeight.trim(),
+			maxCapture,
+			audioLanguage,
 			access,
 			presets: access === 'presets' ? [...chosenPresets].sort() : [],
 			overrides: Object.fromEntries(
@@ -115,6 +123,8 @@
 		refuseLive = l?.max_duration_secs === 0;
 		maxDuration = l?.max_duration_secs ? String(l.max_duration_secs) : '';
 		maxHeight = l?.max_height ? String(l.max_height) : '';
+		maxCapture = l?.max_capture_secs ?? null;
+		audioLanguage = source?.audio_language ?? null;
 		chosenPresets = [...(source?.platforms?.presets ?? [])];
 		access = chosenPresets.length > 0 ? 'presets' : (source?.platforms?.default ?? 'inherit');
 		overrides = { ...(source?.platforms?.overrides ?? {}) };
@@ -167,7 +177,7 @@
 			? 'Zero, from the switch below'
 			: caps.max_duration_secs === null
 				? 'No server limit'
-				: `Server limit ${clock(caps.max_duration_secs)}`
+				: `Server limit ${durationText(caps.max_duration_secs)}`
 	);
 	const heightHint = $derived(`Server limit ${number(caps.max_height)} px`);
 
@@ -255,12 +265,17 @@
 			if (!Number.isInteger(px) || px <= 0) found.maxHeight = 'Enter whole pixels above zero.';
 			else limits.max_height = px;
 		}
+		if (maxCapture !== null) {
+			if (maxCapture <= 0) found.maxCapture = 'Enter a capture length above zero.';
+			else limits.max_capture_secs = maxCapture;
+		}
 		errors = found;
 		if (Object.keys(found).length > 0) return null;
 		return {
 			name: name.trim(),
 			description: description.trim(),
 			limits,
+			audio_language: audioLanguage,
 			platforms: {
 				default: access === 'presets' ? 'inherit' : access,
 				presets: access === 'presets' ? chosenPresets : [],
@@ -361,6 +376,22 @@
 							/>
 							<div class="label label-text preset-tonal">px</div>
 						</div>
+					</Field>
+					<Field label="Max capture length" for="profile-capture" error={errors.maxCapture}>
+						<DurationInput
+							id="profile-capture"
+							bind:value={maxCapture}
+							placeholder={caps.max_capture_secs}
+							label="Max capture length"
+						/>
+					</Field>
+					<Field label="Audio language" for="profile-audio-language">
+						<LanguageSelect
+							id="profile-audio-language"
+							bind:value={audioLanguage}
+							blank="Inherit"
+							disabled={!canEdit}
+						/>
 					</Field>
 				</div>
 				<div class="space-y-1">
@@ -499,8 +530,6 @@
 															>+{number(platform.hosts.length - 3)} more</span
 														>
 													{/if}
-												{:else}
-													<span>{EMPTY}</span>
 												{/if}
 											</p>
 										</td>

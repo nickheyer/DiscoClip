@@ -401,6 +401,20 @@ CREATE UNIQUE INDEX watch_rules_whole_guild ON watch_rules(application_id, guild
     WHERE channel_id IS NULL;
 ",
     },
+    Migration {
+        version: 22,
+        name: "profile_capture_limit",
+        sql: "
+ALTER TABLE profiles ADD COLUMN max_capture_secs INTEGER;
+",
+    },
+    Migration {
+        version: 23,
+        name: "profile_audio_language",
+        sql: "
+ALTER TABLE profiles ADD COLUMN audio_language TEXT;
+",
+    },
 ];
 
 /// Brings the application's tables up to date. Returns how many migrations ran.

@@ -4,6 +4,7 @@
 	import DownloadIcon from '@lucide/svelte/icons/download';
 	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
+	import SquareIcon from '@lucide/svelte/icons/square';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { Accordion, Menu, Portal, Progress, Steps } from '@skeletonlabs/skeleton-svelte';
@@ -29,6 +30,7 @@
 	import CodeBlock from '$lib/components/CodeBlock.svelte';
 	import Confirm from '$lib/components/Confirm.svelte';
 	import DataTable, { type Column } from '$lib/components/DataTable.svelte';
+	import Duration from '$lib/components/Duration.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
 	import Identifier from '$lib/components/Identifier.svelte';
 	import JobTitle from '$lib/components/JobTitle.svelte';
@@ -37,19 +39,17 @@
 	import MediaKindIcon from '$lib/components/MediaKindIcon.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import PlaceLine from '$lib/components/PlaceLine.svelte';
-	import RelativeTime from '$lib/components/RelativeTime.svelte';
+	import Timestamp from '$lib/components/Timestamp.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import Status from '$lib/components/Status.svelte';
 	import { feed } from '$lib/events.svelte';
 	import {
 		absolute,
 		bytes,
-		duration,
-		limitsText,
+		durationSecs,
 		mediaLabel,
 		number,
 		percent,
-		span,
 		stageLabel
 	} from '$lib/format';
 	import { session } from '$lib/session.svelte';
@@ -71,8 +71,12 @@
 	interface Step {
 		stage: Stage;
 		state: StepState;
-		/** What the step's second line reads: a duration, a percentage, "Skipped". */
+		/** What the step's second line reads when it is not a time: a percentage, "Skipped". */
 		detail: string;
+		/** How long the stage took, in seconds, once it has ended. */
+		secs: number | null;
+		/** A live capture under way: seconds captured of the cap, and bytes recorded. */
+		capture: { done: number; total: number | null; bytes: number } | null;
 	}
 
 	/** How each stage's indicator is coloured. */
@@ -98,8 +102,9 @@
 	let progress = $state<{ stage: Stage; progress: JobProgress } | null>(null);
 	let loading = $state(true);
 	let error = $state<unknown>(null);
-	let pending = $state<'retry' | 'cancel' | 'delete' | null>(null);
+	let pending = $state<'retry' | 'cancel' | 'stop' | 'delete' | null>(null);
 	let confirmDelete = $state(false);
+	let confirmCancel = $state(false);
 
 	let requestId = 0;
 	async function load() {
@@ -139,6 +144,8 @@
 						if (job) job = { ...job, log: [...job.log, event.entry] };
 						break;
 					case 'children':
+					case 'recording':
+					case 'stop':
 						void load();
 						break;
 					case 'deleted':
@@ -176,6 +183,20 @@
 		job !== null && (job.status.status === 'queued' || job.status.status === 'running')
 	);
 	const canManage = $derived(session.can('manage_jobs'));
+	/** A live capture is under way: the recording grows and can be stopped or watched. */
+	const capturing = $derived(
+		job !== null &&
+			job.artifacts.recording !== null &&
+			job.status.status === 'running' &&
+			job.status.stage === 'download'
+	);
+	/** When the capture began, for the elapsed time that ticks beside the player. */
+	const captureStart = $derived(
+		job?.artifacts.timings.find((t) => t.stage === 'download')?.started_at ?? null
+	);
+	const recordingUrl = $derived(
+		job ? jobs.downloadUrl(job.id, { artifact: 'recording', inline: true }) : ''
+	);
 
 	/** What each stage's line reads while it runs. */
 	function runningDetail(stage: Stage): string {
@@ -185,6 +206,18 @@
 				: `${number(progress.progress.done)} so far`;
 		}
 		return 'Running';
+	}
+
+	/** The live capture under way at `stage`, when the progress says it is one. */
+	function runningCapture(stage: Stage): Step['capture'] {
+		if (progress && progress.stage === stage && progress.progress.bytes !== null) {
+			return {
+				done: progress.progress.done,
+				total: progress.progress.total,
+				bytes: progress.progress.bytes
+			};
+		}
+		return null;
 	}
 
 	const steps = $derived.by((): Step[] => {
@@ -208,17 +241,19 @@
 			else if (failedIndex >= 0 && index > failedIndex) state = 'skipped';
 			else if (status.status === 'cancelled' && !timing) state = 'skipped';
 			else if (status.status === 'done' && !timing) state = 'skipped';
+			const capture = state === 'running' ? runningCapture(stage) : null;
 			const detail =
 				state === 'running'
-					? runningDetail(stage)
+					? capture
+						? ''
+						: runningDetail(stage)
 					: state === 'skipped'
 						? 'Skipped'
 						: state === 'pending'
 							? 'Waiting'
-							: secs !== null
-								? span(secs)
-								: '';
-			return { stage, state, detail };
+							: '';
+			const took = state === 'done' || state === 'failed' ? secs : null;
+			return { stage, state, detail, secs: took, capture };
 		});
 	});
 
@@ -231,13 +266,6 @@
 		}
 		const firstOpen = steps.findIndex((step) => step.state !== 'done');
 		return firstOpen === -1 ? STAGES.length : firstOpen;
-	});
-
-	/** How long the job ran, from its first stage to its last. */
-	const took = $derived.by((): string | null => {
-		if (!job?.started_at) return null;
-		const end = job.finished_at ? Date.parse(job.finished_at) : Date.now();
-		return span((end - Date.parse(job.started_at)) / 1000);
 	});
 
 	function codec(value: Codec | null | undefined): string {
@@ -276,7 +304,10 @@
 			v.audio_only ? 'audio only' : null,
 			v.drm ? 'DRM' : null,
 			v.cipher ? v.cipher.scheme : null,
-			v.language || null
+			v.language || null,
+			v.audio_track || null,
+			v.audio_default ? 'default' : null,
+			v.audio_dubbed ? 'dub' : null
 		]
 			.filter((flag) => flag !== null)
 			.join(' · ');
@@ -307,6 +338,30 @@
 			pending = null;
 		}
 	}
+
+	/** Cancelling a live capture deletes what was recorded, so it is confirmed first. */
+	function askCancel() {
+		if (capturing) confirmCancel = true;
+		else void cancel();
+	}
+
+	async function stop() {
+		pending = 'stop';
+		try {
+			await jobs.stop(id);
+			notify.success('Stopped');
+			await load();
+		} catch (err) {
+			reportError(err, 'Could not stop');
+		} finally {
+			pending = null;
+		}
+	}
+
+	/** The recorded time a cancel would delete, in seconds. */
+	const recordedSecs = $derived(
+		captureStart ? Math.max(0, (Date.now() - Date.parse(captureStart)) / 1000) : 0
+	);
 
 	async function remove() {
 		await jobs.remove(id);
@@ -450,7 +505,7 @@
 			{:else if resolved?.uploader}
 				<span>{resolved.uploader}</span>
 			{/if}
-			{#if resolved?.duration}<span>{duration(resolved.duration)}</span>{/if}
+			{#if resolved?.duration}<Duration value={durationSecs(resolved.duration)} />{/if}
 			{#if resolved?.live}<span class="text-error-600-400">Live</span>{/if}
 			<Identifier value={job.id} label="Copy job id" />
 		</div>
@@ -475,11 +530,17 @@
 				</Menu>
 			{/if}
 			{#if canManage}
+				{#if capturing}
+					<button type="button" class="btn preset-tonal" onclick={stop} disabled={pending !== null}>
+						{#if pending === 'stop'}<Spinner />{:else}<SquareIcon class="size-4" />{/if}
+						Stop
+					</button>
+				{/if}
 				{#if active}
 					<button
 						type="button"
 						class="btn preset-tonal"
-						onclick={cancel}
+						onclick={askCancel}
 						disabled={pending !== null}
 					>
 						{#if pending === 'cancel'}<Spinner />{:else}<XIcon class="size-4" />{/if}
@@ -534,7 +595,19 @@
 								</Steps.Indicator>
 								<span class="flex flex-col items-start text-sm">
 									<span class="font-medium {STEP_TEXT[step.state]}">{stageLabel(step.stage)}</span>
-									<span class="text-xs text-surface-600-400 tabular-nums">{step.detail}</span>
+									{#if step.capture}
+										<span class="text-xs text-surface-600-400 tabular-nums">
+											<Duration value={step.capture.done} />
+											{#if step.capture.total !== null}
+												of <Duration value={step.capture.total} />
+											{/if}
+											· <Bytes value={step.capture.bytes} />
+										</span>
+									{:else if step.secs !== null}
+										<Duration value={step.secs} class="text-xs text-surface-600-400" />
+									{:else}
+										<span class="text-xs text-surface-600-400 tabular-nums">{step.detail}</span>
+									{/if}
 								</span>
 							</Steps.Trigger>
 							{#if index < steps.length - 1}
@@ -558,7 +631,22 @@
 		</div>
 	</Card>
 
-	{#if job.artifacts.output && job.artifacts.output.info}
+	{#if capturing}
+		<section class="overflow-hidden card preset-filled-surface-100-900" aria-label="Recording">
+			<video
+				class="max-h-[60vh] w-full bg-black"
+				controls
+				autoplay
+				muted
+				playsinline
+				src={recordingUrl}
+			></video>
+			<div class="flex flex-wrap items-center gap-3 p-3 text-sm">
+				<Status label="Live" tone="error" pulse />
+				<Duration since={captureStart} />
+			</div>
+		</section>
+	{:else if job.artifacts.output && job.artifacts.output.info}
 		{@const info = job.artifacts.output.info}
 		<section class="overflow-hidden card preset-filled-surface-100-900" aria-label="Output">
 			{#if info.kind === 'video'}
@@ -604,33 +692,53 @@
 						{/if}
 					</span>
 				</KeyValueRow>
-				<KeyValueRow label="Submitted"><RelativeTime at={job.created_at} /></KeyValueRow>
-				<KeyValueRow label="Ran">
-					{#if job.started_at}
-						<span>Started <RelativeTime at={job.started_at} /></span>
-						{#if job.finished_at}
-							<span class="text-surface-600-400"
-								>· finished <RelativeTime at={job.finished_at} /></span
-							>
-						{/if}
-						{#if took}<span class="text-surface-600-400">· took {took}</span>{/if}
-					{:else}
-						<span class="text-surface-600-400">Not started</span>
-					{/if}
+				<KeyValueRow label="Submitted"><Timestamp at={job.created_at} /></KeyValueRow>
+				{#if job.started_at}
+					<KeyValueRow label="Started"><Timestamp at={job.started_at} /></KeyValueRow>
+				{/if}
+				{#if job.finished_at}
+					<KeyValueRow label="Finished"><Timestamp at={job.finished_at} /></KeyValueRow>
+				{/if}
+				{#if job.started_at}
+					<KeyValueRow label="Elapsed">
+						<Duration since={job.started_at} until={job.finished_at} />
+					</KeyValueRow>
+				{/if}
+				<KeyValueRow label="Max source size">
+					<Bytes value={job.limits_in_force.max_source_bytes} />
 				</KeyValueRow>
-				<KeyValueRow label="Limits" value={limitsText(job.request.limits)} />
-				<KeyValueRow
-					label="Clip"
-					value={job.request.options.clip
-						? `${duration(job.request.options.clip.start)} to ${job.request.options.clip.end ? duration(job.request.options.clip.end) : 'the end'}`
-						: 'Whole'}
-				/>
+				{#if job.limits_in_force.max_duration_secs === 0}
+					<KeyValueRow label="Max duration"><Status label="No live" tone="warning" /></KeyValueRow>
+				{:else if job.limits_in_force.max_duration_secs !== null}
+					<KeyValueRow label="Max duration">
+						<Duration value={job.limits_in_force.max_duration_secs} />
+					</KeyValueRow>
+				{/if}
+				<KeyValueRow label="Max height" value="{number(job.limits_in_force.max_height)} px" />
+				{#if resolved?.live}
+					<KeyValueRow label="Max capture">
+						<Duration value={job.limits_in_force.max_capture_secs} />
+					</KeyValueRow>
+				{/if}
+				{#if job.request.options.clip}
+					{@const clip = job.request.options.clip}
+					<KeyValueRow label="Clip">
+						<span class="inline-flex items-center gap-1">
+							<Duration value={durationSecs(clip.start)} />
+							{#if clip.end}
+								<span class="text-surface-600-400">to</span>
+								<Duration value={durationSecs(clip.end)} />
+							{/if}
+						</span>
+					</KeyValueRow>
+				{/if}
 				<KeyValueRow
 					label="Subtitles"
 					value="{SUBTITLES[job.request.options.subtitles]}{job.request.options.subtitle_language
 						? ` · ${job.request.options.subtitle_language}`
 						: ''}"
 				/>
+				<KeyValueRow label="Audio language" value={job.request.options.audio_language} />
 				{#if job.request.parent}
 					<KeyValueRow label="Playlist">
 						<Identifier
@@ -654,8 +762,8 @@
 
 		<Card title="Result">
 			<KeyValue>
-				<KeyValueRow label="Posted">
-					{#if job.artifacts.published}
+				{#if job.artifacts.published}
+					<KeyValueRow label="Posted">
 						{#if job.artifacts.published.url}
 							{@render external(
 								job.artifacts.published.url,
@@ -665,14 +773,10 @@
 							{job.artifacts.delivery === 'link' ? 'A link to the view page' : 'The file'}
 						{/if}
 						<span class="text-surface-600-400">
-							· <RelativeTime at={job.artifacts.published.at} /></span
+							· <Timestamp at={job.artifacts.published.at} /></span
 						>
-					{:else if job.status.status === 'failed' || job.status.status === 'cancelled'}
-						<span class="text-surface-600-400">Nothing was posted</span>
-					{:else}
-						<span class="text-surface-600-400">Not yet</span>
-					{/if}
-				</KeyValueRow>
+					</KeyValueRow>
+				{/if}
 				{#if job.artifacts.link_reason}
 					<KeyValueRow label="Linked because" value={job.artifacts.link_reason} />
 				{/if}
@@ -681,7 +785,8 @@
 					<KeyValueRow label="Output">
 						{out.path.split('/').pop()}
 						<span class="text-surface-600-400">
-							· {bytes(out.size)}{out.info?.duration ? ` · ${duration(out.info.duration)}` : ''}
+							· <Bytes value={out.size} />{#if out.info?.duration}
+								· <Duration value={durationSecs(out.info.duration)} />{/if}
 						</span>
 					</KeyValueRow>
 					{#if out.info}
@@ -694,8 +799,6 @@
 								: ''}"
 						/>
 					{/if}
-				{:else}
-					<KeyValueRow label="Output" empty="Not made" />
 				{/if}
 				{#if job.artifacts.source}
 					{@const src = job.artifacts.source}
@@ -703,7 +806,7 @@
 						{src.path.split('/').pop()}
 						<span class="text-surface-600-400">
 							· {bytes(src.size)}{src.info
-								? ` · ${codec(src.info.container)}${src.info.video ? ` · ${codec(src.info.video.codec)} ${src.info.video.width}×${src.info.video.height}${pictureFlags(src.info.video)}` : ''}${src.info.audio ? ` · ${codec(src.info.audio.codec)}` : ''}${src.info.subtitles.length > 0 ? ` · ${src.info.subtitles.length} subtitle ${src.info.subtitles.length === 1 ? 'stream' : 'streams'}` : ''}`
+								? ` · ${codec(src.info.container)}${src.info.video ? ` · ${codec(src.info.video.codec)} ${src.info.video.width}×${src.info.video.height}${pictureFlags(src.info.video)}` : ''}${src.info.audio ? ` · ${codec(src.info.audio.codec)}${src.info.audio.language ? ` ${src.info.audio.language}` : ''}` : ''}${src.info.subtitles.length > 0 ? ` · ${src.info.subtitles.length} subtitle ${src.info.subtitles.length === 1 ? 'stream' : 'streams'}` : ''}`
 								: ''}
 						</span>
 					</KeyValueRow>
@@ -854,3 +957,16 @@
 	danger
 	onconfirm={remove}
 />
+
+<Confirm
+	bind:open={confirmCancel}
+	title="Cancel this capture?"
+	confirmLabel="Cancel the capture"
+	cancelLabel="Keep recording"
+	danger
+	onconfirm={cancel}
+>
+	<p class="text-sm text-surface-600-400">
+		The <Duration value={recordedSecs} /> recorded so far is deleted. Stop keeps it.
+	</p>
+</Confirm>

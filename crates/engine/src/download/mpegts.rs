@@ -777,6 +777,18 @@ pub fn start_time(data: &[u8]) -> Option<u64> {
     earliest
 }
 
+/// Whether the transport stream's program carries AAC sound as an ADTS stream: what MP4
+/// takes only once the frames are stripped of their ADTS headers.
+pub fn carries_adts_aac(data: &[u8]) -> bool {
+    let Ok(packets) = packets(data) else {
+        return false;
+    };
+    program_maps(&packets)
+        .iter()
+        .flat_map(|map| map.streams.iter())
+        .any(|(stream_type, _, _)| kind_of(*stream_type) == Some(Kind::Aac))
+}
+
 /// By elementary PID, the presentation time of each PES packet and the elementary
 /// stream bytes of all of them.
 #[cfg(test)]

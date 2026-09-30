@@ -42,8 +42,128 @@ impl Budget {
         Ok(())
     }
 
+    /// Whether `bytes` more would still be within the limit.
+    pub fn fits(&self, bytes: u64) -> bool {
+        self.used.load(Ordering::Relaxed).saturating_add(bytes) <= self.limit
+    }
+
     pub fn limit(&self) -> u64 {
         self.limit
+    }
+}
+
+/// A track fed into a live recording as its segments arrive: the initialization section
+/// once, then every segment, so the recorder's fragmented MP4 grows with the stream. A
+/// segment the byte budget cannot hold ends the track instead of failing it.
+pub struct LiveTrack<'a> {
+    feed: super::recording::Feed,
+    budget: &'a Budget,
+    /// Whether the header that opens the recording has gone in.
+    opened: bool,
+    /// Whether the budget could not take a segment, which ends the capture.
+    full: bool,
+    /// The media time, in seconds, the first segment starts at.
+    start_time: Option<f64>,
+}
+
+impl<'a> LiveTrack<'a> {
+    pub fn new(feed: super::recording::Feed, budget: &'a Budget) -> Self {
+        Self {
+            feed,
+            budget,
+            opened: false,
+            full: false,
+            start_time: None,
+        }
+    }
+
+    /// The media time the first segment started at.
+    pub fn start_time(&self) -> Option<f64> {
+        self.start_time
+    }
+}
+
+#[async_trait]
+impl Consumer for LiveTrack<'_> {
+    async fn take(
+        &mut self,
+        _key: &PartKey,
+        _timing: Timing,
+        init: Option<&InitSection>,
+        bytes: &[u8],
+    ) -> Result<(), DownloadError> {
+        if self.full {
+            return Ok(());
+        }
+        // One header opens the recording. A later one, from a discontinuity, would sit
+        // mid-stream where the remux cannot read it: the fragments that follow carry on
+        // under the first.
+        let header: &[u8] = match init {
+            Some(section) if !self.opened => &section.bytes,
+            _ => &[],
+        };
+        let needed = (header.len() + bytes.len()) as u64;
+        if !self.budget.fits(needed) {
+            self.full = true;
+            return Ok(());
+        }
+        self.budget.take(needed)?;
+        if !header.is_empty() {
+            self.feed.write(header).await?;
+            self.opened = true;
+        }
+        if self.start_time.is_none() {
+            self.start_time = if mpegts::is_transport_stream(bytes) {
+                mpegts::start_time(bytes).map(|ticks| ticks as f64 / 90_000.0)
+            } else {
+                init.and_then(|i| i.parsed.as_ref())
+                    .and_then(|parsed| mp4::start_time(bytes, parsed))
+            };
+        }
+        self.feed.write(bytes).await
+    }
+
+    fn gap(&mut self) {}
+
+    fn full(&self) -> bool {
+        self.full
+    }
+}
+
+/// Where a track's segments go: parts on disk joined once the stream ends, or a live
+/// recording that grows as they arrive.
+pub enum TrackSink<'a> {
+    Parts(Box<TrackWriter<'a>>),
+    Live(LiveTrack<'a>),
+}
+
+#[async_trait]
+impl Consumer for TrackSink<'_> {
+    async fn take(
+        &mut self,
+        key: &PartKey,
+        timing: Timing,
+        init: Option<&InitSection>,
+        bytes: &[u8],
+    ) -> Result<(), DownloadError> {
+        match self {
+            TrackSink::Parts(writer) => writer.take(key, timing, init, bytes).await,
+            TrackSink::Live(track) => track.take(key, timing, init, bytes).await,
+        }
+    }
+
+    fn gap(&mut self) {
+        match self {
+            TrackSink::Parts(writer) => writer.gap(),
+            TrackSink::Live(track) => track.gap(),
+        }
+    }
+
+    fn full(&self) -> bool {
+        match self {
+            TrackSink::Parts(writer) => writer.full(),
+            TrackSink::Live(track) => track.full(),
+        }
     }
 }
 
@@ -176,6 +296,11 @@ pub trait Consumer: Send {
     ) -> Result<(), DownloadError>;
     /// Segments were missed: what follows does not continue what came before.
     fn gap(&mut self);
+    /// Whether the consumer can take no more: a live recording whose byte budget is
+    /// spent. Consumers that fail on the budget instead never fill up.
+    fn full(&self) -> bool {
+        false
+    }
 }
 
 /// The extension a part gets, by what its first bytes are.
@@ -284,11 +409,13 @@ impl Consumer for TrackWriter<'_> {
 }
 
 /// Progress reported for the primary track: media seconds captured against the
-/// presentation's length, or the live capture limit.
+/// presentation's length, or the live capture limit, and the bytes of a recording that
+/// grows as it goes.
 pub struct Meter<'a> {
     progress: &'a ProgressSender,
     done: f64,
     total: Option<f64>,
+    recording: Option<PathBuf>,
 }
 
 impl<'a> Meter<'a> {
@@ -297,7 +424,14 @@ impl<'a> Meter<'a> {
             progress,
             done: 0.0,
             total: None,
+            recording: None,
         }
+    }
+
+    /// Reports the size of the file at `path` along with the seconds captured.
+    pub fn watching(mut self, path: &Path) -> Self {
+        self.recording = Some(path.to_path_buf());
+        self
     }
 
     pub fn set_total(&mut self, total: f64) {
@@ -314,6 +448,10 @@ impl<'a> Meter<'a> {
         self.progress.send_replace(Progress {
             done: self.done.round() as u64,
             total: self.total.map(|t| t.round() as u64),
+            bytes: self
+                .recording
+                .as_ref()
+                .map(|path| std::fs::metadata(path).map(|m| m.len()).unwrap_or(0)),
         });
     }
 }
@@ -347,12 +485,14 @@ async fn input_args(parts: &[PathBuf], list: &Path) -> Result<Vec<OsString>, Dow
 }
 
 /// Remuxes locally downloaded streams into `dest` without touching the network: the
-/// video's parts joined, and the audio's when there is a separate audio stream.
+/// video's parts joined, and the audio's when there is a separate audio stream, its
+/// stream tagged with `language` when the platform said what it is.
 pub async fn mux_parts(
     ffmpeg: &Ffmpeg,
     video: &[PathBuf],
     audio: Option<&[PathBuf]>,
     dest: &Path,
+    language: Option<&str>,
 ) -> Result<LocalFile, DownloadError> {
     let dir = dest.parent().unwrap_or(Path::new("."));
     let mut args: Vec<OsString> = vec!["-loglevel".into(), "warning".into()];
@@ -371,15 +511,9 @@ pub async fn mux_parts(
             ]);
         }
     }
-    args.extend([
-        "-c".into(),
-        "copy".into(),
-        "-sn".into(),
-        "-dn".into(),
-        "-f".into(),
-        "matroska".into(),
-        dest.as_os_str().to_owned(),
-    ]);
+    args.extend(["-c".into(), "copy".into(), "-sn".into(), "-dn".into()]);
+    args.extend(language_args(language));
+    args.extend(["-f".into(), "matroska".into(), dest.as_os_str().to_owned()]);
     ffmpeg
         .run(args, |_| {})
         .await
@@ -394,14 +528,27 @@ pub async fn mux_parts(
     Ok(file)
 }
 
-/// Remuxes one video file and, when given, one audio file into `dest`.
+/// The ffmpeg arguments that tag the first audio stream of an output with `language`.
+pub fn language_args(language: Option<&str>) -> Vec<OsString> {
+    match language.map(str::trim).filter(|l| !l.is_empty()) {
+        Some(language) => vec![
+            "-metadata:s:a:0".into(),
+            format!("language={language}").into(),
+        ],
+        None => Vec::new(),
+    }
+}
+
+/// Remuxes one video file and, when given, one audio file into `dest`, the sound tagged
+/// with `language` when known.
 pub async fn mux(
     ffmpeg: &Ffmpeg,
     video: &Path,
     audio: Option<&Path>,
     dest: &Path,
+    language: Option<&str>,
 ) -> Result<LocalFile, DownloadError> {
     let video = [video.to_path_buf()];
     let audio = audio.map(|a| vec![a.to_path_buf()]);
-    mux_parts(ffmpeg, &video, audio.as_deref(), dest).await
+    mux_parts(ffmpeg, &video, audio.as_deref(), dest, language).await
 }

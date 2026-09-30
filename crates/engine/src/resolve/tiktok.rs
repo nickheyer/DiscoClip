@@ -118,7 +118,7 @@ fn codec_of(name: &str) -> Option<VideoCodec> {
     }
 }
 
-/// The variants a video's `bitrateInfo` and play address make.
+/// The variants a video's `bitrateInfo` makes.
 pub fn variants_of(item: &Value, user_agent: &str) -> Vec<Variant> {
     let video = &item["video"];
     let duration = video["duration"]
@@ -154,20 +154,6 @@ pub fn variants_of(item: &Value, user_agent: &str) -> Vec<Variant> {
         v.format_id = info["GearName"].as_str().map(String::from);
         v.label = info["QualityType"].as_u64().map(|q| format!("quality {q}"));
         v.headers = headers.clone();
-        variants.push(v);
-    }
-    if variants.is_empty()
-        && let Some(url) = video["playAddr"].as_str().and_then(|u| Url::parse(u).ok())
-    {
-        let mut v = Variant::new(url, VariantKind::File);
-        v.container = Some(Container::Mp4);
-        v.video = codec_of(video["codecType"].as_str().unwrap_or(""));
-        v.audio = Some(AudioCodec::Aac);
-        v.bitrate = video["bitrate"].as_u64();
-        v.width = video["width"].as_u64().map(|w| w as u32);
-        v.height = video["height"].as_u64().map(|h| h as u32);
-        v.duration = duration;
-        v.headers = headers;
         variants.push(v);
     }
     variants
@@ -359,7 +345,7 @@ mod tests {
             "id": "7106594312292453675", "desc": "A clip #fyp", "createTime": "1654000000",
             "author": {"uniqueId": "tiktok", "nickname": "TikTok"},
             "video": {
-                "duration": 12, "cover": "https://p16.tiktokcdn.com/cover.jpg", "playAddr": "https://v16.tiktokcdn.com/play.mp4",
+                "duration": 12, "cover": "https://p16.tiktokcdn.com/cover.jpg",
                 "bitrateInfo": [
                     {"Bitrate": 1200000, "CodecType": "h264", "GearName": "normal_720", "QualityType": 10, "PlayAddr": {"UrlList": ["https://v16-webapp-prime.tiktok.com/a.mp4"], "DataSize": "1800000", "Width": 720, "Height": 1280}},
                     {"Bitrate": 2000000, "CodecType": "h265_hvc1", "GearName": "adapt_1080", "QualityType": 20, "PlayAddr": {"UrlList": ["https://v16-webapp-prime.tiktok.com/b.mp4"], "DataSize": 3000000, "Width": 1080, "Height": 1920}}
@@ -404,6 +390,7 @@ mod tests {
         let short = Url::parse("https://vm.tiktok.com/ZMabc/").unwrap();
         assert!(resolver.matches(&short));
         let resolved = resolver.resolve(&short).await.unwrap().media().unwrap();
+        crate::resolve::assert_one_family(&resolved.variants);
         assert_eq!(resolved.id.as_deref(), Some("7106594312292453675"));
         assert_eq!(resolved.title.as_deref(), Some("A clip #fyp"));
         assert_eq!(resolved.uploader.as_deref(), Some("TikTok"));

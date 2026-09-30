@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use discoclip_engine::job::{JobId, JobStatus, Request};
+use discoclip_engine::job::{JobId, JobStatus, Request, Stage};
 use discoclip_engine::{EngineHandle, EventKind};
 use futures::StreamExt;
 use secrecy::ExposeSecret;
@@ -448,6 +448,7 @@ async fn handle_interaction(shared: &Shared, interaction: Interaction) {
     let result = match commands::parse(data) {
         Invocation::Clip { url: Err(reason) } => respond(shared, &interaction, reason, true).await,
         Invocation::Clip { url: Ok(url) } => clip(shared, &interaction, url).await,
+        Invocation::Stop => stop(shared, &interaction).await,
         Invocation::Status => status(shared, &interaction).await,
         Invocation::Unknown(name) => {
             respond(
@@ -517,6 +518,9 @@ async fn clip(shared: &Shared, interaction: &Interaction, url: url::Url) -> Resu
     request.submitted_by = interaction.author().map(|u| format!("discord:{}", u.id));
     request.disabled_platforms = in_force.disabled;
     request.limits = in_force.limits;
+    if let Some(language) = in_force.audio_language {
+        request.options.audio_language = language;
+    }
     match shared.engine.submit(request).await {
         Ok(id) => {
             tracing::info!(job = %id, %url, "queued from /clip");
@@ -542,6 +546,53 @@ async fn clip(shared: &Shared, interaction: &Interaction, url: url::Url) -> Resu
     Ok(())
 }
 
+/// Ends every live capture running for a link seen in the command's channel, keeping
+/// the recordings: each job goes on to post its output.
+async fn stop(shared: &Shared, interaction: &Interaction) -> Result<(), BotError> {
+    let Some(channel) = interaction.channel.as_ref().map(|c| c.id) else {
+        return respond(
+            shared,
+            interaction,
+            "This command needs a channel".into(),
+            true,
+        )
+        .await;
+    };
+    let mut stopped = Vec::new();
+    for id in shared.engine.active() {
+        let Ok(Some(job)) = shared.engine.get(id).await else {
+            continue;
+        };
+        let Some(origin) = DiscordOrigin::parse(&job.request.origin) else {
+            continue;
+        };
+        if origin.application != shared.local_application || origin.channel != channel {
+            continue;
+        }
+        let capturing = job.status
+            == JobStatus::Running {
+                stage: Stage::Download,
+            }
+            && job.artifacts.recording.is_some();
+        if !capturing {
+            continue;
+        }
+        match shared.engine.stop(id).await {
+            Ok(()) => {
+                tracing::info!(job = %id, url = %job.request.url, "capture stopped from /clip stop");
+                stopped.push(job.request.url.to_string());
+            }
+            Err(error) => tracing::warn!(job = %id, "could not stop the capture: {error}"),
+        }
+    }
+    let text = if stopped.is_empty() {
+        "No live capture is running for this channel".to_string()
+    } else {
+        format!("Stopped {}", stopped.join(", "))
+    };
+    respond(shared, interaction, text, stopped.is_empty()).await
+}
+
 async fn status(shared: &Shared, interaction: &Interaction) -> Result<(), BotError> {
     let text = match shared.engine.stats().await {
         Ok(stats) => format!(
@@ -558,7 +609,8 @@ async fn status(shared: &Shared, interaction: &Interaction) -> Result<(), BotErr
     respond(shared, interaction, text, true).await
 }
 
-/// Edits the `/clip` acknowledgement once its job finishes.
+/// Edits the `/clip` acknowledgement when its capture is stopped, and once its job
+/// finishes.
 async fn follow_jobs(shared: Arc<Shared>, shutdown: CancellationToken) {
     let mut events = shared.engine.subscribe();
     loop {
@@ -574,32 +626,43 @@ async fn follow_jobs(shared: Arc<Shared>, shutdown: CancellationToken) {
             }
             Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
         };
-        let EventKind::Status { status } = event.kind else {
-            continue;
-        };
-        if !status.is_terminal() {
-            continue;
-        }
-        let tracked = shared
-            .tracked
-            .lock()
-            .expect("tracked jobs")
-            .remove(&event.job);
-        let Some(Acknowledgement {
-            channel,
-            message,
-            url,
-        }) = tracked
-        else {
-            continue;
-        };
-        let text = match status {
-            JobStatus::Done => format!("Clipped {url}"),
-            JobStatus::Failed { stage, message } => {
-                format!("Could not clip {url}: {stage} failed: {message}")
+        let (text, channel, message) = match event.kind {
+            EventKind::Stop => {
+                let tracked = shared.tracked.lock().expect("tracked jobs");
+                let Some(acknowledgement) = tracked.get(&event.job) else {
+                    continue;
+                };
+                (
+                    format!("Stopped {}", acknowledgement.url),
+                    acknowledgement.channel,
+                    acknowledgement.message,
+                )
             }
-            JobStatus::Cancelled => format!("Cancelled {url}"),
-            JobStatus::Queued | JobStatus::Running { .. } => continue,
+            EventKind::Status { status } if status.is_terminal() => {
+                let tracked = shared
+                    .tracked
+                    .lock()
+                    .expect("tracked jobs")
+                    .remove(&event.job);
+                let Some(Acknowledgement {
+                    channel,
+                    message,
+                    url,
+                }) = tracked
+                else {
+                    continue;
+                };
+                let text = match status {
+                    JobStatus::Done => format!("Clipped {url}"),
+                    JobStatus::Failed { stage, message } => {
+                        format!("Could not clip {url}: {stage} failed: {message}")
+                    }
+                    JobStatus::Cancelled => format!("Cancelled {url}"),
+                    JobStatus::Queued | JobStatus::Running { .. } => continue,
+                };
+                (text, channel, message)
+            }
+            _ => continue,
         };
         if let Err(error) = shared
             .http

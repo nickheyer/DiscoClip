@@ -53,8 +53,9 @@ Follow [the UI and writing standards](crates/app/ui/DESIGN.md) when changing the
 
 Each application runs its own bot. Its page controls the bot, its settings and the
 servers it is in. `/clip` and `/status` are registered globally when the application
-is added; the API can move them to chosen servers or turn them off. A stopped bot
-stays stopped until you start it.
+is added; the API can move them to chosen servers or turn them off. `/clip stop` ends
+the live captures running for the channel it is used in, keeping what was recorded.
+A stopped bot stays stopped until you start it.
 
 The bot supplies channel and role names. Member searches use the Discord API with
 a timeout. When a bot stops, its directory keeps the last known data.
@@ -125,15 +126,21 @@ daily by default or on request.
 | Image | Download the image |
 | File | Download the original file |
 | Playlist | Create one job per entry |
-| Live stream | Record from submission until the stream ends or the capture limit is reached |
+| Live stream | Record from submission until the stream ends, the capture or byte limit is reached, or a person stops it |
 
 Supported transports include HTTP files, HLS, DASH, Smooth Streaming, RTMP, RTSP,
 RTP and WHEP. HTTP downloads use parallel byte ranges when supported and resume
 interrupted transfers. Changed files restart to avoid combining different versions.
 
 Segmented streams support live recording, subtitles and discontinuities.
-Supported transport encryption is decrypted during download. DRM-protected media
-is rejected. Platform requests use the configured proxies, retries and rate limits.
+A live capture writes one growing fragmented MP4, `recording.mp4`, from its first
+byte: the job page and content views play it while it is being made, a Discord
+destination with a content view gets the view's link when the capture begins and the
+finished file in that message once the job ends, and Stop on the job, in the jobs
+list or through `/clip stop` ends the capture and keeps the recording, where Cancel
+deletes it. Supported transport encryption is decrypted during download.
+DRM-protected media is rejected. Platform requests use the configured proxies,
+retries and rate limits.
 
 Admins can import browser cookies from a Netscape `cookies.txt` file or a Cookie
 header. Cookies and provider tokens are encrypted under `secret.key` and are not
@@ -168,7 +175,8 @@ level under `discord.limits`; Nitro raises limits for people, not for bots.
 
 Video is encoded with the embedded ffmpeg build in software. Set `engine.ffmpeg` to an
 installed build and `engine.transcode.encoder` to `auto` or a family to use NVENC,
-VA-API, Quick Sync, AMF, VideoToolbox or V4L2 encoders. Each encoder is tried at
+VA-API, Quick Sync, AMF, VideoToolbox or V4L2 encoders; the `gpu` container image comes
+with such a build and the setting made. Each encoder is tried at
 startup and when the settings change. The Health page reports the encoder in use. A
 hardware encode that fails during a job is redone in software and the job's log says so.
 
@@ -235,24 +243,106 @@ puts the key beside the database when it is missing there. Start the server afte
 
 ## Deploying
 
-The [Dockerfile](Dockerfile) builds the server with the web app embedded and runs it as an
-unprivileged user with Chromium and fonts beside it. The [compose file](compose.yaml)
-runs it with volumes for the data and cache directories:
+### Container images
+
+Releases publish two images to GitHub Container Registry, each for amd64 and arm64.
+Both run the server as an unprivileged user with Chromium and subtitle fonts beside it.
+
+| Image | Encoding |
+| --- | --- |
+| `ghcr.io/nickheyer/discoclip:latest` | The embedded ffmpeg, in software |
+| `ghcr.io/nickheyer/discoclip:gpu` | An ffmpeg built with NVENC and NVDEC, VA-API, Quick Sync and Vulkan, with the VA-API and Vulkan drivers for NVIDIA, Intel and AMD GPUs |
+
+Each release is also tagged with its version: `0.1.0` and `0.1`, and `0.1.0-gpu` and
+`0.1-gpu`. The [compose file](compose.yaml) runs the software image with volumes for the
+data and cache directories:
 
 ```sh
 docker compose up -d
 ```
 
-For a host install, build the release binary and use the
-[systemd unit](packaging/discoclip.service). Its comments carry the install steps. Both
-set the data directory to `/var/lib/discoclip` and the cache to `/var/cache/discoclip`,
-and both stop the server with a signal and a timeout that lets the graceful shutdown
-finish.
+The [gpu compose file](compose.gpu.yaml) layers the gpu image and a GPU over it:
+
+```sh
+docker compose -f compose.yaml -f compose.gpu.yaml up -d
+```
+
+For NVIDIA GPUs the host needs the NVIDIA driver and the
+[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html),
+which mounts the driver's encoder and Vulkan libraries into the container. The file
+reserves every GPU with those capabilities. For Intel and AMD GPUs the file hands in
+`/dev/dri` and the group that owns it instead; its comments say how. With
+`engine.transcode.encoder` at `auto`, the server tries NVENC, Quick Sync, VA-API and
+the rest in turn at startup and the Health page names the encoder in use.
+
+The [Dockerfile](Dockerfile) builds both images, `--target cpu` and `--target gpu`, and
+exports the bare binary with `--target binary --output dist`. `make image`,
+`make image-gpu` and `make smoke` build them here; the smoke test in
+[packaging/smoke-test.sh](packaging/smoke-test.sh) checks each image's encoders and
+filters, renders through libplacebo on Vulkan, starts the server and stops it cleanly.
+
+### Releases
+
+Every [release](https://github.com/nickheyer/DiscoClip/releases) carries archives for
+Linux x86_64 and aarch64, macOS on Apple silicon and Intel, and Windows x86_64, plus
+`.deb` and `.rpm` packages for both Linux architectures, a `SHA256SUMS` file, and build
+provenance attestations for every file and image:
+
+```sh
+gh attestation verify discoclip-v0.1.0-linux-x86_64.tar.gz --repo nickheyer/DiscoClip
+```
+
+Linux binaries need glibc 2.35 or newer: Ubuntu 22.04, Debian 12, Fedora 36 and later.
+
+The packages install the binary at `/usr/bin/discoclip`, the systemd unit, the
+`discoclip` service account and `/etc/discoclip/discoclip.toml`, and enable and start
+the service:
+
+```sh
+sudo apt install ./discoclip_0.1.0-1_amd64.deb     # Debian, Ubuntu
+sudo dnf install ./discoclip-0.1.0-1.x86_64.rpm    # Fedora, RHEL
+```
+
+The [installer](packaging/install.sh) does the same from a release archive on any Linux
+with systemd, after checking the download against `SHA256SUMS`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/nickheyer/DiscoClip/main/packaging/install.sh | sudo sh -s -- --system
+```
+
+Without `--system` it installs the binary alone, under `/usr/local/bin` as root and
+`~/.local/bin` otherwise, on Linux and macOS. `--version v0.1.0` picks a release and
+`--archive` installs from a downloaded file.
+
+The [systemd unit](packaging/discoclip.service) carries the install steps by hand in
+its comments. It sets the data directory to `/var/lib/discoclip` and the cache to
+`/var/cache/discoclip`, as the images do, and stops the server with a signal and a
+timeout that lets the graceful shutdown finish. For hardware encoding on a host install,
+set `engine.ffmpeg` to an ffmpeg with the encoders and uncomment the device lines in
+the unit.
+
+### Making a release
+
+Set `version` in `Cargo.toml`, tag the commit `v<version>` and push the tag. The
+[release workflow](.github/workflows/release.yml) checks the tag against `Cargo.toml`,
+builds every archive, package and image, smoke-tests the images, installs the packages
+on Debian and Fedora, and publishes the GitHub release with generated notes. A version
+with a pre-release part, such as `1.0.0-rc.1`, is published as a pre-release and moves
+no `latest` tag.
+
+[CI](.github/workflows/ci.yml) runs on every push: `cargo fmt`, `cargo clippy`, the
+tests, the web app's checks, and both images with their smoke tests. `make check` runs
+the same here. The resolver tests that fetch from the sites they cover are marked
+`#[ignore]`; `make test-live` runs them, as does a
+[weekly workflow](.github/workflows/live-tests.yml).
+
+### Shutdown and health
 
 A stop signal starts a graceful shutdown. The web listener stops taking connections
 and closes its live feeds, jobs under way get `engine.shutdown.grace_secs` to finish,
 and a job publishing its output finishes regardless. Jobs still running after the
-grace period are queued again and picked up at the next start. Then the bots close
+grace period are queued again and picked up at the next start; a live capture among
+them carries on from its recording as it stands, as if it had been stopped. Then the bots close
 their gateway connections, the database is checkpointed, and the process exits. During
 the shutdown `GET /healthz` answers `503` with `stopping`. A second signal exits at once.
 

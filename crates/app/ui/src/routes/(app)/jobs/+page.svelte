@@ -1,6 +1,7 @@
 <script lang="ts">
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
+	import SquareIcon from '@lucide/svelte/icons/square';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { Switch } from '@skeletonlabs/skeleton-svelte';
@@ -29,12 +30,12 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Pager from '$lib/components/Pager.svelte';
 	import PlaceLine from '$lib/components/PlaceLine.svelte';
-	import RelativeTime from '$lib/components/RelativeTime.svelte';
+	import Timestamp from '$lib/components/Timestamp.svelte';
 	import SearchInput from '$lib/components/SearchInput.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import Status from '$lib/components/Status.svelte';
 	import { feed } from '$lib/events.svelte';
-	import { mediaLabel, number } from '$lib/format';
+	import { countText, mediaLabel, number } from '$lib/format';
 	import { mergeJobEvent } from '$lib/live';
 	import { session } from '$lib/session.svelte';
 	import { submitDialog } from '$lib/submit.svelte';
@@ -205,7 +206,9 @@
 		bulkPending = action;
 		try {
 			const result = await jobs.bulk({ action, ids: selected });
-			const verb = { retry: 'retried', cancel: 'cancelled', delete: 'deleted' }[action];
+			const verb = { retry: 'retried', cancel: 'cancelled', stop: 'stopped', delete: 'deleted' }[
+				action
+			];
 			const firstError = result.results.find((r) => !r.ok)?.error;
 			if (result.failed === 0) {
 				notify.success(`${number(result.succeeded)} ${verb}`);
@@ -234,6 +237,16 @@
 	];
 
 	const canManage = $derived(session.can('manage_jobs'));
+	/** Whether a selected job is capturing a live stream, which Stop ends while keeping the recording. */
+	const capturingSelected = $derived(
+		rows.some(
+			(job) =>
+				selected.includes(job.id) &&
+				job.recording &&
+				job.status.status === 'running' &&
+				job.status.stage === 'download'
+		)
+	);
 </script>
 
 {#snippet jobCell(job: JobSummary)}
@@ -265,7 +278,7 @@
 	<Bytes value={job.output_bytes} />
 {/snippet}
 {#snippet ageCell(job: JobSummary)}
-	<RelativeTime at={job.created_at} class="whitespace-nowrap" />
+	<Timestamp at={job.created_at} class="whitespace-nowrap" />
 {/snippet}
 
 <PageHeader title="Jobs" description="Every link the server has been asked to fetch.">
@@ -368,6 +381,17 @@
 			{#if bulkPending === 'retry'}<Spinner />{:else}<RotateCcwIcon class="size-4" />{/if}
 			Retry
 		</button>
+		{#if capturingSelected}
+			<button
+				type="button"
+				class="btn preset-tonal btn-sm"
+				onclick={() => bulk('stop')}
+				disabled={bulkPending !== null}
+			>
+				{#if bulkPending === 'stop'}<Spinner />{:else}<SquareIcon class="size-4" />{/if}
+				Stop
+			</button>
+		{/if}
 		<button
 			type="button"
 			class="btn preset-tonal btn-sm"
@@ -419,7 +443,7 @@
 
 <Confirm
 	bind:open={confirmDelete}
-	title="Delete {number(selected.length)} job{selected.length === 1 ? '' : 's'}?"
+	title="Delete {countText(selected.length, 'job')}?"
 	message="Their records and cached files go away. Running jobs are skipped."
 	confirmLabel="Delete"
 	danger

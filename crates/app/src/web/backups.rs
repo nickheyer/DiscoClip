@@ -96,7 +96,7 @@ pub async fn download(
     if !tokio::fs::metadata(&path).await.is_ok_and(|m| m.is_file()) {
         return Err(ApiError::NotFound);
     }
-    serve_file(&path, &name, false, &headers).await
+    serve_file(&path, &name, false, &headers, false).await
 }
 
 pub async fn delete(

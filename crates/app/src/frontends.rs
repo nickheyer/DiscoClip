@@ -1468,6 +1468,7 @@ mod tests {
                         overrides: [("youtube".to_string(), false)].into_iter().collect(),
                     },
                     limits: ProfileLimits::default(),
+                    audio_language: None,
                 },
             )
             .await

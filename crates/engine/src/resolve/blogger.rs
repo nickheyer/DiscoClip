@@ -3,7 +3,6 @@
 //! response that describes them.
 
 use std::sync::LazyLock;
-use std::time::Duration;
 
 use async_trait::async_trait;
 use regex::Regex;
@@ -105,20 +104,9 @@ fn codecs_of(mime: &str) -> Option<String> {
         .filter(|codecs| !codecs.is_empty())
 }
 
-/// `76.068` or `1:16` seconds.
-fn parse_seconds(text: &str) -> Option<Duration> {
-    text.trim()
-        .parse::<f64>()
-        .ok()
-        .filter(|s| *s >= 0.0 && s.is_finite())
-        .map(Duration::from_secs_f64)
-        .or_else(|| util::parse_duration(text))
-}
-
-/// One variant per stream the payload lists: every format of the player response's
-/// `streamingData` (muxed `formats`, then video-only and audio-only `adaptiveFormats`)
-/// with its size, codecs, bitrate and length, then every stream of the plain list whose
-/// itag those did not name, with what its link says.
+/// One variant per format of the player response's `streamingData`: the muxed
+/// `formats`, then the video-only and audio-only `adaptiveFormats`, each with its size,
+/// codecs, bitrate and length.
 pub fn variants_of(payload: &Value) -> Vec<Variant> {
     let mut variants: Vec<Variant> = Vec::new();
     let player: Value = payload[7]
@@ -156,30 +144,6 @@ pub fn variants_of(payload: &Value) -> Vec<Variant> {
             }
             variants.push(variant);
         }
-    }
-    for stream in payload[2].as_array().into_iter().flatten() {
-        let Some(url) = util::url_of(&stream[0], None) else {
-            continue;
-        };
-        let itag = util::text(&stream[1][0]);
-        if itag.is_some() && variants.iter().any(|v| v.format_id == itag) {
-            continue;
-        }
-        let container = util::query_param(&url, "mime")
-            .as_deref()
-            .and_then(Container::from_mime);
-        let mut variant = Variant::file(url);
-        if container == Some(Container::Mp4) {
-            variant.video = Some(VideoCodec::H264);
-            variant.audio = Some(AudioCodec::Aac);
-        }
-        variant.container = container;
-        variant.duration = util::query_param(&variant.url, "dur")
-            .as_deref()
-            .and_then(parse_seconds);
-        variant.size = util::query_param(&variant.url, "clen").and_then(|clen| clen.parse().ok());
-        variant.format_id = itag;
-        variants.push(variant);
     }
     variants
 }
@@ -289,6 +253,8 @@ impl Resolver for BloggerResolver {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
     use crate::http::{Exchange, Fixture, RecordedBody, RecordedRequest, RecordedResponse};
 
@@ -316,8 +282,8 @@ mod tests {
     const THREEGP: &str = "https://rr1---sn-x.googlevideo.com/videoplayback?expire=1789543908&id=3c740e3a49197e16&itag=13&source=blogger&mime=video%2F3gpp&clen=438496&dur=76.006";
     const AUDIO: &str = "https://rr1---sn-x.googlevideo.com/videoplayback?expire=1789543908&id=3c740e3a49197e16&itag=140&source=blogger&mime=audio%2Fmp4&dur=76.068";
 
-    /// The app's answer for a video with three muxed files, one audio-only adaptive
-    /// stream, and a 3GP file only the plain list names.
+    /// The app's answer for a video whose player response has two muxed files and one
+    /// audio-only adaptive stream, beside a plain list that also names a 3GP file.
     fn answer() -> String {
         let player = json!({
             "streamingData": {
@@ -444,7 +410,12 @@ mod tests {
             "https://i9.ytimg.com/vi_blogger/PHQOOkkZfhY/1.jpg?sqp=abc"
         );
         assert_eq!(resolved.webpage_url.as_ref(), Some(&url));
-        assert_eq!(resolved.variants.len(), 4);
+        crate::resolve::assert_one_family(&resolved.variants);
+        assert_eq!(resolved.variants.len(), 3);
+        assert!(
+            resolved.variants.iter().all(|v| v.url.as_str() != THREEGP),
+            "the plain list's 3GP file is not a stream of the player response"
+        );
         let mp4 = &resolved.variants[0];
         assert_eq!(mp4.url.as_str(), MP4_360);
         assert_eq!(mp4.container, Some(Container::Mp4));
@@ -466,12 +437,6 @@ mod tests {
         assert!(!audio.video_only);
         assert_eq!(audio.audio, Some(AudioCodec::Aac));
         assert_eq!(audio.video, None);
-        let threegp = &resolved.variants[3];
-        assert_eq!(threegp.url.as_str(), THREEGP);
-        assert_eq!(threegp.format_id.as_deref(), Some("13"));
-        assert_eq!(threegp.container, None);
-        assert_eq!(threegp.size, Some(438496));
-        assert_eq!(threegp.duration, Some(Duration::from_secs_f64(76.006)));
     }
 
     #[tokio::test]

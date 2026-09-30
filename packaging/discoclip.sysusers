@@ -1,0 +1,3 @@
+# systemd-sysusers(8): the account the service runs as. Installed by the packages and by
+# install.sh --system.
+u discoclip - "DiscoClip" /var/lib/discoclip /usr/sbin/nologin

@@ -426,77 +426,57 @@ impl XiaohongshuResolver {
     }
 }
 
-/// The variants a note's video lists: every stream of every codec it was encoded to.
+/// The variants a note's video lists: every H.264 stream it was encoded to, by quality.
 /// A stream's bit rates are in bits per second and its `duration` in milliseconds.
 pub fn variants_of(video: &Value, duration: Option<Duration>) -> Vec<Variant> {
     let headers = vec![("referer".to_string(), SITE.to_string())];
     let mut variants: Vec<Variant> = Vec::new();
-    let streams = &video["media"]["stream"];
-    for (key, codec) in [
-        ("h264", VideoCodec::H264),
-        ("h265", VideoCodec::H265),
-        ("av1", VideoCodec::Av1),
-        ("h266", VideoCodec::Other("h266".into())),
-    ] {
-        for stream in streams[key].as_array().into_iter().flatten() {
-            let Some(url) = stream["masterUrl"]
-                .as_str()
-                .or_else(|| {
-                    stream["backupUrls"]
-                        .as_array()
-                        .and_then(|b| b.iter().find_map(|u| u.as_str()))
-                })
-                .and_then(|u| Url::parse(u).ok())
-            else {
-                continue;
-            };
-            if variants.iter().any(|v| v.url == url) {
-                continue;
-            }
-            let mut v = Variant::new(url, VariantKind::File);
-            v.container = Some(Container::Mp4);
-            v.video = Some(codec.clone());
-            v.audio = Some(match stream["audioCodec"].as_str() {
-                Some(name) if name.eq_ignore_ascii_case("aac") || name.is_empty() => {
-                    AudioCodec::Aac
-                }
-                Some(name) => AudioCodec::Other(name.to_ascii_lowercase()),
-                None => AudioCodec::Aac,
-            });
-            v.width = stream["width"].as_u64().map(|w| w as u32);
-            v.height = stream["height"].as_u64().map(|h| h as u32);
-            v.fps = stream["fps"].as_f64().filter(|f| *f > 0.0);
-            v.bitrate = stream["avgBitrate"]
-                .as_u64()
-                .or_else(|| stream["videoBitrate"].as_u64())
-                .filter(|b| *b > 0);
-            v.size = stream["size"].as_u64().filter(|s| *s > 0);
-            v.duration = stream["duration"]
-                .as_u64()
-                .filter(|d| *d > 0)
-                .map(Duration::from_millis)
-                .or(duration);
-            v.format_id = stream["qualityType"]
-                .as_str()
-                .map(|q| format!("{key}-{q}"))
-                .or_else(|| Some(key.to_string()));
-            v.label = stream["qualityType"].as_str().map(String::from);
-            v.headers = headers.clone();
-            variants.push(v);
-        }
-    }
-    if variants.is_empty()
-        && let Some(url) = video["media"]["videoKey"]
-            .as_str()
-            .and_then(|key| Url::parse(&format!("https://sns-video-bd.xhscdn.com/{key}")).ok())
+    for stream in video["media"]["stream"]["h264"]
+        .as_array()
+        .into_iter()
+        .flatten()
     {
+        let Some(url) = stream["masterUrl"]
+            .as_str()
+            .or_else(|| {
+                stream["backupUrls"]
+                    .as_array()
+                    .and_then(|b| b.iter().find_map(|u| u.as_str()))
+            })
+            .and_then(|u| Url::parse(u).ok())
+        else {
+            continue;
+        };
+        if variants.iter().any(|v| v.url == url) {
+            continue;
+        }
         let mut v = Variant::new(url, VariantKind::File);
         v.container = Some(Container::Mp4);
         v.video = Some(VideoCodec::H264);
-        v.audio = Some(AudioCodec::Aac);
-        v.duration = duration;
-        v.format_id = Some("videoKey".into());
-        v.headers = headers;
+        v.audio = Some(match stream["audioCodec"].as_str() {
+            Some(name) if name.eq_ignore_ascii_case("aac") || name.is_empty() => AudioCodec::Aac,
+            Some(name) => AudioCodec::Other(name.to_ascii_lowercase()),
+            None => AudioCodec::Aac,
+        });
+        v.width = stream["width"].as_u64().map(|w| w as u32);
+        v.height = stream["height"].as_u64().map(|h| h as u32);
+        v.fps = stream["fps"].as_f64().filter(|f| *f > 0.0);
+        v.bitrate = stream["avgBitrate"]
+            .as_u64()
+            .or_else(|| stream["videoBitrate"].as_u64())
+            .filter(|b| *b > 0);
+        v.size = stream["size"].as_u64().filter(|s| *s > 0);
+        v.duration = stream["duration"]
+            .as_u64()
+            .filter(|d| *d > 0)
+            .map(Duration::from_millis)
+            .or(duration);
+        v.format_id = Some(match stream["qualityType"].as_str() {
+            Some(quality) => format!("h264-{quality}"),
+            None => "h264".to_string(),
+        });
+        v.label = stream["qualityType"].as_str().map(String::from);
+        v.headers = headers.clone();
         variants.push(v);
     }
     variants
@@ -742,6 +722,7 @@ mod tests {
         .unwrap();
         assert!(resolver.matches(&url));
         let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
+        crate::resolve::assert_one_family(&resolved.variants);
         assert_eq!(resolved.id.as_deref(), Some(ID));
         assert_eq!(resolved.title.as_deref(), Some("今天的天气"));
         assert_eq!(resolved.uploader.as_deref(), Some("小红"));
@@ -751,17 +732,15 @@ mod tests {
         );
         assert_eq!(resolved.duration, Some(Duration::from_secs(12)));
         assert!(resolved.uploaded_at.is_some());
-        assert_eq!(resolved.variants.len(), 2);
+        assert_eq!(resolved.variants.len(), 1, "the H.264 stream alone");
         assert_eq!(resolved.variants[0].video, Some(VideoCodec::H264));
+        assert_eq!(resolved.variants[0].format_id.as_deref(), Some("h264-HD"));
         assert_eq!(resolved.variants[0].bitrate, Some(2_300_000));
         assert_eq!(resolved.variants[0].size, Some(3456789));
         assert_eq!(
             resolved.variants[0].duration,
             Some(Duration::from_millis(12345))
         );
-        assert_eq!(resolved.variants[1].video, Some(VideoCodec::H265));
-        assert_eq!(resolved.variants[1].bitrate, Some(1_500_000));
-        assert_eq!(resolved.variants[1].duration, Some(Duration::from_secs(12)));
         assert!(
             resolved
                 .webpage_url

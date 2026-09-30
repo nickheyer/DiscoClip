@@ -15,7 +15,10 @@
 	import KeyValueRow from '$lib/components/KeyValueRow.svelte';
 	import MediaKindIcon from '$lib/components/MediaKindIcon.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import RelativeTime from '$lib/components/RelativeTime.svelte';
+	import ChipList from '$lib/components/ChipList.svelte';
+	import Count from '$lib/components/Count.svelte';
+	import Duration from '$lib/components/Duration.svelte';
+	import Timestamp from '$lib/components/Timestamp.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import Status from '$lib/components/Status.svelte';
 	import { host, mediaLabel, number } from '$lib/format';
@@ -26,8 +29,7 @@
 	/** Said on a session button another session action is holding up. */
 	const WAIT = 'Wait for the current session action to finish';
 	/** What a platform asks of a login, as the Session card names it. */
-	const LOGIN: Record<SessionSupport, string> = {
-		none: 'None',
+	const LOGIN: Record<Exclude<SessionSupport, 'none'>, string> = {
 		optional: 'Optional',
 		required: 'Required'
 	};
@@ -110,14 +112,6 @@
 		}
 	}
 
-	function found(fixture: FixtureResult): string {
-		const f = fixture.found;
-		if (!f) return '';
-		return f.kind === 'playlist'
-			? `Playlist · ${number(f.entries)} entries`
-			: `${mediaLabel(f.media)} · ${number(f.variants)} variants`;
-	}
-
 	/** The link's path, which names a link whose title is unknown. */
 	function pathOf(url: string): string {
 		try {
@@ -140,13 +134,8 @@
 	const columns: Column<FixtureResult>[] = [
 		{ key: 'url', label: 'Link', cell: urlCell, class: 'max-w-md' },
 		{ key: 'status', label: 'Result', cell: statusCell },
-		{ key: 'found', label: 'Found', value: found },
-		{
-			key: 'duration',
-			label: 'Took',
-			align: 'right',
-			value: (f) => (f.duration_ms === null ? null : `${number(f.duration_ms)} ms`)
-		},
+		{ key: 'found', label: 'Found', cell: foundCell },
+		{ key: 'duration', label: 'Took', align: 'right', cell: tookCell },
 		{ key: 'run', label: 'Run', cell: runCell }
 	];
 
@@ -194,12 +183,26 @@
 {#snippet statusCell(fixture: FixtureResult)}
 	<Status fixture={fixture.status} />
 {/snippet}
+{#snippet foundCell(fixture: FixtureResult)}
+	{#if fixture.found}
+		{#if fixture.found.kind === 'playlist'}
+			Playlist · <Count value={fixture.found.entries} noun="entry" plural="entries" />
+		{:else}
+			{mediaLabel(fixture.found.media)} · <Count value={fixture.found.variants} noun="variant" />
+		{/if}
+	{/if}
+{/snippet}
+{#snippet tookCell(fixture: FixtureResult)}
+	{#if fixture.duration_ms !== null}
+		<Duration value={fixture.duration_ms / 1000} />
+	{/if}
+{/snippet}
 {#snippet runCell(fixture: FixtureResult)}
 	<div class="whitespace-nowrap">
-		<RelativeTime at={fixture.run_at} />
+		<Timestamp at={fixture.run_at} />
 		{#if fixture.status === 'fail' || fixture.status === 'login_required'}
 			<p class="text-sm text-surface-600-400">
-				Last pass: <RelativeTime at={fixture.last_pass_at} />
+				Last pass: <Timestamp at={fixture.last_pass_at} />
 			</p>
 		{/if}
 	</div>
@@ -252,88 +255,90 @@
 		<Card title="Capabilities">
 			<KeyValue>
 				<KeyValueRow label="Hosts">
-					<span class="font-mono text-xs break-all">{platform.hosts.join(', ')}</span>
+					<ChipList items={platform.hosts} mono />
 				</KeyValueRow>
-				<KeyValueRow
-					label="Features"
-					value={platform.features.length > 0 ? platform.features.join(', ') : null}
-				/>
-				<KeyValueRow
-					label="Formats"
-					value={platform.formats.length > 0 ? platform.formats.join(', ') : null}
-				/>
+				{#if platform.features.length > 0}
+					<KeyValueRow label="Features"><ChipList items={platform.features} /></KeyValueRow>
+				{/if}
+				{#if platform.formats.length > 0}
+					<KeyValueRow label="Formats"><ChipList items={platform.formats} /></KeyValueRow>
+				{/if}
 			</KeyValue>
 		</Card>
 
-		<Card title="Session">
-			<div class="space-y-4">
-				<KeyValue>
-					<KeyValueRow label="Login" value={LOGIN[platform.session]} />
-					<KeyValueRow
-						label="Cookies"
-						value={platform.cookies === 0 ? null : `${number(platform.cookies)} saved`}
-					/>
-					<KeyValueRow label="Updated">
-						<RelativeTime at={platform.cookies_updated_at} />
-					</KeyValueRow>
-					<KeyValueRow label="Last verified">
-						{#if sessionPending === 'check'}
-							<span class="inline-flex items-center gap-2"><Spinner />Verifying now</span>
-						{:else if platform.session_check}
-							<span class="inline-flex flex-wrap items-center gap-2">
-								<Status session={platform.session_check.state} />
-								<RelativeTime at={platform.session_check.at} class="text-surface-600-400" />
-							</span>
-						{:else}
-							<RelativeTime at={null} />
+		{#if platform.session !== 'none'}
+			<Card title="Session">
+				<div class="space-y-4">
+					<KeyValue>
+						<KeyValueRow label="Login" value={LOGIN[platform.session]} />
+						<KeyValueRow
+							label="Cookies"
+							value={platform.cookies === 0 ? null : `${number(platform.cookies)} saved`}
+						/>
+						{#if platform.cookies_updated_at}
+							<KeyValueRow label="Updated">
+								<Timestamp at={platform.cookies_updated_at} />
+							</KeyValueRow>
 						{/if}
-					</KeyValueRow>
-					{#if platform.session_check?.state === 'logged_in'}
-						<KeyValueRow label="Account" value={platform.session_check.account} />
+						{#if sessionPending === 'check' || platform.session_check}
+							<KeyValueRow label="Last verified">
+								{#if sessionPending === 'check'}
+									<span class="inline-flex items-center gap-2"><Spinner />Verifying now</span>
+								{:else if platform.session_check}
+									<span class="inline-flex flex-wrap items-center gap-2">
+										<Status session={platform.session_check.state} />
+										<Timestamp at={platform.session_check.at} class="text-surface-600-400" />
+									</span>
+								{/if}
+							</KeyValueRow>
+						{/if}
+						{#if platform.session_check?.state === 'logged_in'}
+							<KeyValueRow label="Account" value={platform.session_check.account} />
+						{/if}
+					</KeyValue>
+					{#if canSession}
+						<div class="flex flex-wrap gap-2">
+							<button type="button" class="btn preset-filled" onclick={() => (cookiesOpen = true)}>
+								Import cookies
+							</button>
+							<button
+								type="button"
+								class="btn preset-tonal"
+								onclick={checkSession}
+								disabled={sessionPending !== null || platform.cookies === 0}
+								aria-busy={sessionPending === 'check'}
+								title={sessionPending === 'clear' ? WAIT : undefined}
+							>
+								{#if sessionPending === 'check'}<Spinner />{/if}
+								{sessionPending === 'check' ? 'Verifying…' : 'Verify login'}
+							</button>
+							<button
+								type="button"
+								class="btn preset-tonal-error"
+								onclick={() => (confirmClear = true)}
+								disabled={sessionPending !== null || platform.cookies === 0}
+								aria-busy={sessionPending === 'clear'}
+								title={sessionPending === 'check' ? WAIT : undefined}
+							>
+								{#if sessionPending === 'clear'}<Spinner />{/if}
+								{sessionPending === 'clear' ? 'Clearing…' : 'Clear cookies'}
+							</button>
+						</div>
 					{/if}
-				</KeyValue>
-				{#if canSession && platform.session !== 'none'}
-					<div class="flex flex-wrap gap-2">
-						<button type="button" class="btn preset-filled" onclick={() => (cookiesOpen = true)}>
-							Import cookies
-						</button>
-						<button
-							type="button"
-							class="btn preset-tonal"
-							onclick={checkSession}
-							disabled={sessionPending !== null || platform.cookies === 0}
-							aria-busy={sessionPending === 'check'}
-							title={sessionPending === 'clear' ? WAIT : undefined}
-						>
-							{#if sessionPending === 'check'}<Spinner />{/if}
-							{sessionPending === 'check' ? 'Verifying…' : 'Verify login'}
-						</button>
-						<button
-							type="button"
-							class="btn preset-tonal-error"
-							onclick={() => (confirmClear = true)}
-							disabled={sessionPending !== null || platform.cookies === 0}
-							aria-busy={sessionPending === 'clear'}
-							title={sessionPending === 'check' ? WAIT : undefined}
-						>
-							{#if sessionPending === 'clear'}<Spinner />{/if}
-							{sessionPending === 'clear' ? 'Clearing…' : 'Clear cookies'}
-						</button>
-					</div>
-				{/if}
-			</div>
-		</Card>
+				</div>
+			</Card>
+		{/if}
 	</div>
 
 	<Card title="Link checks" count={links} flush>
 		{#snippet actions()}
 			{#if platform}
 				<span class="text-sm text-surface-600-400">
-					Run <RelativeTime at={platform.last_run_at} />
+					Run <Timestamp at={platform.last_run_at} />
 					<span title="The most recent run in which every link passed">
-						· full pass <RelativeTime at={platform.last_pass_at} />
+						· full pass <Timestamp at={platform.last_pass_at} />
 					</span>
-					· fail <RelativeTime at={platform.last_fail_at} />
+					· fail <Timestamp at={platform.last_fail_at} />
 				</span>
 			{/if}
 		{/snippet}

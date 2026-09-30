@@ -2,7 +2,9 @@
 //! scripts a `window.initials` object. A video page carries the video model and the
 //! player's sources, whose links are ciphered with the byte generator the player ships;
 //! deciphered, the HLS masters list a rendition per height, as H.264 and, for newer
-//! uploads, AV1. A gallery page lists its photos, a photo page its image, and the user,
+//! uploads, AV1. A short's player names no master but one MP4 file per height, and the
+//! files stand in wherever the masters are missing. A gallery page lists its photos, a
+//! photo page its image, and the user,
 //! creator and channel pages list their videos a page at a time. The mirrors and the
 //! language and mobile subdomains serve the same pages. Links to xhamsterlive.com, the
 //! cam site xHamster fronts, are Stripchat rooms under another name and are handed on to
@@ -18,8 +20,8 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved, Resolver,
-    SessionSupport, SubtitleTrack, Tag, Variant, clean_title, fetch, hls, navigation_headers, page,
-    status_error, util,
+    SessionSupport, SubtitleTrack, Tag, Variant, VariantKind, clean_title, fetch, hls,
+    navigation_headers, page, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
 use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
@@ -358,75 +360,68 @@ fn video_codec(name: &str) -> Option<VideoCodec> {
     }
 }
 
-/// A link the player's sources name, filed under a codec and, for a file, a quality.
+/// An HLS master the player's sources name, filed under its codec.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceLink {
     pub codec: String,
-    pub quality: Option<String>,
     pub url: Url,
 }
 
-/// The player's source links, each once: the HLS masters by codec, then the standard
-/// sources, whose `auto` entries are the masters again and whose per-height entries
-/// are files.
+/// The player's HLS masters, one per codec, with their links deciphered.
 pub fn source_links(sources: &Value) -> Vec<SourceLink> {
-    let mut links: Vec<SourceLink> = Vec::new();
-    let mut push = |codec: &str, quality: Option<String>, url: Url| {
-        if !links.iter().any(|known| known.url == url) {
-            links.push(SourceLink {
-                codec: codec.to_string(),
-                quality,
+    sources["hls"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter_map(|(codec, entry)| {
+            let url = entry["url"].as_str().and_then(decipher_url)?;
+            Some(SourceLink {
+                codec: codec.clone(),
                 url,
-            });
-        }
-    };
-    for (codec, entry) in sources["hls"].as_object().into_iter().flatten() {
-        for key in ["url", "fallback"] {
-            if let Some(url) = entry[key].as_str().and_then(decipher_url) {
-                push(codec, None, url);
-            }
-        }
-    }
-    for (codec, entries) in sources["standard"].as_object().into_iter().flatten() {
-        for entry in entries.as_array().into_iter().flatten() {
-            let quality = util::text(&entry["quality"])
-                .or_else(|| util::text(&entry["label"]))
-                .filter(|q| !q.is_empty() && q != "auto");
-            for key in ["url", "fallback"] {
-                if let Some(url) = entry[key].as_str().and_then(decipher_url) {
-                    push(codec, quality.clone(), url);
-                }
-            }
-        }
-    }
-    links
+            })
+        })
+        .collect()
 }
 
-/// The variants a legacy `videoModel.sources` map names: a format keyed by quality.
-fn legacy_variants(sources: &Value) -> Vec<Variant> {
-    let mut variants = Vec::new();
-    for (format, qualities) in sources.as_object().into_iter().flatten() {
-        if format == "download" {
-            continue;
-        }
-        for (quality, link) in qualities.as_object().into_iter().flatten() {
-            let Some(url) = link.as_str().and_then(|l| Url::parse(l).ok()) else {
-                continue;
-            };
-            if variants.iter().any(|v: &Variant| v.url == url) {
-                continue;
+/// An MP4 file the player's sources name, filed under its codec and the height the
+/// player labels it with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileLink {
+    pub codec: String,
+    /// The player's quality label, such as `480p`.
+    pub label: String,
+    pub url: Url,
+}
+
+/// The player's MP4 files, one per codec and height, with their links deciphered. The
+/// `auto` entry the player lists among them names an HLS master and is left out.
+pub fn file_links(sources: &Value) -> Vec<FileLink> {
+    sources["standard"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .flat_map(|(codec, entries)| {
+            entries
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(move |entry| (codec, entry))
+        })
+        .filter_map(|(codec, entry)| {
+            let url = entry["url"].as_str().and_then(decipher_url)?;
+            if url.path().ends_with(".m3u8") {
+                return None;
             }
-            let mut variant = Variant::file(url);
-            variant.container = Some(Container::Mp4);
-            variant.video = Some(VideoCodec::H264);
-            variant.audio = Some(AudioCodec::Aac);
-            variant.height = util::height_of(quality);
-            variant.format_id = Some(format!("{format}-{quality}"));
-            variant.label = Some(quality.clone());
-            variants.push(variant);
-        }
-    }
-    variants
+            let label = util::text(&entry["quality"])
+                .or_else(|| util::text(&entry["label"]))
+                .filter(|label| label != "auto")?;
+            Some(FileLink {
+                codec: codec.clone(),
+                label,
+                url,
+            })
+        })
+        .collect()
 }
 
 /// The videos a listing page carries: every `videoThumbProps` list in its initials.
@@ -531,59 +526,18 @@ impl XhamsterResolver {
     }
 
     /// The variants a video's sources play: each HLS master expanded to its renditions,
-    /// each file the host serves, and the legacy files when the model still lists them.
+    /// filed under the master's codec, or the MP4 files the player names when no master
+    /// plays.
     async fn variants_of(
         &self,
         sources: &Value,
-        legacy: &Value,
-        page_url: &str,
     ) -> (Vec<Variant>, Vec<SubtitleTrack>, Option<Duration>) {
         let mut variants: Vec<Variant> = Vec::new();
         let mut subtitles = Vec::new();
         let mut duration = None;
-        let referer = vec![("referer".to_string(), page_url.to_string())];
         for link in source_links(sources) {
             let codec = link.codec.as_str();
-            if !link.url.path().ends_with(".m3u8") {
-                // A file plays only where the host's key allows it: the host answers
-                // the player's own requests and refuses others with 403, and which
-                // it does shows at the first byte.
-                match super::probe_file(&self.http, &link.url, PLATFORM, BROWSER_UA, &referer).await
-                {
-                    Ok(probed) if matches!(probed.status.as_u16(), 200 | 206) => {
-                        let mut variant = Variant::file(link.url.clone());
-                        variant.container = Some(Container::Mp4);
-                        variant.video = video_codec(codec);
-                        variant.audio = Some(AudioCodec::Aac);
-                        variant.height = link.quality.as_deref().and_then(util::height_of);
-                        variant.size = probed.size;
-                        variant.headers = referer.clone();
-                        variant.format_id = Some(match &link.quality {
-                            Some(quality) => format!("{codec}-{quality}"),
-                            None => codec.to_string(),
-                        });
-                        variant.label = link.quality.clone();
-                        if !variants.iter().any(|v| v.url == variant.url) {
-                            variants.push(variant);
-                        }
-                    }
-                    Ok(probed) => {
-                        tracing::debug!(url = %link.url, status = %probed.status, "xHamster file refused");
-                    }
-                    Err(error) => {
-                        tracing::debug!(url = %link.url, "xHamster file not probed: {error}");
-                    }
-                }
-                continue;
-            }
             let prefix = format!("hls-{codec}-");
-            if variants.iter().any(|v| {
-                v.format_id
-                    .as_deref()
-                    .is_some_and(|f| f.starts_with(&prefix))
-            }) {
-                continue;
-            }
             match hls::expand(&self.http, &link.url, PLATFORM, BROWSER_UA, &[]).await {
                 Ok(expanded) => {
                     for mut variant in expanded.variants {
@@ -612,9 +566,21 @@ impl XhamsterResolver {
                 }
             }
         }
-        for variant in legacy_variants(legacy) {
-            if !variants.iter().any(|v| v.url == variant.url) {
-                variants.push(variant);
+        if variants.is_empty() {
+            for link in file_links(sources) {
+                let mut variant = Variant::new(link.url, VariantKind::File);
+                variant.container = Some(Container::Mp4);
+                variant.video = video_codec(&link.codec);
+                variant.audio = Some(AudioCodec::Aac);
+                variant.height = link
+                    .label
+                    .strip_suffix('p')
+                    .and_then(|height| height.parse().ok());
+                variant.format_id = Some(format!("mp4-{}-{}", link.codec, link.label));
+                variant.label = Some(link.label);
+                if !variants.iter().any(|v| v.url == variant.url) {
+                    variants.push(variant);
+                }
             }
         }
         (variants, subtitles, duration)
@@ -635,14 +601,7 @@ impl XhamsterResolver {
             });
         };
         let settings = &initials["xplayerSettings"];
-        let legacy = if short {
-            &Value::Null
-        } else {
-            &model["sources"]
-        };
-        let (variants, subtitles, hls_duration) = self
-            .variants_of(&settings["sources"], legacy, page_url)
-            .await;
+        let (variants, subtitles, hls_duration) = self.variants_of(&settings["sources"]).await;
         if variants.is_empty() {
             return Err(match closed_reason(&html) {
                 Some(reason) => ResolveError::unavailable(url, reason),
@@ -1147,8 +1106,7 @@ mod tests {
                 "pageURL": "https://xhamster.com/videos/xhamster-awards-2025-the-winners-xh1FC1t",
                 "created": 1763216161,
                 "thumbURL": "https://ic-vt-nss.xhcdn.com/a/x/s(w:1280,h:720),webp/028/063/317/1280x720.17634215.jpg",
-                "author": {"name": "xHamster", "pageURL": "https://xhamster.com/users/xhamster"},
-                "sources": null
+                "author": {"name": "xHamster", "pageURL": "https://xhamster.com/users/xhamster"}
             },
             "xplayerSettings": {
                 "videoId": 28063317, "duration": 372,
@@ -1187,12 +1145,6 @@ mod tests {
                 "#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:4.0,\nseg-1.ts\n#EXT-X-ENDLIST\n".into(),
             ));
         }
-        fixture.exchanges.push(get(
-            "https://video-h.xhcdn.com/key=k,end=1/data=d/speed=0/028/063/317/720p.h264.mp4",
-            403,
-            "text/plain",
-            "Wrong key".into(),
-        ));
         let resolver = XhamsterResolver::new(Http::replay(fixture));
         let url =
             Url::parse("https://xhamster.com/videos/xhamster-awards-2025-the-winners-xh1FC1t")
@@ -1213,10 +1165,11 @@ mod tests {
         assert!(resolved.uploaded_at.is_some());
         assert_eq!(resolved.age_limit, Some(18));
         assert_eq!(resolved.media, MediaKind::Video);
+        crate::resolve::assert_one_family(&resolved.variants);
         assert_eq!(
             resolved.variants.len(),
             2,
-            "one rendition per height, and no file the host refuses"
+            "one rendition per height, and none of the files the player lists"
         );
         assert!(resolved.variants.iter().all(|v| v.kind == VariantKind::Hls));
         assert_eq!(resolved.variants[0].height, Some(720));
@@ -1250,24 +1203,6 @@ mod tests {
                 }}
             })),
         ));
-        fixture.exchanges.push(Exchange {
-            request: RecordedRequest {
-                method: "GET".into(),
-                url: "https://video7.xhcdn.com/key=a,end=1,limit=3/data=d/speed=0/031/046/070/480p.h264.mp4".into(),
-                headers: Vec::new(),
-                body: None,
-            },
-            response: RecordedResponse {
-                status: 206,
-                url: "https://ip1.ahcdn.com/key=b/031/046/070/480p.h264.mp4".into(),
-                headers: vec![
-                    ("content-type".into(), "video/mp4".into()),
-                    ("content-range".into(), "bytes 0-0/1234567".into()),
-                ],
-                body: RecordedBody::Empty,
-                truncated: false,
-            },
-        });
         fixture.exchanges.push(get(
             master,
             200,
@@ -1291,31 +1226,62 @@ mod tests {
         assert_eq!(resolved.title.as_deref(), Some("Big Big Tits"));
         assert_eq!(resolved.uploader.as_deref(), Some("BinaJane"));
         assert_eq!(resolved.duration, Some(Duration::from_secs(7)));
+        crate::resolve::assert_one_family(&resolved.variants);
         assert_eq!(
             resolved.variants.len(),
-            2,
-            "the file the host serves and the rendition"
+            1,
+            "the rendition of the master, and not the file the player lists"
         );
-        let file = resolved
-            .variants
-            .iter()
-            .find(|v| v.kind == VariantKind::File)
+        let rendition = &resolved.variants[0];
+        assert_eq!(rendition.kind, VariantKind::Hls);
+        assert_eq!(rendition.height, Some(1280));
+        assert_eq!(rendition.format_id.as_deref(), Some("hls-h264-1280p"));
+        assert_eq!(rendition.video, Some(VideoCodec::H264));
+    }
+
+    #[tokio::test]
+    async fn shorts_without_a_master_resolve_to_the_players_file() {
+        let mut fixture = Fixture::new(PLATFORM, None);
+        fixture.exchanges.push(get(
+            "https://xhamster.com/shorts/giving-pov-massage-xhWbCN7",
+            200,
+            "text/html",
+            page_with(json!({
+                "layoutPage": {"momentProps": {
+                    "id": 31046070, "title": "Neighbor giving POV massage | Clip 2", "created": 1790259527,
+                    "pageURL": "https://xhamster.com/shorts/giving-pov-massage-xhWbCN7",
+                    "posterUrl": "https://ic-vt-nss.xhcdn.com/a/x/frame.0.webp",
+                    "landing": {"name": "Squirt_orgasm_69", "link": "https://xhamster.com/creators/squirt-orgasm-69/shorts"}
+                }},
+                "xplayerSettings": {"duration": 30, "sources": {
+                    "standard": {"h264": [{"url": "https://video7.xhcdn.com/key=a,end=1,limit=3/data=d/speed=0/031/046/070/480p.h264.mp4", "fallback": "", "quality": "480p", "label": "480p", "type": ""}]}
+                }}
+            })),
+        ));
+        let resolver = XhamsterResolver::new(Http::replay(fixture));
+        let resolved = resolver
+            .resolve(&Url::parse("https://xhamster.com/shorts/giving-pov-massage-xhWbCN7").unwrap())
+            .await
+            .unwrap()
+            .media()
             .unwrap();
+        assert_eq!(resolved.id.as_deref(), Some("31046070"));
+        assert_eq!(resolved.duration, Some(Duration::from_secs(30)));
+        assert_eq!(resolved.media, MediaKind::Video);
+        assert_eq!(resolved.variants.len(), 1, "the one file the player names");
+        let file = &resolved.variants[0];
+        assert_eq!(file.kind, VariantKind::File);
         assert_eq!(
             file.url.as_str(),
             "https://video7.xhcdn.com/key=a,end=1,limit=3/data=d/speed=0/031/046/070/480p.h264.mp4"
         );
-        assert_eq!(file.height, Some(480));
-        assert_eq!(file.size, Some(1234567));
-        assert_eq!(file.format_id.as_deref(), Some("h264-480p"));
+        assert_eq!(file.container, Some(Container::Mp4));
         assert_eq!(file.video, Some(VideoCodec::H264));
-        assert_eq!(file.headers[0].0, "referer");
-        let rendition = resolved
-            .variants
-            .iter()
-            .find(|v| v.kind == VariantKind::Hls)
-            .unwrap();
-        assert_eq!(rendition.height, Some(1280));
+        assert_eq!(file.audio, Some(AudioCodec::Aac));
+        assert_eq!(file.height, Some(480));
+        assert_eq!(file.format_id.as_deref(), Some("mp4-h264-480p"));
+        assert_eq!(file.label.as_deref(), Some("480p"));
+        assert!(file.is_playable());
     }
 
     #[tokio::test]
@@ -1515,6 +1481,7 @@ mod tests {
         );
     }
 
+    #[ignore = "reaches the live site: cargo test -- --ignored"]
     #[tokio::test]
     async fn live_examples_resolve() {
         let resolver = XhamsterResolver::new(Http::new(crate::http::HttpConfig::default()));

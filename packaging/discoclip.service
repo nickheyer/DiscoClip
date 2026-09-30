@@ -1,8 +1,17 @@
 # systemd unit for DiscoClip.
 #
-#   install -m 755 target/release/discoclip /usr/local/bin/discoclip
-#   useradd --system --home-dir /var/lib/discoclip --shell /usr/sbin/nologin discoclip
-#   install -d -o discoclip -g discoclip /etc/discoclip
+# The .deb and .rpm packages install this unit, the service account and a config file at
+# /etc/discoclip/discoclip.toml, and start the service. So does the installer from a
+# release archive:
+#
+#   sudo packaging/install.sh --system
+#
+# By hand, from a release archive or `cargo build --release`:
+#
+#   install -m 755 discoclip /usr/bin/discoclip
+#   install -m 644 packaging/discoclip.sysusers /etc/sysusers.d/discoclip.conf
+#   systemd-sysusers discoclip.conf
+#   install -d -m 750 -o root -g discoclip /etc/discoclip
 #   install -m 640 -o root -g discoclip discoclip.example.toml /etc/discoclip/discoclip.toml
 #   install -m 644 packaging/discoclip.service /etc/systemd/system/discoclip.service
 #   systemctl daemon-reload && systemctl enable --now discoclip
@@ -21,7 +30,7 @@ Wants=network-online.target
 Type=simple
 User=discoclip
 Group=discoclip
-ExecStart=/usr/local/bin/discoclip --config /etc/discoclip/discoclip.toml
+ExecStart=/usr/bin/discoclip --config /etc/discoclip/discoclip.toml
 Environment=DISCOCLIP_DATA_DIR=/var/lib/discoclip
 Environment=DISCOCLIP_ENGINE__CACHE_DIR=/var/cache/discoclip
 Environment=DISCOCLIP_LOCAL__DIR=/var/lib/discoclip/local
@@ -55,9 +64,14 @@ RestrictSUIDSGID=true
 RestrictRealtime=true
 LockPersonality=true
 ReadWritePaths=/var/lib/discoclip /var/cache/discoclip
-# For VA-API or Quick Sync encoders through an installed ffmpeg (engine.ffmpeg):
+# For NVENC, VA-API or Quick Sync through an installed ffmpeg (engine.ffmpeg), let the
+# service reach the GPU. NVIDIA needs the device nodes; Intel and AMD need the render
+# node and its group.
 # SupplementaryGroups=render video
 # DeviceAllow=/dev/dri rw
+# DeviceAllow=/dev/nvidiactl rw
+# DeviceAllow=/dev/nvidia-uvm rw
+# DeviceAllow=/dev/nvidia0 rw
 
 [Install]
 WantedBy=multi-user.target

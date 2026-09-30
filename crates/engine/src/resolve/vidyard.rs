@@ -1,5 +1,5 @@
-//! Resolve Vidyard players through the player API. Include MP4, expanded HLS, captions
-//! and metadata. Use the player referer for CDN requests.
+//! Resolve Vidyard players through the player API. Expand the HLS master and include
+//! captions and metadata. Use the player referer for CDN requests.
 //!
 //! Players with multiple chapters become playlists.
 
@@ -15,11 +15,10 @@ use url::Url;
 use super::page::Page;
 use super::{
     MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved, Resolver,
-    SessionSupport, SubtitleFormat, SubtitleTrack, Tag, Variant, VariantKind, clean_title, essence,
-    fetch, hls, path_extension,
+    SessionSupport, SubtitleFormat, SubtitleTrack, Tag, clean_title, fetch, hls,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
+use crate::media::MediaKind;
 
 pub const PLATFORM: &str = "vidyard";
 const PLAYER: &str = "https://play.vidyard.com/";
@@ -133,14 +132,6 @@ fn duration_of(chapter: &Value) -> Option<Duration> {
         })
 }
 
-/// The height a profile such as `720p` names.
-fn profile_height(profile: &str) -> Option<u32> {
-    profile
-        .strip_suffix('p')
-        .and_then(|h| h.parse().ok())
-        .filter(|h| *h > 0)
-}
-
 /// The chapter's captions.
 pub fn subtitles_of(chapter: &Value, headers: &[(String, String)]) -> Vec<SubtitleTrack> {
     chapter["captions"]
@@ -214,90 +205,39 @@ impl VidyardResolver {
         Ok(payload)
     }
 
-    /// One chapter as media: its HLS renditions, MP4 files and captions.
+    /// One chapter as media: the renditions of its HLS master, and its captions.
     async fn chapter_media(&self, chapter: &Value, origin: &Url) -> Result<Resolved, ResolveError> {
         let headers = vec![("referer".to_string(), REFERER.to_string())];
-        let mut duration = duration_of(chapter);
-        let mut variants = Vec::new();
-        let mut subtitles = Vec::new();
-        let mut live = false;
-        let sources = chapter["sources"].as_object();
-        let hls_list: Vec<&Value> = sources
-            .and_then(|s| s.get("hls"))
-            .and_then(|list| list.as_array())
-            .map(|list| list.iter().collect())
-            .unwrap_or_default();
-        let master = hls_list
-            .iter()
+        let master = chapter["sources"]["hls"]
+            .as_array()
+            .into_iter()
+            .flatten()
             .find(|s| s["profile"].as_str() == Some("auto"))
             .and_then(|s| s["url"].as_str())
             .and_then(|u| Url::parse(u).ok());
-        match master {
-            Some(master) => {
-                let expanded = hls::expand(&self.http, &master, PLATFORM, BROWSER_UA, &headers)
-                    .await
-                    .map_err(|e| e.at(origin))?;
-                if duration.is_none() {
-                    duration = expanded.duration;
-                }
-                live = expanded.live;
-                subtitles.extend(expanded.subtitles);
-                variants.extend(expanded.variants);
-            }
-            None => {
-                // Without a master, each rendition's own playlist plays.
-                for source in &hls_list {
-                    let Some(url) = source["url"].as_str().and_then(|u| Url::parse(u).ok()) else {
-                        continue;
-                    };
-                    let profile = source["profile"].as_str().unwrap_or_default();
-                    let mut v = Variant::new(url, VariantKind::Hls);
-                    v.height = profile_height(profile);
-                    v.label = Some(profile.to_string());
-                    v.format_id = Some(format!("hls-{profile}"));
-                    v.headers = headers.clone();
-                    variants.push(v);
-                }
-            }
-        }
-        for (kind, list) in sources.into_iter().flatten() {
-            if kind == "hls" {
-                continue;
-            }
-            for source in list.as_array().into_iter().flatten() {
-                let Some(url) = source["url"].as_str().and_then(|u| Url::parse(u).ok()) else {
-                    continue;
-                };
-                let profile = source["profile"].as_str().unwrap_or_default();
-                let mime = essence(source["mimeType"].as_str());
-                let mut v = Variant::new(url, VariantKind::File);
-                v.container = Container::from_mime(&mime).or_else(|| {
-                    path_extension(&v.url)
-                        .as_deref()
-                        .and_then(Container::from_extension)
-                });
-                if v.container == Some(Container::Mp4) {
-                    v.video = Some(VideoCodec::H264);
-                    v.audio = Some(AudioCodec::Aac);
-                }
-                v.height = profile_height(profile);
-                v.label = Some(profile.to_string());
-                v.format_id = Some(format!("{kind}-{profile}"));
-                v.headers = headers.clone();
-                variants.push(v);
-            }
-        }
-        if variants.is_empty() {
+        let Some(master) = master else {
             return Err(ResolveError::unavailable(
                 origin,
                 "the video has no playable sources",
             ));
+        };
+        let expanded = hls::expand(&self.http, &master, PLATFORM, BROWSER_UA, &headers)
+            .await
+            .map_err(|e| e.at(origin))?;
+        if expanded.variants.is_empty() {
+            return Err(ResolveError::unavailable(
+                origin,
+                "the master playlist lists no streams",
+            ));
         }
+        let duration = duration_of(chapter).or(expanded.duration);
+        let mut variants = expanded.variants;
         for v in &mut variants {
             if v.duration.is_none() {
                 v.duration = duration;
             }
         }
+        let mut subtitles = expanded.subtitles;
         subtitles.extend(subtitles_of(chapter, &headers));
         let mut resolved = Resolved::new(PLATFORM);
         resolved.id = chapter["facadeUuid"]
@@ -307,7 +247,7 @@ impl VidyardResolver {
         resolved.title = chapter["name"].as_str().and_then(clean_title);
         resolved.description = chapter["description"].as_str().and_then(clean_title);
         resolved.duration = duration;
-        resolved.live = live;
+        resolved.live = expanded.live;
         resolved.thumbnail = chapter["thumbnailUrls"]["normal"]
             .as_str()
             .or(chapter["thumbnailUrls"]["small"].as_str())
@@ -342,7 +282,7 @@ impl Resolver for VidyardResolver {
                 "chapters as playlists",
                 "captions",
             ],
-            formats: &["mp4", "hls"],
+            formats: &["hls"],
             media: &[MediaKind::Video],
             tags: &[Tag::Players],
             session: SessionSupport::None,
@@ -411,6 +351,8 @@ impl Resolver for VidyardResolver {
 mod tests {
     use super::*;
     use crate::http::transport::Fixture;
+    use crate::media::VideoCodec;
+    use crate::resolve::VariantKind;
 
     fn fixture() -> Fixture {
         Fixture::parse(include_str!("vidyard_fixture.json")).unwrap()
@@ -506,9 +448,10 @@ mod tests {
                 .as_str()
                 .contains("/thumbnails/50347/")
         );
+        crate::resolve::assert_one_family(&resolved.variants);
         assert_eq!(
             resolved.variants.len(),
-            6,
+            3,
             "{:?}",
             resolved
                 .variants
@@ -516,29 +459,14 @@ mod tests {
                 .map(|v| v.url.as_str())
                 .collect::<Vec<_>>()
         );
+        assert!(resolved.variants.iter().all(|v| v.kind == VariantKind::Hls));
         assert!(resolved.variants.iter().all(|v| {
             v.headers
                 .contains(&("referer".to_string(), REFERER.to_string()))
         }));
-        let hls: Vec<&Variant> = resolved
-            .variants
-            .iter()
-            .filter(|v| v.kind == VariantKind::Hls)
-            .collect();
-        assert_eq!(hls.len(), 3);
-        assert_eq!(hls[0].height, Some(720));
-        assert_eq!(hls[0].video, Some(VideoCodec::H264));
-        let mp4: Vec<&Variant> = resolved
-            .variants
-            .iter()
-            .filter(|v| v.kind == VariantKind::File)
-            .collect();
-        assert_eq!(
-            mp4.iter().map(|v| v.height).collect::<Vec<_>>(),
-            vec![Some(720), Some(480), Some(360)]
-        );
-        assert_eq!(mp4[0].container, Some(Container::Mp4));
-        assert_eq!(mp4[0].format_id.as_deref(), Some("mp4-720p"));
+        assert_eq!(resolved.variants[0].height, Some(720));
+        assert_eq!(resolved.variants[0].video, Some(VideoCodec::H264));
+        assert!(resolved.variants.iter().all(|v| v.duration.is_some()));
         let error = resolver
             .resolve(&Url::parse("https://play.vidyard.com/zzzzzzzzzzzzzzzzzzzzzz").unwrap())
             .await

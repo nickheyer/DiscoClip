@@ -449,11 +449,7 @@ impl Resolver for GofileResolver {
             ],
             tags: &[Tag::Files],
             session: SessionSupport::Optional,
-            examples: &[
-                "https://gofile.io/d/b4Ds9u",
-                "https://gofile.io/d/65pGBWhc",
-                "https://gofile.io/d/027131e2-0d3a-4aa2-936a-362e022d76dc",
-            ],
+            examples: &["https://gofile.io/d/b4Ds9u"],
         }
     }
 
@@ -621,8 +617,9 @@ mod tests {
         assert_eq!(link("https://example.com/d/b4Ds9u"), None);
     }
 
-    /// The token script as the site served it on 2026-09-24, with the guest account and
-    /// the two example contents recorded the same day.
+    /// The token script as the site served it on 2026-09-24, with the guest account, the
+    /// single-file folder `b4Ds9u` and the folder of videos `65pGBWhc` as they were that
+    /// day.
     fn recorded() -> Fixture {
         Fixture::parse(include_str!("gofile_fixture.json")).unwrap()
     }
@@ -802,37 +799,139 @@ mod tests {
         );
     }
 
-    /// Every example link resolves live: the single-file folder as a file, the folder of
-    /// videos as a playlist whose first entry is a video.
-    #[tokio::test]
+    /// The clip the run uploads: a tenth of a second of black, 16 by 16, H.264 in MP4.
+    const CLIP: &[u8] = include_bytes!("gofile_clip.mp4");
+    const UPLOAD: &str = "https://upload.gofile.io/uploadfile";
 
-    async fn live_examples_resolve() {
-        let resolver = GofileResolver::new(Http::new(crate::http::HttpConfig::default()));
-        let mut playlist_entry = None;
-        for link in resolver.platform().examples {
-            let url = Url::parse(link).unwrap();
-            let resolution = tokio::time::timeout(Duration::from_secs(60), resolver.resolve(&url))
-                .await
-                .expect("resolution timed out")
-                .unwrap();
-            match resolution {
-                Resolution::Media(resolved) => {
-                    assert!(
-                        resolved.variants.iter().any(|v| v.is_playable()),
-                        "{link}: no variants"
-                    );
-                    println!("{link}: {:?} {:?}", resolved.media, resolved.title);
-                }
-                Resolution::Playlist(playlist) => {
-                    assert!(!playlist.entries.is_empty(), "{link}: no entries");
-                    println!("{link}: {} entries", playlist.entries.len());
-                    playlist_entry = playlist.entries.first().map(|e| e.url.clone());
-                }
+    /// Uploads the clip as `name`: into `account`'s folder, or as a new guest into a new
+    /// folder. What the upload API answers: the file's id and its folder's code and id,
+    /// and the guest token when it made the guest.
+    async fn upload(http: &Http, name: &str, account: Option<(&str, &str)>) -> Value {
+        let boundary = "discoclip-gofile-live-test";
+        let mut body = Vec::new();
+        if let Some((token, folder)) = account {
+            for (field, value) in [("token", token), ("folderId", folder)] {
+                body.extend_from_slice(
+                    format!(
+                        "--{boundary}\r\nContent-Disposition: form-data; name=\"{field}\"\r\n\r\n{value}\r\n"
+                    )
+                    .as_bytes(),
+                );
             }
         }
-        let entry = playlist_entry.expect("a folder example is a playlist");
-        let video = resolver.resolve(&entry).await.unwrap().media().unwrap();
+        body.extend_from_slice(
+            format!(
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{name}\"\r\nContent-Type: video/mp4\r\n\r\n"
+            )
+            .as_bytes(),
+        );
+        body.extend_from_slice(CLIP);
+        body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+        let response = http
+            .post(Url::parse(UPLOAD).unwrap())
+            .platform(PLATFORM)
+            .user_agent(BROWSER_UA)
+            .header("accept", "application/json")
+            .header(
+                "content-type",
+                &format!("multipart/form-data; boundary={boundary}"),
+            )
+            .body(body)
+            .send()
+            .await
+            .unwrap();
+        assert!(
+            response.status.is_success(),
+            "upload: HTTP {}",
+            response.status
+        );
+        let answer: Value = response.json(MAX_PAGE).await.unwrap();
+        assert_eq!(answer["status"].as_str(), Some("ok"), "upload: {answer}");
+        answer["data"].clone()
+    }
+
+    /// The example link resolves live as a file. Gofile forgets a folder no one downloads
+    /// from for ten days, so the run uploads two clips of its own as a guest and resolves
+    /// their folder as a playlist of two entries, and the first entry as a video by its
+    /// uuid, with another guest account.
+    #[ignore = "reaches the live site: cargo test -- --ignored"]
+    #[tokio::test]
+    async fn live_examples_and_a_fresh_upload_resolve() {
+        let http = Http::new(crate::http::HttpConfig::default());
+        let resolver = GofileResolver::new(http.clone());
+        for link in resolver.platform().examples {
+            let url = Url::parse(link).unwrap();
+            let resolved = tokio::time::timeout(Duration::from_secs(60), resolver.resolve(&url))
+                .await
+                .expect("resolution timed out")
+                .unwrap()
+                .media()
+                .unwrap();
+            assert!(
+                resolved.variants.iter().any(|v| v.is_playable()),
+                "{link}: no variants"
+            );
+            println!("{link}: {:?} {:?}", resolved.media, resolved.title);
+        }
+
+        let first =
+            tokio::time::timeout(Duration::from_secs(60), upload(&http, "clip-1.mp4", None))
+                .await
+                .expect("the first upload timed out");
+        let token = first["guestToken"].as_str().expect("a guest token");
+        let folder_id = first["parentFolder"].as_str().expect("a folder id");
+        let code = first["parentFolderCode"].as_str().expect("a folder code");
+        let second = tokio::time::timeout(
+            Duration::from_secs(60),
+            upload(&http, "clip-2.mp4", Some((token, folder_id))),
+        )
+        .await
+        .expect("the second upload timed out");
+        assert_eq!(second["parentFolderCode"].as_str(), Some(code));
+        let ids = [
+            first["id"].as_str().expect("a file id"),
+            second["id"].as_str().expect("a file id"),
+        ];
+
+        let folder_url = Url::parse(&format!("{SITE}/d/{code}")).unwrap();
+        let Resolution::Playlist(folder) =
+            tokio::time::timeout(Duration::from_secs(60), resolver.resolve(&folder_url))
+                .await
+                .expect("resolution timed out")
+                .unwrap()
+        else {
+            panic!("{folder_url}: a folder of two files is a playlist");
+        };
+        assert_eq!(folder.id.as_deref(), Some(code));
+        assert_eq!(folder.entries.len(), 2, "{folder_url}");
+        assert_eq!(folder.total, Some(2));
+        for entry in &folder.entries {
+            assert!(
+                ids.iter()
+                    .any(|id| entry.url.as_str() == format!("{SITE}/d/{id}")),
+                "{}: not an uploaded file",
+                entry.url
+            );
+        }
+        let video = tokio::time::timeout(
+            Duration::from_secs(60),
+            resolver.resolve(&folder.entries[0].url),
+        )
+        .await
+        .expect("resolution timed out")
+        .unwrap()
+        .media()
+        .unwrap();
         assert_eq!(video.media, MediaKind::Video);
-        println!("{entry}: {:?}", video.title);
+        assert_eq!(video.variants.len(), 1);
+        assert!(video.variants[0].is_playable());
+        assert_eq!(video.variants[0].size, Some(CLIP.len() as u64));
+        assert_eq!(video.variants[0].container, Some(Container::Mp4));
+        println!(
+            "{folder_url}: {} entries, the first {:?} {:?}",
+            folder.entries.len(),
+            video.title,
+            video.media
+        );
     }
 }

@@ -722,20 +722,21 @@ mod tests {
         );
         assert_eq!(resolved.duration, Some(Duration::from_secs(320)));
         assert!(resolved.uploaded_at.is_some());
-        assert_eq!(resolved.variants.len(), 2);
+        // The two streams and the audio rendition they pair with.
+        assert_eq!(resolved.variants.len(), 3);
+        crate::resolve::assert_one_family(&resolved.variants);
         assert_eq!(resolved.variants[0].height, Some(240));
+        assert!(resolved.variants[0].video_only);
         assert_eq!(
             resolved.variants[0].duration,
             Some(Duration::from_secs(320))
         );
-        assert!(
-            resolved.variants[0]
-                .audio_url
-                .as_ref()
-                .unwrap()
-                .as_str()
-                .ends_with("audio-aac-128kbps.m3u8")
-        );
+        let audio = resolved
+            .variants
+            .iter()
+            .find(|v| v.audio_only)
+            .expect("the audio rendition is a variant of its own");
+        assert!(audio.url.as_str().ends_with("audio-aac-128kbps.m3u8"));
         assert_eq!(http.jar(PLATFORM).get("domand_bid").unwrap().value, "BID");
     }
 

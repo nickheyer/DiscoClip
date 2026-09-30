@@ -1,5 +1,6 @@
-//! Record RTMP, RTSP and RTP streams through ffmpeg into Matroska. Apply capture and byte
-//! limits.
+//! Record RTMP, RTSP and RTP streams through ffmpeg. A live stream becomes the growing
+//! fragmented MP4 every capture is kept as; a stream with a known length becomes a
+//! Matroska file taken whole. Apply capture and byte limits.
 //!
 //! Fetch SDP through the engine client so cookies, headers and proxies apply, then pass
 //! the local file to ffmpeg.
@@ -10,6 +11,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 
+use super::recording::{self, RECORDING, Treatment};
 use super::segments::fetch_text;
 use super::{DownloadContext, DownloadError, Downloaded, Downloader};
 use crate::event::{Progress, ProgressSender};
@@ -21,6 +23,30 @@ use crate::resolve::{Variant, VariantKind};
 const MAX_SDP: usize = 1024 * 1024;
 /// How long a stream may go without a byte before it counts as gone.
 const STALL: Duration = Duration::from_secs(20);
+
+/// The codec ffmpeg refused to put in the container, from what it said on the way out:
+/// whether it is an audio codec, and its name.
+fn refused_codec(message: &str) -> Option<(bool, String)> {
+    let start = message.find("Could not find tag for codec ")?;
+    let rest = &message[start + "Could not find tag for codec ".len()..];
+    let name: String = rest
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+        .collect();
+    if name.is_empty() {
+        return None;
+    }
+    let audio = name.starts_with("pcm_")
+        || name.starts_with("adpcm_")
+        || name.starts_with("wmav")
+        || name.starts_with("amr_")
+        || name.starts_with("g72")
+        || matches!(
+            name.as_str(),
+            "speex" | "nellymoser" | "vorbis" | "wmalossless" | "wmapro" | "truehd" | "dts"
+        );
+    Some((audio, name))
+}
 
 pub struct StreamDownloader {
     http: Http,
@@ -149,87 +175,134 @@ impl Downloader for StreamDownloader {
         progress: ProgressSender,
     ) -> Result<Downloaded, DownloadError> {
         tokio::fs::create_dir_all(dest_dir).await?;
-        let dest = dest_dir.join("source.mkv");
-        let mut args: Vec<OsString> = vec!["-loglevel".into(), "warning".into()];
-        args.extend(input_of(&self.http, variant, dest_dir, &context.platform).await?);
+        let input = input_of(&self.http, variant, dest_dir, &context.platform).await?;
         // A recording with a known length is taken whole. Anything else is a live capture,
-        // cut at the limit.
+        // ended at the limit, or when a person stops it.
         let live = variant.live || variant.duration.is_none();
         let total = if live {
             Some(context.max_live)
         } else {
             variant.duration
         };
-        if live {
+        let dest = if live {
+            dest_dir.join(RECORDING)
+        } else {
+            dest_dir.join("source.mkv")
+        };
+        let build = |video: Treatment, audio: Treatment| {
+            let mut args: Vec<OsString> = vec!["-loglevel".into(), "warning".into()];
+            args.extend(input.iter().cloned());
+            if live {
+                args.extend([
+                    "-t".into(),
+                    format!("{:.3}", context.max_live.as_secs_f64()).into(),
+                ]);
+            }
             args.extend([
-                "-t".into(),
-                format!("{:.3}", context.max_live.as_secs_f64()).into(),
+                "-fs".into(),
+                context.max_bytes.to_string().into(),
+                "-map".into(),
+                "0:v:0?".into(),
+                "-map".into(),
+                "0:a:0?".into(),
             ]);
+            if live {
+                args.extend(recording::output_args(
+                    Some(video),
+                    Some(audio),
+                    None,
+                    false,
+                    None,
+                    &dest,
+                ));
+            } else {
+                args.extend([
+                    "-c".into(),
+                    "copy".into(),
+                    "-sn".into(),
+                    "-dn".into(),
+                    "-f".into(),
+                    "matroska".into(),
+                    dest.as_os_str().to_owned(),
+                ]);
+            }
+            args
+        };
+        progress.send_replace(Progress::of(0, total.map(|t| t.as_secs())));
+        let report = |time: Duration| {
+            progress.send_replace(Progress {
+                done: time.as_secs(),
+                total: total.map(|t| t.as_secs()),
+                bytes: live.then(|| std::fs::metadata(&dest).map(|m| m.len()).unwrap_or(0)),
+            });
+        };
+        if live {
+            context.capture.started(&dest);
         }
-        args.extend([
-            "-fs".into(),
-            context.max_bytes.to_string().into(),
-            "-map".into(),
-            "0:v:0?".into(),
-            "-map".into(),
-            "0:a:0?".into(),
-            "-c".into(),
-            "copy".into(),
-            "-sn".into(),
-            "-dn".into(),
-            "-f".into(),
-            "matroska".into(),
-            dest.as_os_str().to_owned(),
-        ]);
-        progress.send_replace(Progress {
-            done: 0,
-            total: total.map(|t| t.as_secs()),
-        });
-        let (output, ending) = self
-            .ffmpeg
-            .record(
-                args,
-                |time| {
-                    progress.send_replace(Progress {
-                        done: time.as_secs(),
-                        total: total.map(|t| t.as_secs()),
-                    });
-                },
-                self.quiet_after,
-                None,
-            )
-            .await
-            .map_err(|e| DownloadError::Process(e.to_string()))?;
+        // The streams are written as they are. One MP4 cannot carry is found out from
+        // ffmpeg refusing it, and that stream alone is encoded on the way in.
+        let mut treatments = (Treatment::Copy, Treatment::Copy);
+        let (output, ending) = loop {
+            let stop = context.stop.clone();
+            let attempt = self
+                .ffmpeg
+                .record(
+                    build(treatments.0, treatments.1),
+                    report,
+                    self.quiet_after,
+                    async move { stop.cancelled().await },
+                )
+                .await;
+            match attempt {
+                Ok(done) => break done,
+                Err(error) if live => {
+                    let Some((audio, codec)) = refused_codec(&error.to_string()) else {
+                        return Err(DownloadError::Process(error.to_string()));
+                    };
+                    let already = if audio { treatments.1 } else { treatments.0 };
+                    if already == Treatment::Encode {
+                        return Err(DownloadError::Process(error.to_string()));
+                    }
+                    tracing::info!(%codec, audio, "MP4 does not carry the stream's codec. Encoding it on the way in.");
+                    if audio {
+                        treatments.1 = Treatment::Encode;
+                    } else {
+                        treatments.0 = Treatment::Encode;
+                    }
+                }
+                Err(error) => return Err(DownloadError::Process(error.to_string())),
+            }
+        };
         let captured = output.last_time.unwrap_or(Duration::ZERO);
         let file = LocalFile::from_path(dest).await?;
         if file.size == 0 {
             return Err(DownloadError::Empty);
         }
-        if file.size > context.max_bytes {
+        if !live && file.size > context.max_bytes {
             return Err(DownloadError::TooLarge {
                 size: file.size,
                 limit: context.max_bytes,
             });
         }
+        let secs = captured.as_secs_f64();
         let mut notes = Vec::new();
         match ending {
+            Ending::Stopped => notes.push(format!("Capture stopped at {secs:.0} s.")),
             Ending::Stalled => notes.push(format!(
-                "Stream idle for {} s. Recording stopped after {:.0} s.",
-                self.quiet_after.as_secs(),
-                captured.as_secs_f64()
+                "Stream idle for {} s. Capture ended at {secs:.0} s.",
+                self.quiet_after.as_secs()
             )),
-            Ending::Stopped => {}
             Ending::Finished if live => {
                 let limit = context.max_live.as_secs_f64();
-                if captured.as_secs_f64() + 1.0 >= limit {
+                if secs + 1.0 >= limit {
+                    notes.push(format!("Capture ended at the {limit:.0} s limit."));
+                } else if file.size >= context.max_bytes {
                     notes.push(format!(
-                        "capture cut at the limit of {limit:.0} s while the stream goes on"
+                        "Capture ended at the {} byte limit.",
+                        context.max_bytes
                     ));
                 } else {
-                    notes.push(format!(
-                        "Stream ended. Recorded {:.0} s.",
-                        captured.as_secs_f64()
-                    ));
+                    notes.push(format!("Stream ended at {secs:.0} s."));
                 }
             }
             Ending::Finished => {}
@@ -655,11 +728,62 @@ mod tests {
             downloaded
                 .notes
                 .iter()
-                .any(|n| n.contains("capture cut at the limit")),
+                .any(|n| n.contains("Capture ended at the 2 s limit")),
+            "{:?}",
+            downloaded.notes
+        );
+        server.abort();
+
+        // A person stopping the capture keeps what was recorded and ends it there.
+        let (sdp, packets) = captured_rtp(&ffmpeg, &dir, 6).await;
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(serve_rtsp(listener, sdp, packets));
+        context.max_live = Duration::from_secs(60);
+        let stop = context.stop.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(2500)).await;
+            stop.cancel();
+        });
+        let (result, _) = record(
+            &site,
+            &ffmpeg,
+            &format!("rtsp://127.0.0.1:{port}/cam"),
+            VariantKind::Rtsp,
+            &dir.join("stopped"),
+            &context,
+        )
+        .await;
+        let downloaded = result.unwrap();
+        assert_eq!(downloaded.file.path.file_name().unwrap(), RECORDING);
+        let info = ffmpeg.probe(&downloaded.file.path).await.unwrap();
+        let recorded = info.duration.unwrap().as_secs_f64();
+        assert!((1.0..4.5).contains(&recorded), "{info:?}");
+        assert!(
+            downloaded
+                .notes
+                .iter()
+                .any(|n| n.starts_with("Capture stopped at")),
             "{:?}",
             downloaded.notes
         );
         server.abort();
         let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[test]
+    fn the_codec_ffmpeg_refused_is_read_from_its_complaint() {
+        let (audio, name) = refused_codec(
+            "x | Could not find tag for codec pcm_mulaw in stream #1, codec not currently supported in container | y",
+        )
+        .unwrap();
+        assert!(audio);
+        assert_eq!(name, "pcm_mulaw");
+        let (audio, name) =
+            refused_codec("Could not find tag for codec flv1 in stream #0, codec not currently supported in container")
+                .unwrap();
+        assert!(!audio);
+        assert_eq!(name, "flv1");
+        assert_eq!(refused_codec("exit status 1: Connection refused"), None);
     }
 }

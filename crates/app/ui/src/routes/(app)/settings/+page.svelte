@@ -17,7 +17,7 @@
 	import SearchInput from '$lib/components/SearchInput.svelte';
 	import SettingFieldRow from '$lib/components/SettingField.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
-	import { number } from '$lib/format';
+	import { countText, number } from '$lib/format';
 	import { fieldsOf } from '$lib/settings';
 	import { notify, reportError } from '$lib/toast.svelte';
 
@@ -139,8 +139,7 @@
 		const app = view.entries.filter((entry) => entry.source === 'app').length;
 		const provisioned = view.entries.length - app;
 		if (app === 0 && provisioned === 0) return 'Nothing overridden';
-		const values = app === 1 ? 'value' : 'values';
-		return `${number(app)} ${values} saved in the app · ${number(provisioned)} from the config file`;
+		return `${countText(app, 'value')} saved in the app · ${number(provisioned)} from the config file`;
 	});
 
 	const exportLabel = $derived(FORMAT_LABELS[exportFormat]);

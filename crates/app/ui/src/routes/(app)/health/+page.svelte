@@ -7,10 +7,11 @@
 	import DataTable, { type Column } from '$lib/components/DataTable.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import RelativeTime from '$lib/components/RelativeTime.svelte';
+	import Duration from '$lib/components/Duration.svelte';
+	import Timestamp from '$lib/components/Timestamp.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import Status from '$lib/components/Status.svelte';
-	import { number, span } from '$lib/format';
+	import { number } from '$lib/format';
 
 	const EVERY = 15_000;
 
@@ -62,8 +63,12 @@
 		<div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-surface-600-400">
 			<Status health={health.status} />
 			<span>Version {health.version}</span>
-			<span>Up {span(health.uptime_secs)}, started <RelativeTime at={health.started_at} /></span>
-			<span>Checked <RelativeTime at={health.at} /></span>
+			<span
+				>Up <Duration value={health.uptime_secs} />, started <Timestamp
+					at={health.started_at}
+				/></span
+			>
+			<span>Checked <Timestamp at={health.at} /></span>
 		</div>
 	{/if}
 	{#snippet actions()}
@@ -79,7 +84,7 @@
 {:else}
 	{#if error && health}
 		<p class="card preset-tonal-error p-3 text-sm" role="alert">
-			The last refresh failed. Showing the result from <RelativeTime at={health.at} />.
+			The last refresh failed. Showing the result from <Timestamp at={health.at} />.
 		</p>
 	{/if}
 	<Card

@@ -15,6 +15,8 @@ pub struct InForce {
     pub disabled: Vec<String>,
     /// The limits named, each tightening the engine's own.
     pub limits: RequestLimits,
+    /// The language of the sound wanted, when a profile names one.
+    pub audio_language: Option<String>,
 }
 
 /// Where a running bot finds what the profiles say for links seen in a channel from a

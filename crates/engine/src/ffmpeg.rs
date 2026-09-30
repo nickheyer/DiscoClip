@@ -552,7 +552,7 @@ impl Ffmpeg {
         args: impl IntoIterator<Item = OsString>,
         mut on_time: impl FnMut(Duration) + Send,
         stall: Duration,
-        stop: Option<tokio::sync::oneshot::Receiver<()>>,
+        stop: impl std::future::Future<Output = ()> + Send,
     ) -> Result<(Output, Ending), FfmpegError> {
         use tokio::io::AsyncWriteExt;
 
@@ -586,14 +586,6 @@ impl Ffmpeg {
             let _ = stderr.read_to_end(&mut buf).await;
             buf
         });
-        let stop = async move {
-            match stop {
-                Some(receiver) => {
-                    let _ = receiver.await;
-                }
-                None => std::future::pending::<()>().await,
-            }
-        };
         tokio::pin!(stop);
         let mut lines = BufReader::new(stdout).lines();
         let mut last_time = None;

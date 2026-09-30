@@ -1,5 +1,7 @@
 .git
+.github
 target
+dist
 crates/app/ui/node_modules
 crates/app/ui/build
 crates/app/ui/.svelte-kit

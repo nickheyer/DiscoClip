@@ -11,7 +11,9 @@
 	import SearchInput from '$lib/components/SearchInput.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import Status, { type Tone } from '$lib/components/Status.svelte';
-	import { absolute, number } from '$lib/format';
+	import { dayKey, number } from '$lib/format';
+	import DateDivider from '$lib/components/DateDivider.svelte';
+	import Timestamp from '$lib/components/Timestamp.svelte';
 	import { reportError } from '$lib/toast.svelte';
 
 	const LIMIT = 200;
@@ -253,12 +255,15 @@
 			</div>
 		{/if}
 		<!-- Skeleton disclosures: each line unfolds into its fields. -->
-		{#each lines as line (line.id)}
+		{#each lines as line, i (line.id)}
+			{#if i === 0 || dayKey(line.at) !== dayKey(lines[i - 1].at)}
+				<DateDivider at={line.at} />
+			{/if}
 			<details class="disclosure [--disclosure-size:var(--text-xs)]">
 				<summary
 					class="grid grid-cols-[auto_auto_auto_minmax(0,1fr)] items-baseline gap-3 whitespace-nowrap"
 				>
-					<time datetime={line.at} class="text-surface-600-400">{absolute(line.at)}</time>
+					<Timestamp at={line.at} mode="clock" class="text-surface-600-400" />
 					<span class="w-12 font-semibold uppercase {LEVEL_CLASS[line.level]}">{line.level}</span>
 					<span class="max-w-48 truncate text-surface-600-400" title={line.target}
 						>{line.target}</span

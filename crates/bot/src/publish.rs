@@ -1,4 +1,6 @@
-//! Uploads finished media to Discord, sized to the guild's upload limit.
+//! Uploads finished media to Discord, sized to the guild's upload limit. A live capture
+//! is announced when it begins, with a link to the page that plays the recording as it
+//! grows, and that message is edited to carry the result once the job finishes.
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -16,7 +18,7 @@ use twilight_model::channel::message::AllowedMentions;
 use twilight_model::guild::PremiumTier;
 use twilight_model::http::attachment::Attachment;
 use twilight_model::id::Id;
-use twilight_model::id::marker::GuildMarker;
+use twilight_model::id::marker::{ChannelMarker, GuildMarker, MessageMarker};
 use uuid::Uuid;
 
 use crate::config::{DiscordSettings, SharedDiscordSettings};
@@ -155,6 +157,42 @@ impl DiscordPublisher {
         DiscordOrigin::parse(origin)
             .ok_or_else(|| PublishError::InvalidOrigin(origin.reference.clone()))
     }
+
+    /// Where a job's messages go, in Discord's terms a channel id: the channel the rule
+    /// that picked the link up sends results to, else the channel the link was seen in.
+    fn destination(job: &Job, origin: &DiscordOrigin) -> Id<ChannelMarker> {
+        job.request
+            .destination
+            .as_deref()
+            .and_then(|channel| channel.parse::<u64>().ok())
+            .and_then(Id::new_checked)
+            .unwrap_or(origin.channel)
+    }
+
+    /// The message that announced the job's capture, to be edited with the result.
+    fn announced(job: &Job) -> Option<Id<MessageMarker>> {
+        job.artifacts
+            .announced
+            .as_ref()
+            .and_then(|published| published.reference.parse::<u64>().ok())
+            .and_then(Id::new_checked)
+    }
+}
+
+/// The publisher's record of a message it posted or edited.
+fn published(origin: &DiscordOrigin, message: &twilight_model::channel::Message) -> Published {
+    let posted = DiscordOrigin {
+        application: origin.application,
+        guild: message.guild_id.or(origin.guild),
+        channel: message.channel_id,
+        message: Some(message.id),
+        author: Some(message.author.id),
+    };
+    Published {
+        reference: message.id.to_string(),
+        url: posted.jump_url(),
+        at: Timestamp::now(),
+    }
 }
 
 /// Whether Discord's side failed in a way another attempt may get past: the connection
@@ -201,19 +239,43 @@ impl Publisher for DiscordPublisher {
         Ok(constraints)
     }
 
+    async fn announce(
+        &self,
+        job: &Job,
+        _recording: &LocalFile,
+    ) -> Result<Option<Published>, PublishError> {
+        let Some(link) = self.links.link_for(job) else {
+            return Ok(None);
+        };
+        let origin = Self::parse(&job.request.origin)?;
+        let clients = self.clients_for(origin.application)?;
+        let destination = Self::destination(job, &origin);
+        let allowed = AllowedMentions::default();
+        let mut request = clients
+            .lookups
+            .create_message(destination)
+            .content(link.page.as_str())
+            .allowed_mentions(Some(&allowed));
+        if destination == origin.channel
+            && let Some(message) = origin.message
+        {
+            request = request.reply(message).fail_if_not_exists(false);
+        }
+        let message = request
+            .await
+            .map_err(|e| PublishError::Rejected(e.to_string()))?
+            .model()
+            .await
+            .map_err(|e| PublishError::Rejected(format!("message decode: {e}")))?;
+        Ok(Some(published(&origin, &message)))
+    }
+
     async fn publish(&self, job: &Job, file: &LocalFile) -> Result<Published, PublishError> {
         let origin = Self::parse(&job.request.origin)?;
         let clients = self.clients_for(origin.application)?;
         let settings = self.settings();
-        // The request names where to post, in Discord's terms a channel id, when the rule
-        // that picked the link up sends results elsewhere.
-        let destination = job
-            .request
-            .destination
-            .as_deref()
-            .and_then(|channel| channel.parse::<u64>().ok())
-            .and_then(Id::new_checked)
-            .unwrap_or(origin.channel);
+        let destination = Self::destination(job, &origin);
+        let announced = Self::announced(job);
         let allowed = AllowedMentions::default();
         if job.artifacts.delivery == Delivery::Link {
             let link = self.links.link_for(job).ok_or_else(|| {
@@ -221,34 +283,35 @@ impl Publisher for DiscordPublisher {
                     "the front end that was to show this media is no longer there".into(),
                 )
             })?;
-            let mut request = clients
-                .lookups
-                .create_message(destination)
-                .content(link.page.as_str())
-                .allowed_mentions(Some(&allowed));
-            if destination == origin.channel
-                && let Some(message) = origin.message
-            {
-                request = request.reply(message).fail_if_not_exists(false);
-            }
-            let message = request
-                .await
+            let response = match announced {
+                Some(message) => {
+                    clients
+                        .lookups
+                        .update_message(destination, message)
+                        .content(Some(link.page.as_str()))
+                        .allowed_mentions(Some(&allowed))
+                        .await
+                }
+                None => {
+                    let mut request = clients
+                        .lookups
+                        .create_message(destination)
+                        .content(link.page.as_str())
+                        .allowed_mentions(Some(&allowed));
+                    if destination == origin.channel
+                        && let Some(message) = origin.message
+                    {
+                        request = request.reply(message).fail_if_not_exists(false);
+                    }
+                    request.await
+                }
+            };
+            let message = response
                 .map_err(|e| PublishError::Rejected(e.to_string()))?
                 .model()
                 .await
                 .map_err(|e| PublishError::Rejected(format!("message decode: {e}")))?;
-            let posted = DiscordOrigin {
-                application: origin.application,
-                guild: message.guild_id.or(origin.guild),
-                channel: message.channel_id,
-                message: Some(message.id),
-                author: Some(message.author.id),
-            };
-            return Ok(Published {
-                reference: message.id.to_string(),
-                url: posted.jump_url(),
-                at: Timestamp::now(),
-            });
+            return Ok(published(&origin, &message));
         }
         let limit = self
             .upload_limit(&origin, &clients.lookups, &settings)
@@ -284,17 +347,33 @@ impl Publisher for DiscordPublisher {
         let attempts = settings.upload.attempts.max(1);
         let mut attempt = 1;
         let response = loop {
-            let mut request = clients
-                .uploads
-                .create_message(destination)
-                .attachments(&attachments)
-                .allowed_mentions(Some(&allowed));
-            if destination == origin.channel
-                && let Some(message) = origin.message
-            {
-                request = request.reply(message).fail_if_not_exists(false);
-            }
-            match tokio::time::timeout(budget, request).await {
+            // A capture that was announced gets its file in the announcement: the link
+            // to the growing recording gives way to the file itself.
+            let sent = match announced {
+                Some(message) => {
+                    let request = clients
+                        .uploads
+                        .update_message(destination, message)
+                        .content(None)
+                        .attachments(&attachments)
+                        .allowed_mentions(Some(&allowed));
+                    tokio::time::timeout(budget, request).await
+                }
+                None => {
+                    let mut request = clients
+                        .uploads
+                        .create_message(destination)
+                        .attachments(&attachments)
+                        .allowed_mentions(Some(&allowed));
+                    if destination == origin.channel
+                        && let Some(message) = origin.message
+                    {
+                        request = request.reply(message).fail_if_not_exists(false);
+                    }
+                    tokio::time::timeout(budget, request).await
+                }
+            };
+            match sent {
                 Ok(Ok(response)) => break response,
                 Ok(Err(error)) => {
                     if let ErrorType::Response { status, .. } = error.kind()
@@ -339,18 +418,7 @@ impl Publisher for DiscordPublisher {
             .model()
             .await
             .map_err(|e| PublishError::Rejected(format!("message decode: {e}")))?;
-        let posted = DiscordOrigin {
-            application: origin.application,
-            guild: message.guild_id.or(origin.guild),
-            channel: message.channel_id,
-            message: Some(message.id),
-            author: Some(message.author.id),
-        };
-        Ok(Published {
-            reference: message.id.to_string(),
-            url: posted.jump_url(),
-            at: Timestamp::now(),
-        })
+        Ok(published(&origin, &message))
     }
 }
 

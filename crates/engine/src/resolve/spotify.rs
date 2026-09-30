@@ -1,12 +1,10 @@
 //! Spotify podcasts: the embed page of an episode or a show carries the anonymous web
 //! token the player uses and the episode's details, and the sound finder the player
-//! asks with that token names the episode's audio: Spotify's own AAC in MP4, and the
-//! podcast host's file when the show passes it through. A show's episodes are listed
-//! through the player's GraphQL query, whose persisted hash is read from the web
-//! player's script. Music is locked with Widevine and refused as such.
+//! asks with that token names the episode's audio, Spotify's own AAC in MP4. A show's
+//! episodes are listed through the player's GraphQL query, whose persisted hash is read
+//! from the web player's script. Music is locked with Widevine and refused as such.
 
 use std::sync::{LazyLock, Mutex};
-use std::time::Duration;
 
 use async_trait::async_trait;
 use jiff::Timestamp;
@@ -16,7 +14,7 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved, Resolver,
-    SessionSupport, Tag, Variant, VariantKind, clean_title, essence, fetch, navigation_headers,
+    SessionSupport, Tag, Variant, VariantKind, clean_title, fetch, navigation_headers,
     status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
@@ -32,8 +30,6 @@ const EPISODES_QUERY: &str = "queryPodcastEpisodes";
 /// How many episodes a show listing is read up to, and how many one query page holds.
 const LISTING_LIMIT: usize = 100;
 const PAGE_SIZE: usize = 50;
-/// How long a podcast host gets to answer for its file.
-const HOST_PROBE: Duration = Duration::from_secs(10);
 
 /// `/episode/{id}`, `/show/{id}` and the music links, behind an optional locale or
 /// embed prefix.
@@ -285,58 +281,6 @@ impl SpotifyResolver {
         }
     }
 
-    /// The podcast host's own file, when the host answers a first-byte request within
-    /// [`HOST_PROBE`]: the redirect chains podcast hosts measure downloads through stall
-    /// or refuse ranged requests, and such a file is left out rather than offered.
-    async fn host_file(&self, original: Url, origin: &Url) -> Option<Variant> {
-        let response = self
-            .http
-            .get(original.clone())
-            .platform(PLATFORM)
-            .user_agent(BROWSER_UA)
-            .header("range", "bytes=0-0")
-            .header("accept-encoding", "identity")
-            .timeout(HOST_PROBE)
-            .send()
-            .await;
-        let response = match response {
-            Ok(response) => response,
-            Err(error) => {
-                tracing::debug!(url = %origin, "the podcast host did not answer for its file: {error}");
-                return None;
-            }
-        };
-        if !response.status.is_success() {
-            tracing::debug!(url = %origin, status = %response.status, "the podcast host refused its file");
-            return None;
-        }
-        let size = response
-            .header("content-range")
-            .and_then(|v| v.rsplit('/').next())
-            .and_then(|v| v.trim().parse::<u64>().ok())
-            .or_else(|| response.content_length().filter(|n| *n > 1));
-        let content_type = essence(response.content_type());
-        let container = Container::from_mime(&content_type).or_else(|| {
-            super::path_extension(&response.url)
-                .as_deref()
-                .and_then(Container::from_extension)
-        });
-        let mut variant = Variant::new(original, VariantKind::File);
-        variant.audio = match &container {
-            Some(Container::Mp3) => Some(AudioCodec::Mp3),
-            Some(Container::M4a) => Some(AudioCodec::Aac),
-            Some(Container::Ogg) => Some(AudioCodec::Vorbis),
-            Some(Container::Opus) => Some(AudioCodec::Opus),
-            _ => None,
-        };
-        variant.container = container;
-        variant.audio_only = true;
-        variant.size = size;
-        variant.format_id = Some("passthrough".into());
-        variant.label = Some("podcast host".into());
-        Some(variant)
-    }
-
     async fn resolve_episode(&self, id: &str, url: &Url) -> Result<Resolution, ResolveError> {
         let EmbedState { token, entity } = self.embed("episode", id, url).await?;
         if entity["isPlayable"].as_bool() == Some(false) {
@@ -378,12 +322,6 @@ impl SpotifyResolver {
                 Some(bitrate) => format!("AAC {}k", bitrate / 1000),
                 None => "AAC".to_string(),
             });
-            variants.push(variant);
-        }
-        if audio["passthrough"].as_str() == Some("ALLOWED")
-            && let Some(original) = util::url_of(&audio["passthroughUrl"], None)
-            && let Some(variant) = self.host_file(original, url).await
-        {
             variants.push(variant);
         }
         if variants.is_empty() {
@@ -484,13 +422,13 @@ impl Resolver for SpotifyResolver {
             name: "Spotify podcasts",
             hosts: &["open.spotify.com"],
             features: &["episodes", "shows", "embeds"],
-            formats: &["m4a", "mp3"],
+            formats: &["m4a"],
             media: &[MediaKind::Audio],
             tags: &[Tag::Podcasts],
             session: SessionSupport::None,
             examples: &[
                 "https://open.spotify.com/episode/3crGsCZzzR8znh9HPh8qR5",
-                "https://open.spotify.com/episode/6f50x9eHVtGGNFsRSfHpnF",
+                "https://open.spotify.com/episode/082a1V6nazH9ZZqskV1vfz",
                 "https://open.spotify.com/show/4rOoJ6Egrf8K2IrywzwOMk",
                 "https://open.spotify.com/embed/show/3IM0lmZxpFAY7CwMuv9H4g",
             ],
@@ -512,6 +450,8 @@ impl Resolver for SpotifyResolver {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
     use crate::http::transport::{
         Exchange, Fixture, RecordedBody, RecordedRequest, RecordedResponse,
@@ -530,27 +470,6 @@ mod tests {
                 url: url.into(),
                 headers: vec![("content-type".into(), content_type.into())],
                 body: RecordedBody::Text(body.into()),
-                truncated: false,
-            },
-        }
-    }
-
-    fn probe(url: &str, status: u16, content_type: &str, size: u64) -> Exchange {
-        Exchange {
-            request: RecordedRequest {
-                method: "GET".into(),
-                url: url.into(),
-                headers: Vec::new(),
-                body: None,
-            },
-            response: RecordedResponse {
-                status,
-                url: url.into(),
-                headers: vec![
-                    ("content-type".into(), content_type.into()),
-                    ("content-range".into(), format!("bytes 0-0/{size}")),
-                ],
-                body: RecordedBody::Empty,
                 truncated: false,
             },
         }
@@ -649,14 +568,8 @@ mod tests {
         ));
         fixture.exchanges.push(exchange("GET", FINDER, 200, "application/json", &json!({
             "url": ["https://audio4-fa.scdn.co/audio/468e?1790357066_k", "https://audio4-ak.spotifycdn.com/audio/468e?__token__=exp"],
-            "format": "MP4_128", "passthrough": "ALLOWED", "passthroughUrl": "https://dts.podtrac.com/redirect.mp3/host.example/ep.mp3", "fileId": "468e"
+            "format": "MP4_128", "fileId": "468e"
         }).to_string()));
-        fixture.exchanges.push(probe(
-            "https://dts.podtrac.com/redirect.mp3/host.example/ep.mp3",
-            206,
-            "audio/mpeg",
-            38607459,
-        ));
         fixture.exchanges.push(exchange(
             "GET",
             "https://open.spotify.com/embed/episode/1111111111111111111111",
@@ -676,7 +589,7 @@ mod tests {
             "https://spclient.wg.spotify.com/soundfinder/v1/unauth/episode/2222222222222222222222/com.widevine.alpha?market=from_token",
             200,
             "application/json",
-            &json!({"url": ["https://audio4-fa.scdn.co/audio/43e1"], "format": "MP4_128_CBCS", "passthrough": "NONE", "passthroughUrl": ""}).to_string(),
+            &json!({"url": ["https://audio4-fa.scdn.co/audio/43e1"], "format": "MP4_128_CBCS"}).to_string(),
         ));
         let resolver = SpotifyResolver::new(Http::replay(fixture));
         let url = Url::parse("https://open.spotify.com/episode/3crGsCZzzR8znh9HPh8qR5").unwrap();
@@ -700,7 +613,8 @@ mod tests {
             resolved.thumbnail.as_ref().unwrap().as_str(),
             "https://image-cdn-fa.spotifycdn.com/image/ep640"
         );
-        assert_eq!(resolved.variants.len(), 2);
+        crate::resolve::assert_one_family(&resolved.variants);
+        assert_eq!(resolved.variants.len(), 1);
         let spotify = &resolved.variants[0];
         assert_eq!(
             spotify.url.as_str(),
@@ -711,10 +625,6 @@ mod tests {
         assert_eq!(spotify.bitrate, Some(128_000));
         assert!(spotify.audio_only);
         assert_eq!(spotify.format_id.as_deref(), Some("mp4_128"));
-        let host = &resolved.variants[1];
-        assert_eq!(host.container, Some(Container::Mp3));
-        assert_eq!(host.size, Some(38607459));
-        assert_eq!(host.format_id.as_deref(), Some("passthrough"));
         assert!(matches!(
             resolver
                 .resolve(
@@ -832,6 +742,7 @@ mod tests {
 
     /// Every example link resolves live: the episodes with Spotify's own audio and the
     /// shows with their episodes.
+    #[ignore = "reaches the live site: cargo test -- --ignored"]
     #[tokio::test]
 
     async fn live_examples_resolve() {

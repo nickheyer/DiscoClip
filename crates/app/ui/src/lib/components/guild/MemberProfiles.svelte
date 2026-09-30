@@ -2,7 +2,7 @@
 	import { applications, profiles as profilesApi, scopeKey } from '$lib/api/endpoints';
 	import type { Assignment, GuildMember, Profile, Snowflake, Uuid } from '$lib/api/types';
 	import DiscordAvatar from '$lib/components/DiscordAvatar.svelte';
-	import RelativeTime from '$lib/components/RelativeTime.svelte';
+	import Timestamp from '$lib/components/Timestamp.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import { notify, reportError } from '$lib/toast.svelte';
 	import MemberPicker from './MemberPicker.svelte';
@@ -100,7 +100,7 @@
 							<span class="text-surface-600-400">→</span>
 							<span class="font-medium">{profileName(assignment.profile_id)}</span>
 						</span>
-						<RelativeTime at={assignment.updated_at} class="text-xs text-surface-600-400" />
+						<Timestamp at={assignment.updated_at} class="text-xs text-surface-600-400" />
 						<button
 							type="button"
 							class="btn btn-sm hover:preset-tonal"

@@ -4,7 +4,7 @@
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use discoclip_engine::Limits;
+use discoclip_engine::EngineConfig;
 use serde::{Deserialize, Serialize};
 
 use super::AppState;
@@ -49,14 +49,17 @@ pub struct ServerLimits {
     /// `null` when the server puts no bound of its own on how long media may be.
     pub max_duration_secs: Option<u64>,
     pub max_height: u32,
+    /// How long a live stream is captured at most.
+    pub max_capture_secs: u64,
 }
 
-impl From<Limits> for ServerLimits {
-    fn from(limits: Limits) -> Self {
+impl ServerLimits {
+    fn of(config: &EngineConfig) -> Self {
         Self {
-            max_source_bytes: limits.max_source_bytes,
-            max_duration_secs: limits.max_duration_secs,
-            max_height: limits.max_height,
+            max_source_bytes: config.limits.max_source_bytes,
+            max_duration_secs: config.limits.max_duration_secs,
+            max_height: config.limits.max_height,
+            max_capture_secs: config.live.max_capture_secs,
         }
     }
 }
@@ -71,10 +74,10 @@ pub struct ProfileView {
 }
 
 impl ProfileView {
-    fn of(profile: Profile, limits: Limits) -> Self {
+    fn of(profile: Profile, config: &EngineConfig) -> Self {
         Self {
             profile,
-            server_limits: limits.into(),
+            server_limits: ServerLimits::of(config),
         }
     }
 }
@@ -89,14 +92,14 @@ pub async fn list(
     State(state): State<AppState>,
     Auth(_): Auth,
 ) -> Result<Json<Vec<ProfileView>>, ApiError> {
-    let limits = state.engine.config().limits;
+    let config = state.engine.config();
     Ok(Json(
         state
             .profiles
             .list()
             .await?
             .into_iter()
-            .map(|profile| ProfileView::of(profile, limits.clone()))
+            .map(|profile| ProfileView::of(profile, &config))
             .collect(),
     ))
 }
@@ -108,7 +111,7 @@ pub async fn get(
 ) -> Result<Json<ProfileView>, ApiError> {
     let id: ProfileId = parse_id(&id)?;
     let profile = state.profiles.get(id).await?.ok_or(ApiError::NotFound)?;
-    Ok(Json(ProfileView::of(profile, state.engine.config().limits)))
+    Ok(Json(ProfileView::of(profile, &state.engine.config())))
 }
 
 pub async fn create(
@@ -121,7 +124,7 @@ pub async fn create(
     tracing::info!(by = identity.user.username, profile = %profile.id, name = profile.input.name, "profile created");
     Ok((
         StatusCode::CREATED,
-        Json(ProfileView::of(profile, state.engine.config().limits)),
+        Json(ProfileView::of(profile, &state.engine.config())),
     ))
 }
 
@@ -135,7 +138,7 @@ pub async fn update(
     let id: ProfileId = parse_id(&id)?;
     let profile = state.profiles.update(&identity.actor(), id, input).await?;
     tracing::info!(by = identity.user.username, profile = %profile.id, name = profile.input.name, "profile updated");
-    Ok(Json(ProfileView::of(profile, state.engine.config().limits)))
+    Ok(Json(ProfileView::of(profile, &state.engine.config())))
 }
 
 pub async fn delete(
@@ -299,7 +302,12 @@ mod tests {
         assert_eq!(body["disabled"], json!([]));
         assert_eq!(
             body["limits"],
-            json!({"max_source_bytes": null, "max_duration_secs": null, "max_height": null})
+            json!({
+                "max_source_bytes": null,
+                "max_duration_secs": null,
+                "max_height": null,
+                "max_capture_secs": null
+            })
         );
         assert_eq!(body["applied"][0]["scope"]["kind"], "global");
 
@@ -308,7 +316,8 @@ mod tests {
         let server_limits = json!({
             "max_source_bytes": 2_u64 * 1024 * 1024 * 1024,
             "max_duration_secs": 3 * 60 * 60,
-            "max_height": 1080
+            "max_height": 1080,
+            "max_capture_secs": 3 * 60 * 60
         });
         assert_eq!(profiles[0]["server_limits"], server_limits);
         let (status, body) = viewer.get(&format!("/api/profiles/{default_id}")).await;

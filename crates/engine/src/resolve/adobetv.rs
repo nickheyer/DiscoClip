@@ -1,5 +1,5 @@
 //! Adobe TV (video.tv.adobe.com): every video answers a JSON description of itself at
-//! `/v/{id}?format=json`, listing its renditions (HLS and MP4) and its caption tracks.
+//! `/v/{id}?format=json`, listing its HLS renditions and its caption tracks.
 
 use std::sync::LazyLock;
 
@@ -10,8 +10,7 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Page, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport,
-    SubtitleFormat, SubtitleTrack, Tag, Variant, VariantKind, clean_title, fetch, manifests,
-    status_error, util,
+    SubtitleFormat, SubtitleTrack, Tag, Variant, clean_title, fetch, manifests, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
 use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
@@ -47,18 +46,17 @@ fn site_url(value: &Value) -> Option<Url> {
     Url::parse(&text).ok()
 }
 
-/// A source entry as a variant: an HLS rendition or an MP4 file, with its size and length.
+/// A source entry as a variant: an HLS rendition, with its size and length. The entry
+/// naming the master playlist lists the same renditions again and is passed over.
 fn source_variant(source: &Value) -> Option<Variant> {
     if source["format"].as_str() == Some("playlist") {
         return None;
     }
     let url = site_url(&source["src"])?;
-    let hls = url.path().ends_with(".m3u8");
-    let mut variant = if hls {
-        Variant::hls(url)
-    } else {
-        Variant::file(url)
-    };
+    if !url.path().ends_with(".m3u8") {
+        return None;
+    }
+    let mut variant = Variant::hls(url);
     variant.container = Some(Container::Mp4);
     variant.video = Some(VideoCodec::H264);
     variant.audio = Some(AudioCodec::Aac);
@@ -109,7 +107,7 @@ impl Resolver for AdobetvResolver {
             name: "Adobe TV",
             hosts: &["video.tv.adobe.com"],
             features: &["videos"],
-            formats: &["hls", "mp4"],
+            formats: &["hls"],
             media: &[MediaKind::Video],
             tags: &[Tag::Video],
             session: SessionSupport::None,
@@ -180,15 +178,8 @@ impl Resolver for AdobetvResolver {
             })
             .collect();
         let duration = variants.iter().find_map(|v| v.duration);
-        let mut variants =
+        let variants =
             manifests::expand_all(&self.http, PLATFORM, variants, &mut subtitles, duration).await;
-        variants.sort_by_key(|v| {
-            std::cmp::Reverse((
-                v.height.unwrap_or(0),
-                v.kind == VariantKind::File,
-                v.bitrate.unwrap_or(0),
-            ))
-        });
         let mut resolved = Resolved::new(PLATFORM);
         resolved.id = Some(id.clone());
         resolved.title = data["title"]
@@ -215,6 +206,7 @@ mod tests {
 
     use super::*;
     use crate::http::{Exchange, Fixture, RecordedBody, RecordedRequest, RecordedResponse};
+    use crate::resolve::VariantKind;
     use serde_json::json;
 
     fn get(url: &str, status: u16, content_type: &str, body: String) -> Exchange {
@@ -318,18 +310,16 @@ mod tests {
             "https://images-tv.adobe.com/mpcv3/x/poster.jpg"
         );
         assert_eq!(resolved.duration, Some(Duration::from_millis(97514)));
-        assert_eq!(resolved.variants.len(), 3);
+        crate::resolve::assert_one_family(&resolved.variants);
+        assert_eq!(resolved.variants.len(), 2);
         let best = &resolved.variants[0];
         assert_eq!(best.kind, VariantKind::Hls);
         assert_eq!(best.height, Some(1080));
         assert_eq!(best.bitrate, Some(922_000));
         assert_eq!(best.size, Some(12_693_000));
         assert_eq!(best.format_id.as_deref(), Some("mpeg-ts-1080p"));
-        assert_eq!(
-            resolved.variants[1].kind,
-            VariantKind::File,
-            "files sort before playlists of the same size"
-        );
+        assert_eq!(resolved.variants[1].kind, VariantKind::Hls);
+        assert_eq!(resolved.variants[1].height, Some(480));
         assert_eq!(resolved.subtitles.len(), 2);
         assert_eq!(resolved.subtitles[0].language, "en-US");
         assert_eq!(resolved.subtitles[1].language, "de");

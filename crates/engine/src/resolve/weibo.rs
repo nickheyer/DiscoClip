@@ -113,8 +113,8 @@ fn absolute(text: &str) -> Option<Url> {
     }
 }
 
-/// The height a quality label such as `高清 1080P`, `720p` or `mp4_720p_mp4` names: the
-/// run of digits a `p` follows.
+/// The height a quality label such as `高清 1080P` or `720p` names: the run of digits a
+/// `p` follows.
 fn label_height(label: &str) -> Option<u32> {
     let chars: Vec<char> = label.chars().collect();
     let mut index = 0;
@@ -498,8 +498,8 @@ fn media_of(post: &Value) -> Option<(&Value, &Value)> {
         })
 }
 
-/// The variants a media record lists: every entry of its playback list, then the plain
-/// stream URLs behind it, without repeats.
+/// The variants a media record lists: every video entry of its playback list, each file
+/// once.
 pub fn variants_of(media: &Value, duration: Option<Duration>) -> Vec<Variant> {
     let headers = vec![("referer".to_string(), SITE.to_string())];
     let mut variants: Vec<Variant> = Vec::new();
@@ -545,50 +545,6 @@ pub fn variants_of(media: &Value, duration: Option<Duration>) -> Vec<Variant> {
             .or(duration);
         v.label = play["quality_label"].as_str().map(String::from);
         v.format_id = play["quality_label"].as_str().map(String::from);
-        v.headers = headers.clone();
-        variants.push(v);
-    }
-    for key in [
-        "mp4_1080p_mp4",
-        "mp4_720p_mp4",
-        "stream_url_hd",
-        "mp4_hd_url",
-        "h265_mp4_hd",
-        "stream_url",
-        "mp4_sd_url",
-        "h265_mp4_ld",
-        "mp4_ld_mp4",
-    ] {
-        let Some(url) = media[key].as_str().and_then(absolute) else {
-            continue;
-        };
-        if variants.iter().any(|v| same_file(&v.url, &url)) {
-            continue;
-        }
-        // The H.265 renditions are HLS playlists rather than files.
-        let playlist = url.path().ends_with(".m3u8");
-        let mut v = Variant::new(
-            url,
-            if playlist {
-                VariantKind::Hls
-            } else {
-                VariantKind::File
-            },
-        );
-        v.container = (!playlist).then_some(Container::Mp4);
-        v.video = Some(if key.starts_with("h265") {
-            VideoCodec::H265
-        } else {
-            VideoCodec::H264
-        });
-        v.audio = Some(AudioCodec::Aac);
-        v.height = label_height(key).or(match key {
-            "stream_url_hd" | "mp4_hd_url" | "h265_mp4_hd" => Some(720),
-            "stream_url" | "mp4_sd_url" | "h265_mp4_ld" => Some(480),
-            _ => None,
-        });
-        v.duration = duration;
-        v.format_id = Some(key.to_string());
         v.headers = headers.clone();
         variants.push(v);
     }
@@ -777,8 +733,8 @@ mod tests {
         assert_eq!(link("https://weibo.com/u/7827771738"), None);
         assert_eq!(link("https://weibo.com/"), None);
         assert_eq!(label_height("高清 1080P"), Some(1080));
-        assert_eq!(label_height("mp4_720p_mp4"), Some(720));
-        assert_eq!(label_height("stream_url"), None);
+        assert_eq!(label_height("标清 480p"), Some(480));
+        assert_eq!(label_height("原画"), None);
     }
 
     #[tokio::test]
@@ -813,26 +769,25 @@ mod tests {
             resolved.webpage_url.as_ref().unwrap().as_str(),
             "https://weibo.com/7827771738/N4xlMvjhI"
         );
-        // Two playback entries, the still skipped, then the plain streams that name files
-        // the playback list does not.
-        assert_eq!(resolved.variants.len(), 5);
+        // The two video entries of the playback list, with the still skipped and the
+        // plain stream links beside the list left alone.
+        crate::resolve::assert_one_family(&resolved.variants);
+        assert_eq!(resolved.variants.len(), 2);
+        assert!(
+            resolved
+                .variants
+                .iter()
+                .all(|v| v.kind == VariantKind::File)
+        );
         assert_eq!(resolved.variants[0].height, Some(1080));
         assert_eq!(resolved.variants[0].size, Some(118485736));
         assert_eq!(resolved.variants[0].label.as_deref(), Some("1080p"));
+        assert_eq!(resolved.variants[0].video, Some(VideoCodec::H264));
+        assert_eq!(resolved.variants[1].height, Some(720));
+        assert_eq!(resolved.variants[1].format_id.as_deref(), Some("720p"));
         assert_eq!(
-            resolved.variants[2].format_id.as_deref(),
-            Some("mp4_720p_mp4")
-        );
-        assert_eq!(resolved.variants[2].height, Some(720));
-        assert_eq!(
-            resolved.variants[3].format_id.as_deref(),
-            Some("h265_mp4_hd")
-        );
-        assert_eq!(resolved.variants[3].kind, VariantKind::Hls);
-        assert_eq!(resolved.variants[3].video, Some(VideoCodec::H265));
-        assert_eq!(
-            resolved.variants[4].format_id.as_deref(),
-            Some("stream_url")
+            resolved.variants[1].url.as_str(),
+            "https://f.video.weibocdn.com/o0/720.mp4"
         );
         assert_eq!(http.jar(PLATFORM).get("SUB").unwrap().value, "_2Ak");
     }
@@ -902,6 +857,7 @@ mod tests {
         assert_eq!(show.title.as_deref(), Some("呃，稍微了解了一下"));
         assert_eq!(show.uploader.as_deref(), Some("君子爱财陈平安"));
         assert_eq!(show.duration, Some(Duration::from_secs(76)));
+        crate::resolve::assert_one_family(&show.variants);
         assert_eq!(show.variants.len(), 2);
         assert_eq!(show.variants[0].height, Some(1080));
         assert_eq!(

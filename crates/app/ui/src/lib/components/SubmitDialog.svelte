@@ -8,6 +8,7 @@
 	import { parseClock, toDuration } from '$lib/format';
 	import { notify, reportError } from '$lib/toast.svelte';
 	import Field from './Field.svelte';
+	import LanguageSelect from './LanguageSelect.svelte';
 	import Modal from './Modal.svelte';
 	import Spinner from './Spinner.svelte';
 
@@ -25,6 +26,7 @@
 	let clipEnd = $state('');
 	let subtitles = $state<SubtitleMode>('keep');
 	let subtitleLanguage = $state('');
+	let audioLanguage = $state<string | null>('en');
 	let advanced = $state(false);
 	let pending = $state(false);
 	let errors = $state<Record<string, string>>({});
@@ -38,6 +40,7 @@
 		clipEnd = '';
 		subtitles = 'keep';
 		subtitleLanguage = '';
+		audioLanguage = 'en';
 		errors = {};
 	}
 
@@ -57,7 +60,8 @@
 		const limits: NonNullable<SubmitRequest['limits']> = {
 			max_source_bytes: null,
 			max_duration_secs: null,
-			max_height: null
+			max_height: null,
+			max_capture_secs: null
 		};
 		if (maxSourceMb.trim()) {
 			const mb = Number(maxSourceMb);
@@ -96,12 +100,18 @@
 		const options: NonNullable<SubmitRequest['options']> = {
 			clip: null,
 			subtitles,
-			subtitle_language: subtitleLanguage.trim() || null
+			subtitle_language: subtitleLanguage.trim() || null,
+			audio_language: audioLanguage ?? 'en'
 		};
 		if (start !== null || end !== null) {
 			options.clip = { start: toDuration(start ?? 0), end: end === null ? null : toDuration(end) };
 		}
-		if (options.clip || options.subtitles !== 'keep' || options.subtitle_language) {
+		if (
+			options.clip ||
+			options.subtitles !== 'keep' ||
+			options.subtitle_language ||
+			options.audio_language !== 'en'
+		) {
 			request.options = options;
 		}
 
@@ -210,6 +220,9 @@
 							bind:value={subtitleLanguage}
 							placeholder="Any"
 						/>
+					</Field>
+					<Field label="Audio language" for="submit-audio-language">
+						<LanguageSelect id="submit-audio-language" bind:value={audioLanguage} />
 					</Field>
 				</div>
 			</Collapsible.Content>

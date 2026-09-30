@@ -1,6 +1,6 @@
 //! Al Jazeera (aljazeera.com, aljazeera.net and its regional sites): every article and
-//! programme page is one post of the site's GraphQL API, whose video names its file on
-//! the network's CDN and its Brightcove player.
+//! programme page is one post of the site's GraphQL API, whose video names its
+//! Brightcove player.
 
 use std::sync::LazyLock;
 
@@ -9,11 +9,11 @@ use regex::Regex;
 use url::Url;
 
 use super::{
-    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag, Variant,
-    brightcove, clean_title, fetch, hls, status_error, util,
+    MAX_PAGE, Platform, Resolution, ResolveError, Resolver, SessionSupport, Tag, brightcove,
+    clean_title, fetch, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
+use crate::media::MediaKind;
 
 pub const PLATFORM: &str = "aljazeera";
 const DEFAULT_ACCOUNT: &str = "911432371001";
@@ -107,7 +107,7 @@ impl Resolver for AljazeeraResolver {
             name: "Al Jazeera",
             hosts: &["aljazeera.com", "aljazeera.net"],
             features: &["videos", "programmes", "articles"],
-            formats: &["mp4", "hls"],
+            formats: &["hls"],
             media: &[MediaKind::Video],
             tags: &[Tag::News],
             session: SessionSupport::None,
@@ -159,7 +159,7 @@ impl Resolver for AljazeeraResolver {
 
         // The video plays through the network's Brightcove player, which the API names
         // (or the page does, when the API withholds the video): every rendition comes from
-        // there, and the file the API names on the network's own CDN joins them.
+        // there.
         let ids = match video_id.clone() {
             Some(id) => Some((account, player, id)),
             None => {
@@ -173,54 +173,15 @@ impl Resolver for AljazeeraResolver {
                 })
             }
         };
-        let source = util::url_of(&video["sourceUrl"], None);
         let mut resolved = match ids {
             Some((account, player, id)) => {
                 let link = brightcove::Link::new(account, player, brightcove::Content::Video(id));
-                match brightcove::media(&self.http, PLATFORM, &link, url).await {
-                    Ok(resolved) => resolved,
-                    Err(error) if source.is_some() => {
-                        tracing::warn!(url = %url, "Al Jazeera's Brightcove player refused the video: {error}");
-                        Resolved::new(PLATFORM)
-                    }
-                    Err(error) => return Err(error),
-                }
+                brightcove::media(&self.http, PLATFORM, &link, url).await?
             }
-            None if source.is_some() => Resolved::new(PLATFORM),
             // Without a video of its own the post is a page like any other. The
             // generic web resolver reads whatever player it embeds.
             None => return Err(ResolveError::Unsupported(url.clone())),
         };
-        if let Some(source) = source {
-            if source.path().ends_with(".m3u8") {
-                let expanded = hls::expand(&self.http, &source, PLATFORM, BROWSER_UA, &[]).await?;
-                for variant in expanded.variants {
-                    if !resolved.variants.iter().any(|v| v.url == variant.url) {
-                        resolved.variants.push(variant);
-                    }
-                }
-                for track in expanded.subtitles {
-                    if !resolved.subtitles.iter().any(|t| t.url == track.url) {
-                        resolved.subtitles.push(track);
-                    }
-                }
-                if resolved.duration.is_none() {
-                    resolved.duration = expanded.duration;
-                }
-                resolved.live |= expanded.live;
-            } else if !resolved.variants.iter().any(|v| v.url == source) {
-                let mut variant = Variant::file(source);
-                variant.container = Some(Container::Mp4);
-                variant.video = Some(VideoCodec::H264);
-                variant.audio = Some(AudioCodec::Aac);
-                variant.format_id = Some("source".to_string());
-                variant.duration = resolved.duration;
-                resolved.variants.push(variant);
-            }
-        }
-        if resolved.variants.is_empty() {
-            return Err(ResolveError::NotFound(url.clone()));
-        }
         resolved.id = video_id.or_else(|| util::text(&article["id"]));
         resolved.title = video["name"]
             .as_str()
@@ -324,13 +285,13 @@ mod tests {
             "application/json",
             json!({"id": video, "name": name, "duration": 1657000, "poster": "https://cf-images.test/poster.jpg",
                    "published_at": "2026-09-10T18:30:00.000Z",
-                   "sources": [{"src": format!("https://house-fastly.brightcovecdn.test/{video}/high.mp4"), "container": "MP4", "codec": "H264", "width": 1280, "height": 720, "avg_bitrate": 2000000, "size": 4000000}],
+                   "sources": [{"src": format!("https://house-fastly.brightcovecdn.test/{video}/master.m3u8"), "type": "application/x-mpegURL", "ext_x_version": "4", "width": 1280, "height": 720, "avg_bitrate": 2000000}],
                    "text_tracks": []}).to_string(),
         ));
     }
 
     #[tokio::test]
-    async fn episodes_resolve_through_brightcove_with_the_networks_own_file() {
+    async fn episodes_resolve_through_brightcove() {
         let mut fixture = Fixture::new(PLATFORM, None);
         fixture.exchanges.push(get(
             &api("www.aljazeera.com", "aje", "will-foreign-workers-leave-south-africa", "episode"),
@@ -369,21 +330,17 @@ mod tests {
             Some(1789065000)
         );
         assert_eq!(resolved.uploader.as_deref(), Some("Al Jazeera"));
-        assert_eq!(
-            resolved.variants.len(),
-            2,
-            "the player's rendition and the network's file"
-        );
+        crate::resolve::assert_one_family(&resolved.variants);
+        assert_eq!(resolved.variants.len(), 1, "the player's rendition");
         assert_eq!(resolved.variants[0].height, Some(720));
         assert_eq!(
-            resolved.variants[1].url.as_str(),
-            "https://ajmn-aje-vod.akamaized.net/media/v1/pmp4/static/clear/665003303001/x/main.mp4"
+            resolved.variants[0].url.path(),
+            "/6404882346112/master.m3u8"
         );
-        assert_eq!(resolved.variants[1].format_id.as_deref(), Some("source"));
     }
 
     #[tokio::test]
-    async fn recorded_episode_resolves_with_every_rendition() {
+    async fn recorded_episode_resolves_through_brightcove() {
         let fixture = Fixture::parse(include_str!("aljazeera_fixture.json")).unwrap();
         let resolver = AljazeeraResolver::new(Http::replay(fixture));
         let resolved = resolver
@@ -397,27 +354,8 @@ mod tests {
             resolved.title.as_deref(),
             Some("Will foreign workers leave South Africa? I Inside story")
         );
-        assert!(resolved.variants.len() > 10, "{}", resolved.variants.len());
-        assert!(
-            resolved
-                .variants
-                .iter()
-                .any(|v| v.kind == super::super::VariantKind::File)
-        );
-        assert!(
-            resolved
-                .variants
-                .iter()
-                .any(|v| v.kind == super::super::VariantKind::Hls && v.height.is_some())
-        );
+        crate::resolve::assert_one_family(&resolved.variants);
         assert!(resolved.variants.iter().any(|v| v.height == Some(1080)));
-        assert!(
-            resolved
-                .variants
-                .iter()
-                .any(|v| v.url.host_str() == Some("ajmn-aje-vod.akamaized.net")),
-            "the network's own file is among the renditions"
-        );
         assert!(matches!(
             resolver
                 .resolve(
@@ -431,7 +369,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn videos_without_a_file_resolve_through_brightcove_and_missing_posts_say_so() {
+    async fn videos_resolve_through_brightcove_and_missing_posts_say_so() {
         let mut fixture = Fixture::new(PLATFORM, None);
         fixture.exchanges.push(get(
             &api("balkans.aljazeera.net", "ajb", "djokovic-usao-u-finale", "video"),
@@ -499,6 +437,7 @@ mod tests {
             .unwrap();
         assert_eq!(resolved.resolver, PLATFORM);
         assert_eq!(resolved.title.as_deref(), Some("Djokovic"));
+        crate::resolve::assert_one_family(&resolved.variants);
         assert_eq!(resolved.variants.len(), 1);
         assert_eq!(resolved.variants[0].height, Some(720));
         assert!(matches!(
@@ -520,7 +459,11 @@ mod tests {
             .unwrap();
         assert_eq!(resolved.id.as_deref(), Some("2"));
         assert_eq!(resolved.title.as_deref(), Some("On the page"));
-        assert_eq!(resolved.variants[0].url.path(), "/6404882346112/high.mp4");
+        crate::resolve::assert_one_family(&resolved.variants);
+        assert_eq!(
+            resolved.variants[0].url.path(),
+            "/6404882346112/master.m3u8"
+        );
         let text_only = Url::parse("https://www.aljazeera.com/news/2026/9/15/text-only").unwrap();
         assert!(matches!(
             resolver.resolve(&text_only).await.unwrap_err(),

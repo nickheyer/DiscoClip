@@ -293,7 +293,7 @@ impl Resolver for LoomResolver {
                 let expanded = hls::expand(&self.http, &stream, PLATFORM, BROWSER_UA, &[]).await?;
                 for mut v in expanded.variants {
                     v.duration = duration.or(v.duration);
-                    if v.width.is_none() {
+                    if v.width.is_none() && !v.audio_only {
                         v.width = width;
                         v.height = height;
                     }
@@ -495,10 +495,12 @@ mod tests {
         assert_eq!(resolved.uploader.as_deref(), Some("wILLIAM PIP"));
         assert!(resolved.uploaded_at.is_some());
         assert_eq!(resolved.duration, Some(Duration::from_secs(27)));
-        assert_eq!(resolved.variants.len(), 1);
+        assert_eq!(resolved.variants.len(), 2);
         assert_eq!(resolved.variants[0].kind, VariantKind::Hls);
         assert_eq!(resolved.variants[0].height, Some(720));
-        assert!(resolved.variants[0].audio_url.is_some());
+        assert!(resolved.variants[0].video_only);
+        assert!(resolved.variants[1].audio_only);
+        assert!(resolved.variants[1].height.is_none());
         let jar = http.jar(PLATFORM);
         assert_eq!(jar.get("CloudFront-Policy").unwrap().value, "POLICY");
         assert_eq!(

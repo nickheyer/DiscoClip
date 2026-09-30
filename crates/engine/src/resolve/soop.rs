@@ -1384,6 +1384,7 @@ mod tests {
 
     /// Every example link resolves live: the recordings and the live to media with
     /// variants, the catch story and stations to entries.
+    #[ignore = "reaches the live site: cargo test -- --ignored"]
     #[tokio::test]
 
     async fn live_examples_resolve() {

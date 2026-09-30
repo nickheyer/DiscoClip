@@ -10,11 +10,13 @@
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
 	import MediaKindIcon from '$lib/components/MediaKindIcon.svelte';
-	import RelativeTime from '$lib/components/RelativeTime.svelte';
+	import Timestamp from '$lib/components/Timestamp.svelte';
 	import SearchInput from '$lib/components/SearchInput.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import FrontHeader from '$lib/components/front/FrontHeader.svelte';
-	import { bytes, clock, mediaLabel } from '$lib/format';
+	import Bytes from '$lib/components/Bytes.svelte';
+	import Duration from '$lib/components/Duration.svelte';
+	import { mediaLabel } from '$lib/format';
 	import { reportError } from '$lib/toast.svelte';
 
 	const LIMIT = 48;
@@ -208,10 +210,16 @@
 								{#if job.duration_secs !== null}
 									<span
 										class="absolute right-2 bottom-2 badge preset-filled-surface-950-50 tabular-nums"
-										style="--badge-size: var(--text-xs)">{clock(job.duration_secs)}</span
+										style="--badge-size: var(--text-xs)"
+										><Duration value={job.duration_secs} /></span
 									>
 								{/if}
-								{#if job.live}
+								{#if job.recording}
+									<span
+										class="absolute top-2 left-2 badge animate-pulse preset-filled-error-500"
+										style="--badge-size: var(--text-xs)">Recording</span
+									>
+								{:else if job.live}
 									<span
 										class="absolute top-2 left-2 badge preset-filled-error-500"
 										style="--badge-size: var(--text-xs)">Live</span
@@ -229,7 +237,7 @@
 							</div>
 						</a>
 						<div class="flex items-center justify-between px-3 pb-3 text-sm text-surface-600-400">
-							<span><RelativeTime at={job.published_at} /> · {bytes(job.size)}</span>
+							<span><Timestamp at={job.published_at} /> · <Bytes value={job.size} /></span>
 							{#if info.downloads && job.download_url}
 								<a
 									href={job.download_url}

@@ -10,8 +10,9 @@
 	import DataTable, { type Column } from '$lib/components/DataTable.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import RelativeTime from '$lib/components/RelativeTime.svelte';
+	import Timestamp from '$lib/components/Timestamp.svelte';
 	import Status from '$lib/components/Status.svelte';
+	import { countText } from '$lib/format';
 	import { notify } from '$lib/toast.svelte';
 
 	let views = $state<Frontend[]>([]);
@@ -69,8 +70,8 @@
 		const channels = s.channels?.length ?? 0;
 		if (guilds === 0 && channels === 0) return 'Everything';
 		return [
-			guilds > 0 ? `${guilds} server${guilds === 1 ? '' : 's'}` : '',
-			channels > 0 ? `${channels} channel${channels === 1 ? '' : 's'}` : ''
+			guilds > 0 ? countText(guilds, 'server') : '',
+			channels > 0 ? countText(channels, 'channel') : ''
 		]
 			.filter(Boolean)
 			.join(' · ');
@@ -119,7 +120,7 @@
 	</div>
 {/snippet}
 {#snippet updatedCell(view: Frontend)}
-	<RelativeTime at={view.updated_at} class="whitespace-nowrap" />
+	<Timestamp at={view.updated_at} class="whitespace-nowrap" />
 {/snippet}
 {#snippet actionsCell(view: Frontend)}
 	<button

@@ -21,7 +21,7 @@
 	import JobTitle from '$lib/components/JobTitle.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import PlaceLine from '$lib/components/PlaceLine.svelte';
-	import RelativeTime from '$lib/components/RelativeTime.svelte';
+	import Timestamp from '$lib/components/Timestamp.svelte';
 	import StatTile from '$lib/components/StatTile.svelte';
 	import Status from '$lib/components/Status.svelte';
 	import { feed } from '$lib/events.svelte';
@@ -157,7 +157,7 @@
 	<Bytes value={job.output_bytes} />
 {/snippet}
 {#snippet ageCell(job: JobSummary)}
-	<RelativeTime at={job.created_at} class="whitespace-nowrap" />
+	<Timestamp at={job.created_at} class="whitespace-nowrap" />
 {/snippet}
 
 <PageHeader title="Dashboard" description="Jobs, workers and connected applications at a glance.">

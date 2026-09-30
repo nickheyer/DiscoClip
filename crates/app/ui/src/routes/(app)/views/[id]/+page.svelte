@@ -31,7 +31,7 @@
 	import Field from '$lib/components/Field.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import RelativeTime from '$lib/components/RelativeTime.svelte';
+	import Timestamp from '$lib/components/Timestamp.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import Status from '$lib/components/Status.svelte';
 	import ScopePicker from '$lib/components/guild/ScopePicker.svelte';
@@ -355,7 +355,7 @@
 </script>
 
 {#snippet userCreated(user: FrontendUser)}
-	<RelativeTime at={user.created_at} class="whitespace-nowrap" />
+	<Timestamp at={user.created_at} class="whitespace-nowrap" />
 {/snippet}
 {#snippet userActions(user: FrontendUser)}
 	<span class="flex justify-end gap-1">
@@ -380,7 +380,7 @@
 	</div>
 {/snippet}
 {#snippet sessionSeen(s: ViewerSession)}
-	<RelativeTime at={s.last_seen_at} class="whitespace-nowrap" />
+	<Timestamp at={s.last_seen_at} class="whitespace-nowrap" />
 {/snippet}
 {#snippet sessionActions(s: ViewerSession)}
 	<button

@@ -1,8 +1,7 @@
-//! Wistia media, through the embed API the player reads: every MP4 asset with its
-//! dimensions, bitrate and size, the original upload, the HLS manifest of media the
-//! account streams, and the captions in every language. Media pages, player iframes,
-//! embed scripts and `wvideo` links name the media. Playlists and channels become
-//! playlists of theirs.
+//! Wistia media, through the embed API the player reads: the HLS manifest of media the
+//! account streams, the tallest video asset of the rest, and the captions in every
+//! language. Media pages, player iframes, embed scripts and `wvideo` links name the
+//! media. Playlists and channels become playlists of theirs.
 
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -169,83 +168,20 @@ fn video_codec(name: &str) -> Option<VideoCodec> {
     }
 }
 
-/// The media's assets as variants: every video and audio file, and the HLS manifest of
-/// media the account streams that way.
+/// The extension an asset's file carries, from its `ext` or its `container`, when it
+/// names a format this crate knows.
+fn asset_extension(asset: &Value) -> Option<String> {
+    ["ext", "container"].into_iter().find_map(|key| {
+        let name = asset[key].as_str()?.trim().to_ascii_lowercase();
+        Container::from_extension(&name).map(|_| name)
+    })
+}
+
+/// The variant the player loads: the HLS manifest of media the account streams that
+/// way, and otherwise the tallest finished video asset, the one with the highest
+/// bitrate among those of a height.
 pub fn variants_of(media: &Value) -> Vec<Variant> {
     let duration = seconds(&media["duration"]);
-    let mut variants = Vec::new();
-    for asset in media["assets"].as_array().into_iter().flatten() {
-        let kind_name = asset["type"].as_str().unwrap_or_default();
-        if matches!(
-            kind_name,
-            "preview" | "storyboard" | "still_image" | "still"
-        ) {
-            continue;
-        }
-        if asset["status"].as_i64().is_some_and(|status| status != 2) {
-            continue;
-        }
-        let container_name = asset["container"]
-            .as_str()
-            .unwrap_or_default()
-            .to_ascii_lowercase();
-        let ext = asset["ext"]
-            .as_str()
-            .unwrap_or_default()
-            .to_ascii_lowercase();
-        let hls = container_name == "m3u8" || ext == "m3u8";
-        let Some(url) = asset_url(asset, if hls { "m3u8" } else { "" }) else {
-            continue;
-        };
-        let display = asset["display_name"].as_str().map(String::from);
-        let audio = display.as_deref() == Some("Audio")
-            || kind_name.ends_with("_audio")
-            || matches!(ext.as_str(), "mp3" | "m4a" | "aac" | "ogg");
-        let mut v = Variant::new(
-            url,
-            if hls {
-                VariantKind::Hls
-            } else {
-                VariantKind::File
-            },
-        );
-        if !hls {
-            v.container = Container::from_extension(&ext)
-                .or_else(|| Container::from_extension(&container_name))
-                .or_else(|| {
-                    (audio && matches!(ext.as_str(), "m4a" | "aac")).then_some(Container::Mp4)
-                });
-            if audio {
-                v.audio_only = true;
-                v.audio = Some(if ext == "mp3" {
-                    AudioCodec::Mp3
-                } else {
-                    AudioCodec::Aac
-                });
-            } else {
-                v.video = asset["codec"].as_str().and_then(video_codec);
-                if v.container == Some(Container::Mp4) {
-                    v.audio = Some(AudioCodec::Aac);
-                }
-            }
-            v.size = asset["size"].as_u64().filter(|s| *s > 0);
-        }
-        if !audio {
-            v.width = asset["width"].as_u64().filter(|w| *w > 0).map(|w| w as u32);
-            v.height = asset["height"]
-                .as_u64()
-                .filter(|h| *h > 0)
-                .map(|h| h as u32);
-        }
-        v.bitrate = asset["bitrate"]
-            .as_u64()
-            .filter(|b| *b > 0)
-            .map(|kbps| kbps * 1000);
-        v.duration = duration;
-        v.label = display;
-        v.format_id = Some(kind_name.to_string());
-        variants.push(v);
-    }
     if media["hls_enabled"].as_bool() == Some(true)
         && let Some(id) = media["hashedId"].as_str()
     {
@@ -255,9 +191,54 @@ pub fn variants_of(media: &Value) -> Vec<Variant> {
         );
         v.duration = duration;
         v.format_id = Some("hls".into());
-        variants.push(v);
+        return vec![v];
     }
-    variants
+    let videos = media["assets"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|asset| {
+            !matches!(
+                asset["type"].as_str().unwrap_or_default(),
+                "preview" | "storyboard" | "still_image" | "still"
+            ) && asset["status"].as_i64().is_none_or(|status| status == 2)
+        })
+        .filter_map(|asset| {
+            let ext = asset_extension(asset)?;
+            let container = Container::from_extension(&ext)?;
+            (container.kind() == MediaKind::Video).then_some((asset, ext, container))
+        });
+    let Some((asset, ext, container)) = videos.max_by_key(|(asset, _, _)| {
+        (
+            asset["height"].as_u64().unwrap_or(0),
+            asset["bitrate"].as_u64().unwrap_or(0),
+        )
+    }) else {
+        return Vec::new();
+    };
+    let Some(url) = asset_url(asset, &ext) else {
+        return Vec::new();
+    };
+    let mut v = Variant::file(url);
+    v.video = asset["codec"].as_str().and_then(video_codec);
+    if container == Container::Mp4 {
+        v.audio = Some(AudioCodec::Aac);
+    }
+    v.container = Some(container);
+    v.width = asset["width"].as_u64().filter(|w| *w > 0).map(|w| w as u32);
+    v.height = asset["height"]
+        .as_u64()
+        .filter(|h| *h > 0)
+        .map(|h| h as u32);
+    v.bitrate = asset["bitrate"]
+        .as_u64()
+        .filter(|b| *b > 0)
+        .map(|kbps| kbps * 1000);
+    v.size = asset["size"].as_u64().filter(|s| *s > 0);
+    v.duration = duration;
+    v.label = asset["display_name"].as_str().map(String::from);
+    v.format_id = asset["type"].as_str().map(String::from);
+    vec![v]
 }
 
 /// The captions the media carries, one WebVTT track per language.
@@ -543,7 +524,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn media_resolve_with_every_asset_and_their_captions() {
+    async fn media_resolve_to_their_tallest_asset_and_their_captions() {
         let resolver = WistiaResolver::new(Http::replay(fixture()));
         let resolved = resolver
             .resolve(&Url::parse("https://fast.wistia.net/embed/iframe/cmst5825to").unwrap())
@@ -561,9 +542,10 @@ mod tests {
                 "https://embed-ssl.wistia.com/deliveries/3edc7b8b5d638393b68168c8cc1e035db6827040.jpg"
             )
         );
+        crate::resolve::assert_one_family(&resolved.variants);
         assert_eq!(
             resolved.variants.len(),
-            4,
+            1,
             "{:?}",
             resolved
                 .variants
@@ -571,31 +553,17 @@ mod tests {
                 .map(|v| v.url.as_str())
                 .collect::<Vec<_>>()
         );
-        let original = resolved
-            .variants
-            .iter()
-            .find(|v| v.format_id.as_deref() == Some("original"))
-            .unwrap();
+        let original = &resolved.variants[0];
+        assert_eq!(original.kind, VariantKind::File);
+        assert_eq!(original.format_id.as_deref(), Some("original"));
         assert_eq!((original.width, original.height), (Some(1280), Some(720)));
         assert_eq!(original.size, Some(43427280));
         assert_eq!(original.bitrate, Some(9672000));
         assert_eq!(original.container, Some(Container::Mp4));
+        assert_eq!(original.audio, Some(AudioCodec::Aac));
+        assert_eq!(original.label.as_deref(), Some("Original File"));
+        assert_eq!(original.duration, Some(Duration::from_secs_f64(35.077)));
         assert!(original.url.as_str().ends_with(".mp4"), "{}", original.url);
-        let hd = resolved
-            .variants
-            .iter()
-            .find(|v| v.format_id.as_deref() == Some("hd_mp4_video"))
-            .unwrap();
-        assert_eq!(hd.height, Some(540));
-        assert_eq!(hd.size, Some(4997682));
-        assert_eq!(hd.video, Some(VideoCodec::H264));
-        assert_eq!(hd.label.as_deref(), Some("540p"));
-        assert!(
-            resolved
-                .variants
-                .iter()
-                .all(|v| v.kind == VariantKind::File)
-        );
         assert_eq!(resolved.subtitles.len(), 1);
         assert_eq!(resolved.subtitles[0].language, "eng");
         assert_eq!(
@@ -610,19 +578,50 @@ mod tests {
     }
 
     #[test]
-    fn streamed_media_add_their_manifest() {
+    fn streamed_media_play_their_manifest_alone() {
         let media: Value = serde_json::from_str(
             r#"{"hashedId":"cmst5825to","hls_enabled":true,"duration":10,"assets":[{"type":"original","url":"https://embed-ssl.wistia.com/deliveries/abc.bin","ext":"mp4","width":1280,"height":720,"size":100,"bitrate":900,"status":2,"display_name":"Original File"},{"type":"hls_video","url":"https://embed-ssl.wistia.com/deliveries/def.bin","container":"m3u8","status":2}]}"#,
         )
         .unwrap();
         let variants = variants_of(&media);
-        assert_eq!(variants.len(), 3);
-        assert_eq!(variants[1].kind, VariantKind::Hls);
-        assert!(variants[1].url.as_str().ends_with("def.m3u8"));
+        assert_eq!(variants.len(), 1);
+        assert_eq!(variants[0].kind, VariantKind::Hls);
         assert_eq!(
-            variants[2].url.as_str(),
+            variants[0].url.as_str(),
             "https://fast.wistia.net/embed/medias/cmst5825to.m3u8"
         );
+        assert_eq!(variants[0].format_id.as_deref(), Some("hls"));
+        assert_eq!(variants[0].duration, Some(Duration::from_secs(10)));
+    }
+
+    #[test]
+    fn media_the_account_does_not_stream_play_their_tallest_asset() {
+        let media: Value = serde_json::from_str(
+            r#"{"hashedId":"cmst5825to","hls_enabled":false,"duration":10,"assets":[
+                {"type":"hd_mp4_video","url":"https://embed-ssl.wistia.com/deliveries/hd.bin","ext":"mp4","container":"mp4","codec":"h264","width":960,"height":540,"size":300,"bitrate":1112,"status":2,"display_name":"540p"},
+                {"type":"md_mp4_video","url":"https://embed-ssl.wistia.com/deliveries/md.bin","ext":"mp4","container":"mp4","codec":"h264","width":960,"height":540,"size":400,"bitrate":1309,"status":2,"display_name":"540p"},
+                {"type":"iphone_video","url":"https://embed-ssl.wistia.com/deliveries/sd.bin","ext":"mp4","container":"mp4","codec":"h264","width":640,"height":360,"size":200,"bitrate":774,"status":2,"display_name":"360p"},
+                {"type":"original","url":"https://embed-ssl.wistia.com/deliveries/big.bin","ext":"mp4","width":1920,"height":1080,"size":900,"bitrate":9000,"status":1,"display_name":"Original File"},
+                {"type":"preview","url":"https://embed-ssl.wistia.com/deliveries/preview.bin","ext":"mp4","width":1920,"height":1080,"size":50,"bitrate":500,"status":2},
+                {"type":"mp3_audio","url":"https://embed-ssl.wistia.com/deliveries/audio.bin","ext":"mp3","width":0,"height":0,"size":100,"bitrate":128,"status":2,"display_name":"Audio"},
+                {"type":"still_image","url":"https://embed-ssl.wistia.com/deliveries/still.bin","ext":"jpg","width":1920,"height":1080,"size":10,"status":2}
+            ]}"#,
+        )
+        .unwrap();
+        let variants = variants_of(&media);
+        assert_eq!(variants.len(), 1);
+        let top = &variants[0];
+        assert_eq!(top.kind, VariantKind::File);
+        assert_eq!(top.format_id.as_deref(), Some("md_mp4_video"));
+        assert_eq!(
+            top.url.as_str(),
+            "https://embed-ssl.wistia.com/deliveries/md.mp4"
+        );
+        assert_eq!(top.height, Some(540));
+        assert_eq!(top.bitrate, Some(1309000));
+        assert_eq!(top.size, Some(400));
+        assert_eq!(top.video, Some(VideoCodec::H264));
+        assert_eq!(top.label.as_deref(), Some("540p"));
     }
 
     #[tokio::test]

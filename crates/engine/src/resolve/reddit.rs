@@ -16,7 +16,7 @@ use url::Url;
 use super::page::Page;
 use super::{
     MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionCheck, SessionSupport,
-    Tag, Variant, VariantKind, clean_title, essence, hls,
+    Tag, clean_title, essence, hls,
 };
 use crate::http::{BROWSER_UA, Cookie, Http};
 use crate::media::MediaKind;
@@ -109,11 +109,6 @@ impl RedditResolver {
         for v in &mut variants {
             v.duration = duration;
         }
-        let dash = Url::parse(&format!("https://v.redd.it/{id}/DASHPlaylist.mpd"))
-            .map_err(|e| ResolveError::malformed(origin, e.to_string()))?;
-        let mut fallback = Variant::new(dash, VariantKind::Dash);
-        fallback.duration = duration;
-        variants.push(fallback);
         let mut resolved = base;
         resolved.id = Some(id.to_string());
         resolved.duration = duration;
@@ -599,7 +594,7 @@ impl Resolver for RedditResolver {
             name: "Reddit",
             hosts: &["reddit.com", "redd.it", "v.redd.it"],
             features: &["videos", "crossposts", "share links", "linked media"],
-            formats: &["hls", "dash"],
+            formats: &["hls"],
             media: &[MediaKind::Video],
             tags: &[Tag::Basic, Tag::Social, Tag::Video],
             session: SessionSupport::Optional,
@@ -666,6 +661,7 @@ mod tests {
     use crate::http::transport::{
         Exchange, Fixture, RecordedBody, RecordedRequest, RecordedResponse,
     };
+    use crate::resolve::VariantKind;
     use serde_json::json;
 
     const POST: &str = "https://www.reddit.com/r/videos/comments/6rrwyj/that_small_heart_attack/";
@@ -809,13 +805,16 @@ mod tests {
             Some(jiff::Timestamp::from_second(1501941939).unwrap())
         );
         assert_eq!(resolved.duration, Some(Duration::from_secs(12)));
+        // The master's two streams and the audio rendition they share, nothing else.
         assert_eq!(resolved.variants.len(), 3);
+        crate::resolve::assert_one_family(&resolved.variants);
+        assert!(resolved.variants.iter().all(|v| v.kind == VariantKind::Hls));
         assert_eq!(resolved.variants[0].url.as_str(), MEDIA);
         assert_eq!(resolved.variants[0].height, Some(640));
-        assert_eq!(resolved.variants[2].kind, VariantKind::Dash);
+        assert!(resolved.variants[2].audio_only);
         assert_eq!(
             resolved.variants[2].url.as_str(),
-            "https://v.redd.it/zv89llsvexdz/DASHPlaylist.mpd"
+            "https://v.redd.it/zv89llsvexdz/HLS_AUDIO_160_K_v4.m3u8"
         );
     }
 

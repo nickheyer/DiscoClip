@@ -1446,6 +1446,7 @@ mod tests {
 
     /// Every example link resolves live without a session: the public video, audio and
     /// image posts, and the creator and collection listings.
+    #[ignore = "reaches the live site: cargo test -- --ignored"]
     #[tokio::test]
 
     async fn live_examples_resolve() {

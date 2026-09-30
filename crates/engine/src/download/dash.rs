@@ -1,8 +1,9 @@
 //! Download DASH SegmentBase, SegmentList and SegmentTemplate representations, including
 //! timelines and text tracks. Join periods into one recording.
 //!
-//! Reload dynamic manifests until completion, capture limit or failure. Reject Common
-//! Encryption as DRM.
+//! Reload dynamic manifests until completion, the capture or byte limit, a person's stop
+//! or failure; a dynamic presentation goes straight into the growing recording. Reject
+//! Common Encryption as DRM.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -14,11 +15,13 @@ use dash_mpd::{
     AdaptationSet, MPD, Period, Representation, SegmentBase, SegmentList, SegmentTemplate,
 };
 use futures::StreamExt;
+use tokio_util::sync::CancellationToken;
 use url::Url;
 
+use super::recording::{Lane, Recorder, Spec, treatments_of};
 use super::segments::{
-    Budget, Consumer, InitSection, Meter, PartKey, Timing, TrackWriter, fetch_bytes, fetch_text,
-    mux_parts,
+    Budget, Consumer, InitSection, LiveTrack, Meter, PartKey, Timing, TrackSink, TrackWriter,
+    fetch_bytes, fetch_text, mux_parts,
 };
 use super::{
     DownloadContext, DownloadError, Downloaded, Downloader, LocalSubtitle, mp4, subtitles,
@@ -373,14 +376,21 @@ impl<'a> Track<'a> {
     }
 }
 
-/// What every manifest load of one download shares: the client and headers, the byte
-/// budget, the initialization sections fetched, and the notes for the job log.
+/// What every manifest load of one download shares: the client and headers, the
+/// limits, what ends the capture, the initialization sections fetched, and the notes
+/// for the job log.
 struct Session<'a> {
     http: &'a Http,
     platform: &'a str,
     headers: &'a [(String, String)],
     manifest: &'a Url,
     max_live: Duration,
+    max_bytes: u64,
+    /// A person's request to end the capture.
+    asked: &'a CancellationToken,
+    /// Cancelled when the capture is to end: by the person, or by the byte limit. Every
+    /// track's loop leaves off at it.
+    stop: CancellationToken,
     inits: Mutex<HashMap<String, Arc<InitSection>>>,
     notes: Mutex<Vec<String>>,
 }
@@ -392,6 +402,17 @@ impl Session<'_> {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .push(message);
+    }
+
+    /// The byte budget could not hold the next segment: the capture ends, noted once.
+    fn bytes_spent(&self) {
+        if !self.stop.is_cancelled() {
+            self.stop.cancel();
+            self.note(format!(
+                "Capture ended at the {} byte limit.",
+                self.max_bytes
+            ));
+        }
     }
 
     /// The pieces of `track`, in order, that can be fetched now.
@@ -698,7 +719,8 @@ impl Session<'_> {
     }
 
     /// Fetches `pieces` in order into `consumer`, for a `live` stream skipping one that
-    /// cannot be fetched. Whether the capture reached its limit.
+    /// cannot be fetched. Whether the capture is to end: at its limit, its byte budget,
+    /// or a person's stop.
     async fn fetch_track(
         &self,
         name: &str,
@@ -709,6 +731,9 @@ impl Session<'_> {
         mut meter: Option<&mut Meter<'_>>,
     ) -> Result<bool, DownloadError> {
         let max_live = self.max_live.as_secs_f64();
+        if live && self.stop.is_cancelled() {
+            return Ok(true);
+        }
         let fetches = futures::stream::iter(pieces.into_iter().map(|piece| async move {
             let result = self.fetch_piece(&piece).await;
             (piece, result)
@@ -738,6 +763,10 @@ impl Session<'_> {
                 origin: cursor.period_start(piece.period, piece.start),
             };
             consumer.take(&key, timing, init.as_deref(), &bytes).await?;
+            if consumer.full() {
+                self.bytes_spent();
+                return Ok(true);
+            }
             cursor.last = Some((piece.period, piece.number));
             cursor.captured += piece.duration;
             if cursor.first_start.is_none() {
@@ -746,7 +775,7 @@ impl Session<'_> {
             if let Some(meter) = meter.as_deref_mut() {
                 meter.add(piece.duration);
             }
-            if live && cursor.captured >= max_live {
+            if live && (cursor.captured >= max_live || self.stop.is_cancelled()) {
                 return Ok(true);
             }
         }
@@ -1142,6 +1171,9 @@ impl Downloader for DashDownloader {
             headers,
             manifest,
             max_live: context.max_live,
+            max_bytes: context.max_bytes,
+            asked: &context.stop,
+            stop: context.stop.child_token(),
             inits: Mutex::new(HashMap::new()),
             notes: Mutex::new(Vec::new()),
         };
@@ -1149,8 +1181,9 @@ impl Downloader for DashDownloader {
             rep_id: wanted_id(variant),
             audio_only: variant.audio_only,
             max_height: context.max_height,
-            language: variant.language.clone(),
+            language: Some(context.audio_language.clone()),
         };
+        let mut audio_language: Option<String> = None;
         let mut loaded = Some(load_manifest(&self.http, manifest, platform, headers).await?);
         let first_mpd = &loaded.as_ref().unwrap().1;
         let first_base = loaded.as_ref().unwrap().0.clone();
@@ -1168,14 +1201,60 @@ impl Downloader for DashDownloader {
                 first_mpd.periods.len()
             ));
         }
-        progress.send_replace(Progress {
-            done: 0,
-            total: None,
-        });
-        let mut meter = Meter::new(&progress);
-
-        let mut primary = TrackWriter::new(dest_dir, "video", &budget);
-        let mut audio = TrackWriter::new(dest_dir, "audio", &budget);
+        progress.send_replace(Progress::of(0, None));
+        let live = is_dynamic(first_mpd);
+        // A dynamic presentation goes straight into the recording, which plays as it
+        // grows, under the treatments its first period's codecs call for.
+        let recorder = if live {
+            let bounds = period_bounds(first_mpd);
+            let chosen = choose(
+                &first_base,
+                manifest,
+                first_mpd,
+                0,
+                bounds[0],
+                &wanted,
+                &text_languages,
+            )?;
+            let (video, muxed_audio) = treatments_of(chosen.primary.codecs());
+            audio_language = chosen
+                .audio
+                .as_ref()
+                .and_then(|track| track.language().map(String::from));
+            let spec = Spec {
+                language: audio_language.clone(),
+                ..Spec::copied(
+                    if wanted.audio_only {
+                        muxed_audio
+                    } else {
+                        video
+                    },
+                    chosen
+                        .audio
+                        .as_ref()
+                        .map(|track| treatments_of(track.codecs()).1),
+                )
+            };
+            let recorder = Recorder::start(&self.ffmpeg, dest_dir, &spec).await?;
+            context.capture.started(recorder.path());
+            Some(recorder)
+        } else {
+            None
+        };
+        let mut meter = match &recorder {
+            Some(recorder) => Meter::new(&progress).watching(recorder.path()),
+            None => Meter::new(&progress),
+        };
+        let (mut primary, mut audio) = match &recorder {
+            Some(recorder) => (
+                TrackSink::Live(LiveTrack::new(recorder.feed(Lane::Video), &budget)),
+                TrackSink::Live(LiveTrack::new(recorder.feed(Lane::Audio), &budget)),
+            ),
+            None => (
+                TrackSink::Parts(Box::new(TrackWriter::new(dest_dir, "video", &budget))),
+                TrackSink::Parts(Box::new(TrackWriter::new(dest_dir, "audio", &budget))),
+            ),
+        };
         let mut texts: Vec<TextSink<'_>> = Vec::new();
         let mut cursors = (Cursor::default(), Cursor::default(), Vec::<Cursor>::new());
         let mut reload_url = manifest.clone();
@@ -1194,11 +1273,23 @@ impl Downloader for DashDownloader {
                     Err(error) if was_live == Some(true) => {
                         failures += 1;
                         if failures < RELOAD_FAILURES {
-                            tokio::time::sleep(Duration::from_secs(1)).await;
+                            tokio::select! {
+                                _ = tokio::time::sleep(Duration::from_secs(1)) => {}
+                                _ = session.stop.cancelled() => {}
+                            }
+                            if session.stop.is_cancelled() {
+                                if session.asked.is_cancelled() {
+                                    session.note(format!(
+                                        "Capture stopped at {:.0} s.",
+                                        cursors.0.captured
+                                    ));
+                                }
+                                break;
+                            }
                             continue;
                         }
                         session.note(format!(
-                            "Manifest reload failed {failures} times ({error}). Recording stopped after {:.0} s.",
+                            "Manifest reload failed {failures} times ({error}). Capture ended at {:.0} s.",
                             cursors.0.captured
                         ));
                         break;
@@ -1245,6 +1336,9 @@ impl Downloader for DashDownloader {
                 primary_pieces.extend(session.pieces(&chosen.primary, clock).await?);
                 if let Some(track) = &chosen.audio {
                     has_audio = true;
+                    if audio_language.is_none() {
+                        audio_language = track.language().map(String::from);
+                    }
                     audio_pieces.extend(session.pieces(track, clock).await?);
                 }
                 for (language, track) in &chosen.texts {
@@ -1328,26 +1422,25 @@ impl Downloader for DashDownloader {
                         session.fetch_track("subtitles", pieces, live, sink, cursor, None)
                     }),
             );
-            let (cut, audio_result, text_results) = tokio::join!(primary_run, audio_run, text_runs);
-            let cut = cut?;
-            audio_result?;
+            let (ended, audio_result, text_results) =
+                tokio::join!(primary_run, audio_run, text_runs);
+            let ended = ended? || audio_result?;
             for result in text_results {
                 if let Err(error) = result {
                     session.note(format!("subtitles not fetched: {error}"));
                 }
             }
-            if cut {
-                session.note(format!(
-                    "capture cut at the limit of {max_live:.0} s while the stream goes on"
-                ));
+            if ended {
+                if session.asked.is_cancelled() {
+                    session.note(format!("Capture stopped at {:.0} s.", cursors.0.captured));
+                } else if !session.stop.is_cancelled() {
+                    session.note(format!("Capture ended at the {max_live:.0} s limit."));
+                }
                 break;
             }
             if !live {
                 if was_live == Some(true) {
-                    session.note(format!(
-                        "Stream ended. Recorded {:.0} s.",
-                        cursors.0.captured
-                    ));
+                    session.note(format!("Stream ended at {:.0} s.", cursors.0.captured));
                 }
                 break;
             }
@@ -1360,21 +1453,49 @@ impl Downloader for DashDownloader {
                         .unwrap_or(Duration::from_secs(2))
                         .clamp(Duration::from_secs(1), Duration::from_secs(10))
                 });
-            tokio::time::sleep(if new_count > 0 { wait } else { wait / 2 }).await;
+            tokio::select! {
+                _ = tokio::time::sleep(if new_count > 0 { wait } else { wait / 2 }) => {}
+                _ = session.stop.cancelled() => {}
+            }
         }
 
-        let (primary_parts, _) = primary.finish().await?;
-        let (audio_parts, _) = audio.finish().await?;
-        if primary_parts.is_empty() {
-            return Err(DownloadError::Empty);
-        }
-        if primary_parts.len() > 1 {
-            session.note(format!(
-                "the recording is joined from {} parts",
-                primary_parts.len()
-            ));
-        }
         let media_start = cursors.0.first_start.unwrap_or(0.0);
+        let file = match (primary, audio, recorder) {
+            (TrackSink::Parts(primary), TrackSink::Parts(audio), _) => {
+                let (primary_parts, _) = primary.finish().await?;
+                let (audio_parts, _) = audio.finish().await?;
+                if primary_parts.is_empty() {
+                    return Err(DownloadError::Empty);
+                }
+                if primary_parts.len() > 1 {
+                    session.note(format!(
+                        "the recording is joined from {} parts",
+                        primary_parts.len()
+                    ));
+                }
+                let dest = dest_dir.join("source.mkv");
+                let file = mux_parts(
+                    &self.ffmpeg,
+                    &primary_parts,
+                    has_audio.then_some(audio_parts.as_slice()),
+                    &dest,
+                    audio_language.as_deref(),
+                )
+                .await?;
+                for part in primary_parts.iter().chain(audio_parts.iter()) {
+                    let _ = tokio::fs::remove_file(part).await;
+                }
+                if file.size > context.max_bytes {
+                    return Err(DownloadError::TooLarge {
+                        size: file.size,
+                        limit: context.max_bytes,
+                    });
+                }
+                file
+            }
+            (_, _, Some(recorder)) => recorder.finish().await?,
+            (_, _, None) => unreachable!("a live sink has a recorder"),
+        };
         let mut local_subtitles = Vec::new();
         for (index, (track, sink)) in text_choices.iter().zip(texts).enumerate() {
             let (text, format) = match sink.kind {
@@ -1412,24 +1533,6 @@ impl Downloader for DashDownloader {
                 path,
                 format,
                 url: Some(track.url.clone()),
-            });
-        }
-
-        let dest = dest_dir.join("source.mkv");
-        let file = mux_parts(
-            &self.ffmpeg,
-            &primary_parts,
-            has_audio.then_some(audio_parts.as_slice()),
-            &dest,
-        )
-        .await?;
-        for part in primary_parts.iter().chain(audio_parts.iter()) {
-            let _ = tokio::fs::remove_file(part).await;
-        }
-        if file.size > context.max_bytes {
-            return Err(DownloadError::TooLarge {
-                size: file.size,
-                limit: context.max_bytes,
             });
         }
         Ok(Downloaded {
@@ -1605,7 +1708,16 @@ mod tests {
     }
 
     async fn probed(ffmpeg: &Ffmpeg, downloaded: &Downloaded) -> crate::media::MediaInfo {
-        assert!(downloaded.file.path.ends_with("source.mkv"));
+        let name = downloaded
+            .file
+            .path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap();
+        assert!(
+            name == "source.mkv" || name == super::super::RECORDING,
+            "{name}"
+        );
         ffmpeg.probe(&downloaded.file.path).await.unwrap()
     }
 
@@ -1960,7 +2072,7 @@ mod tests {
             downloaded
                 .notes
                 .iter()
-                .any(|n| n.contains("capture cut at the limit")),
+                .any(|n| n.contains("Capture ended at the") && n.contains("limit")),
             "{:?}",
             downloaded.notes
         );

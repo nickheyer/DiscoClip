@@ -69,6 +69,7 @@ impl Watcher {
         );
         let disabled = in_force.disabled;
         let limits = in_force.limits;
+        let audio_language = in_force.audio_language;
         let origin = DiscordOrigin {
             application: self.application,
             guild: message.guild_id,
@@ -94,6 +95,9 @@ impl Watcher {
                 let mut request = Request::new(origin.clone(), url);
                 request.destination = destination.clone();
                 request.limits = limits;
+                if let Some(language) = &audio_language {
+                    request.options.audio_language = language.clone();
+                }
                 request.submitted_by = submitted_by.clone();
                 request.disabled_platforms = disabled.clone();
                 request
@@ -159,6 +163,7 @@ mod tests {
             InForce {
                 disabled: self.0.clone(),
                 limits: self.1,
+                audio_language: None,
             }
         }
     }
@@ -304,6 +309,7 @@ mod tests {
             max_source_bytes: Some(1000),
             max_duration_secs: Some(30),
             max_height: Some(720),
+            max_capture_secs: None,
         };
         let watcher = watcher_with(vec![with_destination], Vec::new(), limits);
         let picked = watcher.requests(&message(1, 9, &[], "https://a.example/v"));

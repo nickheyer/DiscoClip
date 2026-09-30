@@ -8,7 +8,7 @@ use url::Url;
 
 use super::{
     ResolveError, SubtitleFormat, SubtitleTrack, Variant, VariantKind, check_status, fetch,
-    parse_codecs,
+    parse_codecs, signed_url,
 };
 use crate::http::Http;
 
@@ -22,9 +22,9 @@ pub struct Expanded {
     pub live: bool,
 }
 
-/// Reads the master playlist at `url` as `platform`, returning one variant per stream
-/// with its default audio rendition, and every subtitle rendition. A media playlist is
-/// one variant.
+/// Reads the master playlist at `url` as `platform`, returning one variant per stream,
+/// one audio-only variant per audio rendition a stream can pair with, and every subtitle
+/// rendition. A media playlist is one variant.
 pub async fn expand(
     http: &Http,
     url: &Url,
@@ -32,6 +32,21 @@ pub async fn expand(
     user_agent: &str,
     headers: &[(String, String)],
 ) -> Result<Expanded, ResolveError> {
+    expand_signed(http, url, platform, user_agent, headers, &[]).await
+}
+
+/// [`expand`] for a host that checks a signature on every playlist: `query` is carried by
+/// the master's request, by every playlist and rendition the master names, and by the
+/// variants, so the download signs their playlists and segments the same way.
+pub async fn expand_signed(
+    http: &Http,
+    url: &Url,
+    platform: &str,
+    user_agent: &str,
+    headers: &[(String, String)],
+    query: &[(String, String)],
+) -> Result<Expanded, ResolveError> {
+    let url = signed_url(url, query);
     let response = http
         .get(url.clone())
         .platform(platform)
@@ -39,10 +54,13 @@ pub async fn expand(
         .headers(headers)
         .send()
         .await?;
-    check_status(&response, url)?;
+    check_status(&response, &url)?;
     let base = response.url.clone();
     let body = response.bytes(MAX_PLAYLIST).await?;
-    expand_playlist(http, url, &base, &body, platform, user_agent, headers).await
+    expand_playlist_signed(
+        http, &url, &base, &body, platform, user_agent, headers, query,
+    )
+    .await
 }
 
 /// [`expand`] for a playlist already read: `body` came from `base`, and `url` names the
@@ -56,12 +74,30 @@ pub async fn expand_playlist(
     user_agent: &str,
     headers: &[(String, String)],
 ) -> Result<Expanded, ResolveError> {
+    expand_playlist_signed(http, url, base, body, platform, user_agent, headers, &[]).await
+}
+
+/// [`expand_playlist`] with `query` carried by every link the playlist names, as
+/// [`expand_signed`] carries it.
+#[allow(clippy::too_many_arguments)]
+async fn expand_playlist_signed(
+    http: &Http,
+    url: &Url,
+    base: &Url,
+    body: &[u8],
+    platform: &str,
+    user_agent: &str,
+    headers: &[(String, String)],
+    query: &[(String, String)],
+) -> Result<Expanded, ResolveError> {
     let base = base.clone();
+    let join = |uri: &str| base.join(uri).map(|joined| signed_url(&joined, query));
     match m3u8_rs::parse_playlist_res(body) {
         Ok(Playlist::MasterPlaylist(master)) => {
             let mut variants = Vec::new();
+            let mut audio_variants: Vec<Variant> = Vec::new();
             for stream in master.variants.iter().filter(|v| !v.is_i_frame) {
-                let stream_url = base.join(&stream.uri).map_err(|e| {
+                let stream_url = join(&stream.uri).map_err(|e| {
                     ResolveError::malformed(url, format!("bad variant uri {}: {e}", stream.uri))
                 })?;
                 let mut variant = Variant::new(stream_url, VariantKind::Hls);
@@ -79,19 +115,32 @@ pub async fn expand_playlist(
                     variant.audio = audio;
                     variant.codecs = Some(codecs.clone());
                 }
+                // The renditions of the stream's audio group, each an audio-only variant
+                // the stream is paired with by language when the job is planned.
+                let mut renditions = 0;
                 if let Some(group) = &stream.audio {
-                    let alternative = master
-                        .alternatives
-                        .iter()
-                        .filter(|a| {
-                            a.media_type == AlternativeMediaType::Audio && a.group_id == *group
-                        })
-                        .max_by_key(|a| (a.default, a.autoselect))
-                        .and_then(|a| a.uri.as_deref());
-                    if let Some(uri) = alternative {
-                        variant.audio_url = Some(base.join(uri).map_err(|e| {
+                    for alternative in master.alternatives.iter().filter(|a| {
+                        a.media_type == AlternativeMediaType::Audio && a.group_id == *group
+                    }) {
+                        let Some(uri) = alternative.uri.as_deref() else {
+                            continue;
+                        };
+                        let rendition_url = join(uri).map_err(|e| {
                             ResolveError::malformed(url, format!("bad audio uri {uri}: {e}"))
-                        })?);
+                        })?;
+                        renditions += 1;
+                        if audio_variants.iter().any(|v| v.url == rendition_url) {
+                            continue;
+                        }
+                        let mut audio = Variant::new(rendition_url, VariantKind::Hls);
+                        audio.audio_only = true;
+                        audio.language = alternative.language.clone();
+                        audio.label = Some(alternative.name.clone());
+                        audio.audio_track = Some(format!("{group}:{}", alternative.name));
+                        audio.audio_default = alternative.default;
+                        audio.headers = headers.to_vec();
+                        audio.query = query.to_vec();
+                        audio_variants.push(audio);
                     }
                 }
                 if let Some(res) = &stream.resolution {
@@ -105,13 +154,15 @@ pub async fn expand_playlist(
                         None => "audio".to_string(),
                     });
                 }
-                // A stream whose codecs name no audio and that pairs with no audio
-                // rendition is video alone.
-                variant.video_only = variant.video.is_some()
-                    && variant.audio.is_none()
-                    && stream.codecs.is_some()
-                    && variant.audio_url.is_none();
+                // A stream with audio renditions to pair with is taken as the picture
+                // alone, so the sound comes from the rendition in the language wanted.
+                // So is one whose codecs name no audio.
+                variant.video_only = renditions > 0
+                    || (variant.video.is_some()
+                        && variant.audio.is_none()
+                        && stream.codecs.is_some());
                 variant.headers = headers.to_vec();
+                variant.query = query.to_vec();
                 variants.push(variant);
             }
             let mut subtitles = Vec::new();
@@ -121,7 +172,7 @@ pub async fn expand_playlist(
                 .filter(|a| a.media_type == AlternativeMediaType::Subtitles)
             {
                 if let Some(uri) = &alternative.uri
-                    && let Ok(track_url) = base.join(uri)
+                    && let Ok(track_url) = join(uri)
                 {
                     subtitles.push(SubtitleTrack {
                         url: track_url,
@@ -144,6 +195,7 @@ pub async fn expand_playlist(
                 Some(media) => media_duration(http, &media, platform, user_agent, headers).await?,
                 None => (None, false),
             };
+            variants.extend(audio_variants);
             for v in &mut variants {
                 v.duration = duration;
                 v.live = live;
@@ -158,10 +210,11 @@ pub async fn expand_playlist(
         Ok(Playlist::MediaPlaylist(media)) => {
             let duration = sum_segments(&media);
             let live = !media.end_list;
-            let mut variant = Variant::new(base, VariantKind::Hls);
+            let mut variant = Variant::new(signed_url(&base, query), VariantKind::Hls);
             variant.duration = duration;
             variant.live = live;
             variant.headers = headers.to_vec();
+            variant.query = query.to_vec();
             Ok(Expanded {
                 variants: vec![variant],
                 subtitles: Vec::new(),
@@ -262,11 +315,32 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(expanded.variants.len(), 2);
+        // Two streams, and the one audio rendition they share as a variant of its own.
+        assert_eq!(expanded.variants.len(), 3);
         let best = &expanded.variants[0];
         assert_eq!(best.url.as_str(), "https://cdn.test/v/720.m3u8");
+        assert!(
+            best.video_only,
+            "a stream with renditions pairs by language"
+        );
+        assert!(best.audio_url.is_none());
+        let rendition = &expanded.variants[2];
+        assert!(rendition.audio_only);
+        assert_eq!(rendition.url.as_str(), "https://cdn.test/v/audio/en.m3u8");
+        assert_eq!(rendition.audio_track.as_deref(), Some("aud:English"));
+        assert!(rendition.audio_default);
+        assert_eq!(rendition.label.as_deref(), Some("English"));
+        let paired = crate::plan::select_variant(
+            &expanded.variants,
+            &crate::config::Limits::default(),
+            "web",
+            crate::media::MediaKind::Video,
+            "en",
+        )
+        .unwrap();
+        assert_eq!(paired.url.as_str(), "https://cdn.test/v/720.m3u8");
         assert_eq!(
-            best.audio_url.as_ref().unwrap().as_str(),
+            paired.audio_url.as_ref().unwrap().as_str(),
             "https://cdn.test/v/audio/en.m3u8"
         );
         assert_eq!(best.height, Some(720));

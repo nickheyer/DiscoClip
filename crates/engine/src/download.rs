@@ -10,6 +10,8 @@ use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use tokio::fs::File;
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
+use tokio::sync::watch;
+use tokio_util::sync::CancellationToken;
 
 use url::Url;
 
@@ -26,10 +28,13 @@ pub mod hls;
 pub mod ism;
 pub mod mp4;
 pub mod mpegts;
+pub mod recording;
 pub mod segments;
 pub mod stream;
 pub mod subtitles;
 pub mod whep;
+
+pub use recording::RECORDING;
 
 /// Which subtitles the job wants beside the media: the tracks the resolver listed, after
 /// the job's language preference, and that preference for renditions a downloader finds
@@ -40,17 +45,48 @@ pub struct SubtitleChoice {
     pub language: Option<String>,
 }
 
+/// Where a downloader says its live capture has begun: the recording it writes from its
+/// first byte, so the job can show and serve it while it grows.
+#[derive(Debug, Clone)]
+pub struct CaptureNotice(watch::Sender<Option<PathBuf>>);
+
+impl CaptureNotice {
+    /// A notice and the receiver that learns of the recording's path.
+    pub fn channel() -> (Self, watch::Receiver<Option<PathBuf>>) {
+        let (sender, receiver) = watch::channel(None);
+        (Self(sender), receiver)
+    }
+
+    /// A notice nothing listens to.
+    pub fn unheard() -> Self {
+        Self::channel().0
+    }
+
+    /// The capture has begun, writing `path`.
+    pub fn started(&self, path: &Path) {
+        self.0.send_replace(Some(path.to_path_buf()));
+    }
+}
+
 /// The bounds a job puts on its download.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct DownloadContext {
     /// Bytes the source may occupy on disk.
     pub max_bytes: u64,
     /// The tallest picture worth fetching. Manifests offering several pick by this.
     pub max_height: u32,
-    /// How long a live stream is captured before it is cut and treated as a recording.
+    /// How long a live stream is captured before the capture ends and the recording is
+    /// treated as the source.
     pub max_live: Duration,
+    /// Cancelled when a person ends a live capture early. The downloader closes the
+    /// recording as it stands and returns it, as it does at the capture limit.
+    pub stop: CancellationToken,
+    /// Told when a live capture begins, with the recording it writes.
+    pub capture: CaptureNotice,
     /// The portion wanted. Downloaders that can seek fetch only it.
     pub clip: Option<ClipRange>,
+    /// The language of the sound wanted, for a manifest that offers several.
+    pub audio_language: String,
     /// Whose cookies and proxy the requests use.
     pub platform: String,
     /// How many connections fetch one file, how much each asks for, and how often a
@@ -70,7 +106,10 @@ impl DownloadContext {
             max_bytes,
             max_height: crate::config::Limits::default().max_height,
             max_live: Duration::from_secs(3 * 60 * 60),
+            stop: CancellationToken::new(),
+            capture: CaptureNotice::unheard(),
             clip: None,
+            audio_language: crate::job::DEFAULT_AUDIO_LANGUAGE.to_string(),
             platform: crate::http::WEB_PLATFORM.to_string(),
             download: DownloadConfig::default(),
             browser: BrowserConfig::default(),
@@ -214,10 +253,10 @@ impl<'a> Tally<'a> {
 
     fn send(&self) {
         let total = self.total.load(Ordering::Relaxed);
-        self.progress.send_replace(Progress {
-            done: self.done.load(Ordering::Relaxed),
-            total: (total > 0).then_some(total),
-        });
+        self.progress.send_replace(Progress::of(
+            self.done.load(Ordering::Relaxed),
+            (total > 0).then_some(total),
+        ));
     }
 
     fn advance(&self, bytes: u64) {
@@ -924,7 +963,14 @@ impl Downloader for HttpDownloader {
         )
         .await?;
         let dest = dest_dir.join("source.mkv");
-        let file = segments::mux(&self.ffmpeg, &video_path, Some(&audio_path), &dest).await?;
+        let file = segments::mux(
+            &self.ffmpeg,
+            &video_path,
+            Some(&audio_path),
+            &dest,
+            variant.language.as_deref(),
+        )
+        .await?;
         let _ = tokio::fs::remove_file(&video_path).await;
         let _ = tokio::fs::remove_file(&audio_path).await;
         if file.size > context.max_bytes {

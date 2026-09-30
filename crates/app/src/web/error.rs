@@ -227,6 +227,17 @@ impl From<discoclip_engine::CancelError> for ApiError {
     }
 }
 
+impl From<discoclip_engine::StopError> for ApiError {
+    fn from(error: discoclip_engine::StopError) -> Self {
+        use discoclip_engine::StopError;
+        match error {
+            StopError::NotFound(_) => ApiError::NotFound,
+            StopError::NotCapturing(_) => ApiError::Conflict(error.to_string()),
+            StopError::Store(_) => ApiError::Internal(error.to_string()),
+        }
+    }
+}
+
 impl From<discoclip_engine::DeleteError> for ApiError {
     fn from(error: discoclip_engine::DeleteError) -> Self {
         use discoclip_engine::DeleteError;

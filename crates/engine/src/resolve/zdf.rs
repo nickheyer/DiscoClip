@@ -1,10 +1,10 @@
 //! ZDF: the Mediathek's GraphQL API names a video by the canonical id its link ends with
-//! and lists its media, each a document the tmd API describes with MP4 and WebM files by
-//! height, HLS playlists and captions. Live channels are such documents too, and the live
-//! TV page lists the channels. A series, magazine or film page lists its episodes per
-//! season through the same API, and the news sites' videos come from the Mediathek's
-//! document API when the GraphQL API does not carry them. Every API call carries the
-//! bearer token the token service hands out.
+//! and lists its media, each a document the tmd API describes with HLS playlists and
+//! captions. Live channels are such documents too, and the live TV page lists the
+//! channels. A series, magazine or film page lists its episodes per season through the
+//! same API, and the news sites' videos come from the Mediathek's document API when the
+//! GraphQL API does not carry them. Every API call carries the bearer token the token
+//! service hands out.
 
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
@@ -21,7 +21,7 @@ use super::{
     navigation_headers, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
+use crate::media::MediaKind;
 
 pub const PLATFORM: &str = "zdf";
 const API: &str = "https://api.zdf.de";
@@ -37,13 +37,11 @@ const PAGE_SIZE: usize = 100;
 const TOKEN_MARGIN: i64 = 60;
 
 static RE_CANONICAL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z0-9._-]+$").unwrap());
-/// `_3328k_` in a file's name: its bitrate.
-static RE_BITRATE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"_(\d+)k_").unwrap());
 /// `zdfneo-live-beitrag-100`: a live channel's canonical on the live TV page.
 static RE_LIVE_CHANNEL: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\b([a-z0-9]+)-live-beitrag-(\d+)\b").unwrap());
 
-const VIDEO_QUERY: &str = "query VideoByCanonical($canonical: String!) { videoByCanonical(canonical: $canonical) { canonical title sharingUrl editorialDate leadParagraph teaser { title description image { list } } episodeInfo { episodeNumber seasonNumber } smartCollection { canonical title sharingUrl } currentMedia { nodes { id ptmdTemplate ... on VodMedia { duration aspectRatio vodMediaType label } ... on LiveMedia { start stop encryption liveMediaType label } } } } }";
+const VIDEO_QUERY: &str = "query VideoByCanonical($canonical: String!) { videoByCanonical(canonical: $canonical) { canonical title sharingUrl editorialDate leadParagraph teaser { title description image { list } } episodeInfo { episodeNumber seasonNumber } smartCollection { canonical title sharingUrl } currentMedia { nodes { id ptmdTemplate ... on VodMedia { duration vodMediaType label } ... on LiveMedia { start stop encryption liveMediaType label } } } } }";
 
 const COLLECTION_QUERY: &str = "query CollectionByCanonical($canonical: String!, $pageSize: Int!) { smartCollectionByCanonical(canonical: $canonical) { __typename ... on ISmartCollection { canonical title infoText sharingUrl } ... on MovieSmartCollection { video { canonical sharingUrl title } } ... on HybridBingeSeriesSmartCollection { seasons { totalCount nodes { number episodes(first: $pageSize) { totalCount nodes { canonical sharingUrl title editorialDate currentMedia { nodes { ... on VodMedia { duration } } } } } } } } ... on DefaultWithSectionsSmartCollection { seasons { totalCount nodes { number episodes(first: $pageSize) { totalCount nodes { canonical sharingUrl title editorialDate currentMedia { nodes { ... on VodMedia { duration } } } } } } } } } }";
 
@@ -114,7 +112,6 @@ struct Token {
 
 /// The streams one tmd document describes.
 struct Streams {
-    files: Vec<Variant>,
     playlists: Vec<Variant>,
     subtitles: Vec<SubtitleTrack>,
     duration: Option<Duration>,
@@ -209,11 +206,9 @@ fn region_of(ptmd: &Value) -> Option<String> {
     }
 }
 
-/// The streams a tmd document lists: its files by height, the HLS master of each
-/// adaptive listing, its captions and its length. `sign_language` marks a German Sign
-/// Language edition.
-fn streams_of(ptmd: &Value, aspect_ratio: Option<f64>, sign_language: bool) -> Streams {
-    let mut files: Vec<Variant> = Vec::new();
+/// The streams a tmd document lists: the HLS master of each adaptive listing, its
+/// captions and its length. `sign_language` marks a German Sign Language edition.
+fn streams_of(ptmd: &Value, sign_language: bool) -> Streams {
     let mut playlists: Vec<Variant> = Vec::new();
     let duration = util::millis(attribute(ptmd, "duration"));
     let formitaeten = ptmd["priorityList"]
@@ -222,99 +217,39 @@ fn streams_of(ptmd: &Value, aspect_ratio: Option<f64>, sign_language: bool) -> S
         .flatten()
         .flat_map(|p| p["formitaeten"].as_array().into_iter().flatten());
     for formitaet in formitaeten {
-        // The files behind the user agent restriction are the same files on another
-        // host, served only to the site's own player.
+        // The streams behind the user agent restriction are served only to the site's
+        // own player.
         if formitaet["facets"].as_array().is_some_and(|f| {
             f.iter()
                 .any(|v| v.as_str() == Some("restriction_useragent"))
         }) {
             continue;
         }
+        // One master per listing: the one with every rendition.
         let mut best_playlist: Option<(i64, Variant)> = None;
         for quality in formitaet["qualities"].as_array().into_iter().flatten() {
-            let height = util::u32_of(&quality["highestVerticalResolution"]);
-            let name = quality["quality"].as_str().unwrap_or("").to_string();
+            let rank = if quality["quality"].as_str() == Some("auto") {
+                i64::MAX
+            } else {
+                i64::from(util::u32_of(&quality["highestVerticalResolution"]).unwrap_or(0))
+            };
             for track in quality["audio"]["tracks"].as_array().into_iter().flatten() {
                 let Some(link) = util::url_of(&track["uri"], None) else {
                     continue;
                 };
-                let class = track["class"].as_str().unwrap_or("main");
-                let language = track["language"].as_str().and_then(language_of);
-                let extension = super::path_extension(&link).unwrap_or_default();
-                if extension == "m3u8" {
-                    // One master per listing: the one with every rendition.
-                    let rank = if name == "auto" {
-                        i64::MAX
+                if super::path_extension(&link).as_deref() != Some("m3u8") {
+                    continue;
+                }
+                if best_playlist.as_ref().is_none_or(|(r, _)| rank > *r) {
+                    let mut variant = Variant::hls(link);
+                    variant.language = track["language"].as_str().and_then(language_of);
+                    variant.format_id = Some(if sign_language {
+                        "hls-dgs".into()
                     } else {
-                        i64::from(height.unwrap_or(0))
-                    };
-                    if best_playlist.as_ref().is_none_or(|(r, _)| rank > *r) {
-                        let mut variant = Variant::hls(link);
-                        variant.language = language;
-                        variant.format_id = Some(if sign_language {
-                            "hls-dgs".into()
-                        } else {
-                            "hls".into()
-                        });
-                        best_playlist = Some((rank, variant));
-                    }
-                    continue;
-                }
-                if !matches!(extension.as_str(), "mp4" | "webm") {
-                    continue;
-                }
-                if files.iter().any(|v| v.url == link) {
-                    continue;
-                }
-                let mut variant = Variant::file(link);
-                variant.container = Some(if extension == "webm" {
-                    Container::Webm
-                } else {
-                    Container::Mp4
-                });
-                if let Some(codecs) = quality["mimeCodec"].as_str() {
-                    variant = variant.with_codecs(codecs);
-                }
-                if variant.video.is_none() {
-                    variant.video = Some(if extension == "webm" {
-                        VideoCodec::Vp9
-                    } else {
-                        VideoCodec::H264
+                        "hls".into()
                     });
+                    best_playlist = Some((rank, variant));
                 }
-                if variant.audio.is_none() {
-                    variant.audio = Some(if extension == "webm" {
-                        AudioCodec::Opus
-                    } else {
-                        AudioCodec::Aac
-                    });
-                }
-                variant.height = height;
-                variant.width = match (aspect_ratio, height) {
-                    (Some(ratio), Some(h)) => Some((ratio * f64::from(h)).round() as u32),
-                    _ => None,
-                };
-                variant.size = util::uint(&track["filesize"]);
-                variant.bitrate = util::search(&RE_BITRATE, variant.url.as_str())
-                    .and_then(|k| k.parse::<u64>().ok())
-                    .map(|k| k * 1000);
-                variant.duration = duration;
-                variant.language = language;
-                let mut label = height
-                    .map(|h| format!("{h}p"))
-                    .unwrap_or_else(|| name.clone());
-                let mut format_id = format!("{extension}-{label}");
-                if class == "ad" {
-                    label.push_str(" AD");
-                    format_id.push_str("-ad");
-                }
-                if sign_language {
-                    label.push_str(" DGS");
-                    format_id.push_str("-dgs");
-                }
-                variant.label = Some(label);
-                variant.format_id = Some(format_id);
-                files.push(variant);
             }
         }
         if let Some((_, playlist)) = best_playlist
@@ -323,9 +258,7 @@ fn streams_of(ptmd: &Value, aspect_ratio: Option<f64>, sign_language: bool) -> S
             playlists.push(playlist);
         }
     }
-    files.sort_by_key(|v| std::cmp::Reverse(v.height.unwrap_or(0)));
     Streams {
-        files,
         playlists,
         subtitles: subtitles_of(&ptmd["captions"]),
         duration,
@@ -373,13 +306,6 @@ struct MediaNode {
     ptmd: String,
     sign_language: bool,
     live: bool,
-    aspect_ratio: Option<f64>,
-}
-
-fn aspect_ratio_of(text: &Value) -> Option<f64> {
-    let (w, h) = text.as_str()?.split_once(':')?;
-    let (w, h): (f64, f64) = (w.trim().parse().ok()?, h.trim().parse().ok()?);
-    (h > 0.0).then(|| w / h)
 }
 
 pub struct ZdfResolver {
@@ -516,7 +442,6 @@ impl ZdfResolver {
         if nodes.is_empty() {
             return Err(ResolveError::NotFound(origin.clone()));
         }
-        let mut files = Vec::new();
         let mut playlists = Vec::new();
         let mut subtitles = Vec::new();
         let mut duration = None;
@@ -524,10 +449,9 @@ impl ZdfResolver {
         let live = nodes.iter().any(|n| n.live);
         for node in nodes {
             let ptmd = self.ptmd(&node.ptmd, origin).await?;
-            let streams = streams_of(&ptmd, node.aspect_ratio, node.sign_language);
+            let streams = streams_of(&ptmd, node.sign_language);
             duration = duration.or(streams.duration);
             region = region.or(streams.region);
-            files.extend(streams.files);
             playlists.extend(streams.playlists);
             for track in streams.subtitles {
                 if !subtitles.iter().any(|t: &SubtitleTrack| t.url == track.url) {
@@ -537,7 +461,7 @@ impl ZdfResolver {
         }
         let expansion =
             manifests::expand_each(&self.http, PLATFORM, playlists, &mut subtitles, duration).await;
-        let mut expanded = expansion.variants;
+        let mut variants = expansion.variants;
         let mut refusal = None;
         for unread in expansion.unread {
             if unread.refused()
@@ -563,24 +487,19 @@ impl ZdfResolver {
                     "HLS master not expanded: {}",
                     unread.error
                 );
-                expanded.push(unread.variant);
+                variants.push(unread.variant);
             }
         }
-        let mut variants = files;
-        for mut variant in expanded {
+        if variants.is_empty() {
+            return Err(refusal.unwrap_or_else(|| ResolveError::NotFound(origin.clone())));
+        }
+        for variant in &mut variants {
             if live {
                 variant.live = true;
             }
             if variant.duration.is_none() {
                 variant.duration = duration;
             }
-            variants.push(variant);
-        }
-        if variants.is_empty() {
-            return Err(refusal.unwrap_or_else(|| ResolveError::NotFound(origin.clone())));
-        }
-        if live {
-            variants.iter_mut().for_each(|v| v.live = true);
         }
         resolved.live = live;
         resolved.duration = if live {
@@ -614,7 +533,6 @@ impl ZdfResolver {
                     ptmd: util::text(&node["ptmdTemplate"])?,
                     sign_language: node["vodMediaType"].as_str() == Some("DGS"),
                     live: !node["liveMediaType"].is_null(),
-                    aspect_ratio: aspect_ratio_of(&node["aspectRatio"]),
                 })
             })
             .collect();
@@ -677,7 +595,6 @@ impl ZdfResolver {
                             .as_str()
                             .is_some_and(|l| l.contains("Gebärden")),
                     live: ptmd.contains("/live/"),
-                    aspect_ratio: None,
                     ptmd,
                 })
             })
@@ -688,7 +605,6 @@ impl ZdfResolver {
             nodes.push(MediaNode {
                 sign_language: false,
                 live: ptmd.contains("/live/"),
-                aspect_ratio: None,
                 ptmd,
             });
         }
@@ -884,7 +800,7 @@ impl Resolver for ZdfResolver {
                 "news",
                 "subtitles",
             ],
-            formats: &["mp4", "webm", "hls"],
+            formats: &["hls"],
             media: &[MediaKind::Video],
             tags: &[Tag::News, Tag::Video, Tag::Live],
             session: SessionSupport::None,
@@ -1089,7 +1005,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn videos_resolve_with_files_by_height_renditions_and_captions() {
+    async fn videos_resolve_with_the_full_masters_renditions_and_captions() {
         let mut fixture = Fixture::new(PLATFORM, None);
         fixture.exchanges.push(token());
         fixture.exchanges.push(graphql(json!({"videoByCanonical": {
@@ -1100,7 +1016,7 @@ mod tests {
             "episodeInfo": {"episodeNumber": 1, "seasonNumber": 2},
             "smartCollection": {"canonical": "inside-cdu-102", "title": "Inside CDU", "sharingUrl": "https://www.zdf.de/dokus/inside-cdu-102"},
             "currentMedia": {"nodes": [
-                {"id": "260922_folge1_rehbraun_zei", "ptmdTemplate": "/tmd/2/{playerId}/vod/ptmd/mediathek/260922_folge1_rehbraun_zei/2", "duration": 2129, "aspectRatio": "16:9", "vodMediaType": "DEFAULT", "label": "Normal"}
+                {"id": "260922_folge1_rehbraun_zei", "ptmdTemplate": "/tmd/2/{playerId}/vod/ptmd/mediathek/260922_folge1_rehbraun_zei/2", "duration": 2129, "vodMediaType": "DEFAULT", "label": "Normal"}
             ]}
         }})));
         fixture.exchanges.push(get(
@@ -1128,6 +1044,7 @@ mod tests {
         .unwrap();
         assert!(resolver.matches(&url));
         let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
+        crate::resolve::assert_one_family(&resolved.variants);
         assert_eq!(
             resolved.id.as_deref(),
             Some("inside-cdu-staffel-2-folge-1-rehbraun-100")
@@ -1155,41 +1072,20 @@ mod tests {
                 "https://www.zdf.de/video/dokus/inside-cdu-102/inside-cdu-staffel-2-folge-1-rehbraun-100"
             )
         );
-        let files: Vec<&Variant> = resolved
-            .variants
-            .iter()
-            .filter(|v| v.kind == VariantKind::File)
-            .collect();
         assert_eq!(
-            files.len(),
-            4,
-            "the WebM, two MP4 files and the audio description"
+            resolved.variants.len(),
+            2,
+            "the full master's renditions, and nothing else the document lists"
         );
-        assert_eq!(files[0].container, Some(Container::Webm));
-        assert_eq!(files[0].height, Some(1080));
-        assert_eq!(files[0].width, Some(1920));
-        assert_eq!(files[0].video, Some(VideoCodec::Vp9));
-        assert_eq!(files[0].audio, Some(AudioCodec::Opus));
-        assert_eq!(files[0].size, Some(1464293655));
-        assert_eq!(files[0].bitrate, Some(4_328_000));
-        assert_eq!(files[0].format_id.as_deref(), Some("webm-1080p"));
-        assert_eq!(files[0].language.as_deref(), Some("de"));
-        assert_eq!(files[1].container, Some(Container::Mp4));
-        assert_eq!(files[1].height, Some(720));
-        assert_eq!(files[1].video, Some(VideoCodec::H264));
-        assert_eq!(files[1].audio, Some(AudioCodec::Aac));
-        assert_eq!(files[1].label.as_deref(), Some("720p"));
-        assert_eq!(files[1].duration, Some(Duration::from_secs(2129)));
-        assert_eq!(files[3].format_id.as_deref(), Some("mp4-360p-ad"));
-        assert_eq!(files[3].label.as_deref(), Some("360p AD"));
-        let renditions: Vec<&Variant> = resolved
-            .variants
-            .iter()
-            .filter(|v| v.kind == VariantKind::Hls)
-            .collect();
-        assert_eq!(renditions.len(), 2, "the full master's renditions, once");
-        assert_eq!(renditions[1].height, Some(1080));
-        assert_eq!(renditions[1].duration, Some(Duration::from_secs(15)));
+        assert!(
+            resolved
+                .variants
+                .iter()
+                .all(|v| v.kind == VariantKind::Hls && v.format_id.as_deref() == Some("hls"))
+        );
+        assert_eq!(resolved.variants[0].height, Some(270));
+        assert_eq!(resolved.variants[1].height, Some(1080));
+        assert_eq!(resolved.variants[1].duration, Some(Duration::from_secs(15)));
         assert_eq!(resolved.subtitles.len(), 2);
         assert_eq!(resolved.subtitles[0].format, SubtitleFormat::Ttml);
         assert_eq!(resolved.subtitles[1].format, SubtitleFormat::Vtt);
@@ -1249,6 +1145,7 @@ mod tests {
             .unwrap()
             .media()
             .unwrap();
+        crate::resolve::assert_one_family(&live.variants);
         assert!(live.live);
         assert_eq!(live.title.as_deref(), Some("ZDF Livestream"));
         assert_eq!(live.uploader.as_deref(), Some("ZDF"));
@@ -1360,6 +1257,7 @@ mod tests {
         fixture.exchanges.pop();
         let resolver = ZdfResolver::new(Http::replay(fixture));
         let live = resolver.resolve(&origin).await.unwrap().media().unwrap();
+        crate::resolve::assert_one_family(&live.variants);
         assert!(live.live);
         assert_eq!(live.variants.len(), 1);
         assert_eq!(live.variants[0].kind, VariantKind::Hls);
@@ -1371,7 +1269,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_refused_master_of_a_video_with_files_is_left_out() {
+    async fn a_refused_master_of_a_video_served_everywhere_is_the_refusal_itself() {
         let mut fixture = Fixture::new(PLATFORM, None);
         fixture.exchanges.push(token());
         fixture.exchanges.push(graphql(json!({"videoByCanonical": {
@@ -1379,7 +1277,7 @@ mod tests {
             "sharingUrl": "https://www.zdf.de/video/dokus/inside-cdu-102/inside-cdu-staffel-2-folge-1-rehbraun-100",
             "smartCollection": null,
             "currentMedia": {"nodes": [
-                {"id": "260922_folge1_rehbraun_zei", "ptmdTemplate": "/tmd/2/{playerId}/vod/ptmd/mediathek/260922_folge1_rehbraun_zei/2", "duration": 2129, "aspectRatio": "16:9", "vodMediaType": "DEFAULT", "label": "Normal"}
+                {"id": "260922_folge1_rehbraun_zei", "ptmdTemplate": "/tmd/2/{playerId}/vod/ptmd/mediathek/260922_folge1_rehbraun_zei/2", "duration": 2129, "vodMediaType": "DEFAULT", "label": "Normal"}
             ]}
         }})));
         fixture.exchanges.push(get(
@@ -1395,29 +1293,14 @@ mod tests {
             "<HTML><HEAD><TITLE>Access Denied</TITLE></HEAD><BODY><H1>Access Denied</H1></BODY></HTML>".into(),
         ));
         let resolver = ZdfResolver::new(Http::replay(fixture));
-        let resolved = resolver
-            .resolve(
-                &Url::parse(
-                    "https://www.zdf.de/video/dokus/inside-cdu-102/inside-cdu-staffel-2-folge-1-rehbraun-100",
-                )
-                .unwrap(),
-            )
-            .await
-            .unwrap()
-            .media()
-            .unwrap();
-        assert!(!resolved.variants.is_empty());
+        let origin = Url::parse(
+            "https://www.zdf.de/video/dokus/inside-cdu-102/inside-cdu-staffel-2-folge-1-rehbraun-100",
+        )
+        .unwrap();
+        let error = resolver.resolve(&origin).await.unwrap_err();
         assert!(
-            resolved
-                .variants
-                .iter()
-                .all(|v| v.kind == VariantKind::File && v.height.is_some()),
-            "{:?}",
-            resolved
-                .variants
-                .iter()
-                .map(|v| v.url.as_str())
-                .collect::<Vec<_>>()
+            matches!(&error, ResolveError::Unavailable { url, reason } if *url == origin && reason == "HTTP 403 Forbidden"),
+            "{error}"
         );
     }
 
@@ -1463,17 +1346,29 @@ mod tests {
             "canonical": "terra-x-history-ein-tag-im-juli-ahrtalflut-2021-100", "title": "Ein Tag im Juli - Ahrtalflut 2021",
             "sharingUrl": "https://www.zdf.de/video/dokus/ein-tag-im-juli---ahrtalflut-2021-movie-100/terra-x-history-ein-tag-im-juli-ahrtalflut-2021-100",
             "teaser": {"image": {"list": {}}}, "smartCollection": {"canonical": "ein-tag-im-juli---ahrtalflut-2021-movie-100", "title": "Ein Tag im Juli - Ahrtalflut 2021", "sharingUrl": "https://www.zdf.de/dokus/ein-tag-im-juli---ahrtalflut-2021-movie-100"},
-            "currentMedia": {"nodes": [{"id": "260519_2015_sendung_his", "ptmdTemplate": "/tmd/2/{playerId}/vod/ptmd/mediathek/260519_2015_sendung_his/2", "duration": 5304, "aspectRatio": "16:9", "vodMediaType": "DEFAULT"}]}
+            "currentMedia": {"nodes": [{"id": "260519_2015_sendung_his", "ptmdTemplate": "/tmd/2/{playerId}/vod/ptmd/mediathek/260519_2015_sendung_his/2", "duration": 5304, "vodMediaType": "DEFAULT"}]}
         }})));
         fixture.exchanges.push(get(
             "https://api.zdf.de/tmd/2/android_native_6/vod/ptmd/mediathek/260519_2015_sendung_his/2",
             200,
             "application/json",
             json!({"attributes": {"duration": {"value": 5304000}}, "captions": [], "priorityList": [{"formitaeten": [
-                {"facets": ["progressive"], "mimeType": "video/mp4", "type": "h264_aac_mp4_http_na_na", "qualities": [
-                    {"highestVerticalResolution": 720, "mimeCodec": "avc1.640028, mp4a.40.2", "quality": "hd", "audio": {"tracks": [track("https://nrodlzdf-a.akamaihd.net/y/his_3328k_p15v17.mp4", "main", Some(1000))]}}
+                {"facets": [], "isAdaptive": true, "mimeType": "application/x-mpegURL", "type": "h264_aac_ts_http_m3u8_http", "qualities": [
+                    {"highestVerticalResolution": 720, "quality": "auto", "audio": {"tracks": [track("https://zdfvod.akamaized.net/y/all.csmil/master.m3u8", "main", None)]}}
                 ]}
             ]}]}).to_string(),
+        ));
+        fixture.exchanges.push(get(
+            "https://zdfvod.akamaized.net/y/all.csmil/master.m3u8",
+            200,
+            "application/x-mpegURL",
+            "#EXTM3U\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=3328000,RESOLUTION=1280x720,FRAME-RATE=25.000,CODECS=\"avc1.640028,mp4a.40.2\"\nhttps://zdfvod-rwrtr.akamaized.net/y/index-f4-v1-a1.m3u8\n".into(),
+        ));
+        fixture.exchanges.push(get(
+            "https://zdfvod-rwrtr.akamaized.net/y/index-f4-v1-a1.m3u8",
+            200,
+            "application/x-mpegURL",
+            MEDIA.into(),
         ));
         let resolver = ZdfResolver::new(Http::replay(fixture));
         let Resolution::Playlist(all) = resolver
@@ -1513,6 +1408,7 @@ mod tests {
             .unwrap()
             .media()
             .unwrap();
+        crate::resolve::assert_one_family(&film.variants);
         assert_eq!(
             film.id.as_deref(),
             Some("terra-x-history-ein-tag-im-juli-ahrtalflut-2021-100")
@@ -1552,10 +1448,22 @@ mod tests {
             200,
             "application/json",
             json!({"attributes": {"duration": {"value": 30000}}, "captions": [], "priorityList": [{"formitaeten": [
-                {"facets": ["progressive"], "mimeType": "video/mp4", "type": "h264_aac_mp4_http_na_na", "qualities": [
-                    {"highestVerticalResolution": 1080, "mimeCodec": "avc1.64002a, mp4a.40.2", "quality": "fhd", "audio": {"tracks": [track("https://nrodlzdf-a.akamaihd.net/z/drohne_6628k_p61v17.mp4", "main", Some(24000000))]}}
+                {"facets": [], "isAdaptive": true, "mimeType": "application/x-mpegURL", "type": "h264_aac_ts_http_m3u8_http", "qualities": [
+                    {"highestVerticalResolution": 1080, "quality": "auto", "audio": {"tracks": [track("https://zdfvod.akamaized.net/z/all.csmil/master.m3u8", "main", None)]}}
                 ]}
             ]}]}).to_string(),
+        ));
+        fixture.exchanges.push(get(
+            "https://zdfvod.akamaized.net/z/all.csmil/master.m3u8",
+            200,
+            "application/x-mpegURL",
+            "#EXTM3U\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=6628000,RESOLUTION=1920x1080,FRAME-RATE=25.000,CODECS=\"avc1.64002a,mp4a.40.2\"\nhttps://zdfvod-rwrtr.akamaized.net/z/index-f6-v1-a1.m3u8\n".into(),
+        ));
+        fixture.exchanges.push(get(
+            "https://zdfvod-rwrtr.akamaized.net/z/index-f6-v1-a1.m3u8",
+            200,
+            "application/x-mpegURL",
+            MEDIA.into(),
         ));
         fixture
             .exchanges
@@ -1573,6 +1481,7 @@ mod tests {
             .unwrap()
             .media()
             .unwrap();
+        crate::resolve::assert_one_family(&news.variants);
         assert_eq!(
             news.id.as_deref(),
             Some("berlin-flughafen-ber-drohnen-alarm-100")
@@ -1590,7 +1499,6 @@ mod tests {
         );
         assert_eq!(news.variants.len(), 1);
         assert_eq!(news.variants[0].height, Some(1080));
-        assert_eq!(news.variants[0].size, Some(24000000));
         assert_eq!(news.subtitles.len(), 1);
         assert_eq!(news.subtitles[0].format, SubtitleFormat::Vtt);
         assert!(matches!(
@@ -1602,9 +1510,10 @@ mod tests {
         ));
     }
 
-    /// Every example link resolves live: videos with files by height, collections with
-    /// episodes, and the live TV page with its channels. The channels themselves are
+    /// Every example link resolves live: videos with renditions by height, collections
+    /// with episodes, and the live TV page with its channels. The channels themselves are
     /// served in Germany only, so none is an example.
+    #[ignore = "reaches the live site: cargo test -- --ignored"]
     #[tokio::test]
     async fn live_examples_resolve() {
         let resolver = ZdfResolver::new(Http::new(crate::http::HttpConfig::default()));
@@ -1621,13 +1530,14 @@ mod tests {
                         "{link}: no playable variant"
                     );
                     assert!(resolved.title.is_some(), "{link}: no title");
+                    crate::resolve::assert_one_family(&resolved.variants);
                     if !resolved.live {
                         assert!(
                             resolved
                                 .variants
                                 .iter()
-                                .any(|v| v.kind == VariantKind::File && v.height.is_some()),
-                            "{link}: no file by height"
+                                .any(|v| v.kind == VariantKind::Hls && v.height.is_some()),
+                            "{link}: no rendition by height"
                         );
                         assert!(!resolved.subtitles.is_empty(), "{link}: no subtitles");
                     }

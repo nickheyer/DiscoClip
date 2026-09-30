@@ -1,0 +1,438 @@
+# A tag v<version> publishes the release: archives for Linux, macOS and Windows, the .deb
+# and .rpm packages, the cpu and gpu images on GHCR for amd64 and arm64, a SHA256SUMS
+# file, and build provenance attestations for every file and image.
+#
+# To release: set `version` in Cargo.toml, tag the commit `v<version>`, and push the tag.
+#
+# The tag has to match the version in Cargo.toml. A version with a pre-release part,
+# such as 1.0.0-rc.1, is published as a pre-release and moves no `latest` tag.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+  attestations: write
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  verify:
+    name: Check the tag
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      image: ${{ steps.version.outputs.image }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - id: version
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::the tag $GITHUB_REF_NAME does not match version $version in Cargo.toml"
+            exit 1
+          fi
+          {
+            echo "version=$version"
+            case "$version" in
+              *-*) echo "prerelease=true" ;;
+              *) echo "prerelease=false" ;;
+            esac
+            echo "image=ghcr.io/$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')/discoclip"
+          } >> "$GITHUB_OUTPUT"
+
+  linux:
+    name: Linux ${{ matrix.arch }}
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      # The same build stage the images use, so the archive's binary is the image's.
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: binary
+          outputs: type=local,dest=out
+          cache-from: type=gha,scope=build-${{ matrix.arch }}
+          cache-to: type=gha,scope=build-${{ matrix.arch }},mode=max
+
+      - name: Check
+        run: |
+          chmod 755 out/discoclip
+          out/discoclip --version
+          echo "needs glibc $(objdump -T out/discoclip | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)"
+
+      - name: Archive
+        run: packaging/archive.sh out/discoclip linux-${{ matrix.arch }} dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-linux-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  packages:
+    name: Packages
+    needs: [verify, linux]
+    runs-on: ubuntu-24.04
+    env:
+      NFPM_VERSION: 2.47.0
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-linux-*
+          path: archives
+          merge-multiple: true
+
+      - name: Install nfpm
+        run: |
+          base="https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}"
+          curl -fsSLO "$base/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz"
+          curl -fsSLO "$base/checksums.txt"
+          grep " nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz\$" checksums.txt | sha256sum -c -
+          tar -xzf "nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz" nfpm
+          sudo install -m 755 nfpm /usr/local/bin/nfpm
+          nfpm --version
+
+      - name: Package
+        run: |
+          for pair in x86_64:amd64 aarch64:arm64; do
+            arch=${pair%%:*}
+            pkgarch=${pair##*:}
+            mkdir -p "bin/$arch"
+            tar -xzf archives/discoclip-v*-linux-"$arch".tar.gz -C "bin/$arch" --strip-components=1 --wildcards '*/discoclip'
+            packaging/package.sh "bin/$arch/discoclip" "$pkgarch" dist
+          done
+          ls -l dist
+
+      - name: Install the .deb on Debian
+        run: |
+          docker run --rm -v "$PWD/dist:/dist:ro" debian:trixie-slim sh -euc '
+            apt-get update -qq
+            apt-get install -y -qq --no-install-recommends /dist/discoclip_*_amd64.deb >/dev/null
+            discoclip --version
+            id discoclip
+            test -f /usr/lib/systemd/system/discoclip.service
+            test -f /usr/lib/sysusers.d/discoclip.conf
+            stat -c "%U:%G %a" /etc/discoclip/discoclip.toml
+            apt-get remove -y -qq discoclip >/dev/null
+            apt-get purge -y -qq discoclip >/dev/null
+            test ! -e /etc/discoclip
+          '
+
+      - name: Install the .rpm on Fedora
+        run: |
+          docker run --rm -v "$PWD/dist:/dist:ro" fedora:latest sh -euc '
+            dnf install -y -q --setopt=install_weak_deps=False /dist/discoclip-*.x86_64.rpm
+            discoclip --version
+            id discoclip
+            test -f /usr/lib/systemd/system/discoclip.service
+            stat -c "%U:%G %a" /etc/discoclip/discoclip.toml
+            dnf remove -y -q discoclip
+          '
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-packages
+          path: dist/*
+          if-no-files-found: error
+
+  macos:
+    name: macOS ${{ matrix.arch }}
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: aarch64
+            runner: macos-15
+          - arch: x86_64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: |
+          cargo build --release --locked
+          target/release/discoclip --version
+
+      - name: Archive
+        run: packaging/archive.sh target/release/discoclip macos-${{ matrix.arch }} dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-macos-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  windows:
+    name: Windows x86_64
+    needs: verify
+    runs-on: windows-2025
+    env:
+      LIBCLANG_PATH: C:\Program Files\LLVM\bin
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      # The TLS library the HTTP client links assembles with NASM.
+      - uses: ilammy/setup-nasm@v1
+
+      - name: Build
+        shell: bash
+        run: |
+          cargo build --release --locked
+          target/release/discoclip.exe --version
+
+      - name: Archive
+        shell: bash
+        run: packaging/archive.sh target/release/discoclip.exe windows-x86_64 dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-windows-x86_64
+          path: dist/*
+          if-no-files-found: error
+
+  images:
+    name: Image ${{ matrix.variant }} ${{ matrix.arch }}
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [cpu, gpu]
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+            platform: linux/amd64
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ needs.verify.outputs.image }}
+
+      # Pushed by digest alone; the merge job below names the manifest lists.
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: ${{ matrix.variant }}
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=${{ needs.verify.outputs.image }},push-by-digest=true,name-canonical=true,push=true
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=${{ matrix.variant }}-${{ matrix.arch }}
+          cache-to: type=gha,scope=${{ matrix.variant }}-${{ matrix.arch }},mode=max
+
+      - name: Smoke test
+        env:
+          IMAGE: ${{ needs.verify.outputs.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          docker pull "$IMAGE@$DIGEST"
+          docker tag "$IMAGE@$DIGEST" discoclip:${{ matrix.variant }}
+          packaging/smoke-test.sh discoclip:${{ matrix.variant }} ${{ matrix.variant }}
+
+      - name: Export the digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p digests
+          touch "digests/${DIGEST#sha256:}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.variant }}-${{ matrix.arch }}
+          path: digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: Publish image ${{ matrix.variant }}
+    needs: [verify, images]
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [cpu, gpu]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digests-${{ matrix.variant }}-*
+          path: digests
+          merge-multiple: true
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      # cpu: 0.2.0, 0.2, latest. gpu: 0.2.0-gpu, 0.2-gpu, latest-gpu, gpu.
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ needs.verify.outputs.image }}
+          flavor: |
+            suffix=${{ matrix.variant == 'gpu' && '-gpu' || '' }},onlatest=true
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=gpu,suffix=,enable=${{ matrix.variant == 'gpu' && needs.verify.outputs.prerelease == 'false' }}
+
+      - name: Create the manifest list
+        working-directory: digests
+        env:
+          IMAGE: ${{ needs.verify.outputs.image }}
+        run: |
+          # shellcheck disable=SC2046
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf "$IMAGE@sha256:%s " *)
+
+      - id: inspect
+        name: Inspect
+        env:
+          IMAGE: ${{ needs.verify.outputs.image }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          docker buildx imagetools inspect "$IMAGE:$VERSION"
+          digest=$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{json .Manifest.Digest}}' | tr -d '"')
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ needs.verify.outputs.image }}
+          subject-digest: ${{ steps.inspect.outputs.digest }}
+          push-to-registry: true
+
+  publish:
+    name: Publish the release
+    needs: [verify, linux, packages, macos, windows, merge]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: |
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*
+
+      - name: Release notes
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+          IMAGE: ${{ needs.verify.outputs.image }}
+        run: |
+          {
+            echo "## Downloads"
+            echo
+            echo "| File | For |"
+            echo "| --- | --- |"
+            echo "| \`discoclip-v${VERSION}-linux-x86_64.tar.gz\` | Linux x86_64, glibc 2.35 or newer |"
+            echo "| \`discoclip-v${VERSION}-linux-aarch64.tar.gz\` | Linux aarch64, glibc 2.35 or newer |"
+            echo "| \`discoclip_${VERSION}-1_amd64.deb\`, \`discoclip_${VERSION}-1_arm64.deb\` | Debian and Ubuntu: the binary, the systemd unit, the service account and /etc/discoclip/discoclip.toml |"
+            echo "| \`discoclip-${VERSION}-1.x86_64.rpm\`, \`discoclip-${VERSION}-1.aarch64.rpm\` | Fedora and RHEL: the same |"
+            echo "| \`discoclip-v${VERSION}-macos-aarch64.tar.gz\` | macOS on Apple silicon |"
+            echo "| \`discoclip-v${VERSION}-macos-x86_64.tar.gz\` | macOS on Intel |"
+            echo "| \`discoclip-v${VERSION}-windows-x86_64.zip\` | Windows x86_64 |"
+            echo
+            echo "\`SHA256SUMS\` lists every file. Each file and image carries a build provenance attestation:"
+            echo "\`gh attestation verify <file> --repo ${GITHUB_REPOSITORY}\`."
+            echo
+            echo "## Images"
+            echo
+            echo "| Image | Encoding |"
+            echo "| --- | --- |"
+            echo "| \`${IMAGE}:${VERSION}\` | The embedded ffmpeg, in software |"
+            echo "| \`${IMAGE}:${VERSION}-gpu\` | An ffmpeg built with NVENC, VA-API, Quick Sync and Vulkan, and the drivers for NVIDIA, Intel and AMD GPUs |"
+            echo
+            echo "Both are built for amd64 and arm64. See the README's Deploying section for compose files and the installer."
+            echo
+          } > notes.md
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.verify.outputs.version }}
+          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+        run: |
+          flags=""
+          if [ "$PRERELEASE" = true ]; then flags="--prerelease"; fi
+          # shellcheck disable=SC2086
+          gh release create "$GITHUB_REF_NAME" \
+            --verify-tag \
+            --title "DiscoClip $VERSION" \
+            --notes-file notes.md \
+            --generate-notes \
+            $flags \
+            dist/*

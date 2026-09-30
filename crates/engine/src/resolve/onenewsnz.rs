@@ -252,20 +252,10 @@ mod tests {
             resolved
                 .variants
                 .iter()
-                .any(|v| v.kind == VariantKind::File && v.height.is_some())
-        );
-        assert!(
-            resolved
-                .variants
-                .iter()
                 .any(|v| v.kind == VariantKind::Hls && v.height.is_some())
         );
-        assert!(
-            resolved
-                .variants
-                .iter()
-                .any(|v| v.kind == VariantKind::Dash && v.height.is_some())
-        );
+        crate::resolve::assert_one_family(&resolved.variants);
+        assert!(resolved.variants.iter().all(|v| v.kind == VariantKind::Hls));
 
         let error = resolver
             .resolve(&Url::parse(RUGBY).unwrap())

@@ -812,6 +812,17 @@ pub struct Variant {
     pub label: Option<String>,
     #[serde(default)]
     pub language: Option<String>,
+    /// The platform's own name for the audio track: a YouTube `audioTrack.id`, an HLS
+    /// rendition's group and name.
+    #[serde(default)]
+    pub audio_track: Option<String>,
+    /// The platform marks the audio track as the one its player takes by default: the
+    /// original sound.
+    #[serde(default)]
+    pub audio_default: bool,
+    /// The platform marks the audio track as a dub of the original.
+    #[serde(default)]
+    pub audio_dubbed: bool,
     /// The RFC 6381 codec string, when known.
     #[serde(default)]
     pub codecs: Option<String>,
@@ -860,6 +871,9 @@ impl Variant {
             format_id: None,
             label: None,
             language: None,
+            audio_track: None,
+            audio_default: false,
+            audio_dubbed: false,
             codecs: None,
             video_only: false,
             audio_only: false,
@@ -1427,9 +1441,53 @@ pub fn parse_time_stamp(text: &str) -> Option<Duration> {
     Some(Duration::from_secs_f64(total))
 }
 
+/// Asserts, in tests, that a resolver returned one media URL family: every variant, and
+/// the audio it pairs with, on one host and of one kind of file, so none of them is a
+/// fallback from another delivery. Hosts are compared with their digits set aside, since
+/// a CDN numbers its edges, and the kind of file is the path's extension, absent for a
+/// file named by its query.
+#[cfg(test)]
+pub fn assert_one_family(variants: &[Variant]) {
+    fn family(url: &Url) -> (String, String) {
+        let host = url
+            .host_str()
+            .unwrap_or("")
+            .chars()
+            .filter(|c| !c.is_ascii_digit())
+            .collect::<String>()
+            .to_ascii_lowercase();
+        (host, path_extension(url).unwrap_or_default())
+    }
+    let families: std::collections::BTreeSet<(String, String)> = variants
+        .iter()
+        .flat_map(|v| std::iter::once(&v.url).chain(v.audio_url.iter()))
+        .map(family)
+        .collect();
+    assert!(
+        families.len() <= 1,
+        "the variants span {} URL families: {families:?}",
+        families.len()
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn one_family_means_one_host_and_one_kind_of_file() {
+        let url = |s: &str| Url::parse(s).unwrap();
+        let mut hls = Variant::new(url("https://cdn1.site.test/v/720.m3u8"), VariantKind::Hls);
+        hls.audio_url = Some(url("https://cdn2.site.test/v/audio/en.m3u8"));
+        let rung = Variant::new(url("https://cdn3.site.test/v/360.m3u8"), VariantKind::Hls);
+        assert_one_family(&[hls.clone(), rung]);
+        let file = Variant::new(url("https://cdn1.site.test/v/720.mp4"), VariantKind::File);
+        let outcome = std::panic::catch_unwind(|| assert_one_family(&[hls, file]));
+        assert!(
+            outcome.is_err(),
+            "a file beside a playlist is a second family"
+        );
+    }
 
     #[test]
     fn essence_drops_parameters_and_case() {

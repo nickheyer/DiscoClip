@@ -16,7 +16,7 @@ use super::{
     timestamp_hint,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
+use crate::media::MediaKind;
 
 pub const PLATFORM: &str = "vk";
 const SITE: &str = "https://vk.com/";
@@ -280,68 +280,18 @@ pub fn decode_body(bytes: &[u8], content_type: Option<&str>) -> String {
     }
 }
 
-/// The variants a player's parameters list: MP4 files by height, HLS and DASH
-/// manifests, and the live stream of a broadcast.
+/// The HLS manifest a player's parameters name, which is the stream the site's own
+/// player loads, as the one variant.
 pub fn variants_of(params: &Value, duration: Option<Duration>, live: bool) -> Vec<Variant> {
-    let headers = vec![("referer".to_string(), SITE.to_string())];
-    let mut variants = Vec::new();
-    for height in [144u32, 240, 360, 480, 720, 1080, 1440, 2160] {
-        let Some(url) = params[format!("url{height}")].as_str().and_then(absolute) else {
-            continue;
-        };
-        let mut v = Variant::new(url, VariantKind::File);
-        v.container = Some(Container::Mp4);
-        v.video = Some(VideoCodec::H264);
-        v.audio = Some(AudioCodec::Aac);
-        v.height = Some(height);
-        v.duration = duration;
-        v.format_id = Some(format!("url{height}"));
-        v.label = Some(format!("{height}p"));
-        v.headers = headers.clone();
-        variants.push(v);
-    }
-    let manifests: [(&str, VariantKind); 9] = [
-        ("hls", VariantKind::Hls),
-        ("hls_fmp4", VariantKind::Hls),
-        ("hls_ondemand", VariantKind::Hls),
-        ("dash_sep", VariantKind::Dash),
-        ("dash_webm", VariantKind::Dash),
-        ("dash_webm_av1", VariantKind::Dash),
-        ("dash_ondemand", VariantKind::Dash),
-        ("hls_live", VariantKind::Hls),
-        ("dash_live", VariantKind::Dash),
-    ];
-    for (key, kind) in manifests {
-        let Some(url) = params[key].as_str().and_then(absolute) else {
-            continue;
-        };
-        if variants.iter().any(|v| v.url == url) {
-            continue;
-        }
-        let mut v = Variant::new(url, kind);
-        v.duration = duration;
-        v.live = live || key.ends_with("_live");
-        v.format_id = Some(key.to_string());
-        v.headers = headers.clone();
-        if key.contains("webm") {
-            v.container = Some(Container::Webm);
-            v.video = Some(if key.ends_with("av1") {
-                VideoCodec::Av1
-            } else {
-                VideoCodec::Vp9
-            });
-        }
-        variants.push(v);
-    }
-    if let Some(url) = params["live_mp4"].as_str().and_then(absolute) {
-        let mut v = Variant::new(url, VariantKind::File);
-        v.container = Some(Container::Mp4);
-        v.live = true;
-        v.format_id = Some("live_mp4".into());
-        v.headers = headers.clone();
-        variants.push(v);
-    }
-    variants
+    let Some(url) = params["hls"].as_str().and_then(absolute) else {
+        return Vec::new();
+    };
+    let mut v = Variant::new(url, VariantKind::Hls);
+    v.duration = duration;
+    v.live = live;
+    v.format_id = Some("hls".into());
+    v.headers = vec![("referer".to_string(), SITE.to_string())];
+    vec![v]
 }
 
 #[async_trait]
@@ -356,7 +306,7 @@ impl Resolver for VkResolver {
             name: "VK",
             hosts: &["vk.com", "vk.ru", "vkvideo.ru", "vkontakte.ru"],
             features: &["videos", "clips", "embeds", "live", "private share links"],
-            formats: &["mp4", "hls", "dash"],
+            formats: &["hls"],
             media: &[MediaKind::Video],
             tags: &[Tag::Social, Tag::Video, Tag::Live],
             session: SessionSupport::Optional,
@@ -397,9 +347,7 @@ impl Resolver for VkResolver {
         let params = player_params(&payload)
             .ok_or_else(|| ResolveError::malformed(url, "the player answer has no parameters"))?;
         let live = matches!(params["live"].as_str(), Some("1") | Some("true"))
-            || params["live"].as_i64().is_some_and(|l| l != 0)
-            || params["live_mp4"].is_string()
-            || params["hls_live"].is_string();
+            || params["live"].as_i64().is_some_and(|l| l != 0);
         let duration = params["duration"]
             .as_str()
             .and_then(|d| d.parse::<f64>().ok())
@@ -652,28 +600,19 @@ mod tests {
         assert!(resolved.uploaded_at.is_some());
         assert_eq!(resolved.clip.unwrap().start, Duration::from_secs(60));
         assert!(!resolved.live);
-        assert_eq!(resolved.variants.len(), 6);
-        let files: Vec<_> = resolved
-            .variants
-            .iter()
-            .filter(|v| v.kind == VariantKind::File)
-            .collect();
-        assert_eq!(files.len(), 3);
-        assert_eq!(files[2].height, Some(720));
-        assert_eq!(files[2].label.as_deref(), Some("720p"));
-        let hls = resolved
-            .variants
-            .iter()
-            .find(|v| v.kind == VariantKind::Hls)
-            .unwrap();
+        crate::resolve::assert_one_family(&resolved.variants);
+        assert_eq!(
+            resolved.variants.len(),
+            1,
+            "the HLS manifest alone, whatever files and DASH manifests the player lists"
+        );
+        let hls = &resolved.variants[0];
+        assert_eq!(hls.kind, VariantKind::Hls);
         assert!(hls.url.as_str().contains("video.m3u8"));
-        let av1 = resolved
-            .variants
-            .iter()
-            .find(|v| v.format_id.as_deref() == Some("dash_webm_av1"))
-            .unwrap();
-        assert_eq!(av1.video, Some(VideoCodec::Av1));
-        assert_eq!(av1.kind, VariantKind::Dash);
+        assert_eq!(hls.format_id.as_deref(), Some("hls"));
+        assert_eq!(hls.duration, Some(Duration::from_secs(195)));
+        assert!(!hls.live);
+        assert_eq!(hls.headers[0], ("referer".to_string(), SITE.to_string()));
         assert_eq!(resolved.subtitles.len(), 1);
         assert_eq!(
             resolved.subtitles[0].url.as_str(),
@@ -735,18 +674,9 @@ mod tests {
     async fn live_streams_are_marked() {
         let mut live = params();
         live["live"] = json!("1");
-        live["hls_live"] = json!("https://live.vk.com/stream.m3u8");
+        live["hls"] = json!("https://live.vk.com/stream.m3u8");
+        live["hls_live"] = json!("https://live.vk.com/edge.m3u8");
         live["live_mp4"] = json!("https://live.vk.com/stream.mp4");
-        for key in [
-            "url144",
-            "url240",
-            "url720",
-            "dash_sep",
-            "hls",
-            "dash_webm_av1",
-        ] {
-            live.as_object_mut().unwrap().remove(key);
-        }
         let mut fixture = Fixture::new("vk", None);
         fixture.exchanges.push(home());
         fixture
@@ -760,8 +690,13 @@ mod tests {
             .media()
             .unwrap();
         assert!(resolved.live);
-        assert_eq!(resolved.variants.len(), 2);
-        assert!(resolved.variants.iter().all(|v| v.live));
+        crate::resolve::assert_one_family(&resolved.variants);
+        assert_eq!(resolved.variants.len(), 1);
+        assert!(resolved.variants[0].live);
         assert_eq!(resolved.variants[0].kind, VariantKind::Hls);
+        assert_eq!(
+            resolved.variants[0].url.as_str(),
+            "https://live.vk.com/stream.m3u8"
+        );
     }
 }

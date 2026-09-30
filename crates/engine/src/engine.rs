@@ -16,7 +16,7 @@ use crate::config::EngineConfig;
 use crate::download::Downloader;
 use crate::event::{EngineEvent, EventKind};
 use crate::http::Http;
-use crate::job::{Job, JobId, JobStatus, Request, RequestLimits, SourceId, StatusKind};
+use crate::job::{Job, JobId, JobStatus, Request, RequestLimits, SourceId, Stage, StatusKind};
 use crate::pipeline::{self, Context};
 use crate::publish::Publisher;
 use crate::resolve::{
@@ -204,7 +204,10 @@ impl Engine {
                 },
             };
             shared.queued.fetch_sub(1, Ordering::Relaxed);
-            let token = CancellationToken::new();
+            let active_job = Active {
+                cancel: CancellationToken::new(),
+                stop: CancellationToken::new(),
+            };
             {
                 // Recovery and a concurrent submit can both queue the same id. Run it once.
                 let mut active = shared.active.lock().expect("active jobs lock");
@@ -212,7 +215,7 @@ impl Engine {
                     tracing::debug!(job = %id, "Job already running. Skipping duplicate dispatch.");
                     continue;
                 }
-                active.insert(id, token.clone());
+                active.insert(id, active_job.clone());
             }
             let job = match ctx.store.get(id).await {
                 Ok(Some(job)) if job.status == JobStatus::Queued => job,
@@ -236,7 +239,7 @@ impl Engine {
             let shared = shared.clone();
             let interrupt = interrupt.clone();
             tasks.spawn(async move {
-                pipeline::run_job(ctx, job, token, interrupt).await;
+                pipeline::run_job(ctx, job, active_job.cancel, active_job.stop, interrupt).await;
                 drop(permit);
                 shared.active.lock().expect("active jobs lock").remove(&id);
             });
@@ -285,14 +288,36 @@ impl Engine {
     /// Requeues the jobs that were running or waiting when the engine last stopped, and
     /// removes cache directories of jobs the store no longer has. A finished job's
     /// directory stays, since it holds the output the web app serves, until retention
-    /// takes it.
+    /// takes it. A job that was capturing a live stream keeps its recording and carries
+    /// on from it, as if the capture had been stopped.
     async fn recover(&self) -> Result<(), EngineError> {
         let ctx = &self.context;
         let active = ctx.store.list_active().await?;
         for mut job in active {
             if matches!(job.status, JobStatus::Running { .. }) {
-                ctx.note(&mut job, None, "requeued after engine restart")
+                let recorded = match &job.artifacts.recording {
+                    Some(recording) => tokio::fs::metadata(&recording.path)
+                        .await
+                        .is_ok_and(|m| m.is_file() && m.len() > 0),
+                    None => false,
+                };
+                if recorded
+                    && job.status
+                        == (JobStatus::Running {
+                            stage: Stage::Download,
+                        })
+                {
+                    ctx.note(
+                        &mut job,
+                        Some(Stage::Download),
+                        "Engine restarted during the capture. It carries on from the recording as it stands.",
+                    )
                     .await?;
+                } else {
+                    job.artifacts.recording = None;
+                    ctx.note(&mut job, None, "requeued after engine restart")
+                        .await?;
+                }
                 ctx.transition(&mut job, JobStatus::Queued).await?;
             }
             self.handle
@@ -307,7 +332,8 @@ impl Engine {
             let name = entry.file_name().to_string_lossy().into_owned();
             let known = match name.parse::<JobId>() {
                 Ok(id) => ctx.store.get(id).await?.is_some_and(|job| {
-                    job.status == JobStatus::Done && !pipeline::kept_files(&job).is_empty()
+                    (job.status == JobStatus::Done && !pipeline::kept_files(&job).is_empty())
+                        || (job.status == JobStatus::Queued && job.artifacts.recording.is_some())
                 }),
                 Err(_) => false,
             };
@@ -322,6 +348,14 @@ impl Engine {
     }
 }
 
+/// The tokens a running job listens to: one that stops it wherever it is, one that ends
+/// its live capture and keeps the recording.
+#[derive(Clone)]
+struct Active {
+    cancel: CancellationToken,
+    stop: CancellationToken,
+}
+
 struct Shared {
     resolvers: Arc<ResolverRegistry>,
     store: Arc<dyn JobStore>,
@@ -329,7 +363,7 @@ struct Shared {
     sources: HashSet<SourceId>,
     submit: mpsc::Sender<JobId>,
     events: broadcast::Sender<EngineEvent>,
-    active: Mutex<HashMap<JobId, CancellationToken>>,
+    active: Mutex<HashMap<JobId, Active>>,
     /// How many jobs may run concurrently. The semaphore holds that many permits.
     workers: AtomicUsize,
     semaphore: Arc<Semaphore>,
@@ -587,7 +621,7 @@ impl EngineHandle {
             .lock()
             .expect("active jobs lock")
             .get(&id)
-            .cloned();
+            .map(|active| active.cancel.clone());
         if let Some(token) = token {
             token.cancel();
             return Ok(());
@@ -612,6 +646,41 @@ impl EngineHandle {
                 status: JobStatus::Cancelled,
             },
         });
+        Ok(())
+    }
+
+    /// Ends a running live capture, keeping what was recorded: the recording as it
+    /// stands becomes the source and the job goes on to make and post its output.
+    pub async fn stop(&self, id: JobId) -> Result<(), StopError> {
+        let token = self
+            .shared
+            .active
+            .lock()
+            .expect("active jobs lock")
+            .get(&id)
+            .map(|active| active.stop.clone());
+        let job = self
+            .shared
+            .store
+            .get(id)
+            .await?
+            .ok_or(StopError::NotFound(id))?;
+        let capturing = job.status
+            == (JobStatus::Running {
+                stage: Stage::Download,
+            })
+            && job.artifacts.recording.is_some();
+        let Some(token) = token.filter(|_| capturing) else {
+            return Err(StopError::NotCapturing(id));
+        };
+        if !token.is_cancelled() {
+            token.cancel();
+            let _ = self.shared.events.send(EngineEvent {
+                job: id,
+                at: Timestamp::now(),
+                kind: EventKind::Stop,
+            });
+        }
         Ok(())
     }
 
@@ -779,6 +848,16 @@ pub enum CancelError {
     NotFound(JobId),
     #[error("job {0} has already finished")]
     Finished(JobId),
+    #[error(transparent)]
+    Store(#[from] StoreError),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum StopError {
+    #[error("job {0} not found")]
+    NotFound(JobId),
+    #[error("job {0} is not capturing a live stream")]
+    NotCapturing(JobId),
     #[error(transparent)]
     Store(#[from] StoreError),
 }

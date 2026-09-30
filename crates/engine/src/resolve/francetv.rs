@@ -14,7 +14,7 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Page, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved,
-    Resolver, SessionSupport, SubtitleFormat, SubtitleTrack, Tag, clean_title, dash, fetch, hls,
+    Resolver, SessionSupport, SubtitleFormat, SubtitleTrack, Tag, clean_title, fetch, hls,
     navigation_headers, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
@@ -312,88 +312,57 @@ impl FrancetvResolver {
         hints: Option<Hints>,
         origin: &Url,
     ) -> Result<Resolution, ResolveError> {
-        let mut answers = Vec::new();
-        let mut refusals = Vec::new();
-        for (device, browser) in [("desktop", "chrome"), ("mobile", "safari")] {
-            match self.player(id, device, browser, domain, origin).await {
-                Ok(answer) => answers.push(answer),
-                Err(error) => refusals.push(error),
+        // The player is asked once, as the mobile Safari player asks: its answer names
+        // the HLS master that player loads.
+        let answer = self.player(id, "mobile", "safari", domain, origin).await?;
+        let meta = match &answer["meta"] {
+            meta if meta.is_object() => meta.clone(),
+            _ => Value::Null,
+        };
+        let video = &answer["video"];
+        let Some(media) = util::url_of(&video["url"], None) else {
+            return Err(ResolveError::NotFound(origin.clone()));
+        };
+        let live = video["is_live"].as_bool().unwrap_or(false);
+        let duration = util::seconds(&video["duration"]);
+        let signed = self.sign(video, &media, origin).await?;
+        let token: Vec<(String, String)> = signed
+            .query_pairs()
+            .filter(|(k, _)| k == "hdnea")
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect();
+        let expanded = match hls::expand(&self.http, &signed, PLATFORM, BROWSER_UA, &[]).await {
+            Ok(expanded) => expanded,
+            Err(error) => {
+                if self.is_geo_blocked(&media).await {
+                    return Err(ResolveError::unavailable(
+                        origin,
+                        "available only in France",
+                    ));
+                }
+                return Err(error);
             }
-        }
-        if answers.is_empty() {
-            return Err(refusals.remove(0));
-        }
-        let meta = answers
-            .iter()
-            .map(|a| &a["meta"])
-            .find(|m| m.is_object())
-            .cloned()
-            .unwrap_or(Value::Null);
+        };
         let mut variants = Vec::new();
-        let mut subtitles = Vec::new();
-        let mut live = false;
-        let mut duration = None;
-        let mut media_url = None;
-        let mut failure = None;
-        for answer in &answers {
-            let video = &answer["video"];
-            let Some(media) = util::url_of(&video["url"], None) else {
-                continue;
-            };
-            live |= video["is_live"].as_bool().unwrap_or(false);
-            duration = duration.or_else(|| util::seconds(&video["duration"]));
-            media_url.get_or_insert(media.clone());
-            let signed = self.sign(video, &media, origin).await?;
-            let token: Vec<(String, String)> = signed
-                .query_pairs()
-                .filter(|(k, _)| k == "hdnea")
-                .map(|(k, v)| (k.into_owned(), v.into_owned()))
-                .collect();
-            let format = video["format"].as_str().unwrap_or("").to_ascii_lowercase();
-            let extension = super::path_extension(&signed).unwrap_or_default();
-            let expanded = if format == "dash" || extension == "mpd" {
-                dash::expand(&self.http, &signed, PLATFORM, BROWSER_UA, &[])
-                    .await
-                    .map(|e| ("dash", e.variants, e.subtitles))
-            } else {
-                hls::expand(&self.http, &signed, PLATFORM, BROWSER_UA, &[])
-                    .await
-                    .map(|e| ("hls", e.variants, e.subtitles))
-            };
-            match expanded {
-                Ok((name, streams, tracks)) => {
-                    for mut variant in streams {
-                        variant.format_id = Some(match &variant.label {
-                            Some(label) => format!("{name}-{label}"),
-                            None => name.to_string(),
-                        });
-                        variant.query = token.clone();
-                        variant.live |= live;
-                        variants.push(variant);
-                    }
-                    for track in tracks {
-                        if !subtitles.iter().any(|t: &SubtitleTrack| t.url == track.url) {
-                            subtitles.push(track);
-                        }
-                    }
-                }
-                Err(error) => {
-                    tracing::warn!(%origin, "France TV {format} manifest not read: {error}");
-                    failure = Some(error);
-                }
-            }
+        for mut variant in expanded.variants {
+            variant.format_id = Some(match &variant.label {
+                Some(label) => format!("hls-{label}"),
+                None => "hls".to_string(),
+            });
+            variant.query = token.clone();
+            variant.live |= live;
+            variants.push(variant);
         }
         if variants.is_empty() {
-            if let Some(media) = &media_url
-                && self.is_geo_blocked(media).await
-            {
+            if self.is_geo_blocked(&media).await {
                 return Err(ResolveError::unavailable(
                     origin,
                     "available only in France",
                 ));
             }
-            return Err(failure.unwrap_or_else(|| ResolveError::NotFound(origin.clone())));
+            return Err(ResolveError::NotFound(origin.clone()));
         }
+        let mut subtitles = expanded.subtitles;
         for caption in meta["subtitles"].as_array().into_iter().flatten() {
             let Some(track_url) = util::url_of(&caption["url"], None) else {
                 continue;
@@ -547,7 +516,7 @@ impl Resolver for FrancetvResolver {
                 "embeds",
                 "subtitles",
             ],
-            formats: &["hls", "dash"],
+            formats: &["hls"],
             media: &[MediaKind::Video],
             tags: &[Tag::News, Tag::Video, Tag::Live],
             session: SessionSupport::None,
@@ -627,18 +596,6 @@ mod tests {
         .to_string()
     }
 
-    const MPD: &str = r#"<?xml version="1.0"?>
-<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT49M57S" profiles="urn:mpeg:dash:profile:isoff-on-demand:2011">
-  <Period>
-    <AdaptationSet mimeType="video/mp4" contentType="video">
-      <Representation id="video=1500000" bandwidth="1500000" width="1280" height="720" codecs="avc1.64001f"/>
-      <Representation id="video=4000000" bandwidth="4000000" width="1920" height="1080" codecs="avc1.640028"/>
-    </AdaptationSet>
-    <AdaptationSet mimeType="audio/mp4" contentType="audio" lang="fr">
-      <Representation id="audio=96000" bandwidth="96000" codecs="mp4a.40.2"/>
-    </AdaptationSet>
-  </Period>
-</MPD>"#;
     const MASTER: &str = "#EXTM3U\n#EXT-X-VERSION:5\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",LANGUAGE=\"fr\",NAME=\"Audio\",DEFAULT=YES,AUTOSELECT=YES,URI=\"audio.m3u8\"\n#EXT-X-STREAM-INF:BANDWIDTH=1208000,CODECS=\"mp4a.40.2,avc1.4D401F\",RESOLUTION=1024x576,FRAME-RATE=25,AUDIO=\"audio\"\nvideo-576.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=2322000,CODECS=\"mp4a.40.2,avc1.64001F\",RESOLUTION=1280x720,FRAME-RATE=25,AUDIO=\"audio\"\nvideo-720.m3u8\n";
     const MEDIA: &str = "#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.0,\n0.ts\n#EXTINF:4.0,\n1.ts\n#EXT-X-ENDLIST\n";
     const LIVE_MEDIA: &str =
@@ -750,7 +707,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn pages_resolve_their_dash_and_hls_streams_signed() {
+    async fn pages_resolve_their_hls_streams_signed() {
         let page_url = "https://www.france.tv/documentaires/documentaires-animaliers/5947971-les-abeilles-sentinelles-de-la-planete.html";
         let mut fixture = Fixture::new(PLATFORM, None);
         fixture.exchanges.push(get(
@@ -762,16 +719,6 @@ mod tests {
             ),
         ));
         fixture.exchanges.push(get(
-            &format!("{PLAYER_API}{ID}?device_type=desktop&browser=chrome&domain=www.france.tv"),
-            200,
-            "application/json",
-            player_answer(
-                "dash",
-                "https://cloudreplay.ftven.fr/ftv/6/76/x.ism/manifest.mpd",
-                false,
-            ),
-        ));
-        fixture.exchanges.push(get(
             &format!("{PLAYER_API}{ID}?device_type=mobile&browser=safari&domain=www.france.tv"),
             200,
             "application/json",
@@ -780,18 +727,6 @@ mod tests {
                 "https://cloudreplay.ftven.fr/ftv/6/76/x.ism/master.m3u8",
                 false,
             ),
-        ));
-        fixture.exchanges.push(get(
-            "https://hdfauth.ftven.fr/esi/TA?format=json&url=https%3A%2F%2Fcloudreplay.ftven.fr%2Fftv%2F6%2F76%2Fx.ism%2Fmanifest.mpd",
-            200,
-            "application/json",
-            signed("https://cloudreplay.ftven.fr/tok/ftv/6/76/x.ism/manifest.mpd"),
-        ));
-        fixture.exchanges.push(get(
-            "https://cloudreplay.ftven.fr/tok/ftv/6/76/x.ism/manifest.mpd?hdnea=exp=1790271531~acl=%2f*~hmac=abc",
-            200,
-            "application/dash+xml",
-            MPD.into(),
         ));
         fixture.exchanges.push(get(
             "https://hdfauth.ftven.fr/esi/TA?format=json&url=https%3A%2F%2Fcloudreplay.ftven.fr%2Fftv%2F6%2F76%2Fx.ism%2Fmaster.m3u8",
@@ -837,22 +772,20 @@ mod tests {
             resolved.webpage_url.as_ref().map(|u| u.as_str()),
             Some(page_url)
         );
-        let dash: Vec<&Variant> = resolved
-            .variants
-            .iter()
-            .filter(|v| v.kind == VariantKind::Dash)
-            .collect();
+        // The master's two streams and their audio rendition: one HLS family, no DASH.
+        crate::resolve::assert_one_family(&resolved.variants);
         let hls: Vec<&Variant> = resolved
             .variants
             .iter()
             .filter(|v| v.kind == VariantKind::Hls)
             .collect();
-        assert_eq!(dash.len(), 2);
-        assert_eq!(hls.len(), 2);
-        assert_eq!(dash[0].format_id.as_deref(), Some("dash-720p"));
+        assert_eq!(hls.len(), 3);
+        assert_eq!(hls.len(), resolved.variants.len());
         assert_eq!(hls[1].height, Some(720));
         assert_eq!(hls[1].format_id.as_deref(), Some("hls-720p"));
         assert_eq!(hls[1].duration, Some(Duration::from_secs(10)));
+        assert!(hls[2].audio_only);
+        assert_eq!(hls[2].format_id.as_deref(), Some("hls-Audio"));
         assert!(resolved.variants.iter().all(|v| v.query
             == [(
                 "hdnea".to_string(),
@@ -879,12 +812,6 @@ mod tests {
             format!(
                 r#"<html><head><meta property="og:image" content="https://medias.france.tv/x/france2.jpg"></head><body><script>self.__next_f.push([1,"{{\"options\":{{\"id\":\"{live_id}\"}}}}"])</script></body></html>"#
             ),
-        ));
-        fixture.exchanges.push(get(
-            &format!("{PLAYER_API}{live_id}?device_type=desktop&browser=chrome&domain=www.france.tv"),
-            422,
-            "application/json",
-            json!({"code": 2017, "message": "Cette vidéo n'est pas disponible depuis le site web mobile"}).to_string(),
         ));
         fixture.exchanges.push(get(
             &format!("{PLAYER_API}{live_id}?device_type=mobile&browser=safari&domain=www.france.tv"),
@@ -921,30 +848,30 @@ mod tests {
             ),
         ));
         fixture.exchanges.push(get(
-            &format!("{PLAYER_API}{article_id}?device_type=desktop&browser=chrome&domain=www.franceinfo.fr"),
+            &format!("{PLAYER_API}{article_id}?device_type=mobile&browser=safari&domain=www.franceinfo.fr"),
             200,
             "application/json",
-            json!({"video": {"token": {"akamai": "https://hdfauth.ftven.fr/esi/TA?format=json"}, "duration": 139, "format": "dash", "is_live": false, "drm": false,
-                    "url": "https://cloudingest.ftven.fr/ftv/4/d3/y.ism/manifest.mpd"},
+            json!({"video": {"token": {"akamai": "https://hdfauth.ftven.fr/esi/TA?format=json"}, "duration": 139, "format": "hls", "is_live": false, "drm": false,
+                    "url": "https://cloudingest.ftven.fr/ftv/4/d3/y.ism/master.m3u8"},
                 "meta": {"id": article_id, "title": "Privés d'eau potable depuis un an", "additional_title": null, "broadcasted_at": "2026-09-24T18:53:23+02:00", "image_url": null, "subtitles": []}}).to_string(),
         ));
         fixture.exchanges.push(get(
-            &format!("{PLAYER_API}{article_id}?device_type=mobile&browser=safari&domain=www.franceinfo.fr"),
-            422,
-            "application/json",
-            json!({"code": 2017, "message": "indisponible"}).to_string(),
-        ));
-        fixture.exchanges.push(get(
-            "https://hdfauth.ftven.fr/esi/TA?format=json&url=https%3A%2F%2Fcloudingest.ftven.fr%2Fftv%2F4%2Fd3%2Fy.ism%2Fmanifest.mpd",
+            "https://hdfauth.ftven.fr/esi/TA?format=json&url=https%3A%2F%2Fcloudingest.ftven.fr%2Fftv%2F4%2Fd3%2Fy.ism%2Fmaster.m3u8",
             200,
             "application/json",
-            signed("https://cloudingest.ftven.fr/tok/ftv/4/d3/y.ism/manifest.mpd"),
+            signed("https://cloudingest.ftven.fr/tok/ftv/4/d3/y.ism/master.m3u8"),
         ));
         fixture.exchanges.push(get(
-            "https://cloudingest.ftven.fr/tok/ftv/4/d3/y.ism/manifest.mpd?hdnea=exp=1790271531~acl=%2f*~hmac=abc",
+            "https://cloudingest.ftven.fr/tok/ftv/4/d3/y.ism/master.m3u8?hdnea=exp=1790271531~acl=%2f*~hmac=abc",
             200,
-            "application/dash+xml",
-            MPD.into(),
+            "application/x-mpegURL",
+            MASTER.into(),
+        ));
+        fixture.exchanges.push(get(
+            "https://cloudingest.ftven.fr/tok/ftv/4/d3/y.ism/video-720.m3u8",
+            200,
+            "application/x-mpegURL",
+            MEDIA.into(),
         ));
         fixture.exchanges.push(get(
             "https://www.franceinfo.fr/culture/livres/un-roman_8207663.html",
@@ -964,7 +891,8 @@ mod tests {
             live.title.as_deref(),
             Some("France 2 en direct - N'oubliez pas les paroles")
         );
-        assert_eq!(live.variants.len(), 2);
+        assert_eq!(live.variants.len(), 3);
+        crate::resolve::assert_one_family(&live.variants);
         assert!(
             live.variants
                 .iter()
@@ -991,8 +919,9 @@ mod tests {
             Some("Privés d'eau potable depuis un an")
         );
         assert_eq!(article.duration, Some(Duration::from_secs(139)));
-        assert_eq!(article.variants.len(), 2);
-        assert!(article.variants.iter().all(|v| v.kind == VariantKind::Dash));
+        assert_eq!(article.variants.len(), 3);
+        crate::resolve::assert_one_family(&article.variants);
+        assert!(article.variants.iter().all(|v| v.kind == VariantKind::Hls));
         assert_eq!(
             article.webpage_url.as_ref().map(|u| u.as_str()),
             Some(
@@ -1124,6 +1053,7 @@ mod tests {
 
     /// Every example link resolves live: the live channel and the videos with signed
     /// streams, the programme page with episodes.
+    #[ignore = "reaches the live site: cargo test -- --ignored"]
     #[tokio::test]
 
     async fn live_examples_resolve() {

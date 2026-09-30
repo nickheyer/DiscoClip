@@ -1014,6 +1014,7 @@ mod tests {
 
     /// Every example link resolves live: the video, the embed and the broadcast to
     /// media with playable streams, the group to entries.
+    #[ignore = "reaches the live site: cargo test -- --ignored"]
     #[tokio::test]
 
     async fn live_examples_resolve() {

@@ -19,10 +19,12 @@
 	import KeyValueRow from '$lib/components/KeyValueRow.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import RelativeTime from '$lib/components/RelativeTime.svelte';
+	import Bytes from '$lib/components/Bytes.svelte';
+	import Duration from '$lib/components/Duration.svelte';
+	import Timestamp from '$lib/components/Timestamp.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import Status from '$lib/components/Status.svelte';
-	import { absolute, bytes, every, number } from '$lib/format';
+	import { absolute, bytes, countText, durationText, number } from '$lib/format';
 	import { notify, reportError } from '$lib/toast.svelte';
 
 	let view = $state<BackupsView | null>(null);
@@ -43,13 +45,8 @@
 	let keep = $state<number | undefined>(7);
 	let scheduleError = $state('');
 
-	const intervals = [
-		{ value: 3600, label: 'Every hour' },
-		{ value: 21600, label: 'Every 6 hours' },
-		{ value: 43200, label: 'Every 12 hours' },
-		{ value: 86400, label: 'Every day' },
-		{ value: 604800, label: 'Every week' }
-	];
+	/** The frequencies offered, in seconds. */
+	const intervals = [3600, 21600, 43200, 86400, 604800];
 	const lastSweep = $derived(retention?.status.last);
 	const totalBytes = $derived(view?.backups.reduce((sum, backup) => sum + backup.bytes, 0) ?? 0);
 	const busy = $derived(running || saving || restoringNow);
@@ -99,7 +96,7 @@
 			else
 				notify.success(
 					'Cleanup complete',
-					`${number(removed)} ${removed === 1 ? 'job' : 'jobs'} removed · ${bytes(report.bytes_freed)} freed`
+					`${countText(removed, 'job')} removed · ${bytes(report.bytes_freed)} freed`
 				);
 			await loadRetention();
 		} catch (err) {
@@ -170,7 +167,7 @@
 
 {#snippet createdCell(backup: BackupEntry)}
 	<span class="flex flex-wrap items-center gap-2 font-medium" title={backup.name}>
-		<RelativeTime at={backup.at} class="whitespace-nowrap" />
+		<Timestamp at={backup.at} class="whitespace-nowrap" />
 		{#if view?.backups[0]?.name === backup.name}
 			<span class="badge preset-tonal" style="--badge-size: var(--text-xs)">Latest</span>
 		{/if}
@@ -249,7 +246,7 @@
 				<KeyValueRow label="State">
 					<Status enabled={view.enabled} />
 				</KeyValueRow>
-				<KeyValueRow label="Frequency" value={every(view.interval_secs)} />
+				<KeyValueRow label="Frequency"><Duration value={view.interval_secs} /></KeyValueRow>
 				<KeyValueRow label="Keep" value="Latest {number(view.keep)}" />
 			</KeyValue>
 			{#if view.status.last_error}
@@ -323,14 +320,13 @@
 						? bytes(retention.config.cache_max_bytes)
 						: 'No limit'}
 				/>
-				<KeyValueRow
-					label="Automatic cleanup"
-					value={every(retention.config.sweep_interval_secs)}
-				/>
+				<KeyValueRow label="Automatic cleanup">
+					<Duration value={retention.config.sweep_interval_secs} />
+				</KeyValueRow>
 			</KeyValue>
 			<p class="text-sm text-surface-600-400">
 				{#if lastSweep}
-					Last run <RelativeTime at={lastSweep.at} /> · {bytes(lastSweep.bytes_freed)} freed
+					Last run <Timestamp at={lastSweep.at} /> · {bytes(lastSweep.bytes_freed)} freed
 				{:else}
 					No cleanup runs yet
 				{/if}
@@ -357,7 +353,8 @@
 >
 	{#if deleting}
 		<p class="card preset-tonal p-3 text-sm font-medium">
-			{absolute(deleting.at)} <span class="text-surface-600-400">· {bytes(deleting.bytes)}</span>
+			<Timestamp at={deleting.at} />
+			<span class="text-surface-600-400">· <Bytes value={deleting.bytes} /></span>
 		</p>
 	{/if}
 </Confirm>
@@ -370,7 +367,8 @@
 >
 	{#if restoring}
 		<p class="card preset-tonal p-3 text-sm font-medium">
-			{absolute(restoring.at)} <span class="text-surface-600-400">· {bytes(restoring.bytes)}</span>
+			<Timestamp at={restoring.at} />
+			<span class="text-surface-600-400">· <Bytes value={restoring.bytes} /></span>
 		</p>
 	{/if}
 	<div class="space-y-2 text-sm text-surface-600-400">
@@ -404,11 +402,11 @@
 				bind:value={interval}
 				disabled={!enabled || saving}
 			>
-				{#if !intervals.some((option) => option.value === interval)}
-					<option value={interval}>{every(interval)}</option>
+				{#if !intervals.includes(interval)}
+					<option value={interval}>{durationText(interval)}</option>
 				{/if}
-				{#each intervals as option (option.value)}
-					<option value={option.value}>{option.label}</option>
+				{#each intervals as option (option)}
+					<option value={option}>{durationText(option)}</option>
 				{/each}
 			</select>
 		</Field>

@@ -1,8 +1,9 @@
 //! Download Smooth Streaming video, audio and text fragments. Generate movie headers from
 //! codec data and set fragment decode times from the manifest.
 //!
-//! Follow live manifests until completion, capture limit or failure. Reject declared DRM,
-//! including PlayReady.
+//! Follow live manifests until completion, the capture or byte limit, a person's stop or
+//! failure; a live presentation goes straight into the growing recording. Reject
+//! declared DRM, including PlayReady.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -11,11 +12,13 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::StreamExt;
+use tokio_util::sync::CancellationToken;
 use url::Url;
 
+use super::recording::{Lane, Recorder, Spec, Treatment, audio_treatment_of, video_treatment_of};
 use super::segments::{
-    Budget, Consumer, InitSection, Meter, PartKey, Timing, TrackWriter, fetch_bytes, fetch_text,
-    mux_parts,
+    Budget, Consumer, InitSection, LiveTrack, Meter, PartKey, Timing, TrackSink, TrackWriter,
+    fetch_bytes, fetch_text, mux_parts,
 };
 use super::{
     DownloadContext, DownloadError, Downloaded, Downloader, LocalSubtitle, mp4, subtitles,
@@ -1025,13 +1028,35 @@ impl Cursor {
     }
 }
 
-/// What every manifest load of one download shares.
+/// What every manifest load of one download shares: the client and headers, the
+/// limits, what ends the capture, and the notes for the job log.
 struct Session<'a> {
     http: &'a Http,
     platform: &'a str,
     headers: &'a [(String, String)],
     max_live: Duration,
+    max_bytes: u64,
+    /// A person's request to end the capture.
+    asked: &'a CancellationToken,
+    /// Cancelled when the capture is to end: by the person, or by the byte limit. Every
+    /// track's loop leaves off at it.
+    stop: CancellationToken,
     notes: Mutex<Vec<String>>,
+}
+
+/// How the recorder treats a Smooth Streaming level, by the `FourCC` the manifest gives
+/// it: the names MP4 carries as they are, or an encode for the rest, such as VC-1 and
+/// Windows Media Audio.
+fn treatment_of(kind: StreamKind, four_cc: &str) -> Treatment {
+    let name = four_cc.trim().to_ascii_lowercase();
+    match kind {
+        StreamKind::Video => video_treatment_of(&name),
+        StreamKind::Audio => match name.as_str() {
+            "aacl" | "aach" | "aacp" | "" => Treatment::Copy,
+            other => audio_treatment_of(other),
+        },
+        StreamKind::Text => Treatment::Copy,
+    }
 }
 
 impl Session<'_> {
@@ -1043,9 +1068,20 @@ impl Session<'_> {
             .push(message);
     }
 
+    /// The byte budget could not hold the next fragment: the capture ends, noted once.
+    fn bytes_spent(&self) {
+        if !self.stop.is_cancelled() {
+            self.stop.cancel();
+            self.note(format!(
+                "Capture ended at the {} byte limit.",
+                self.max_bytes
+            ));
+        }
+    }
+
     /// Fetches `pieces` in order into `consumer`, each given its decode time when it is
     /// media. For a `live` stream skipping one that cannot be fetched. Whether the
-    /// capture reached its limit.
+    /// capture is to end: at its limit, its byte budget, or a person's stop.
     #[allow(clippy::too_many_arguments)]
     async fn fetch_track(
         &self,
@@ -1058,6 +1094,9 @@ impl Session<'_> {
         mut meter: Option<&mut Meter<'_>>,
     ) -> Result<bool, DownloadError> {
         let max_live = self.max_live.as_secs_f64();
+        if live && self.stop.is_cancelled() {
+            return Ok(true);
+        }
         let fetches = futures::stream::iter(pieces.into_iter().map(|piece| async move {
             let result =
                 fetch_bytes(self.http, &piece.url, self.platform, self.headers, None).await;
@@ -1093,6 +1132,10 @@ impl Session<'_> {
                 origin: 0.0,
             };
             consumer.take(&key, timing, init, &bytes).await?;
+            if consumer.full() {
+                self.bytes_spent();
+                return Ok(true);
+            }
             cursor.last = Some(piece.time);
             cursor.captured += piece.duration;
             if cursor.first_start.is_none() {
@@ -1101,7 +1144,7 @@ impl Session<'_> {
             if let Some(meter) = meter.as_deref_mut() {
                 meter.add(piece.duration);
             }
-            if live && cursor.captured >= max_live {
+            if live && (cursor.captured >= max_live || self.stop.is_cancelled()) {
                 return Ok(true);
             }
         }
@@ -1151,14 +1194,18 @@ impl Downloader for IsmDownloader {
             platform,
             headers,
             max_live: context.max_live,
+            max_bytes: context.max_bytes,
+            asked: &context.stop,
+            stop: context.stop.child_token(),
             notes: Mutex::new(Vec::new()),
         };
         let wanted = Wanted {
             level: wanted_level(variant),
             audio_only: variant.audio_only,
             max_height: context.max_height,
-            language: variant.language.clone(),
+            language: Some(context.audio_language.clone()),
         };
+        let mut audio_language: Option<String> = None;
         let mut loaded = Some(load_manifest(&self.http, manifest_url, platform, headers).await?);
         let first = loaded.as_ref().unwrap();
         if let Some(system) = &first.protection {
@@ -1171,14 +1218,52 @@ impl Downloader for IsmDownloader {
             ),
             None => Vec::new(),
         };
-        progress.send_replace(Progress {
-            done: 0,
-            total: None,
-        });
-        let mut meter = Meter::new(&progress);
-
-        let mut primary = TrackWriter::new(dest_dir, "video", &budget);
-        let mut audio = TrackWriter::new(dest_dir, "audio", &budget);
+        progress.send_replace(Progress::of(0, None));
+        // A live presentation goes straight into the recording, which plays as it
+        // grows, under the treatments its levels' codecs call for.
+        let recorder = if first.live {
+            let video = if wanted.audio_only {
+                None
+            } else {
+                best_video(first, &wanted)
+            };
+            let (primary_choice, audio_choice) = match video {
+                Some(video) => (video, best_audio(first, &wanted)),
+                None => (
+                    best_audio(first, &wanted).ok_or_else(|| {
+                        manifest_error("the manifest has no video or audio stream")
+                    })?,
+                    None,
+                ),
+            };
+            audio_language = audio_choice.and_then(|(stream, _)| stream.language.clone());
+            let spec = Spec {
+                language: audio_language.clone(),
+                ..Spec::copied(
+                    treatment_of(primary_choice.0.kind, &primary_choice.1.four_cc),
+                    audio_choice.map(|(stream, level)| treatment_of(stream.kind, &level.four_cc)),
+                )
+            };
+            let recorder = Recorder::start(&self.ffmpeg, dest_dir, &spec).await?;
+            context.capture.started(recorder.path());
+            Some(recorder)
+        } else {
+            None
+        };
+        let mut meter = match &recorder {
+            Some(recorder) => Meter::new(&progress).watching(recorder.path()),
+            None => Meter::new(&progress),
+        };
+        let (mut primary, mut audio) = match &recorder {
+            Some(recorder) => (
+                TrackSink::Live(LiveTrack::new(recorder.feed(Lane::Video), &budget)),
+                TrackSink::Live(LiveTrack::new(recorder.feed(Lane::Audio), &budget)),
+            ),
+            None => (
+                TrackSink::Parts(Box::new(TrackWriter::new(dest_dir, "video", &budget))),
+                TrackSink::Parts(Box::new(TrackWriter::new(dest_dir, "audio", &budget))),
+            ),
+        };
         let mut texts: Vec<TextSink<'_>> = text_choices
             .iter()
             .map(|_| TextSink {
@@ -1204,11 +1289,23 @@ impl Downloader for IsmDownloader {
                     Err(error) if was_live == Some(true) => {
                         failures += 1;
                         if failures < RELOAD_FAILURES {
-                            tokio::time::sleep(Duration::from_secs(1)).await;
+                            tokio::select! {
+                                _ = tokio::time::sleep(Duration::from_secs(1)) => {}
+                                _ = session.stop.cancelled() => {}
+                            }
+                            if session.stop.is_cancelled() {
+                                if session.asked.is_cancelled() {
+                                    session.note(format!(
+                                        "Capture stopped at {:.0} s.",
+                                        cursors.0.captured
+                                    ));
+                                }
+                                break;
+                            }
                             continue;
                         }
                         session.note(format!(
-                            "Manifest reload failed {failures} times ({error}). Recording stopped after {:.0} s.",
+                            "Manifest reload failed {failures} times ({error}). Capture ended at {:.0} s.",
                             cursors.0.captured
                         ));
                         break;
@@ -1268,6 +1365,9 @@ impl Downloader for IsmDownloader {
             let mut audio_pieces = match audio_choice {
                 Some((stream, level)) => {
                     has_audio = true;
+                    if audio_language.is_none() {
+                        audio_language = stream.language.clone();
+                    }
                     pieces_of(manifest_url, stream, level)?
                 }
                 None => Vec::new(),
@@ -1358,44 +1458,71 @@ impl Downloader for IsmDownloader {
                         session.fetch_track("subtitles", pieces, live, None, sink, cursor, None)
                     }),
             );
-            let (cut, audio_result, text_results) = tokio::join!(primary_run, audio_run, text_runs);
-            let cut = cut?;
-            audio_result?;
+            let (ended, audio_result, text_results) =
+                tokio::join!(primary_run, audio_run, text_runs);
+            let ended = ended? || audio_result?;
             for result in text_results {
                 if let Err(error) = result {
                     session.note(format!("subtitles not fetched: {error}"));
                 }
             }
-            if cut {
-                session.note(format!(
-                    "capture cut at the limit of {max_live:.0} s while the stream goes on"
-                ));
+            if ended {
+                if session.asked.is_cancelled() {
+                    session.note(format!("Capture stopped at {:.0} s.", cursors.0.captured));
+                } else if !session.stop.is_cancelled() {
+                    session.note(format!("Capture ended at the {max_live:.0} s limit."));
+                }
                 break;
             }
             if !live {
                 if was_live == Some(true) {
-                    session.note(format!(
-                        "Stream ended. Recorded {:.0} s.",
-                        cursors.0.captured
-                    ));
+                    session.note(format!("Stream ended at {:.0} s.", cursors.0.captured));
                 }
                 break;
             }
             let wait = Duration::from_secs_f64(last_duration.clamp(1.0, 10.0));
-            tokio::time::sleep(if new_count > 0 { wait } else { wait / 2 }).await;
+            tokio::select! {
+                _ = tokio::time::sleep(if new_count > 0 { wait } else { wait / 2 }) => {}
+                _ = session.stop.cancelled() => {}
+            }
         }
 
-        let (primary_parts, _) = primary.finish().await?;
-        let (audio_parts, _) = audio.finish().await?;
-        if primary_parts.is_empty() {
-            return Err(DownloadError::Empty);
-        }
-        if primary_parts.len() > 1 {
-            session.note(format!(
-                "the recording is joined from {} parts",
-                primary_parts.len()
-            ));
-        }
+        let file = match (primary, audio, recorder) {
+            (TrackSink::Parts(primary), TrackSink::Parts(audio), _) => {
+                let (primary_parts, _) = primary.finish().await?;
+                let (audio_parts, _) = audio.finish().await?;
+                if primary_parts.is_empty() {
+                    return Err(DownloadError::Empty);
+                }
+                if primary_parts.len() > 1 {
+                    session.note(format!(
+                        "the recording is joined from {} parts",
+                        primary_parts.len()
+                    ));
+                }
+                let dest = dest_dir.join("source.mkv");
+                let file = mux_parts(
+                    &self.ffmpeg,
+                    &primary_parts,
+                    has_audio.then_some(audio_parts.as_slice()),
+                    &dest,
+                    audio_language.as_deref(),
+                )
+                .await?;
+                for part in primary_parts.iter().chain(audio_parts.iter()) {
+                    let _ = tokio::fs::remove_file(part).await;
+                }
+                if file.size > context.max_bytes {
+                    return Err(DownloadError::TooLarge {
+                        size: file.size,
+                        limit: context.max_bytes,
+                    });
+                }
+                file
+            }
+            (_, _, Some(recorder)) => recorder.finish().await?,
+            (_, _, None) => unreachable!("a live sink has a recorder"),
+        };
         let media_start = cursors.0.first_start.unwrap_or(0.0);
         let mut local_subtitles = Vec::new();
         for (index, (track, sink)) in text_choices.iter().zip(texts).enumerate() {
@@ -1419,23 +1546,6 @@ impl Downloader for IsmDownloader {
             });
         }
 
-        let dest = dest_dir.join("source.mkv");
-        let file = mux_parts(
-            &self.ffmpeg,
-            &primary_parts,
-            has_audio.then_some(audio_parts.as_slice()),
-            &dest,
-        )
-        .await?;
-        for part in primary_parts.iter().chain(audio_parts.iter()) {
-            let _ = tokio::fs::remove_file(part).await;
-        }
-        if file.size > context.max_bytes {
-            return Err(DownloadError::TooLarge {
-                size: file.size,
-                limit: context.max_bytes,
-            });
-        }
         Ok(Downloaded {
             file,
             subtitles: local_subtitles,
@@ -1933,7 +2043,16 @@ mod tests {
         )
         .await;
         let downloaded = result.unwrap();
-        assert!(downloaded.file.path.ends_with("source.mkv"));
+        let name = downloaded
+            .file
+            .path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap();
+        assert!(
+            name == "source.mkv" || name == super::super::RECORDING,
+            "{name}"
+        );
         let info = ffmpeg.probe(&downloaded.file.path).await.unwrap();
         assert!(info.video.is_some(), "{info:?}");
         assert!(info.audio.is_some(), "{info:?}");
@@ -2117,7 +2236,7 @@ mod tests {
             downloaded
                 .notes
                 .iter()
-                .any(|n| n.contains("capture cut at the limit")),
+                .any(|n| n.contains("Capture ended at the") && n.contains("limit")),
             "{:?}",
             downloaded.notes
         );

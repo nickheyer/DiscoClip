@@ -13,7 +13,7 @@
 	import KeyValueRow from '$lib/components/KeyValueRow.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import RelativeTime from '$lib/components/RelativeTime.svelte';
+	import Timestamp from '$lib/components/Timestamp.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import Status from '$lib/components/Status.svelte';
 	import { feed } from '$lib/events.svelte';
@@ -118,7 +118,7 @@
 	<Status enabled={rule.enabled} />
 {/snippet}
 {#snippet updatedCell(rule: Rule)}
-	<RelativeTime at={rule.updated_at} class="whitespace-nowrap" />
+	<Timestamp at={rule.updated_at} class="whitespace-nowrap" />
 {/snippet}
 
 <PageHeader title="Applications" description="Each Discord application runs its own bot.">
@@ -193,11 +193,11 @@
 									{:else if bot.state === 'failed'}
 										<span class="text-error-600-400">{bot.error}</span>
 									{:else}
-										Since <RelativeTime at={bot.since} />
+										Since <Timestamp at={bot.since} />
 									{/if}
 								</KeyValueRow>
 								<KeyValueRow label="Login" value={app.login ? 'On' : 'Off'} />
-								<KeyValueRow label="Added"><RelativeTime at={app.created_at} /></KeyValueRow>
+								<KeyValueRow label="Added"><Timestamp at={app.created_at} /></KeyValueRow>
 							</KeyValue>
 						</a>
 					{/each}

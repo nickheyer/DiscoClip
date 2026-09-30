@@ -921,6 +921,7 @@ mod tests {
     }
 
     /// Every example link resolves live.
+    #[ignore = "reaches the live site: cargo test -- --ignored"]
     #[tokio::test]
 
     async fn live_examples_resolve() {

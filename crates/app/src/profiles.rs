@@ -107,6 +107,8 @@ pub struct ProfileLimits {
     pub max_source_bytes: Option<u64>,
     pub max_duration_secs: Option<u64>,
     pub max_height: Option<u32>,
+    /// How long a live stream is captured before the capture ends.
+    pub max_capture_secs: Option<u64>,
 }
 
 impl ProfileLimits {
@@ -120,6 +122,9 @@ impl ProfileLimits {
         }
         if self.max_height.is_some() {
             limits.max_height = self.max_height;
+        }
+        if self.max_capture_secs.is_some() {
+            limits.max_capture_secs = self.max_capture_secs;
         }
     }
 }
@@ -277,6 +282,10 @@ pub struct ProfileInput {
     pub platforms: PlatformToggles,
     #[serde(default)]
     pub limits: ProfileLimits,
+    /// The language of the sound taken when a source offers several, as a language
+    /// tag. Unset leaves the parent scope's.
+    #[serde(default)]
+    pub audio_language: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -409,6 +418,8 @@ pub struct EffectiveProfile {
     /// The limits assigned, each the narrowest profile that names it. Unset ones leave
     /// the engine's own.
     pub limits: RequestLimits,
+    /// The language of the sound wanted, from the narrowest profile that names one.
+    pub audio_language: Option<String>,
     pub applied: Vec<Assignment>,
 }
 
@@ -427,6 +438,7 @@ impl EffectiveProfile {
         InForce {
             disabled: self.disabled(),
             limits: self.limits,
+            audio_language: self.audio_language.clone(),
         }
     }
 }
@@ -529,17 +541,47 @@ fn check(
             "max_height must be above zero".into(),
         ));
     }
+    if input.limits.max_capture_secs == Some(0) {
+        return Err(ProfileError::Invalid(
+            "max_capture_secs must be above zero".into(),
+        ));
+    }
+    let audio_language = match input.audio_language.as_deref().map(str::trim) {
+        None | Some("") => None,
+        Some(tag) => {
+            let tag = tag.to_ascii_lowercase();
+            let well_formed = tag.split('-').enumerate().all(|(n, part)| {
+                let length = if n == 0 { 2..=3 } else { 2..=8 };
+                length.contains(&part.len()) && part.chars().all(|c| c.is_ascii_alphanumeric())
+            });
+            if !well_formed {
+                return Err(ProfileError::Invalid(
+                    "audio_language must be a language tag such as en or pt-br".into(),
+                ));
+            }
+            Some(tag)
+        }
+    };
     Ok(ProfileInput {
         name,
         description,
         platforms: input.platforms.clone(),
         limits: input.limits,
+        audio_language,
     })
+}
+
+/// What a profile says, as the cache applies it.
+#[derive(Debug, Clone)]
+struct Cached {
+    toggles: PlatformToggles,
+    limits: ProfileLimits,
+    audio_language: Option<String>,
 }
 
 #[derive(Default)]
 struct CacheInner {
-    profiles: HashMap<ProfileId, (PlatformToggles, ProfileLimits)>,
+    profiles: HashMap<ProfileId, Cached>,
     assignments: HashMap<String, (ProfileId, Timestamp)>,
 }
 
@@ -598,13 +640,13 @@ impl ProfileCache {
     /// applied. `None` when no such profile exists.
     pub fn alone(&self, profile: ProfileId) -> Option<BTreeMap<String, bool>> {
         let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
-        let (toggles, _) = inner.profiles.get(&profile)?;
+        let cached = inner.profiles.get(&profile)?;
         let mut platforms: BTreeMap<String, bool> = self
             .platforms
             .iter()
             .map(|id| (id.to_string(), true))
             .collect();
-        toggles.apply(&mut platforms, &self.presets);
+        cached.toggles.apply(&mut platforms, &self.presets);
         Some(platforms)
     }
 
@@ -626,16 +668,20 @@ impl ProfileCache {
             .map(|id| (id.to_string(), true))
             .collect();
         let mut limits = RequestLimits::default();
+        let mut audio_language = None;
         let mut applied = Vec::new();
         for scope in scopes {
             let Some((profile_id, updated_at)) = inner.assignments.get(&scope.key()) else {
                 continue;
             };
-            let Some((toggles, named)) = inner.profiles.get(profile_id) else {
+            let Some(cached) = inner.profiles.get(profile_id) else {
                 continue;
             };
-            toggles.apply(&mut platforms, &self.presets);
-            named.apply(&mut limits);
+            cached.toggles.apply(&mut platforms, &self.presets);
+            cached.limits.apply(&mut limits);
+            if cached.audio_language.is_some() {
+                audio_language = cached.audio_language.clone();
+            }
             applied.push(Assignment {
                 scope: scope.clone(),
                 profile_id: *profile_id,
@@ -645,6 +691,7 @@ impl ProfileCache {
         EffectiveProfile {
             platforms,
             limits,
+            audio_language,
             applied,
         }
     }
@@ -681,7 +728,8 @@ pub struct ProfileStore {
 }
 
 const SELECT: &str = "SELECT id, name, description, platforms, builtin, created_at, updated_at, \
-     max_source_bytes, max_duration_secs, max_height FROM profiles";
+     max_source_bytes, max_duration_secs, max_height, max_capture_secs, audio_language \
+     FROM profiles";
 
 impl ProfileStore {
     /// Over a database the application's migrations have been applied to, for the
@@ -787,7 +835,8 @@ impl ProfileStore {
             let now = Timestamp::now();
             let updated = tx.execute(
                 "UPDATE profiles SET name = ?2, description = ?3, platforms = ?4, updated_at = ?5,
-                    max_source_bytes = ?6, max_duration_secs = ?7, max_height = ?8
+                    max_source_bytes = ?6, max_duration_secs = ?7, max_height = ?8,
+                    max_capture_secs = ?9, audio_language = ?10
                  WHERE id = ?1",
                 params![
                     id.to_string(),
@@ -798,6 +847,8 @@ impl ProfileStore {
                     input.limits.max_source_bytes.map(|n| n as i64),
                     input.limits.max_duration_secs.map(|n| n as i64),
                     input.limits.max_height.map(i64::from),
+                    input.limits.max_capture_secs.map(|n| n as i64),
+                    input.audio_language,
                 ],
             );
             match updated {
@@ -1039,8 +1090,8 @@ fn insert(
     };
     conn.execute(
         "INSERT INTO profiles (id, name, description, platforms, builtin, created_at, updated_at,
-            max_source_bytes, max_duration_secs, max_height)
-         VALUES (?1, ?2, ?3, ?4, 0, ?5, ?5, ?6, ?7, ?8)",
+            max_source_bytes, max_duration_secs, max_height, max_capture_secs, audio_language)
+         VALUES (?1, ?2, ?3, ?4, 0, ?5, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![
             id.to_string(),
             input.name,
@@ -1050,6 +1101,8 @@ fn insert(
             input.limits.max_source_bytes.map(|n| n as i64),
             input.limits.max_duration_secs.map(|n| n as i64),
             input.limits.max_height.map(i64::from),
+            input.limits.max_capture_secs.map(|n| n as i64),
+            input.audio_language,
         ],
     )
 }
@@ -1101,6 +1154,7 @@ fn convert_rule_policies(conn: &Connection, cache: &ProfileCache) -> Result<usiz
                         max_source_bytes: max_source_bytes.map(|n| n.max(1) as u64),
                         max_duration_secs: max_duration_secs.map(|n| n.max(0) as u64),
                         max_height: max_height.map(|n| u32::try_from(n.max(1)).unwrap_or(u32::MAX)),
+                        max_capture_secs: None,
                     },
                 },
                 hosts,
@@ -1148,7 +1202,7 @@ fn convert_rule_policies(conn: &Connection, cache: &ProfileCache) -> Result<usiz
                 .unwrap_or_else(|e| e.into_inner())
                 .profiles
                 .get(&previous)
-                .map(|(toggles, _)| toggles.clone())
+                .map(|cached| cached.toggles.clone())
                 .unwrap_or_default(),
             (false, None) => PlatformToggles {
                 default: PlatformDefault::Disabled,
@@ -1174,7 +1228,7 @@ fn convert_rule_policies(conn: &Connection, cache: &ProfileCache) -> Result<usiz
         };
         let mut limits = policy.limits;
         if let Some(previous) = existing
-            && let Some((_, named)) = cache
+            && let Some(cached) = cache
                 .inner
                 .read()
                 .unwrap_or_else(|e| e.into_inner())
@@ -1182,12 +1236,13 @@ fn convert_rule_policies(conn: &Connection, cache: &ProfileCache) -> Result<usiz
                 .get(&previous)
         {
             let mut merged = RequestLimits::default();
-            named.apply(&mut merged);
+            cached.limits.apply(&mut merged);
             policy.limits.apply(&mut merged);
             limits = ProfileLimits {
                 max_source_bytes: merged.max_source_bytes,
                 max_duration_secs: merged.max_duration_secs,
                 max_height: merged.max_height,
+                max_capture_secs: merged.max_capture_secs,
             };
         }
         let base_name = format!("Channel {} rule", policy.channel_id);
@@ -1202,6 +1257,7 @@ fn convert_rule_policies(conn: &Connection, cache: &ProfileCache) -> Result<usiz
             description,
             platforms,
             limits,
+            audio_language: None,
         };
         let mut attempt = 0;
         loop {
@@ -1269,11 +1325,20 @@ fn convert_rule_policies(conn: &Connection, cache: &ProfileCache) -> Result<usiz
 /// Reloads the cache from every profile and assignment.
 fn refresh(conn: &Connection, cache: &ProfileCache) -> Result<usize, ProfileError> {
     let mut stmt = conn.prepare(SELECT)?;
-    let profiles: HashMap<ProfileId, (PlatformToggles, ProfileLimits)> = stmt
+    let profiles: HashMap<ProfileId, Cached> = stmt
         .query_map([], row_to_profile)?
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()
-        .map(|p| (p.id, (p.input.platforms, p.input.limits)))
+        .map(|p| {
+            (
+                p.id,
+                Cached {
+                    toggles: p.input.platforms,
+                    limits: p.input.limits,
+                    audio_language: p.input.audio_language,
+                },
+            )
+        })
         .collect();
     let mut stmt = conn.prepare("SELECT scope, profile_id, updated_at FROM profile_assignments")?;
     let rows = stmt.query_map([], |row| {
@@ -1323,6 +1388,8 @@ fn row_to_profile(row: &rusqlite::Row<'_>) -> rusqlite::Result<Profile> {
     let max_source_bytes: Option<i64> = row.get(7)?;
     let max_duration_secs: Option<i64> = row.get(8)?;
     let max_height: Option<i64> = row.get(9)?;
+    let max_capture_secs: Option<i64> = row.get(10)?;
+    let audio_language: Option<String> = row.get(11)?;
     Ok(Profile {
         id: id
             .parse()
@@ -1336,7 +1403,9 @@ fn row_to_profile(row: &rusqlite::Row<'_>) -> rusqlite::Result<Profile> {
                 max_source_bytes: max_source_bytes.map(|n| n.max(0) as u64),
                 max_duration_secs: max_duration_secs.map(|n| n.max(0) as u64),
                 max_height: max_height.map(|n| u32::try_from(n.max(0)).unwrap_or(u32::MAX)),
+                max_capture_secs: max_capture_secs.map(|n| n.max(0) as u64),
             },
+            audio_language,
         },
         builtin: row.get(4)?,
         created_at: timestamp("created_at", row.get(5)?).map_err(|e| corrupt(e.to_string()))?,
@@ -1428,6 +1497,7 @@ mod tests {
             description: String::new(),
             platforms,
             limits: ProfileLimits::default(),
+            audio_language: None,
         }
     }
 
@@ -1692,6 +1762,7 @@ mod tests {
                         max_source_bytes: Some(50_000_000),
                         max_duration_secs: Some(600),
                         max_height: None,
+                        max_capture_secs: Some(1800),
                     },
                     ..input("Guild limits", PlatformToggles::default())
                 },
@@ -1706,6 +1777,7 @@ mod tests {
                         max_source_bytes: None,
                         max_duration_secs: Some(60),
                         max_height: Some(480),
+                        max_capture_secs: None,
                     },
                     ..input("Channel limits", PlatformToggles::default())
                 },

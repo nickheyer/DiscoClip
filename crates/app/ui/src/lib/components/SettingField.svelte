@@ -3,7 +3,6 @@
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import { Switch } from '@skeletonlabs/skeleton-svelte';
 	import type { Json } from '$lib/api/types';
-	import { EMPTY } from '$lib/format';
 	import {
 		display,
 		rawNumber,
@@ -11,10 +10,13 @@
 		summary,
 		valueAt,
 		type Leaf,
-		type SettingField
+		type SettingField,
+		type Unit
 	} from '$lib/settings';
+	import BytesInput from './BytesInput.svelte';
+	import DurationInput from './DurationInput.svelte';
 	import Field from './Field.svelte';
-	import RelativeTime from './RelativeTime.svelte';
+	import Timestamp from './Timestamp.svelte';
 	import Spinner from './Spinner.svelte';
 
 	interface Props {
@@ -29,11 +31,27 @@
 	let pending = $state<'save' | 'reset' | null>(null);
 	let text = $state('');
 	let checked = $state(false);
+	/** A number of seconds or bytes being edited through its typed input. */
+	let amount = $state<number | null>(null);
 	/** The text of each value of a section being edited, by its name. */
 	let parts = $state<Record<string, string>>({});
+	/** The seconds and bytes of a section being edited through typed inputs, by name. */
+	let amounts = $state<Record<string, number | null>>({});
 	/** The switches of a section being edited, by name. */
 	let flags = $state<Record<string, boolean>>({});
 	let error = $state<string | null>(null);
+
+	/** Whether a unit has an input of its own: seconds and bytes do. */
+	function typed(unit: Unit | null): 'seconds' | 'bytes' | null {
+		if (unit?.label === 'seconds') return 'seconds';
+		if (unit?.label === 'bytes') return 'bytes';
+		return null;
+	}
+
+	/** The number a value reads as, for a typed input and its placeholder. */
+	function amountOf(value: Json | undefined): number | null {
+		return typeof value === 'number' && Number.isFinite(value) ? value : null;
+	}
 
 	/** How a value sits in a text box. */
 	function textOf(value: Json | undefined, leaf: Leaf): string {
@@ -53,18 +71,28 @@
 		switch (field.kind) {
 			case 'section': {
 				const next: Record<string, string> = {};
+				const numbers: Record<string, number | null> = {};
 				const on: Record<string, boolean> = {};
 				for (const leaf of field.leaves ?? []) {
 					const held = valueAt(field.value, leaf.name);
 					if (leaf.kind === 'boolean') on[leaf.name] = held === true;
+					else if (leaf.kind === 'number' && typed(leaf.unit)) numbers[leaf.name] = amountOf(held);
 					else next[leaf.name] = leaf.secret ? '' : textOf(held, leaf);
 				}
 				parts = next;
+				amounts = numbers;
 				flags = on;
 				break;
 			}
 			case 'boolean':
 				checked = field.value === true;
+				break;
+			case 'number':
+				if (typed(field.unit)) {
+					amount = amountOf(field.value);
+				} else {
+					text = field.value === null || field.value === undefined ? '' : String(field.value);
+				}
 				break;
 			case 'list':
 				text = Array.isArray(field.value) ? field.value.map(String).join('\n') : '';
@@ -96,15 +124,22 @@
 				filled += 1;
 				continue;
 			}
-			const typed = (parts[leaf.name] ?? '').trim();
-			if (!typed) {
+			if (leaf.kind === 'number' && typed(leaf.unit)) {
+				const n = amounts[leaf.name] ?? null;
+				if (n === null) continue;
+				filled += 1;
+				setAt(out, leaf.name, n);
+				continue;
+			}
+			const entered = (parts[leaf.name] ?? '').trim();
+			if (!entered) {
 				if (leaf.secret && leaf.set) setAt(out, leaf.name, null);
 				continue;
 			}
 			filled += 1;
 			switch (leaf.kind) {
 				case 'number': {
-					const n = Number(typed);
+					const n = Number(entered);
 					if (!Number.isFinite(n)) throw new Error(`${leaf.name}: that is not a number.`);
 					setAt(out, leaf.name, n);
 					break;
@@ -113,7 +148,7 @@
 					setAt(
 						out,
 						leaf.name,
-						typed
+						entered
 							.split('\n')
 							.map((line) => line.trim())
 							.filter(Boolean)
@@ -121,13 +156,13 @@
 					break;
 				case 'json':
 					try {
-						setAt(out, leaf.name, JSON.parse(typed) as Json);
+						setAt(out, leaf.name, JSON.parse(entered) as Json);
 					} catch {
 						throw new Error(`${leaf.name}: that is not valid JSON.`);
 					}
 					break;
 				default:
-					setAt(out, leaf.name, typed);
+					setAt(out, leaf.name, entered);
 			}
 		}
 		if (filled === 0) throw new Error('Enter at least one value, or leave the section off.');
@@ -141,6 +176,10 @@
 			case 'boolean':
 				return checked;
 			case 'number': {
+				if (typed(field.unit)) {
+					if (amount === null) throw new Error('Enter a value.');
+					return amount;
+				}
 				if (!text.trim()) throw new Error('Enter a number.');
 				const n = Number(text);
 				if (!Number.isFinite(n)) throw new Error('That is not a number.');
@@ -220,7 +259,7 @@
 			<span class="badge preset-tonal-warning" style="--badge-size: var(--text-xs)">Secret</span>
 		{/if}
 		{#if field.stored}
-			<RelativeTime at={field.stored.updated_at} class="text-xs text-surface-600-400" />
+			<Timestamp at={field.stored.updated_at} class="text-xs text-surface-600-400" />
 		{/if}
 	</div>
 
@@ -257,6 +296,18 @@
 											{#each leaf.choices as choice (choice)}<option value={choice}>{choice}</option
 												>{/each}
 										</select>
+									{:else if leaf.kind === 'number' && typed(leaf.unit) === 'seconds'}
+										<DurationInput
+											id={leafId}
+											bind:value={amounts[leaf.name]}
+											placeholder={amountOf(Number(leaf.placeholder))}
+										/>
+									{:else if leaf.kind === 'number' && typed(leaf.unit) === 'bytes'}
+										<BytesInput
+											id={leafId}
+											bind:value={amounts[leaf.name]}
+											placeholder={amountOf(Number(leaf.placeholder))}
+										/>
 									{:else if leaf.kind === 'number'}
 										<div class="field-group grid-cols-[1fr_auto]">
 											<input
@@ -305,6 +356,10 @@
 						<Switch.Label>{checked ? 'On' : 'Off'}</Switch.Label>
 						<Switch.HiddenInput id={inputId} />
 					</Switch>
+				{:else if field.kind === 'number' && typed(field.unit) === 'seconds'}
+					<DurationInput id={inputId} bind:value={amount} placeholder={amountOf(field.default)} />
+				{:else if field.kind === 'number' && typed(field.unit) === 'bytes'}
+					<BytesInput id={inputId} bind:value={amount} placeholder={amountOf(field.default)} />
 				{:else if field.kind === 'number'}
 					<div class="field-group grid-cols-[1fr_auto]">
 						<input id={inputId} class="input" type="number" step="any" bind:value={text} />
@@ -341,24 +396,22 @@
 						spellcheck="false"></textarea>
 				{/if}
 				{#if error}<p class="text-xs text-error-600-400" role="alert">{error}</p>{/if}
-				<p class="text-xs text-surface-600-400">Default: {fallback}</p>
+				{#if fallback}
+					<p class="text-xs text-surface-600-400">Default: {fallback}</p>
+				{/if}
 			</div>
 		{:else}
 			<p class="break-all {field.kind === 'json' ? 'font-mono text-xs' : ''}">
 				{#if field.secret}
-					{#if field.value === null || field.value === undefined || field.value === ''}
-						<span class="text-surface-600-400">{EMPTY}</span>
-					{:else}
+					{#if field.value !== null && field.value !== undefined && field.value !== ''}
 						••••••••
 					{/if}
-				{:else if shown === EMPTY}
-					<span class="text-surface-600-400">{EMPTY}</span>
 				{:else}
 					{shown}{#if raw}<span class="ml-2 font-mono text-xs text-surface-600-400">{raw}</span
 						>{/if}
 				{/if}
 			</p>
-			{#if field.stored && !field.secret && fallback !== shown}
+			{#if field.stored && !field.secret && fallback && fallback !== shown}
 				<p class="text-xs text-surface-600-400">Default: {fallback}</p>
 			{/if}
 		{/if}

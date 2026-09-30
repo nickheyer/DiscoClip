@@ -29,7 +29,7 @@ pub use config::{
 };
 pub use engine::{
     CancelError, DeleteError, Engine, EngineBuilder, EngineError, EngineHandle, PlatformSession,
-    RetryError, SubmitError, Utilisation,
+    RetryError, StopError, SubmitError, Utilisation,
 };
 pub use event::{EngineEvent, EventKind, Progress};
 pub use http::{Http, HttpConfig};

@@ -1,9 +1,8 @@
 //! XNXX videos, porn makers and pornstars. The pages run the XVideos player, so a video
-//! page hands it the MP4 files by height and the HLS playlist in the same
-//! `html5player.setVideoUrlLow`, `setVideoUrlHigh` and `setVideoHLS` calls, with the
-//! title, thumbnails and uploader beside them and the upload date, length and
-//! description in the page's JSON-LD. Porn maker, pornstar and profile pages list
-//! their uploads through the same listing JSON, read here through the XVideos helpers.
+//! page hands it the HLS playlist in the same `html5player.setVideoHLS` call, with the
+//! title, thumbnails and uploader beside it and the upload date, length and description
+//! in the page's JSON-LD. Porn maker, pornstar and profile pages list their uploads
+//! through the same listing JSON, read here through the XVideos helpers.
 
 use std::sync::LazyLock;
 
@@ -113,7 +112,7 @@ impl Resolver for XnxxResolver {
             name: "XNXX",
             hosts: &["xnxx.com", "xnxx2.com", "xnxx3.com", "xnxx.tv", "xnxx.es"],
             features: &["videos", "embeds", "porn makers", "pornstars", "profiles"],
-            formats: &["mp4", "hls"],
+            formats: &["hls"],
             media: &[MediaKind::Video],
             tags: &[Tag::Nsfw, Tag::Video],
             session: SessionSupport::None,
@@ -157,7 +156,6 @@ mod tests {
     use crate::http::transport::{
         Exchange, Fixture, RecordedBody, RecordedRequest, RecordedResponse,
     };
-    use crate::media::{Container, VideoCodec};
     use serde_json::json;
 
     fn get(url: &str, status: u16, content_type: &str, body: &str) -> Exchange {
@@ -278,6 +276,7 @@ html5player.setUploaderName('glurp');
         let url = Url::parse("https://www.xnxx.com/video-55awb78/skyrim_test_video").unwrap();
         assert!(resolver.matches(&url));
         let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
+        crate::resolve::assert_one_family(&resolved.variants);
         assert_eq!(resolved.resolver, PLATFORM);
         assert_eq!(resolved.id.as_deref(), Some("55awb78"));
         assert_eq!(resolved.title.as_deref(), Some("Skyrim Test Video"));
@@ -290,11 +289,9 @@ html5player.setUploaderName('glurp');
         assert_eq!(resolved.duration, Some(Duration::from_secs(469)));
         assert!(resolved.uploaded_at.is_some());
         assert_eq!(resolved.age_limit, Some(18));
-        assert_eq!(resolved.variants.len(), 3);
+        assert_eq!(resolved.variants.len(), 1);
         assert_eq!(resolved.variants[0].height, Some(480));
-        assert_eq!(resolved.variants[1].container, Some(Container::Mp4));
-        assert_eq!(resolved.variants[1].video, Some(VideoCodec::H264));
-        assert_eq!(resolved.variants[2].label.as_deref(), Some("240p"));
+        assert_eq!(resolved.variants[0].format_id.as_deref(), Some("hls-480p"));
         assert!(matches!(
             resolver
                 .resolve(&Url::parse("https://www.xnxx.com/video-zzzzzzz/x").unwrap())
@@ -336,6 +333,7 @@ html5player.setUploaderName('glurp');
     }
 
     /// Every example link resolves live.
+    #[ignore = "reaches the live site: cargo test -- --ignored"]
     #[tokio::test]
 
     async fn live_examples_resolve() {

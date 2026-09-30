@@ -26,9 +26,10 @@
 	import Field from '$lib/components/Field.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import RelativeTime from '$lib/components/RelativeTime.svelte';
+	import ChipList from '$lib/components/ChipList.svelte';
+	import Timestamp from '$lib/components/Timestamp.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
-	import { number } from '$lib/format';
+	import { countText, number } from '$lib/format';
 	import { session } from '$lib/session.svelte';
 	import { notify, reportError } from '$lib/toast.svelte';
 
@@ -142,9 +143,7 @@
 
 	async function endOthers() {
 		const result = await sessionsApi.revokeOthers();
-		notify.success(
-			`${number(result.revoked)} other session${result.revoked === 1 ? '' : 's'} ended`
-		);
+		notify.success(`${countText(result.revoked, 'other session')} ended`);
 		sessions = sessions.filter((s) => s.current);
 	}
 
@@ -245,13 +244,13 @@
 	</div>
 {/snippet}
 {#snippet sessionCreated(s: SessionView)}
-	<RelativeTime at={s.created_at} class="whitespace-nowrap" />
+	<Timestamp at={s.created_at} class="whitespace-nowrap" />
 {/snippet}
 {#snippet sessionSeen(s: SessionView)}
-	<RelativeTime at={s.last_seen_at} class="whitespace-nowrap" />
+	<Timestamp at={s.last_seen_at} class="whitespace-nowrap" />
 {/snippet}
 {#snippet sessionExpires(s: SessionView)}
-	<RelativeTime at={s.expires_at} class="whitespace-nowrap" />
+	<Timestamp at={s.expires_at} class="whitespace-nowrap" />
 {/snippet}
 {#snippet sessionActions(s: SessionView)}
 	<button
@@ -269,14 +268,14 @@
 	<span class="ml-2 font-mono text-xs text-surface-600-400">{t.prefix}…</span>
 {/snippet}
 {#snippet scopesCell(t: ApiToken)}
-	{t.scopes.map((scope) => PERMISSION_LABELS[scope]).join(', ') || 'Read only'}
+	<ChipList items={t.scopes.map((scope) => PERMISSION_LABELS[scope])} />
 {/snippet}
 {#snippet tokenUsed(t: ApiToken)}
-	<RelativeTime at={t.last_used_at} class="whitespace-nowrap" />
+	<Timestamp at={t.last_used_at} class="whitespace-nowrap" />
 {/snippet}
 {#snippet tokenExpires(t: ApiToken)}
 	{#if t.expires_at}
-		<RelativeTime at={t.expires_at} class="whitespace-nowrap" />
+		<Timestamp at={t.expires_at} class="whitespace-nowrap" />
 	{:else}
 		<span class="text-surface-600-400">Never</span>
 	{/if}
@@ -415,9 +414,9 @@
 											{#if identity.email}· {identity.email}{/if}
 										</p>
 										<p class="text-surface-600-400">
-											Linked <RelativeTime at={identity.linked_at} />
+											Linked <Timestamp at={identity.linked_at} />
 											{#if identity.expires_at}
-												· token expires <RelativeTime at={identity.expires_at} />
+												· token expires <Timestamp at={identity.expires_at} />
 											{/if}
 											{#if identity.has_refresh_token}· refreshable{/if}
 										</p>

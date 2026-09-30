@@ -1120,6 +1120,7 @@ mod tests {
 
     /// Every example link resolves live on its server: videos with variants, the live
     /// webcam as a live stream, and the channel, account and playlist with entries.
+    #[ignore = "reaches the live site: cargo test -- --ignored"]
     #[tokio::test]
 
     async fn live_examples_resolve() {

@@ -17,9 +17,11 @@
 	import Field from '$lib/components/Field.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import RelativeTime from '$lib/components/RelativeTime.svelte';
+	import ChipList from '$lib/components/ChipList.svelte';
+	import Count from '$lib/components/Count.svelte';
+	import Timestamp from '$lib/components/Timestamp.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
-	import { EMPTY, number } from '$lib/format';
+	import { number } from '$lib/format';
 	import { session } from '$lib/session.svelte';
 	import { notify, reportError } from '$lib/toast.svelte';
 
@@ -197,7 +199,7 @@
 		{
 			key: 'password',
 			label: 'Password',
-			value: (u) => (u.has_password ? 'Set' : `${EMPTY}, provider login only`)
+			value: (u) => (u.has_password ? 'Set' : 'Provider login')
 		},
 		{
 			key: 'created',
@@ -263,7 +265,7 @@
 	</select>
 {/snippet}
 {#snippet createdCell(user: User)}
-	<RelativeTime at={user.created_at} class="whitespace-nowrap" />
+	<Timestamp at={user.created_at} class="whitespace-nowrap" />
 {/snippet}
 {#snippet userActions(user: User)}
 	<span class="flex justify-end gap-1">
@@ -290,13 +292,13 @@
 	{/if}
 {/snippet}
 {#snippet sessionCreated(s: AccountSessionView)}
-	<RelativeTime at={s.created_at} class="whitespace-nowrap" />
+	<Timestamp at={s.created_at} class="whitespace-nowrap" />
 {/snippet}
 {#snippet sessionSeen(s: AccountSessionView)}
-	<RelativeTime at={s.last_seen_at} class="whitespace-nowrap" />
+	<Timestamp at={s.last_seen_at} class="whitespace-nowrap" />
 {/snippet}
 {#snippet sessionExpires(s: AccountSessionView)}
-	<RelativeTime at={s.expires_at} class="whitespace-nowrap" />
+	<Timestamp at={s.expires_at} class="whitespace-nowrap" />
 {/snippet}
 {#snippet sessionActions(s: AccountSessionView)}
 	<span class="flex justify-end gap-1">
@@ -322,13 +324,13 @@
 	<span class="ml-2 font-mono text-xs text-surface-600-400">{t.prefix}…</span>
 {/snippet}
 {#snippet tokenScopes(t: AccountTokenView)}
-	{t.scopes.map((scope) => PERMISSION_LABELS[scope]).join(', ') || 'Read only'}
+	<ChipList items={t.scopes.map((scope) => PERMISSION_LABELS[scope])} />
 {/snippet}
 {#snippet tokenUsed(t: AccountTokenView)}
-	<RelativeTime at={t.last_used_at} class="whitespace-nowrap" />
+	<Timestamp at={t.last_used_at} class="whitespace-nowrap" />
 {/snippet}
 {#snippet tokenExpires(t: AccountTokenView)}
-	<RelativeTime at={t.expires_at} class="whitespace-nowrap" />
+	<Timestamp at={t.expires_at} class="whitespace-nowrap" />
 {/snippet}
 {#snippet tokenActions(t: AccountTokenView)}
 	<button
@@ -414,8 +416,7 @@
 									<span class="flex flex-wrap items-center gap-2">
 										<span class="font-semibold">{ROLE_LABELS[role.role]}</span>
 										<span class="badge preset-tonal" style="--badge-size: var(--text-xs)">
-											{number(role.accounts.length)}
-											{role.accounts.length === 1 ? 'account' : 'accounts'}
+											<Count value={role.accounts.length} noun="account" />
 										</span>
 									</span>
 									<Accordion.ItemIndicator class="group">
@@ -425,10 +426,11 @@
 							</h3>
 							<Accordion.ItemContent class="space-y-2 text-sm">
 								<p class="text-surface-600-400">{role.description}</p>
-								<p>
-									{role.permissions.map((permission) => PERMISSION_LABELS[permission]).join(', ') ||
-										'Read only'}
-								</p>
+								{#if role.permissions.length > 0}
+									<p>
+										{role.permissions.map((permission) => PERMISSION_LABELS[permission]).join(', ')}
+									</p>
+								{/if}
 								{#if role.accounts.length === 0}
 									<p class="text-surface-600-400">No accounts</p>
 								{:else}

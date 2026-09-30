@@ -1,5 +1,5 @@
 //! Aparat (aparat.com) videos, through the site's own API, which names a video's HLS
-//! manifest and its download files by profile.
+//! manifest.
 
 use std::sync::LazyLock;
 
@@ -9,11 +9,11 @@ use serde_json::Value;
 use url::Url;
 
 use super::{
-    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag, Variant,
+    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag,
     clean_title, fetch, hls, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
+use crate::media::MediaKind;
 
 pub const PLATFORM: &str = "aparat";
 const SITE: &str = "https://www.aparat.com/";
@@ -22,7 +22,6 @@ const API: &str = "https://www.aparat.com/api/fa/v1/video/video/show/videohash/"
 /// `/v/{hash}` or `/video/video/embed/videohash/{hash}`.
 static RE_PATH: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^/(?:v/|video/video/embed/videohash/)([a-zA-Z0-9]+)").unwrap());
-static RE_HEIGHT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(\d+)[pP]").unwrap());
 
 pub fn video_id(url: &Url) -> Option<String> {
     if !matches!(url.scheme(), "http" | "https") {
@@ -64,7 +63,7 @@ impl Resolver for AparatResolver {
             name: "Aparat",
             hosts: &["aparat.com"],
             features: &["videos"],
-            formats: &["hls", "mp4"],
+            formats: &["hls"],
             media: &[MediaKind::Video],
             tags: &[Tag::Video],
             session: SessionSupport::None,
@@ -91,45 +90,16 @@ impl Resolver for AparatResolver {
         if util::boolean(&video["deleted"]) == Some(true) {
             return Err(ResolveError::NotFound(url.clone()));
         }
+        let manifest = util::url_of(&video["hls_link"], None)
+            .ok_or_else(|| ResolveError::NotFound(url.clone()))?;
+        let headers = [("referer".to_string(), SITE.to_string())];
+        let expanded = hls::expand(&self.http, &manifest, PLATFORM, BROWSER_UA, &headers).await?;
+        if expanded.variants.is_empty() {
+            return Err(ResolveError::NotFound(url.clone()));
+        }
         let mut resolved = Resolved::new(PLATFORM);
-        let mut failure = None;
-        if let Some(manifest) = util::url_of(&video["hls_link"], None) {
-            let headers = [("referer".to_string(), SITE.to_string())];
-            match hls::expand(&self.http, &manifest, PLATFORM, BROWSER_UA, &headers).await {
-                Ok(expanded) => {
-                    resolved.variants.extend(expanded.variants);
-                    resolved.subtitles.extend(expanded.subtitles);
-                    resolved.duration = expanded.duration;
-                }
-                Err(error) => failure = Some(error),
-            }
-        }
-        for file in video["file_link_all"].as_array().into_iter().flatten() {
-            let profile = file["profile"].as_str().unwrap_or("").trim();
-            for link in file["urls"].as_array().into_iter().flatten() {
-                let Some(link) = util::url_of(link, None) else {
-                    continue;
-                };
-                let mut variant = Variant::file(link);
-                variant.container = Some(Container::Mp4);
-                variant.video = Some(VideoCodec::H264);
-                variant.audio = Some(AudioCodec::Aac);
-                variant.height = util::search(&RE_HEIGHT, profile).and_then(|h| h.parse().ok());
-                variant.label = Some(if profile.is_empty() {
-                    "download".to_string()
-                } else {
-                    profile.to_string()
-                });
-                variant.format_id = Some(format!(
-                    "http-{}",
-                    if profile.is_empty() { "mp4" } else { profile }
-                ));
-                resolved.variants.push(variant);
-            }
-        }
-        if resolved.variants.is_empty() {
-            return Err(failure.unwrap_or_else(|| ResolveError::NotFound(url.clone())));
-        }
+        resolved.variants = expanded.variants;
+        resolved.subtitles = expanded.subtitles;
         resolved.id = Some(id.clone());
         resolved.title = video["title"].as_str().and_then(clean_title);
         resolved.description = video["description"]
@@ -138,7 +108,7 @@ impl Resolver for AparatResolver {
             .and_then(|d| clean_title(&d));
         resolved.thumbnail = util::url_of(&video["big_poster"], None)
             .or_else(|| util::url_of(&video["medium_poster"], None));
-        resolved.duration = util::seconds(&video["duration"]).or(resolved.duration);
+        resolved.duration = util::seconds(&video["duration"]).or(expanded.duration);
         resolved.uploaded_at = util::time(&video["sdate_real"]).or_else(|| {
             // The age the API states, seconds before now.
             util::int(&video["sdate_timediff"]).map(|age| util::from_now(-age))
@@ -197,7 +167,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn videos_resolve_with_manifest_and_files() {
+    async fn videos_resolve_through_their_manifest() {
         let mut fixture = Fixture::new(PLATFORM, None);
         fixture.exchanges.push(get(
             "https://www.aparat.com/api/fa/v1/video/video/show/videohash/wP8On",
@@ -207,10 +177,6 @@ mod tests {
                 "id": 878887, "title": "تیم گلکسی 11 - زومیت", "description": "www.zoomit.ir", "uid": "wP8On",
                 "big_poster": "https://static.cdn.asset.aparat.cloud/avt/878887.jpg?width=900", "duration": "231",
                 "sdate_real": "2013-12-18T22:57:00+03:30", "sdate_timediff": 402126888, "owner_username": "zoomit",
-                "file_link_all": [
-                    {"text": "دانلود", "profile": "720p", "urls": ["https://aspb3.cdn.asset.aparat.com/aparat-video/a-720p.mp4?wmsAuthSign=x"]},
-                    {"text": "دانلود", "profile": "", "urls": ["https://aspb3.cdn.asset.aparat.com/aparat-video/a.mp4?wmsAuthSign=x", "bad url"]}
-                ],
                 "hls_link": "https://www.aparat.com/external/chelsea/manifest.m3u8?q=abc"
             }}}).to_string(),
         ));
@@ -244,17 +210,14 @@ mod tests {
             resolved.uploaded_at.map(|t| t.as_second()),
             Some(1387394820)
         );
-        assert_eq!(resolved.variants.len(), 3);
+        crate::resolve::assert_one_family(&resolved.variants);
+        assert_eq!(resolved.variants.len(), 1);
         assert_eq!(resolved.variants[0].kind, VariantKind::Hls);
         assert_eq!(resolved.variants[0].height, Some(352));
         assert_eq!(
             resolved.variants[0].headers,
             vec![("referer".to_string(), SITE.to_string())]
         );
-        assert_eq!(resolved.variants[1].kind, VariantKind::File);
-        assert_eq!(resolved.variants[1].height, Some(720));
-        assert_eq!(resolved.variants[1].format_id.as_deref(), Some("http-720p"));
-        assert_eq!(resolved.variants[2].label.as_deref(), Some("download"));
         assert!(matches!(
             resolver
                 .resolve(&Url::parse("https://www.aparat.com/v/gone1").unwrap())

@@ -61,10 +61,11 @@ export type SettingSource = 'provisioning' | 'app';
 export type SettingsFormat = 'toml' | 'yaml' | 'json';
 export type StatusKind = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
 export type Stage = 'resolve' | 'download' | 'transcode' | 'publish' | 'archive';
-export type BulkAction = 'retry' | 'cancel' | 'delete';
-export type Artifact = 'output' | 'source' | 'subtitle';
+export type BulkAction = 'retry' | 'cancel' | 'stop' | 'delete';
+export type Artifact = 'output' | 'source' | 'subtitle' | 'recording';
 export type JobOrder = 'newest' | 'oldest';
-export type JobEventKind = 'submitted' | 'status' | 'progress' | 'log' | 'children' | 'deleted';
+export type JobEventKind =
+	'submitted' | 'status' | 'progress' | 'log' | 'children' | 'recording' | 'stop' | 'deleted';
 export type SubtitleMode = 'keep' | 'burn' | 'skip';
 export type SubtitleFormat = 'vtt' | 'srt' | 'ttml' | 'ass' | 'json3' | 'hls_vtt';
 export type VariantKind =
@@ -234,6 +235,8 @@ export interface ProfileInput {
 	description?: string;
 	platforms?: PlatformToggles;
 	limits?: ProfileLimits;
+	/** The language of the sound taken when a source offers several. Unset leaves the parent scope's. */
+	audio_language?: string | null;
 }
 
 export interface ProfileLimits {
@@ -243,6 +246,8 @@ export interface ProfileLimits {
 	max_duration_secs?: number | null;
 	/** Above zero. */
 	max_height?: number | null;
+	/** How long a live stream is captured, in seconds. Above zero. */
+	max_capture_secs?: number | null;
 }
 
 export interface PlatformToggles {
@@ -618,6 +623,8 @@ export interface ServerLimits {
 	/** `null` puts no bound on how long media may be. */
 	max_duration_secs: number | null;
 	max_height: number;
+	/** How long a live stream is captured at most, in seconds. */
+	max_capture_secs: number;
 }
 
 export interface Preset {
@@ -648,6 +655,8 @@ export interface EffectiveProfile {
 	platforms: Record<string, boolean>;
 	/** Effective profile limits. `null` uses the engine limit. */
 	limits: RequestLimits;
+	/** The language of the sound wanted, from the narrowest profile that names one. */
+	audio_language: string | null;
 	/** The assignments applied, widest first. */
 	applied: Assignment[];
 }
@@ -726,6 +735,8 @@ export interface FrontJob {
 	duration_secs: number | null;
 	/** A recorded stream. */
 	live: boolean;
+	/** The media is the recording of a capture under way, playing while it grows. */
+	recording: boolean;
 	size: number;
 	width: number | null;
 	height: number | null;
@@ -792,6 +803,8 @@ export interface JobSummary {
 	thumbnail: Url | null;
 	duration_secs: number | null;
 	live: boolean;
+	/** A live capture is being recorded, or was. */
+	recording: boolean;
 	output_bytes: number | null;
 	published_url: Url | null;
 	published_reference: string | null;
@@ -886,12 +899,16 @@ export type JobEvent = { job: Uuid; at: Timestamp; job_summary: JobSummary | nul
 	| { kind: 'progress'; stage: Stage; progress: Progress }
 	| { kind: 'log'; entry: LogEntry }
 	| { kind: 'children'; ids: Uuid[] }
+	| { kind: 'recording'; file: LocalFile }
+	| { kind: 'stop' }
 	| { kind: 'deleted' }
 );
 
 export interface Progress {
 	done: number;
 	total: number | null;
+	/** Bytes on disk so far, for a capture whose recording grows as the stream goes on. */
+	bytes: number | null;
 }
 
 export interface LogEntry {
@@ -915,12 +932,26 @@ export interface RequestLimits {
 	max_source_bytes: number | null;
 	max_duration_secs: number | null;
 	max_height: number | null;
+	/** How long a live stream is captured, in seconds. */
+	max_capture_secs: number | null;
+}
+
+/** The limits a job runs under, each the tighter of its request's and the engine's cap. */
+export interface LimitsInForce {
+	max_source_bytes: number;
+	/** `null` puts no bound on how long media may be; `0` refuses live streams. */
+	max_duration_secs: number | null;
+	max_height: number;
+	/** How long a live stream is captured at most, in seconds. */
+	max_capture_secs: number;
 }
 
 export interface RequestOptions {
 	clip: ClipRange | null;
 	subtitles: SubtitleMode;
 	subtitle_language: string | null;
+	/** The language of the sound wanted when a source offers several. */
+	audio_language: string;
 }
 
 export interface ClipRange {
@@ -938,6 +969,8 @@ export interface Job {
 	request: JobRequest;
 	/** The request's origin in the names people know, for a request from Discord. */
 	place: Place | null;
+	/** The request's limits tightened by the engine's own: what the job is held to. */
+	limits_in_force: LimitsInForce;
 	status: JobStatus;
 	artifacts: Artifacts;
 	log: LogEntry[];
@@ -949,6 +982,10 @@ export interface Job {
 
 export interface Artifacts {
 	resolved: Resolved | null;
+	/** The recording a live capture writes from its first byte, playable while it grows. */
+	recording: LocalFile | null;
+	/** The message the destination got when the capture began, edited with the result. */
+	announced: Published | null;
 	source: LocalFile | null;
 	output: LocalFile | null;
 	/** Whether the output was handed over or a view's page was posted. */
@@ -999,6 +1036,12 @@ export interface Variant {
 	format_id: string | null;
 	label: string | null;
 	language: string | null;
+	/** The platform's own name for the audio track. */
+	audio_track: string | null;
+	/** The platform marks the track as the original its player takes by default. */
+	audio_default: boolean;
+	/** The platform marks the track as a dub. */
+	audio_dubbed: boolean;
 	codecs: string | null;
 	video_only: boolean;
 	audio_only: boolean;

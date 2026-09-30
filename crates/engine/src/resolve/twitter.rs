@@ -74,7 +74,7 @@ impl Resolver for TwitterResolver {
                 "fixvx.com",
             ],
             features: &["videos", "gifs"],
-            formats: &["mp4", "hls"],
+            formats: &["mp4"],
             media: &[MediaKind::Video],
             tags: &[Tag::Basic, Tag::Social],
             session: SessionSupport::None,
@@ -208,22 +208,7 @@ impl Resolver for TwitterResolver {
                     }
                 }
                 variants.push(v);
-            } else if content_type.to_ascii_lowercase().contains("mpegurl") {
-                let mut v = Variant::new(variant_url, VariantKind::Hls);
-                v.duration = duration;
-                variants.push(v);
             }
-        }
-        if variants.is_empty()
-            && let Some(raw) = video.get("url").and_then(|u| u.as_str())
-            && let Ok(direct) = Url::parse(raw)
-        {
-            let mut v = Variant::new(direct, VariantKind::File);
-            v.container = Some(Container::Mp4);
-            v.width = width;
-            v.height = height;
-            v.duration = duration;
-            variants.push(v);
         }
         if variants.is_empty() {
             return Err(ResolveError::NotFound(url.clone()));

@@ -1,8 +1,9 @@
 //! Downloads HLS: media playlists segment by segment, on demand or live with the
-//! playlist reloaded as it grows and the capture cut at the limit or ended when the
-//! stream ends. AES-128 and SAMPLE-AES undone. The stream split where it says it is
-//! discontinuous and the parts joined back. And the subtitle renditions that go with it,
-//! followed alongside and aligned to the media.
+//! playlist reloaded as it grows and the capture ended at the limit, when a person stops
+//! it, or when the stream ends. AES-128 and SAMPLE-AES undone. On demand, the stream is
+//! split where it says it is discontinuous and the parts joined back; live, every segment
+//! goes straight into the growing recording. And the subtitle renditions that go with
+//! it, followed alongside and aligned to the media.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -15,11 +16,13 @@ use base64::Engine as _;
 use futures::StreamExt;
 use m3u8_rs::{AlternativeMediaType, KeyMethod, MasterPlaylist, MediaPlaylist, Playlist};
 use md5::{Digest, Md5};
+use tokio_util::sync::CancellationToken;
 use url::Url;
 
+use super::recording::{Lane, Recorder, Spec, adts_audio, treatments_of};
 use super::segments::{
-    Budget, Consumer, InitSection, Meter, PartKey, Timing, TrackWriter, fetch_bytes, fetch_text,
-    mux_parts,
+    Budget, Consumer, InitSection, LiveTrack, Meter, PartKey, Timing, TrackWriter, fetch_bytes,
+    fetch_text, mux_parts,
 };
 use super::{
     DownloadContext, DownloadError, Downloaded, Downloader, LocalSubtitle, mp4, mpegts, subtitles,
@@ -111,7 +114,14 @@ struct Loaded {
     audio: Option<Url>,
     /// The subtitle renditions a master listed.
     subtitles: Vec<SubtitleTrack>,
+    /// The `CODECS` the master gave the chosen stream.
+    codecs: Option<String>,
+    /// The language of the audio rendition taken, when the master said.
+    audio_language: Option<String>,
 }
+
+/// A segment fetched ahead of its loop: its initialization section and its bytes.
+type Prefetched = (Option<Arc<InitSection>>, Vec<u8>);
 
 /// The stream of a master playlist to take: the tallest that fits `max_height`, the
 /// smallest when none does, the highest bandwidth among equals.
@@ -165,6 +175,7 @@ fn restore_keyed_segments(url: &Url, text: String) -> Result<String, DownloadErr
     Ok(stripchat::restore_media_playlist(&text, secret))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn load_media_playlist(
     http: &Http,
     url: &Url,
@@ -172,6 +183,7 @@ async fn load_media_playlist(
     headers: &[(String, String)],
     query: &[(String, String)],
     max_height: u32,
+    audio_language: &str,
     depth: u8,
 ) -> Result<Loaded, DownloadError> {
     let url = &signed_url(url, query);
@@ -183,6 +195,8 @@ async fn load_media_playlist(
             playlist: media,
             audio: None,
             subtitles: Vec::new(),
+            codecs: None,
+            audio_language: None,
         }),
         Ok(Playlist::MasterPlaylist(master)) => {
             if depth == 0 {
@@ -193,21 +207,33 @@ async fn load_media_playlist(
             let next = final_url
                 .join(&best.uri)
                 .map_err(|e| DownloadError::Manifest(format!("bad variant uri: {e}")))?;
-            let audio = match &best.audio {
-                Some(group) => master
+            // The rendition in the language asked for, else the group's default.
+            let rendition = best.audio.as_ref().and_then(|group| {
+                master
                     .alternatives
                     .iter()
-                    .filter(|a| a.media_type == AlternativeMediaType::Audio && a.group_id == *group)
-                    .max_by_key(|a| (a.default, a.autoselect))
-                    .and_then(|a| a.uri.as_deref())
-                    .map(|uri| {
-                        final_url
-                            .join(uri)
-                            .map_err(|e| DownloadError::Manifest(format!("bad audio uri: {e}")))
+                    .filter(|a| {
+                        a.media_type == AlternativeMediaType::Audio
+                            && a.group_id == *group
+                            && a.uri.is_some()
                     })
-                    .transpose()?,
-                None => None,
-            };
+                    .max_by_key(|a| {
+                        (
+                            crate::plan::language_matches(a.language.as_deref(), audio_language),
+                            a.default,
+                            a.autoselect,
+                        )
+                    })
+            });
+            let audio = rendition
+                .and_then(|a| a.uri.as_deref())
+                .map(|uri| {
+                    final_url
+                        .join(uri)
+                        .map_err(|e| DownloadError::Manifest(format!("bad audio uri: {e}")))
+                })
+                .transpose()?;
+            let rendition_language = rendition.and_then(|a| a.language.clone());
             let mut subtitles = Vec::new();
             for alternative in master.alternatives.iter().filter(|a| {
                 a.media_type == AlternativeMediaType::Subtitles
@@ -233,11 +259,14 @@ async fn load_media_playlist(
                 headers,
                 query,
                 max_height,
+                audio_language,
                 depth - 1,
             ))
             .await?;
             loaded.audio = audio;
             loaded.subtitles = subtitles;
+            loaded.codecs = best.codecs.clone();
+            loaded.audio_language = rendition_language;
             Ok(loaded)
         }
         Err(error) => Err(DownloadError::Manifest(format!(
@@ -460,17 +489,39 @@ fn decrypt_aes128(data: &[u8], key: &[u8], iv: &[u8; 16]) -> Result<Vec<u8>, Dow
 }
 
 /// What every playlist of one download shares: the client, the keys and initialization
-/// sections fetched so far, the byte budget and the notes for the job log.
+/// sections fetched so far, the limits, what ends the capture, and the notes for the
+/// job log.
 struct Session<'a> {
     http: &'a Http,
     platform: &'a str,
     headers: &'a [(String, String)],
     query: &'a [(String, String)],
     max_height: u32,
+    /// The language of the sound wanted, for a master that offers several.
+    audio_language: &'a str,
     max_live: Duration,
+    max_bytes: u64,
+    /// A person's request to end the capture.
+    asked: &'a CancellationToken,
+    /// Cancelled when the capture is to end: by the person, or by the byte limit. Every
+    /// track's loop leaves off at it.
+    stop: CancellationToken,
     keys: Mutex<HashMap<String, [u8; 16]>>,
     inits: Mutex<HashMap<String, Arc<InitSection>>>,
+    /// Segments fetched ahead of their loop, by address, handed over once.
+    prefetched: Mutex<HashMap<String, Prefetched>>,
     notes: Mutex<Vec<String>>,
+}
+
+/// Why a live track's loop left off.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum End {
+    /// The person asked.
+    Stopped,
+    /// The capture limit was reached.
+    Limit,
+    /// The byte budget could not hold the next segment.
+    Bytes,
 }
 
 impl Session<'_> {
@@ -480,6 +531,30 @@ impl Session<'_> {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .push(message);
+    }
+
+    /// Notes how a live capture ended, once, from the primary track. The byte limit is
+    /// noted by whichever track hits it and ends every other track's loop.
+    fn ended(&self, end: End, captured: f64, primary: bool) {
+        match end {
+            End::Bytes => {
+                if !self.stop.is_cancelled() {
+                    self.stop.cancel();
+                    self.note(format!(
+                        "Capture ended at the {} byte limit.",
+                        self.max_bytes
+                    ));
+                }
+            }
+            End::Limit if primary => self.note(format!(
+                "Capture ended at the {:.0} s limit.",
+                self.max_live.as_secs_f64()
+            )),
+            End::Stopped if primary && self.asked.is_cancelled() => {
+                self.note(format!("Capture stopped at {captured:.0} s."));
+            }
+            End::Limit | End::Stopped => {}
+        }
     }
 
     /// The 16 bytes at `url`: fetched, or carried in a `data:` URL.
@@ -562,12 +637,47 @@ impl Session<'_> {
         Ok(section)
     }
 
+    /// The address a piece is fetched at, for the segments fetched ahead of their loop.
+    fn piece_key(piece: &Piece) -> String {
+        match piece.range {
+            Some((start, end)) => format!("{}#{start}-{end}", piece.url),
+            None => piece.url.to_string(),
+        }
+    }
+
+    /// Fetches the first segment of the playlist at `url` ahead of its loop, to read
+    /// what it carries: the loop takes it from here rather than fetching it again.
+    async fn prefetch_first(&self, url: &Url, loaded: &Loaded) -> Result<Vec<u8>, DownloadError> {
+        let pieces = pieces_of(&loaded.base, &loaded.playlist, self.query, url)?;
+        let Some(piece) = pieces.last() else {
+            return Err(DownloadError::Manifest(format!("{url} lists no segments")));
+        };
+        let (init, bytes) = self.fetch_piece(piece).await?;
+        let sample = match &init {
+            Some(init) => [init.bytes.as_slice(), bytes.as_slice()].concat(),
+            None => bytes.clone(),
+        };
+        self.prefetched
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(Self::piece_key(piece), (init, bytes));
+        Ok(sample)
+    }
+
     /// Fetches and decrypts one segment: its initialization section, when it has one,
     /// and its bytes.
     async fn fetch_piece(
         &self,
         piece: &Piece,
     ) -> Result<(Option<Arc<InitSection>>, Vec<u8>), DownloadError> {
+        if let Some(fetched) = self
+            .prefetched
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&Self::piece_key(piece))
+        {
+            return Ok(fetched);
+        }
         let init = match &piece.map {
             Some(map) => Some(self.init_section(map, piece.sequence).await?),
             None => None,
@@ -646,8 +756,9 @@ impl Consumer for TextCollector<'_> {
 impl Session<'_> {
     /// Follows the media playlist at `url` until it ends: every segment in order into
     /// `consumer`, a live playlist reloaded as the stream goes on until it ends, the
-    /// capture limit is reached, or the playlist can no longer be loaded. What happened
-    /// to a live stream goes into the notes.
+    /// capture limit or byte limit is reached, a person stops the capture, or the
+    /// playlist can no longer be loaded. What happened to a live stream goes into the
+    /// notes.
     async fn follow(
         &self,
         url: &Url,
@@ -661,6 +772,7 @@ impl Session<'_> {
         let mut failures = 0u32;
         let mut was_live: Option<bool> = None;
         let max_live = self.max_live.as_secs_f64();
+        let primary = meter.is_some();
         loop {
             let loaded = match first.take() {
                 Some(loaded) => Ok(loaded),
@@ -672,6 +784,7 @@ impl Session<'_> {
                         self.headers,
                         self.query,
                         self.max_height,
+                        self.audio_language,
                         2,
                     )
                     .await
@@ -685,12 +798,18 @@ impl Session<'_> {
                 Err(error) if was_live == Some(true) => {
                     failures += 1;
                     if failures < RELOAD_FAILURES {
-                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        tokio::select! {
+                            _ = tokio::time::sleep(Duration::from_secs(1)) => {}
+                            _ = self.stop.cancelled() => {}
+                        }
+                        if self.stop.is_cancelled() {
+                            self.ended(End::Stopped, captured, primary);
+                            return Ok(());
+                        }
                         continue;
                     }
                     self.note(format!(
-                        "{name}: reload failed {failures} times ({error}). Recording stopped after {:.0} s.",
-                        captured
+                        "{name}: reload failed {failures} times ({error}). Capture ended at {captured:.0} s."
                     ));
                     return Ok(());
                 }
@@ -746,7 +865,7 @@ impl Session<'_> {
                 consumer.gap();
             }
             let count = fresh.len();
-            let mut cut = false;
+            let mut ended: Option<End> = None;
             let fetches = futures::stream::iter(fresh.into_iter().map(|piece| async move {
                 let result = self.fetch_piece(&piece).await;
                 (piece, result)
@@ -776,32 +895,43 @@ impl Session<'_> {
                     origin: 0.0,
                 };
                 consumer.take(&key, timing, init.as_deref(), &bytes).await?;
+                if consumer.full() {
+                    ended = Some(End::Bytes);
+                    break;
+                }
                 captured += piece.duration;
                 next = Some(piece.sequence + 1);
                 if let Some(meter) = meter.as_deref_mut() {
                     meter.add(piece.duration);
                 }
                 if live && captured >= max_live {
-                    cut = true;
+                    ended = Some(End::Limit);
+                    break;
+                }
+                if self.stop.is_cancelled() {
+                    ended = Some(End::Stopped);
                     break;
                 }
             }
-            if cut {
-                self.note(format!(
-                    "{name}: capture cut at the limit of {:.0} s while the stream goes on",
-                    max_live
-                ));
+            if ended.is_none() && live && self.stop.is_cancelled() {
+                ended = Some(End::Stopped);
+            }
+            if let Some(end) = ended {
+                self.ended(end, captured, primary);
                 return Ok(());
             }
             if !live {
-                if was_live == Some(true) {
-                    self.note(format!("{name}: stream ended. Recorded {:.0} s.", captured));
+                if was_live == Some(true) && primary {
+                    self.note(format!("Stream ended at {captured:.0} s."));
                 }
                 return Ok(());
             }
             let target = Duration::from_secs(playlist.target_duration.max(1));
             let wait = if count > 0 { target } else { target / 2 };
-            tokio::time::sleep(wait).await;
+            tokio::select! {
+                _ = tokio::time::sleep(wait) => {}
+                _ = self.stop.cancelled() => {}
+            }
         }
     }
 }
@@ -838,13 +968,18 @@ impl Downloader for HlsDownloader {
             headers,
             query,
             max_height: context.max_height,
+            audio_language: &context.audio_language,
             max_live: context.max_live,
+            max_bytes: context.max_bytes,
+            asked: &context.stop,
+            stop: context.stop.child_token(),
             keys: Mutex::new(HashMap::new()),
             inits: Mutex::new(HashMap::new()),
+            prefetched: Mutex::new(HashMap::new()),
             notes: Mutex::new(Vec::new()),
         };
         // The first load says what goes with the stream when the link is a master
-        // playlist: its audio rendition and subtitle renditions.
+        // playlist: its audio rendition and subtitle renditions, and its codecs.
         let mut first = load_media_playlist(
             &self.http,
             &variant.url,
@@ -852,11 +987,18 @@ impl Downloader for HlsDownloader {
             headers,
             query,
             context.max_height,
+            &context.audio_language,
             2,
         )
         .await?;
         let video_url = first.base.clone();
         let audio_url = variant.audio_url.clone().or(first.audio.take());
+        // What the sound is: the paired rendition's language, else the master's word.
+        let audio_language = variant
+            .language
+            .clone()
+            .filter(|_| variant.audio_url.is_some())
+            .or(first.audio_language.take());
         let mut subtitle_tracks: Vec<SubtitleTrack> = Vec::new();
         if let Some(choice) = &context.subtitles {
             subtitle_tracks.extend(
@@ -873,14 +1015,8 @@ impl Downloader for HlsDownloader {
             }
         }
         first.subtitles.clear();
-        progress.send_replace(Progress {
-            done: 0,
-            total: None,
-        });
-        let mut meter = Meter::new(&progress);
-
-        let mut video = TrackWriter::new(dest_dir, "video", &budget);
-        let mut audio = TrackWriter::new(dest_dir, "audio", &budget);
+        let live = !first.playlist.end_list;
+        progress.send_replace(Progress::of(0, None));
         let mut texts: Vec<TextCollector<'_>> = subtitle_tracks
             .iter()
             .map(|_| TextCollector {
@@ -888,38 +1024,121 @@ impl Downloader for HlsDownloader {
                 segments: Vec::new(),
             })
             .collect();
-        let video_run = session.follow(
-            &video_url,
-            "video",
-            &mut video,
-            Some(&mut meter),
-            Some(first),
-        );
-        let audio_run = async {
-            match &audio_url {
-                Some(url) => session.follow(url, "audio", &mut audio, None, None).await,
-                None => Ok(()),
-            }
-        };
         let text_runs =
             futures::future::join_all(subtitle_tracks.iter().zip(texts.iter_mut()).map(
                 |(track, collector)| session.follow(&track.url, "subtitles", collector, None, None),
             ));
-        let (video_result, audio_result, text_results) =
-            tokio::join!(video_run, audio_run, text_runs);
-        video_result?;
-        audio_result?;
-        let (video_parts, start_time) = video.finish().await?;
-        let (audio_parts, _) = audio.finish().await?;
-        if video_parts.is_empty() {
-            return Err(DownloadError::Empty);
-        }
-        if video_parts.len() > 1 {
-            session.note(format!(
-                "the stream is discontinuous: {} parts joined",
-                video_parts.len()
-            ));
-        }
+
+        let (file, start_time, text_results) = if live {
+            // A live stream goes straight into the recording, which plays as it grows.
+            // The newest segment of each track says how its sound arrives.
+            let (video_treatment, audio_treatment) = treatments_of(first.codecs.as_deref());
+            let sample = session.prefetch_first(&video_url, &first).await?;
+            let adts = match &audio_url {
+                Some(url) => {
+                    let loaded = load_media_playlist(
+                        &self.http,
+                        url,
+                        platform,
+                        headers,
+                        query,
+                        context.max_height,
+                        &context.audio_language,
+                        2,
+                    )
+                    .await?;
+                    adts_audio(&session.prefetch_first(url, &loaded).await?)
+                }
+                None => adts_audio(&sample),
+            };
+            let spec = Spec {
+                adts,
+                language: audio_language.clone(),
+                ..Spec::copied(video_treatment, audio_url.as_ref().map(|_| audio_treatment))
+            };
+            let recorder = Recorder::start(&self.ffmpeg, dest_dir, &spec).await?;
+            context.capture.started(recorder.path());
+            let mut meter = Meter::new(&progress).watching(recorder.path());
+            let mut video = LiveTrack::new(recorder.feed(Lane::Video), &budget);
+            let mut audio = audio_url
+                .as_ref()
+                .map(|_| LiveTrack::new(recorder.feed(Lane::Audio), &budget));
+            let video_run = session.follow(
+                &video_url,
+                "video",
+                &mut video,
+                Some(&mut meter),
+                Some(first),
+            );
+            let audio_run = async {
+                match (&audio_url, audio.as_mut()) {
+                    (Some(url), Some(track)) => {
+                        session.follow(url, "audio", track, None, None).await
+                    }
+                    _ => Ok(()),
+                }
+            };
+            let (video_result, audio_result, text_results) =
+                tokio::join!(video_run, audio_run, text_runs);
+            video_result?;
+            audio_result?;
+            let start_time = video.start_time();
+            drop(video);
+            drop(audio);
+            let file = recorder.finish().await?;
+            (file, start_time, text_results)
+        } else {
+            let mut meter = Meter::new(&progress);
+            let mut video = TrackWriter::new(dest_dir, "video", &budget);
+            let mut audio = TrackWriter::new(dest_dir, "audio", &budget);
+            let video_run = session.follow(
+                &video_url,
+                "video",
+                &mut video,
+                Some(&mut meter),
+                Some(first),
+            );
+            let audio_run = async {
+                match &audio_url {
+                    Some(url) => session.follow(url, "audio", &mut audio, None, None).await,
+                    None => Ok(()),
+                }
+            };
+            let (video_result, audio_result, text_results) =
+                tokio::join!(video_run, audio_run, text_runs);
+            video_result?;
+            audio_result?;
+            let (video_parts, start_time) = video.finish().await?;
+            let (audio_parts, _) = audio.finish().await?;
+            if video_parts.is_empty() {
+                return Err(DownloadError::Empty);
+            }
+            if video_parts.len() > 1 {
+                session.note(format!(
+                    "the stream is discontinuous: {} parts joined",
+                    video_parts.len()
+                ));
+            }
+            let dest = dest_dir.join("source.mkv");
+            let file = mux_parts(
+                &self.ffmpeg,
+                &video_parts,
+                audio_url.as_ref().map(|_| audio_parts.as_slice()),
+                &dest,
+                audio_language.as_deref(),
+            )
+            .await?;
+            for part in video_parts.iter().chain(audio_parts.iter()) {
+                let _ = tokio::fs::remove_file(part).await;
+            }
+            if file.size > context.max_bytes {
+                return Err(DownloadError::TooLarge {
+                    size: file.size,
+                    limit: context.max_bytes,
+                });
+            }
+            (file, start_time, text_results)
+        };
 
         let mut local_subtitles = Vec::new();
         for ((track, collector), result) in subtitle_tracks.iter().zip(texts).zip(text_results) {
@@ -944,24 +1163,6 @@ impl Downloader for HlsDownloader {
                 path,
                 format: SubtitleFormat::Vtt,
                 url: Some(track.url.clone()),
-            });
-        }
-
-        let dest = dest_dir.join("source.mkv");
-        let file = mux_parts(
-            &self.ffmpeg,
-            &video_parts,
-            audio_url.as_ref().map(|_| audio_parts.as_slice()),
-            &dest,
-        )
-        .await?;
-        for part in video_parts.iter().chain(audio_parts.iter()) {
-            let _ = tokio::fs::remove_file(part).await;
-        }
-        if file.size > context.max_bytes {
-            return Err(DownloadError::TooLarge {
-                size: file.size,
-                limit: context.max_bytes,
             });
         }
         Ok(Downloaded {
@@ -1350,7 +1551,16 @@ mod tests {
     }
 
     async fn probed_duration(ffmpeg: &Ffmpeg, downloaded: &Downloaded) -> f64 {
-        assert!(downloaded.file.path.ends_with("source.mkv"));
+        let name = downloaded
+            .file
+            .path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap();
+        assert!(
+            name == "source.mkv" || name == super::super::RECORDING,
+            "{name}"
+        );
         let info = ffmpeg.probe(&downloaded.file.path).await.unwrap();
         assert!(info.video.is_some(), "{info:?}");
         info.duration.unwrap().as_secs_f64()
@@ -1601,7 +1811,7 @@ mod tests {
             downloaded
                 .notes
                 .iter()
-                .any(|n| n.contains("capture cut at the limit")),
+                .any(|n| n.contains("Capture ended at the") && n.contains("limit")),
             "{:?}",
             downloaded.notes
         );
@@ -1699,14 +1909,13 @@ mod tests {
             "{:?}",
             downloaded.notes
         );
-        assert!(
-            downloaded
-                .notes
-                .iter()
-                .any(|n| n.contains("2 parts joined")),
-            "{:?}",
-            downloaded.notes
+        // The recording carries the two segments that were there, around the hole.
+        assert_eq!(
+            downloaded.file.path.file_name().unwrap(),
+            super::super::RECORDING
         );
+        let duration = probed_duration(&ffmpeg, &downloaded).await;
+        assert!((1.9..=3.1).contains(&duration), "{duration}");
         site.put_text(
             &format!("{BASE}vodhole.m3u8"),
             M3U8,

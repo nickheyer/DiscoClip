@@ -1,7 +1,7 @@
 //! Bluesky posts with video, through the public AT Protocol API the app reads: the post
 //! thread names the video's HLS playlist and thumbnail, the author's data server holds
-//! the original upload and the caption files, a quoted post's video counts as the post's
-//! own, and a link card hands the linked page on.
+//! the caption files, a quoted post's video counts as the post's own, and a link card
+//! hands the linked page on.
 
 use std::sync::LazyLock;
 
@@ -17,7 +17,7 @@ use super::{
     timestamp_hint, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
+use crate::media::MediaKind;
 
 pub const PLATFORM: &str = "bluesky";
 const SITE: &str = "https://bsky.app/";
@@ -293,8 +293,8 @@ impl BlueskyResolver {
         Some(url)
     }
 
-    /// One video of a post as media: the HLS renditions, the original upload from the
-    /// author's data server, the caption files, and what the post says.
+    /// One video of a post as media: the HLS renditions, the caption files from the
+    /// author's data server, and what the post says.
     async fn video(
         &self,
         video: &PostVideo<'_>,
@@ -322,26 +322,14 @@ impl BlueskyResolver {
         let mut subtitles = expanded.subtitles;
         let author = &post["author"];
         let did = author["did"].as_str().unwrap_or("");
-        let cid = view["cid"]
-            .as_str()
-            .or_else(|| record["video"]["ref"]["$link"].as_str());
-        if let (false, Some(cid)) = (did.is_empty(), cid) {
+        let captions: Vec<&Value> = record["captions"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .collect();
+        if !did.is_empty() && !captions.is_empty() {
             let server = self.data_server(did).await;
-            if let Some(blob) = Self::blob_url(&server, did, cid) {
-                let mut original = Variant::file(blob);
-                let mime = record["video"]["mimeType"].as_str().unwrap_or("video/mp4");
-                original.container = Container::from_mime(mime).or(Some(Container::Mp4));
-                original.video = Some(VideoCodec::H264);
-                original.audio = Some(AudioCodec::Aac);
-                original.width = width;
-                original.height = height;
-                original.size = record["video"]["size"].as_u64().filter(|s| *s > 0);
-                original.duration = expanded.duration;
-                original.format_id = Some("blob".to_string());
-                original.label = Some("original".to_string());
-                variants.push(original);
-            }
-            for caption in record["captions"].as_array().into_iter().flatten() {
+            for caption in captions {
                 let Some(file_cid) = caption["file"]["ref"]["$link"].as_str() else {
                     continue;
                 };
@@ -419,15 +407,8 @@ impl Resolver for BlueskyResolver {
             id: PLATFORM,
             name: "Bluesky",
             hosts: &["bsky.app", "main.bsky.dev"],
-            features: &[
-                "posts",
-                "quote posts",
-                "link cards",
-                "at links",
-                "original uploads",
-                "captions",
-            ],
-            formats: &["hls", "mp4"],
+            features: &["posts", "quote posts", "link cards", "at links", "captions"],
+            formats: &["hls"],
             media: &[MediaKind::Video],
             tags: &[Tag::Basic, Tag::Social],
             session: SessionSupport::None,
@@ -651,23 +632,9 @@ mod tests {
             resolved.duration,
             Some(std::time::Duration::from_secs_f64(5.5))
         );
-        assert_eq!(
-            resolved.variants.len(),
-            3,
-            "two renditions and the original upload"
-        );
+        crate::resolve::assert_one_family(&resolved.variants);
+        assert_eq!(resolved.variants.len(), 2, "the two renditions");
         assert_eq!(resolved.variants[0].height, Some(800));
-        let original = resolved
-            .variants
-            .iter()
-            .find(|v| v.format_id.as_deref() == Some("blob"))
-            .unwrap();
-        assert!(
-            original
-                .url
-                .as_str()
-                .starts_with("https://bsky.social/xrpc/com.atproto.sync.getBlob?did=")
-        );
         assert!(resolved.thumbnail.is_some());
     }
 

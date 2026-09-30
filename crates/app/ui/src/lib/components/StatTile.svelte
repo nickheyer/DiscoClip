@@ -3,15 +3,18 @@
 
 	interface Props {
 		label: string;
-		value: string | number;
+		/** The figure, as text. */
+		value?: string | number;
+		/** The figure, rendered by a value component. */
+		figure?: Snippet;
 		/** A second line under the value. */
-		hint?: string;
+		hint?: string | Snippet;
 		tone?: 'surface' | 'primary' | 'success' | 'warning' | 'error';
 		children?: Snippet;
 		loading?: boolean;
 	}
 
-	let { label, value, hint, tone = 'surface', children, loading = false }: Props = $props();
+	let { label, value, figure, hint, tone = 'surface', children, loading = false }: Props = $props();
 
 	const TONE = {
 		surface: '',
@@ -29,9 +32,11 @@
 		<div class="h-4 placeholder w-3/4 animate-pulse" aria-hidden="true"></div>
 	{:else}
 		<p class="text-2xl font-semibold tracking-tight break-words tabular-nums {TONE[tone]}">
-			{value}
+			{#if figure}{@render figure()}{:else}{value}{/if}
 		</p>
-		{#if hint}
+		{#if typeof hint === 'function'}
+			<p class="mt-auto text-xs break-words text-surface-600-400">{@render hint()}</p>
+		{:else if hint}
 			<p class="mt-auto text-xs break-words text-surface-600-400">{hint}</p>
 		{/if}
 	{/if}

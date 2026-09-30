@@ -1621,6 +1621,7 @@ mod tests {
 
     /// Every example link resolves live: tracks to audio with a playable variant, lists
     /// to entries.
+    #[ignore = "reaches the live site: cargo test -- --ignored"]
     #[tokio::test]
 
     async fn live_examples_resolve() {

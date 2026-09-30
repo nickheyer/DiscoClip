@@ -22,7 +22,8 @@
 	import GuildIcon from '$lib/components/GuildIcon.svelte';
 	import Identifier from '$lib/components/Identifier.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import RelativeTime from '$lib/components/RelativeTime.svelte';
+	import Count from '$lib/components/Count.svelte';
+	import Timestamp from '$lib/components/Timestamp.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import Status from '$lib/components/Status.svelte';
 	import { hasOptions, stopWatching, watchServer } from '$lib/components/guild/watching';
@@ -240,7 +241,7 @@
 	</span>
 {/snippet}
 {#snippet joinedCell(guild: BotGuild)}
-	<RelativeTime at={guild.joined_at} class="whitespace-nowrap" />
+	<Timestamp at={guild.joined_at} class="whitespace-nowrap" />
 {/snippet}
 {#snippet watchCell(guild: BotGuild)}
 	{@const busy = watchPending.has(guild.guild_id)}
@@ -274,7 +275,7 @@
 			{#if bot.state === 'connected'}
 				<span>as {bot.user}</span>
 			{/if}
-			<span>since <RelativeTime at={bot.since} /></span>
+			<span>since <Timestamp at={bot.since} /></span>
 			<span class="inline-flex items-center gap-1">
 				Client id <Identifier value={app.client_id} full label="Copy client id" />
 			</span>
@@ -331,7 +332,7 @@
 				<p class="font-medium">
 					{#if bot.state === 'retrying'}
 						The bot lost its connection and is trying again. Attempt {number(bot.attempt)}, next
-						<RelativeTime at={bot.next_attempt_at} />.
+						<Timestamp at={bot.next_attempt_at} />.
 					{:else}
 						The bot stopped with an error.
 					{/if}
@@ -371,10 +372,9 @@
 				<p class="px-4 pt-3 text-sm text-surface-600-400">
 					Slash commands registered
 					{#if app.commands.mode === 'guilds'}
-						in {number(app.commands.guilds.length)}
-						{app.commands.guilds.length === 1 ? 'server' : 'servers'}
+						in <Count value={app.commands.guilds.length} noun="server" />
 					{/if}
-					<RelativeTime at={app.commands.registered_at} />.
+					<Timestamp at={app.commands.registered_at} />.
 				</p>
 			{:else}
 				<div class="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 pt-3 text-sm">

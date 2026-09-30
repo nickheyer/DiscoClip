@@ -1179,6 +1179,7 @@ mod tests {
 
     /// Every example link resolves live, and the image and the PDF among them come back
     /// as what they are. A public Google Doc is turned away as a document.
+    #[ignore = "reaches the live site: cargo test -- --ignored"]
     #[tokio::test]
 
     async fn live_examples_resolve_to_their_kinds() {

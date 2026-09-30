@@ -39,7 +39,7 @@ resume_attempts = 5            # retry attempts per download
 # Video encoding. "auto" tries the hardware families in turn and falls back to software.
 # Hardware encoders come from the ffmpeg build in use: the embedded build has none, so
 # name an installed build with engine.ffmpeg to use NVENC, VA-API, Quick Sync, AMF or
-# VideoToolbox.
+# VideoToolbox. The gpu container image carries such a build and names it.
 [engine.transcode]
 encoder = "auto"               # auto, software, nvenc, vaapi, qsv, videotoolbox, amf, v4l2m2m
 vaapi_device = "/dev/dri/renderD128"

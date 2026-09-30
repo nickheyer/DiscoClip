@@ -486,9 +486,10 @@ pub async fn feed_info(
             Some("m3u8") => match hls::expand(http, &url, platform, BROWSER_UA, &[]).await {
                 Ok(expanded) => {
                     for mut variant in expanded.variants {
-                        variant.format_id = Some(match variant.bitrate {
-                            Some(bits) => format!("hls-{}", bits / 1000),
-                            None => "hls".into(),
+                        variant.format_id = Some(match (variant.bitrate, &variant.label) {
+                            (Some(bits), _) => format!("hls-{}", bits / 1000),
+                            (None, Some(label)) => format!("hls-{label}"),
+                            (None, None) => "hls".into(),
                         });
                         variants.push(variant);
                     }
@@ -1092,7 +1093,13 @@ mod tests {
         );
         assert!(!resolved.variants.is_empty());
         assert!(resolved.variants.iter().all(|v| v.kind == VariantKind::Hls));
-        assert!(resolved.variants.iter().all(|v| v.height.is_some()));
+        assert!(
+            resolved
+                .variants
+                .iter()
+                .all(|v| v.height.is_some() || v.audio_only)
+        );
+        crate::resolve::assert_one_family(&resolved.variants);
         assert!(resolved.variants.iter().all(|v| {
             v.format_id
                 .as_deref()

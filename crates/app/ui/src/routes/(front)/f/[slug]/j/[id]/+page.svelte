@@ -13,8 +13,12 @@
 	import KeyValue from '$lib/components/KeyValue.svelte';
 	import KeyValueRow from '$lib/components/KeyValueRow.svelte';
 	import MediaKindIcon from '$lib/components/MediaKindIcon.svelte';
+	import Status from '$lib/components/Status.svelte';
 	import FrontHeader from '$lib/components/front/FrontHeader.svelte';
-	import { absolute, bytes, clock, mediaLabel } from '$lib/format';
+	import Bytes from '$lib/components/Bytes.svelte';
+	import Duration from '$lib/components/Duration.svelte';
+	import Timestamp from '$lib/components/Timestamp.svelte';
+	import { bytes, mediaLabel } from '$lib/format';
 
 	const slug = $derived(page.params.slug ?? '');
 	const id = $derived(page.params.id ?? '');
@@ -117,7 +121,10 @@
 
 		<div class="flex flex-wrap items-start justify-between gap-4">
 			<div class="min-w-0 space-y-1">
-				<h1 class="h4 break-words">{job.title ?? mediaLabel(job.media)}</h1>
+				<h1 class="flex flex-wrap items-center gap-2 h4 break-words">
+					{job.title ?? mediaLabel(job.media)}
+					{#if job.recording}<Status label="Recording" tone="error" pulse />{/if}
+				</h1>
 				<p class="text-sm text-surface-600-400">
 					{[job.uploader, job.resolver].filter(Boolean).join(' · ')}
 				</p>
@@ -144,17 +151,16 @@
 					label="Kind"
 					value={job.live ? `${mediaLabel(job.media)} · recorded live` : mediaLabel(job.media)}
 				/>
-				<KeyValueRow
-					label="Length"
-					value={job.duration_secs === null ? null : clock(job.duration_secs)}
-				/>
-				<KeyValueRow label="Size" value={bytes(job.size)} />
+				{#if !job.recording && job.duration_secs !== null}
+					<KeyValueRow label="Length"><Duration value={job.duration_secs} /></KeyValueRow>
+				{/if}
+				<KeyValueRow label="Size"><Bytes value={job.size} /></KeyValueRow>
 				<KeyValueRow
 					label="Dimensions"
 					value={job.width && job.height ? `${job.width} × ${job.height}` : null}
 				/>
 				<KeyValueRow label="Format" value={job.content_type} />
-				<KeyValueRow label="Published" value={absolute(job.published_at)} />
+				<KeyValueRow label="Published"><Timestamp at={job.published_at} /></KeyValueRow>
 			</KeyValue>
 		</Card>
 	{/if}

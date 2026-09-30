@@ -23,7 +23,7 @@ use player::{Player, PlayerCache};
 use super::page::{Page, json_after};
 use super::{
     ClipRange, MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionCheck,
-    SessionSupport, Tag, Variant, VariantKind, fetch_ok, hls, timestamp_hint,
+    SessionSupport, Tag, fetch_ok, hls, timestamp_hint,
 };
 use crate::http::{BROWSER_UA, Cookie, Http};
 use crate::media::MediaKind;
@@ -322,16 +322,6 @@ impl YoutubeResolver {
                 Err(error) => problems.push(format!("HLS manifest: {error}")),
             }
         }
-        if resolved.live
-            && let Some(manifest) = streaming["dashManifestUrl"]
-                .as_str()
-                .and_then(|u| Url::parse(u).ok())
-        {
-            let mut variant = Variant::new(manifest, VariantKind::Dash);
-            variant.live = true;
-            variant.headers = vec![("user-agent".to_string(), client.user_agent.to_string())];
-            variants.push(variant);
-        }
         if !variants.iter().any(|v| !v.audio_only) {
             return Err(if problems.is_empty() {
                 "no playable format".to_string()
@@ -506,6 +496,7 @@ mod tests {
     use crate::http::transport::{
         Exchange, Fixture, RecordedBody, RecordedRequest, RecordedResponse,
     };
+    use crate::resolve::VariantKind;
     use crate::resolve::youtube::player::tests::SCRIPT;
 
     fn link(s: &str) -> Option<Link> {
@@ -744,6 +735,7 @@ mod tests {
             &crate::config::Limits::default(),
             PLATFORM,
             resolved.media,
+            "en",
         )
         .unwrap();
         assert_eq!(chosen.audio_url.unwrap().path(), "/native-audio");
@@ -802,6 +794,7 @@ mod tests {
         );
     }
 
+    #[ignore = "reaches the live site: cargo test -- --ignored"]
     #[tokio::test]
 
     async fn live_reported_video_downloads_media() {
@@ -819,9 +812,14 @@ mod tests {
             max_height: 1080,
             ..Default::default()
         };
-        let variant =
-            crate::plan::select_variant(&resolved.variants, &limits, PLATFORM, resolved.media)
-                .unwrap();
+        let variant = crate::plan::select_variant(
+            &resolved.variants,
+            &limits,
+            PLATFORM,
+            resolved.media,
+            "en",
+        )
+        .unwrap();
         assert_eq!(variant.kind, VariantKind::File);
         assert_eq!(variant.height, Some(1080));
         assert!(variant.audio_url.is_some() || !variant.video_only);
@@ -911,12 +909,12 @@ mod tests {
         assert_eq!(resolved.duration, Some(Duration::from_secs(19)));
         assert_eq!(resolved.clip.unwrap().start, Duration::from_secs(5));
         assert_eq!(resolved.subtitles.len(), 1);
-        assert_eq!(resolved.variants.len(), 3);
-        let full = &resolved.variants[0];
-        assert_eq!(full.format_id.as_deref(), Some("18"));
-        assert!(!full.video_only && !full.audio_only);
-        assert!(full.url.as_str().contains("n=zyx_w8_split"), "{}", full.url);
-        let video = &resolved.variants[1];
+        // The muxed format the answer lists beside the adaptive ones is not taken: the
+        // picture and the sound come as the adaptive pair.
+        assert_eq!(resolved.variants.len(), 2);
+        crate::resolve::assert_one_family(&resolved.variants);
+        let video = &resolved.variants[0];
+        assert_eq!(video.format_id.as_deref(), Some("137"));
         assert!(video.video_only);
         assert_eq!(video.height, Some(1080));
         assert_eq!(video.size, Some(5000));
@@ -927,7 +925,7 @@ mod tests {
             video.url
         );
         assert_eq!(video.headers[0].0, "user-agent");
-        let audio = &resolved.variants[2];
+        let audio = &resolved.variants[1];
         assert!(audio.audio_only);
         assert_eq!(audio.language.as_deref(), Some("en"));
         assert_eq!(audio.audio, Some(crate::media::AudioCodec::Aac));
@@ -951,7 +949,8 @@ mod tests {
             .media()
             .unwrap();
         assert_eq!(resolved.age_limit, Some(18));
-        assert_eq!(resolved.variants.len(), 3);
+        assert_eq!(resolved.variants.len(), 2);
+        crate::resolve::assert_one_family(&resolved.variants);
 
         // With no app getting past it, the video needs a logged-in session.
         let mut fixture = Fixture::new("youtube", None);

@@ -219,10 +219,6 @@ impl XResolver {
                 v.width = dims.map(|d| d.0).or(width);
                 v.height = dims.map(|d| d.1).or(height);
                 variants.push(v);
-            } else if content_type.to_ascii_lowercase().contains("mpegurl") {
-                let mut v = Variant::new(variant_url, VariantKind::Hls);
-                v.duration = duration;
-                variants.push(v);
             }
         }
         if variants.is_empty() {
@@ -274,7 +270,7 @@ impl Resolver for XResolver {
                 "fixvx.com",
             ],
             features: &["videos", "gifs", "sensitive media with a session"],
-            formats: &["mp4", "hls"],
+            formats: &["mp4"],
             media: &[MediaKind::Video],
             tags: &[Tag::Basic, Tag::Social],
             session: SessionSupport::Optional,
@@ -395,10 +391,16 @@ mod tests {
         assert_eq!(resolved.uploader.as_deref(), Some("@SpaceX"));
         assert_eq!(resolved.duration, Some(Duration::from_secs(42)));
         assert!(resolved.uploaded_at.is_some());
-        assert_eq!(resolved.variants.len(), 3);
-        assert_eq!(resolved.variants[0].kind, VariantKind::Hls);
-        assert_eq!(resolved.variants[2].height, Some(720));
-        assert_eq!(resolved.variants[2].bitrate, Some(2176000));
+        crate::resolve::assert_one_family(&resolved.variants);
+        assert_eq!(resolved.variants.len(), 2);
+        assert!(
+            resolved
+                .variants
+                .iter()
+                .all(|v| v.kind == VariantKind::File)
+        );
+        assert_eq!(resolved.variants[1].height, Some(720));
+        assert_eq!(resolved.variants[1].bitrate, Some(2176000));
         assert_eq!(
             resolved.webpage_url.unwrap().as_str(),
             "https://x.com/SpaceX/status/1732824684683784516"
@@ -418,7 +420,10 @@ mod tests {
             "GET",
             "https://api.fxtwitter.com/status/1732824684683784516",
             200,
-            json!({"code": 200, "tweet": {"author": {"name": "SpaceX", "screen_name": "SpaceX"}, "text": "Liftoff!", "media": {"videos": [{"url": "https://video.twimg.com/a.mp4", "duration": 42, "width": 1280, "height": 720, "variants": []}]}}}),
+            json!({"code": 200, "tweet": {"author": {"name": "SpaceX", "screen_name": "SpaceX"}, "text": "Liftoff!", "media": {"videos": [{"url": "https://video.twimg.com/a.mp4", "duration": 42, "width": 1280, "height": 720, "variants": [
+                {"content_type": "application/x-mpegURL", "url": "https://video.twimg.com/ext_tw_video/1/pl/x.m3u8"},
+                {"content_type": "video/mp4", "bitrate": 832000, "url": "https://video.twimg.com/ext_tw_video/1/vid/640x360/a.mp4"}
+            ]}]}}}),
         ));
         let resolver = XResolver::new(Http::replay(fixture));
         let resolved = resolver
@@ -427,7 +432,11 @@ mod tests {
             .unwrap()
             .media()
             .unwrap();
+        crate::resolve::assert_one_family(&resolved.variants);
         assert_eq!(resolved.variants.len(), 1);
+        assert_eq!(resolved.variants[0].kind, VariantKind::File);
+        assert_eq!(resolved.variants[0].width, Some(640));
+        assert_eq!(resolved.variants[0].bitrate, Some(832000));
 
         let mut fixture = Fixture::new("x", None);
         fixture.exchanges.push(exchange(

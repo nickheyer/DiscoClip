@@ -9,7 +9,7 @@
 	import ErrorState from '$lib/components/ErrorState.svelte';
 	import GuildIcon from '$lib/components/GuildIcon.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import RelativeTime from '$lib/components/RelativeTime.svelte';
+	import Timestamp from '$lib/components/Timestamp.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import Status from '$lib/components/Status.svelte';
 	import { number } from '$lib/format';
@@ -73,7 +73,7 @@
 	description="The Discord servers your linked account belongs to. Servers you manage on Discord open their watch rules here."
 >
 	{#if fetchedAt}
-		<p class="text-sm text-surface-600-400">Fetched <RelativeTime at={fetchedAt} />.</p>
+		<p class="text-sm text-surface-600-400">Fetched <Timestamp at={fetchedAt} />.</p>
 	{/if}
 	{#snippet actions()}
 		<button type="button" class="btn preset-tonal" onclick={refresh} disabled={refreshing}>

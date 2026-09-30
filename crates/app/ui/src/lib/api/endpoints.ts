@@ -226,6 +226,8 @@ export const jobs = {
 	remove: (id: T.Uuid) => del<void>(`/jobs/${enc(id)}`),
 	retry: (id: T.Uuid) => post<T.Submitted>(`/jobs/${enc(id)}/retry`),
 	cancel: (id: T.Uuid) => post<void>(`/jobs/${enc(id)}/cancel`),
+	/** Ends a running live capture, keeping what was recorded. */
+	stop: (id: T.Uuid) => post<void>(`/jobs/${enc(id)}/stop`),
 	downloadUrl: (
 		id: T.Uuid,
 		query: { artifact?: T.Artifact; index?: number; inline?: boolean } = {}

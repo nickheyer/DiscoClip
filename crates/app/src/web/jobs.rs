@@ -13,11 +13,12 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use discoclip_engine::job::{
-    Job, JobId, JobStatus, Origin, Request, RequestLimits, RequestOptions, SourceId,
+    Job, JobId, JobStatus, Origin, Request, RequestLimits, RequestOptions, SourceId, Stage,
 };
 use discoclip_engine::media::{Container, MediaKind, safe_stem};
 use discoclip_engine::{
-    EngineEvent, EventKind, JobFilter, Order, ResolverStats, Stats, StatusKind, Utilisation,
+    EngineConfig, EngineEvent, EventKind, JobFilter, Order, ResolverStats, Stats, StatusKind,
+    Utilisation,
 };
 use futures::{Stream, StreamExt};
 use jiff::{SignedDuration, Timestamp};
@@ -139,6 +140,8 @@ pub struct JobSummary {
     /// Seconds of media, when the resolver said.
     pub duration_secs: Option<f64>,
     pub live: bool,
+    /// A live capture is being recorded, or was: the recording plays while it grows.
+    pub recording: bool,
     pub output_bytes: Option<u64>,
     pub published_url: Option<Url>,
     pub published_reference: Option<String>,
@@ -177,6 +180,7 @@ impl JobSummary {
             thumbnail: resolved.and_then(|r| r.thumbnail.clone()),
             duration_secs: resolved.and_then(|r| r.duration).map(|d| d.as_secs_f64()),
             live: resolved.is_some_and(|r| r.live),
+            recording: job.artifacts.recording.is_some(),
             output_bytes: job.artifacts.output.as_ref().map(|f| f.size),
             published_url: job.artifacts.published.as_ref().and_then(|p| p.url.clone()),
             published_reference: job
@@ -290,13 +294,39 @@ pub async fn list(
     }))
 }
 
-/// A job in full, with its place named.
+/// A job in full, with its place named and the limits it runs under.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct JobView {
     #[serde(flatten)]
     pub job: Job,
     /// The origin in the names people know, for a request from Discord.
     pub place: Option<Place>,
+    /// The request's limits tightened by the engine's own: what the job is held to.
+    pub limits_in_force: LimitsInForce,
+}
+
+/// The limits a job runs under, each the tighter of what its request named and the
+/// engine's own cap.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct LimitsInForce {
+    pub max_source_bytes: u64,
+    /// `None` puts no bound on how long media may be.
+    pub max_duration_secs: Option<u64>,
+    pub max_height: u32,
+    /// How long a live stream is captured at most, in seconds.
+    pub max_capture_secs: u64,
+}
+
+impl LimitsInForce {
+    fn of(request: &RequestLimits, config: &EngineConfig) -> Self {
+        let applied = request.applied_to(&config.limits);
+        Self {
+            max_source_bytes: applied.max_source_bytes,
+            max_duration_secs: applied.max_duration_secs,
+            max_height: applied.max_height,
+            max_capture_secs: request.capture_secs(&config.limits, config.live.max_capture_secs),
+        }
+    }
 }
 
 /// One job in full: the request, every stage's timing, the log, and every artifact.
@@ -312,7 +342,12 @@ pub async fn get(
         &job.request.origin,
         job.request.destination.as_deref(),
     );
-    Ok(Json(JobView { job, place }))
+    let limits_in_force = LimitsInForce::of(&job.request.limits, &state.engine.config());
+    Ok(Json(JobView {
+        job,
+        place,
+        limits_in_force,
+    }))
 }
 
 /// The jobs a playlist job expanded into, oldest first.
@@ -392,7 +427,11 @@ fn stats_event(stats: &JobStats) -> Event {
 fn carries_summary(kind: &EventKind) -> bool {
     matches!(
         kind,
-        EventKind::Submitted { .. } | EventKind::Status { .. } | EventKind::Children { .. }
+        EventKind::Submitted { .. }
+            | EventKind::Status { .. }
+            | EventKind::Children { .. }
+            | EventKind::Recording { .. }
+            | EventKind::Stop
     )
 }
 
@@ -578,6 +617,20 @@ pub async fn cancel(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Ends a running live capture, keeping what was recorded: the job goes on to make and
+/// post its output from the recording as it stands.
+pub async fn stop(
+    State(state): State<AppState>,
+    Auth(identity): Auth,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    identity.require(Permission::ManageJobs)?;
+    let id: JobId = parse_id(&id)?;
+    state.engine.stop(id).await?;
+    tracing::info!(by = identity.user.username, job = %id, "capture stopped");
+    Ok(StatusCode::NO_CONTENT)
+}
+
 /// Removes a finished job's record and whatever it left in the cache.
 pub async fn delete(
     State(state): State<AppState>,
@@ -596,6 +649,8 @@ pub async fn delete(
 pub enum BulkAction {
     Retry,
     Cancel,
+    /// Ends the live captures among the jobs, keeping their recordings.
+    Stop,
     Delete,
 }
 
@@ -624,7 +679,7 @@ pub struct BulkResponse {
     pub failed: usize,
 }
 
-/// Retries, cancels or deletes several jobs. Each is reported on its own.
+/// Retries, cancels, stops or deletes several jobs. Each is reported on its own.
 pub async fn bulk(
     State(state): State<AppState>,
     Auth(identity): Auth,
@@ -649,6 +704,12 @@ pub async fn bulk(
             BulkAction::Cancel => state
                 .engine
                 .cancel(id)
+                .await
+                .map(|()| None)
+                .map_err(|e| e.to_string()),
+            BulkAction::Stop => state
+                .engine
+                .stop(id)
                 .await
                 .map(|()| None)
                 .map_err(|e| e.to_string()),
@@ -691,6 +752,8 @@ pub enum Artifact {
     Output,
     Source,
     Subtitle,
+    /// The recording of a live capture, served while it grows.
+    Recording,
 }
 
 #[derive(Debug, Deserialize)]
@@ -781,6 +844,14 @@ pub(super) async fn locate(
                 .collect(),
             "-source",
         ),
+        Artifact::Recording => (
+            job.artifacts
+                .recording
+                .iter()
+                .map(|f| f.path.clone())
+                .collect(),
+            "-recording",
+        ),
         Artifact::Subtitle => {
             let track = job
                 .artifacts
@@ -855,22 +926,48 @@ fn byte_range(headers: &HeaderMap, len: u64) -> Result<Option<(u64, u64)>, ApiEr
     Ok(Some(range))
 }
 
+/// How long a request for bytes a growing file does not hold yet waits for them.
+const GROWTH_WAIT: Duration = Duration::from_secs(10);
+
+/// The first byte a `Range: bytes=` header asks for, when it names one.
+fn range_start(headers: &HeaderMap) -> Option<u64> {
+    let value = headers.get(header::RANGE)?.to_str().ok()?;
+    let (start, _) = value.strip_prefix("bytes=")?.trim().split_once('-')?;
+    start.parse().ok()
+}
+
 /// Streams a file, whole or the range asked for, with the headers a browser or a video
-/// element needs to save or play it.
+/// element needs to save or play it. A `growing` file is one still being written: its
+/// length is read afresh for every request, a range is answered without a total, and a
+/// request for bytes past its end waits for them to be written.
 pub(super) async fn serve_file(
     path: &FsPath,
     filename: &str,
     inline: bool,
     headers: &HeaderMap,
+    growing: bool,
 ) -> Result<Response, ApiError> {
     let mut file = tokio::fs::File::open(path)
         .await
         .map_err(|e| ApiError::Internal(format!("opening {}: {e}", path.display())))?;
-    let len = file
+    let mut len = file
         .metadata()
         .await
         .map_err(|e| ApiError::Internal(format!("reading {}: {e}", path.display())))?
         .len();
+    if growing && let Some(start) = range_start(headers).filter(|start| *start >= len) {
+        let deadline = tokio::time::Instant::now() + GROWTH_WAIT;
+        while tokio::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            len = tokio::fs::metadata(path)
+                .await
+                .map_err(|e| ApiError::Internal(format!("reading {}: {e}", path.display())))?
+                .len();
+            if len > start {
+                break;
+            }
+        }
+    }
     let disposition = format!(
         "{}; filename=\"{}\"",
         if inline { "inline" } else { "attachment" },
@@ -894,7 +991,14 @@ pub(super) async fn serve_file(
             let span = end - start + 1;
             response = response
                 .status(StatusCode::PARTIAL_CONTENT)
-                .header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{len}"))
+                .header(
+                    header::CONTENT_RANGE,
+                    if growing {
+                        format!("bytes {start}-{end}/*")
+                    } else {
+                        format!("bytes {start}-{end}/{len}")
+                    },
+                )
                 .header(header::CONTENT_LENGTH, span);
             Body::from_stream(ReaderStream::new(file.take(span)))
         }
@@ -910,7 +1014,17 @@ pub(super) async fn serve_file(
         .map_err(|e| ApiError::Internal(format!("building response: {e}")))
 }
 
-/// The job's output, source or a subtitle file, from the cache or the archive.
+/// Whether the job's recording is still being written: its live capture is under way.
+pub(super) fn recording_grows(job: &Job) -> bool {
+    job.artifacts.recording.is_some()
+        && job.status
+            == JobStatus::Running {
+                stage: Stage::Download,
+            }
+}
+
+/// The job's output, source, recording or a subtitle file, from the cache or the
+/// archive. The recording of a capture under way is served as it grows.
 pub async fn download(
     State(state): State<AppState>,
     Auth(_): Auth,
@@ -921,7 +1035,8 @@ pub async fn download(
     let id: JobId = parse_id(&id)?;
     let job = state.engine.get(id).await?.ok_or(ApiError::NotFound)?;
     let (path, filename) = locate(&job, &query).await?;
-    serve_file(&path, &filename, query.inline, &headers).await
+    let growing = query.artifact == Artifact::Recording && recording_grows(&job);
+    serve_file(&path, &filename, query.inline, &headers, growing).await
 }
 
 impl IntoResponse for Submitted {

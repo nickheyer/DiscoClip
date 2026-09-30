@@ -1,10 +1,9 @@
-//! XVideos videos, channels and profiles. A video page hands its player the MP4 files by
-//! height and the HLS playlist in `html5player.setVideoUrlLow`, `setVideoUrlHigh` and
-//! `setVideoHLS` calls, the title, thumbnails and uploader in the calls beside them, and
-//! the upload date, length and description in the page's JSON-LD. Channels, profiles,
-//! pornstar and model pages list their uploads through the JSON the site's own listing
-//! pages page through. XNXX runs the same player on its own pages and reads them with
-//! the helpers here.
+//! XVideos videos, channels and profiles. A video page hands its player the HLS playlist
+//! in an `html5player.setVideoHLS` call, the title, thumbnails and uploader in the calls
+//! beside it, and the upload date, length and description in the page's JSON-LD.
+//! Channels, profiles, pornstar and model pages list their uploads through the JSON the
+//! site's own listing pages page through. XNXX runs the same player on its own pages and
+//! reads them with the helpers here.
 
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -20,7 +19,7 @@ use super::{
     status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
+use crate::media::MediaKind;
 
 pub const PLATFORM: &str = "xvideos";
 const SITE: &str = "https://www.xvideos.com";
@@ -55,17 +54,14 @@ static RE_LISTING: LazyLock<Regex> = LazyLock::new(|| {
 static RE_BARE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^/([A-Za-z0-9_-]{3,})/?$").unwrap());
 
-/// `html5player.setVideoUrlLow('…')`, `setVideoUrlHigh('…')` and `setVideoHLS('…')`.
-static RE_SET_VIDEO: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"html5player\.setVideo(UrlLow|UrlHigh|HLS)\s*\(\s*['"]((?:https?:)?//[^'"]+)['"]"#)
-        .unwrap()
+/// `html5player.setVideoHLS('…')`: the playlist the player loads.
+static RE_SET_HLS: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"html5player\.setVideoHLS\s*\(\s*['"]((?:https?:)?//[^'"]+)['"]"#).unwrap()
 });
 /// `html5player.setX('…')`: the player's other settings, by name.
 static RE_SET_STRING: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"html5player\.set([A-Za-z0-9]+)\s*\(\s*'((?:[^'\\]|\\.)*)'\s*\)"#).unwrap()
 });
-/// `video_360p.mp4`: the height an MP4 file is named for.
-static RE_MP4_HEIGHT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"video_(\d+)p\.mp4").unwrap());
 /// `<h1 class="inlineError">…</h1>`: why a page shows no video.
 static RE_INLINE_ERROR: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"(?s)<h1 class="inlineError">(.+?)</h1>"#).unwrap());
@@ -204,8 +200,7 @@ pub struct PlayerData {
     pub id: Option<String>,
     /// From `setVideoTitle`, HTML entities decoded.
     pub title: Option<String>,
-    /// The MP4 files: `low` and `high`, as the player names them.
-    pub files: Vec<(String, Url)>,
+    /// The HLS playlist, from `setVideoHLS`.
     pub hls: Option<Url>,
     /// The 16:9 thumbnail, else the 4:3 one.
     pub thumbnail: Option<Url>,
@@ -234,17 +229,12 @@ fn js_unescape(text: &str) -> String {
 
 /// The player's settings on a page.
 pub fn player_data(html: &str) -> PlayerData {
-    let mut data = PlayerData::default();
-    for caps in RE_SET_VIDEO.captures_iter(html) {
-        let Some(url) = util::join_url(None, &caps[2]) else {
-            continue;
-        };
-        match &caps[1] {
-            "UrlLow" => data.files.push(("low".to_string(), url)),
-            "UrlHigh" => data.files.push(("high".to_string(), url)),
-            _ => data.hls = Some(url),
-        }
-    }
+    let mut data = PlayerData {
+        hls: RE_SET_HLS
+            .captures(html)
+            .and_then(|caps| util::join_url(None, &caps[1])),
+        ..PlayerData::default()
+    };
     let mut thumb_43 = None;
     for caps in RE_SET_STRING.captures_iter(html) {
         let value = js_unescape(&caps[2]);
@@ -269,40 +259,23 @@ pub fn page_error(html: &str) -> Option<String> {
     clean_title(&util::clean_html(&caps[1]))
 }
 
-/// The variants a video page's player is handed: the HLS renditions and the MP4 files,
-/// tallest first.
+/// The variants a video page's player is handed: the playlist's renditions, tallest
+/// first.
 pub async fn player_variants(
     http: &Http,
     platform: &str,
-    data: &PlayerData,
+    playlist: &Url,
     origin: &Url,
 ) -> Result<Vec<Variant>, ResolveError> {
-    let mut variants = Vec::new();
-    if let Some(playlist) = &data.hls {
-        let expanded = hls::expand(http, playlist, platform, BROWSER_UA, &[])
-            .await
-            .map_err(|error| error.at(origin))?;
-        for mut variant in expanded.variants {
-            variant.format_id = Some(match &variant.label {
-                Some(label) => format!("hls-{label}"),
-                None => "hls".to_string(),
-            });
-            variants.push(variant);
-        }
-    }
-    for (name, url) in &data.files {
-        let mut variant = Variant::file(url.clone());
-        variant.container = Some(Container::Mp4);
-        variant.video = Some(VideoCodec::H264);
-        variant.audio = Some(AudioCodec::Aac);
-        variant.height =
-            util::search(&RE_MP4_HEIGHT, url.as_str()).and_then(|h| h.parse::<u32>().ok());
-        variant.format_id = Some(format!("mp4-{name}"));
-        variant.label = Some(match variant.height {
-            Some(height) => format!("{height}p"),
-            None => name.clone(),
+    let expanded = hls::expand(http, playlist, platform, BROWSER_UA, &[])
+        .await
+        .map_err(|error| error.at(origin))?;
+    let mut variants = expanded.variants;
+    for variant in &mut variants {
+        variant.format_id = Some(match &variant.label {
+            Some(label) => format!("hls-{label}"),
+            None => "hls".to_string(),
         });
-        variants.push(variant);
     }
     variants.sort_by_key(|v| std::cmp::Reverse(v.height));
     Ok(variants)
@@ -341,13 +314,13 @@ pub async fn resolve_player_page(
     }
     let html = fetched.text();
     let data = player_data(&html);
-    if data.files.is_empty() && data.hls.is_none() {
+    let Some(playlist) = &data.hls else {
         return Err(match page_error(&html) {
             Some(reason) => ResolveError::unavailable(origin, reason),
             None => ResolveError::unavailable(origin, "the page hands its player no video"),
         });
-    }
-    let variants = player_variants(http, platform, &data, origin).await?;
+    };
+    let variants = player_variants(http, platform, playlist, origin).await?;
     let page = Page::parse(&html, &fetched.url);
     let ld = ld_video(&page);
     let mut resolved = Resolved::new(platform);
@@ -524,7 +497,7 @@ impl Resolver for XvideosResolver {
                 "profiles",
                 "pornstars",
             ],
-            formats: &["mp4", "hls"],
+            formats: &["hls"],
             media: &[MediaKind::Video],
             tags: &[Tag::Nsfw, Tag::Video],
             session: SessionSupport::None,
@@ -570,6 +543,7 @@ mod tests {
     use crate::http::transport::{
         Exchange, Fixture, RecordedBody, RecordedRequest, RecordedResponse,
     };
+    use crate::resolve::VariantKind;
     use serde_json::json;
 
     fn get(url: &str, status: u16, content_type: &str, body: &str) -> Exchange {
@@ -697,8 +671,6 @@ html5player.setUploaderName('skakdjskdk');
         assert_eq!(data.id.as_deref(), Some("keecekh888c"));
         assert_eq!(data.title.as_deref(), Some("what's her name?"));
         assert_eq!(data.uploader.as_deref(), Some("skakdjskdk"));
-        assert_eq!(data.files.len(), 2);
-        assert_eq!(data.files[0].0, "low");
         assert!(data.hls.as_ref().unwrap().as_str().ends_with("/hls.m3u8"));
         assert!(data.thumbnail.unwrap().as_str().ends_with("xv_27_p.jpg"));
         assert_eq!(
@@ -709,7 +681,7 @@ html5player.setUploaderName('skakdjskdk');
     }
 
     #[tokio::test]
-    async fn videos_resolve_with_hls_renditions_and_mp4_files() {
+    async fn videos_resolve_with_the_playlists_renditions() {
         let mut fixture = Fixture::new(PLATFORM, None);
         fixture.exchanges.push(get(
             "https://www.xvideos.com/video.keecekh888c/_",
@@ -739,6 +711,7 @@ html5player.setUploaderName('skakdjskdk');
         let url = Url::parse("https://www.xvideos.com/video.keecekh888c/what_s_her_name_").unwrap();
         assert!(resolver.matches(&url));
         let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
+        crate::resolve::assert_one_family(&resolved.variants);
         assert_eq!(resolved.id.as_deref(), Some("keecekh888c"));
         assert_eq!(resolved.title.as_deref(), Some("what's her name?"));
         assert_eq!(
@@ -757,19 +730,12 @@ html5player.setUploaderName('skakdjskdk');
             resolved.webpage_url.as_ref().unwrap().as_str(),
             "https://www.xvideos.com/video.keecekh888c/what_s_her_name_"
         );
-        assert_eq!(resolved.variants.len(), 4, "two renditions and two files");
+        assert_eq!(resolved.variants.len(), 2, "the playlist's two renditions");
+        assert!(resolved.variants.iter().all(|v| v.kind == VariantKind::Hls));
         assert_eq!(resolved.variants[0].height, Some(832));
         assert_eq!(resolved.variants[0].format_id.as_deref(), Some("hls-832p"));
-        let mp4: Vec<&Variant> = resolved
-            .variants
-            .iter()
-            .filter(|v| v.container == Some(Container::Mp4))
-            .collect();
-        assert_eq!(mp4.len(), 2);
-        assert_eq!(mp4[0].height, Some(360));
-        assert_eq!(mp4[0].format_id.as_deref(), Some("mp4-high"));
-        assert_eq!(mp4[1].label.as_deref(), Some("240p"));
-        assert_eq!(mp4[1].video, Some(VideoCodec::H264));
+        assert_eq!(resolved.variants[1].height, Some(554));
+        assert_eq!(resolved.variants[1].format_id.as_deref(), Some("hls-554p"));
     }
 
     #[tokio::test]
@@ -858,8 +824,8 @@ html5player.setUploaderName('skakdjskdk');
         ));
     }
 
-    /// Every example link resolves live: videos with renditions and files, listings
-    /// with entries.
+    /// Every example link resolves live: videos with renditions, listings with entries.
+    #[ignore = "reaches the live site: cargo test -- --ignored"]
     #[tokio::test]
 
     async fn live_examples_resolve() {

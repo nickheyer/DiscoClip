@@ -1,8 +1,7 @@
 //! TED talks: a talk page hands its player the talk in its `__NEXT_DATA__`: an HLS
-//! master playlist with every rendition and a subtitle track for every language the talk
-//! is translated into, and the MP4 the player falls back to. A playlist page and a series
-//! page list their talks in the same data, a series by season. The embed host serves the
-//! same talks.
+//! master playlist with every rendition and the subtitle tracks it lists. A playlist page
+//! and a series page list their talks in the same data, a series by season. The embed
+//! host serves the same talks.
 
 use std::sync::LazyLock;
 
@@ -13,11 +12,10 @@ use url::Url;
 
 use super::{
     MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved, Resolver,
-    SessionSupport, SubtitleFormat, SubtitleTrack, Tag, Variant, clean_title, fetch, hls,
-    navigation_headers, status_error, util,
+    SessionSupport, Tag, clean_title, fetch, hls, navigation_headers, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
+use crate::media::MediaKind;
 
 pub const PLATFORM: &str = "ted";
 const SITE: &str = "https://www.ted.com";
@@ -124,16 +122,6 @@ fn thumbnail_of(talk: &Value, player: &Value) -> Option<Url> {
     Some(url)
 }
 
-/// The subtitle playlist of `language` beside the stream's master playlist:
-/// `…/subtitles/{language}.m3u8` with the master's query.
-fn subtitle_playlist(stream: &Url, language: &str) -> Option<Url> {
-    let mut track = stream.clone();
-    let path = stream.path();
-    let dir = path.rsplit_once('/').map(|(dir, _)| dir)?;
-    track.set_path(&format!("{dir}/subtitles/{language}.m3u8"));
-    Some(track)
-}
-
 pub struct TedResolver {
     http: Http,
 }
@@ -175,8 +163,8 @@ impl TedResolver {
         let mut failure = None;
         let stream = util::url_of(&talk["hlsUrl"], None)
             .or_else(|| util::url_of(&player["resources"]["hls"]["stream"], None));
-        if let Some(stream) = &stream {
-            match hls::expand(&self.http, stream, PLATFORM, BROWSER_UA, &[]).await {
+        if let Some(stream) = stream {
+            match hls::expand(&self.http, &stream, PLATFORM, BROWSER_UA, &[]).await {
                 Ok(expanded) => {
                     for mut variant in expanded.variants {
                         variant.format_id = Some(match &variant.label {
@@ -195,57 +183,6 @@ impl TedResolver {
                     failure = Some(error);
                 }
             }
-            // Every language the talk is translated into has a subtitle playlist beside
-            // the master, whether or not the master lists it.
-            for language in player["languages"].as_array().into_iter().flatten() {
-                let Some(code) = util::text(&language["languageCode"]) else {
-                    continue;
-                };
-                if subtitles
-                    .iter()
-                    .any(|t| t.language.eq_ignore_ascii_case(&code))
-                {
-                    continue;
-                }
-                if let Some(track) = subtitle_playlist(stream, &code) {
-                    subtitles.push(SubtitleTrack {
-                        url: track,
-                        language: code,
-                        name: language["languageName"].as_str().and_then(clean_title),
-                        format: SubtitleFormat::HlsVtt,
-                        auto: false,
-                        headers: Vec::new(),
-                    });
-                }
-            }
-        }
-        for file in player["resources"]["h264"].as_array().into_iter().flatten() {
-            let Some(link) = util::url_of(&file["file"], None) else {
-                continue;
-            };
-            let mut variant = Variant::file(link);
-            variant.container = Some(Container::Mp4);
-            variant.video = Some(VideoCodec::H264);
-            variant.audio = Some(AudioCodec::Aac);
-            variant.bitrate = util::uint(&file["bitrate"]).map(|k| k * 1000);
-            let label = match util::uint(&file["bitrate"]) {
-                Some(kbps) => format!("{kbps}k"),
-                None => "mp4".to_string(),
-            };
-            variant.format_id = Some(format!("h264-{label}"));
-            variant.label = Some(label);
-            variant.duration = duration;
-            variants.push(variant);
-        }
-        if let Some(audio) = util::url_of(&talk["audioDownload"], None) {
-            let mut variant = Variant::file(audio);
-            variant.audio_only = true;
-            variant.container = Some(Container::Mp3);
-            variant.audio = Some(AudioCodec::Mp3);
-            variant.format_id = Some("audio".to_string());
-            variant.label = Some("audio".to_string());
-            variant.duration = duration;
-            variants.push(variant);
         }
         if variants.is_empty() {
             let external = &player["external"];
@@ -383,7 +320,7 @@ impl Resolver for TedResolver {
             name: "TED",
             hosts: &["ted.com", "embed.ted.com"],
             features: &["talks", "playlists", "series", "embeds", "subtitles"],
-            formats: &["hls", "mp4"],
+            formats: &["hls"],
             media: &[MediaKind::Video],
             tags: &[Tag::Video],
             session: SessionSupport::None,
@@ -416,6 +353,7 @@ mod tests {
     use crate::http::transport::{
         Exchange, Fixture, RecordedBody, RecordedRequest, RecordedResponse,
     };
+    use crate::resolve::SubtitleFormat;
     use serde_json::json;
     use std::time::Duration;
 
@@ -514,14 +452,8 @@ mod tests {
                 "thumb": "https://pi.tedcdn.com/r/x/CandaceParker_2021W-1350x675.jpg?w=1",
                 "external": {"service": "YouTube", "code": "0jNhhrgczsc"},
                 "resources": {
-                    "hls": {"stream": "https://hls.ted.com/project_masters/7506/manifest.m3u8?intro_master_id=9294&preview"},
-                    "h264": [{"bitrate": 1200, "file": "https://py.tedcdn.com/consus/projects/x-fallback-1200k.mp4"}]
-                },
-                "languages": [
-                    {"languageCode": "en", "languageName": "English"},
-                    {"languageCode": "fr", "languageName": "French"},
-                    {"languageCode": "zh-cn", "languageName": "Chinese, Simplified"}
-                ]
+                    "hls": {"stream": "https://hls.ted.com/project_masters/7506/manifest.m3u8?intro_master_id=9294&preview"}
+                }
             }
         }}}}))
     }
@@ -530,7 +462,7 @@ mod tests {
     const MEDIA: &str = "#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.0,\n0.ts\n#EXTINF:4.0,\n1.ts\n#EXT-X-ENDLIST\n";
 
     #[tokio::test]
-    async fn talks_resolve_with_renditions_the_mp4_and_every_language() {
+    async fn talks_resolve_with_their_renditions_and_subtitles() {
         let mut fixture = Fixture::new(PLATFORM, None);
         fixture.exchanges.push(get(
             "https://www.ted.com/talks/candace_parker_how_to_break_down_barriers_and_not_accept_limits",
@@ -579,21 +511,35 @@ mod tests {
                 "https://www.ted.com/talks/candace_parker_how_to_break_down_barriers_and_not_accept_limits"
             )
         );
-        assert_eq!(resolved.variants.len(), 3, "two renditions and the MP4");
+        crate::resolve::assert_one_family(&resolved.variants);
+        assert_eq!(
+            resolved.variants.len(),
+            3,
+            "one rendition per height and the audio rendition"
+        );
         assert_eq!(resolved.variants[0].height, Some(720));
         assert_eq!(resolved.variants[0].format_id.as_deref(), Some("hls-720p"));
         assert_eq!(resolved.variants[0].duration, Some(Duration::from_secs(10)));
-        let mp4 = &resolved.variants[2];
-        assert_eq!(mp4.container, Some(Container::Mp4));
-        assert_eq!(mp4.bitrate, Some(1_200_000));
-        assert_eq!(mp4.format_id.as_deref(), Some("h264-1200k"));
-        assert_eq!(mp4.duration, Some(Duration::from_secs(679)));
+        assert_eq!(resolved.variants[1].height, Some(180));
+        assert_eq!(resolved.variants[1].format_id.as_deref(), Some("hls-180p"));
+        assert_eq!(
+            resolved.variants[1].duration,
+            Some(Duration::from_secs(10)),
+            "every rung shares the media playlist's length"
+        );
+        let audio = &resolved.variants[2];
+        assert!(audio.audio_only);
+        assert_eq!(audio.format_id.as_deref(), Some("hls-medium"));
+        assert_eq!(
+            audio.url.as_str(),
+            "https://hls.ted.com/project_masters/7506/index-f8-a1.m3u8?intro_master_id=9294"
+        );
         let languages: Vec<&str> = resolved
             .subtitles
             .iter()
             .map(|t| t.language.as_str())
             .collect();
-        assert_eq!(languages, ["en", "fr", "zh-cn"]);
+        assert_eq!(languages, ["en", "fr"]);
         assert!(
             resolved
                 .subtitles
@@ -601,13 +547,10 @@ mod tests {
                 .all(|t| t.format == SubtitleFormat::HlsVtt)
         );
         assert_eq!(
-            resolved.subtitles[2].url.as_str(),
-            "https://hls.ted.com/project_masters/7506/subtitles/zh-cn.m3u8?intro_master_id=9294"
+            resolved.subtitles[1].url.as_str(),
+            "https://hls.ted.com/project_masters/7506/subtitles/fr.m3u8?intro_master_id=9294"
         );
-        assert_eq!(
-            resolved.subtitles[2].name.as_deref(),
-            Some("Chinese, Simplified")
-        );
+        assert_eq!(resolved.subtitles[1].name.as_deref(), Some("French"));
     }
 
     #[tokio::test]
@@ -720,7 +663,7 @@ mod tests {
             "text/html",
             page(json!({"props": {"pageProps": {"videoData": {
                 "id": "1", "title": "Elsewhere", "slug": "elsewhere",
-                "videoPlayerData": {"external": {"service": "YouTube", "code": "0jNhhrgczsc"}, "resources": {"hls": {"stream": ""}, "h264": []}}
+                "videoPlayerData": {"external": {"service": "YouTube", "code": "0jNhhrgczsc"}, "resources": {"hls": {"stream": ""}}}
             }}}})),
         ));
         fixture.exchanges.push(get(
@@ -756,6 +699,7 @@ mod tests {
 
     /// Every example link resolves live: talks with renditions by height and subtitles,
     /// lists with entries.
+    #[ignore = "reaches the live site: cargo test -- --ignored"]
     #[tokio::test]
 
     async fn live_examples_resolve() {

@@ -1,5 +1,5 @@
-//! Resolve Brightcove through the Playback API using the player policy key. Include file
-//! and manifest renditions, subtitles and metadata.
+//! Resolve Brightcove through the Playback API using the player policy key. Include the
+//! HLS renditions, subtitles and metadata.
 //!
 //! Translate legacy player URLs to current IDs. Preserve referring sites for restricted
 //! players and report DRM by key system.
@@ -18,11 +18,11 @@ use url::Url;
 use super::page::Page;
 use super::{
     MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved, Resolver,
-    SessionSupport, SubtitleFormat, SubtitleTrack, Tag, Variant, VariantKind, clean_title, essence,
-    fetch, is_dash_type, is_hls_type, is_ism_type, manifests, util,
+    SessionSupport, SubtitleFormat, SubtitleTrack, Tag, Variant, clean_title, essence, fetch,
+    is_hls_type, manifests, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
+use crate::media::MediaKind;
 
 pub const PLATFORM: &str = "brightcove";
 const PLAYERS: &str = "https://players.brightcove.net/";
@@ -438,27 +438,9 @@ fn drm_system(source: &Value) -> Option<String> {
     })
 }
 
-fn container_of(ext: &str, container: Option<&str>) -> Option<Container> {
-    let name = if ext.is_empty() {
-        container.unwrap_or("").to_ascii_lowercase()
-    } else {
-        ext.to_string()
-    };
-    match name.as_str() {
-        "" => None,
-        "mp4" | "m4v" => Some(Container::Mp4),
-        "webm" => Some(Container::Webm),
-        "flv" => Some(Container::Flv),
-        "mov" => Some(Container::Mov),
-        other => {
-            Container::from_extension(other).or_else(|| Some(Container::Other(other.to_string())))
-        }
-    }
-}
-
-/// The video's sources as variants: the HLS, DASH and Smooth Streaming manifests, every
-/// file (MP4 and otherwise, audio alone when the source has no picture), and RTMP
-/// streams. The plain HTTP copy of an HTTPS source is left out.
+/// The video's HLS masters as variants, one per manifest its sources list, each with
+/// the size, bitrate, length and key system the source states. The plain HTTP copy of
+/// an HTTPS source is left out.
 pub fn variants_of(video: &Value) -> Vec<Variant> {
     let duration = video["duration"]
         .as_u64()
@@ -469,43 +451,17 @@ pub fn variants_of(video: &Value) -> Vec<Variant> {
     for source in &sources {
         let mime = essence(source["type"].as_str());
         let container = source["container"].as_str().map(|c| c.to_ascii_uppercase());
-        let src = source["src"]
+        let Some(url) = source["src"]
             .as_str()
             .or(source["streaming_src"].as_str())
-            .and_then(|u| Url::parse(u).ok());
-        let ext = src
-            .as_ref()
-            .and_then(super::path_extension)
-            .unwrap_or_default();
-        let kind = if is_hls_type(&mime) || ext == "m3u8" || container.as_deref() == Some("M2TS") {
-            VariantKind::Hls
-        } else if is_dash_type(&mime) || ext == "mpd" {
-            VariantKind::Dash
-        } else if (is_ism_type(&mime) && mime != "text/xml" && mime != "application/xml")
-            || ext == "ism"
-            || ext == "isml"
-        {
-            VariantKind::Ism
-        } else if src.is_some() {
-            VariantKind::File
-        } else {
-            VariantKind::Rtmp
+            .and_then(|u| Url::parse(u).ok())
+        else {
+            continue;
         };
-        let url = match (&src, kind) {
-            (Some(url), VariantKind::Rtmp) => url.clone(),
-            (Some(url), _) => url.clone(),
-            (None, _) => {
-                let (Some(app), Some(stream)) =
-                    (source["app_name"].as_str(), source["stream_name"].as_str())
-                else {
-                    continue;
-                };
-                match Url::parse(&format!("{}/{}", app.trim_end_matches('/'), stream)) {
-                    Ok(url) => url,
-                    Err(_) => continue,
-                }
-            }
-        };
+        let ext = super::path_extension(&url).unwrap_or_default();
+        if !(is_hls_type(&mime) || ext == "m3u8" || container.as_deref() == Some("M2TS")) {
+            continue;
+        }
         if url.scheme() == "http"
             && sources.iter().any(|other| {
                 other["src"].as_str().is_some_and(|o| {
@@ -518,80 +474,22 @@ pub fn variants_of(video: &Value) -> Vec<Variant> {
         if variants.iter().any(|v| v.url == url) {
             continue;
         }
-        let mut v = Variant::new(url, kind);
-        let width = source["width"].as_u64().map(|w| w as u32);
-        let height = source["height"].as_u64().map(|h| h as u32);
-        let bitrate = source["avg_bitrate"].as_u64().filter(|b| *b > 0);
-        match kind {
-            VariantKind::File | VariantKind::Rtmp => {
-                v.container = container_of(
-                    if kind == VariantKind::Rtmp {
-                        "flv"
-                    } else {
-                        &ext
-                    },
-                    container.as_deref(),
-                );
-                if width == Some(0) && height == Some(0) {
-                    v.audio_only = true;
-                    v.audio = Some(AudioCodec::Aac);
-                } else {
-                    v.video = Some(
-                        match source["codec"]
-                            .as_str()
-                            .map(|c| c.to_ascii_uppercase())
-                            .as_deref()
-                        {
-                            Some("H265") | Some("HEVC") => VideoCodec::H265,
-                            Some("VP9") => VideoCodec::Vp9,
-                            Some("AV1") => VideoCodec::Av1,
-                            _ => VideoCodec::H264,
-                        },
-                    );
-                    v.audio = Some(AudioCodec::Aac);
-                    v.width = width.filter(|w| *w > 0);
-                    v.height = height.filter(|h| *h > 0);
-                }
-                v.bitrate = bitrate;
-                v.size = source["size"].as_u64().filter(|s| *s > 0);
-                let prefix = match (kind, source["src"].is_string()) {
-                    (VariantKind::Rtmp, _) => "rtmp",
-                    (_, true) => "http",
-                    (_, false) => "http-streaming",
-                };
-                let mut id = prefix.to_string();
-                if let Some(b) = bitrate {
-                    id.push_str(&format!("-{}k", b / 1000));
-                }
-                if let Some(h) = v.height {
-                    id.push_str(&format!("-{h}p"));
-                }
-                v.format_id = Some(id);
-                v.label = v
-                    .height
-                    .map(|h| format!("{h}p"))
-                    .or_else(|| v.audio_only.then(|| "audio".to_string()));
-            }
-            _ => {
-                v.format_id = Some(match source["ext_x_version"].as_str() {
-                    Some(x) => format!("{}-v{x}", kind.as_str()),
-                    None => kind.as_str().to_string(),
-                });
-                v.width = width.filter(|w| *w > 0);
-                v.height = height.filter(|h| *h > 0);
-                v.bitrate = bitrate;
-            }
-        }
-        v.duration = duration;
-        v.drm = drm_system(source).or_else(|| {
-            if container.as_deref() == Some("WVM") {
-                Some("widevine".to_string())
-            } else if kind == VariantKind::Ism {
-                Some("playready".to_string())
-            } else {
-                None
-            }
+        let mut v = Variant::hls(url);
+        v.format_id = Some(match source["ext_x_version"].as_str() {
+            Some(x) => format!("hls-v{x}"),
+            None => "hls".to_string(),
         });
+        v.width = source["width"]
+            .as_u64()
+            .map(|w| w as u32)
+            .filter(|w| *w > 0);
+        v.height = source["height"]
+            .as_u64()
+            .map(|h| h as u32)
+            .filter(|h| *h > 0);
+        v.bitrate = source["avg_bitrate"].as_u64().filter(|b| *b > 0);
+        v.duration = duration;
+        v.drm = drm_system(source);
         variants.push(v);
     }
     variants
@@ -813,9 +711,9 @@ async fn playback(
 }
 
 /// The video `link` names, read as `platform` from the Playback API with the player's
-/// policy key: its name, description, length, poster and text tracks, every rendition,
-/// and the streams of its HLS and DASH manifests. The result is attributed to
-/// `platform`, with `origin` as its page.
+/// policy key: its name, description, length, poster and text tracks, and the
+/// renditions of its HLS manifests. The result is attributed to `platform`, with
+/// `origin` as its page.
 pub async fn media(
     http: &Http,
     platform: &str,
@@ -905,7 +803,7 @@ impl Resolver for BrightcoveResolver {
                 "live",
                 "drm reported",
             ],
-            formats: &["mp4", "hls", "dash", "ism", "rtmp"],
+            formats: &["hls"],
             media: &[MediaKind::Video],
             tags: &[Tag::Players],
             session: SessionSupport::None,
@@ -982,6 +880,7 @@ mod tests {
     use crate::http::transport::{
         Exchange, Fixture, RecordedBody, RecordedRequest, RecordedResponse,
     };
+    use crate::resolve::{VariantKind, assert_one_family};
 
     fn get(url: &str, status: u16, content_type: &str, body: &str) -> Exchange {
         Exchange {
@@ -1056,9 +955,10 @@ mod tests {
         assert_eq!(resolved.description.as_deref(), Some("Marvels of the sea."));
         assert_eq!(resolved.duration, Some(Duration::from_millis(155574)));
         assert!(resolved.uploaded_at.is_some());
+        // The two HLS manifests, the plain HTTP copy of the first left out: no file, no DASH.
         assert_eq!(
             resolved.variants.len(),
-            4,
+            2,
             "{:?}",
             resolved
                 .variants
@@ -1067,20 +967,10 @@ mod tests {
                 .collect::<Vec<_>>()
         );
         assert!(resolved.variants.iter().all(|v| v.url.scheme() == "https"));
-        let mp4 = resolved
-            .variants
-            .iter()
-            .find(|v| v.kind == VariantKind::File)
-            .unwrap();
-        assert_eq!(mp4.size, Some(39116979));
-        assert_eq!(mp4.height, Some(360));
-        assert_eq!(mp4.bitrate, Some(2007000));
-        assert!(
-            resolved
-                .variants
-                .iter()
-                .any(|v| v.kind == VariantKind::Dash)
-        );
+        assert!(resolved.variants.iter().all(|v| v.kind == VariantKind::Hls));
+        assert_one_family(&resolved.variants);
+        assert_eq!(resolved.variants[0].format_id.as_deref(), Some("hls-v4"));
+        assert_eq!(resolved.variants[1].format_id.as_deref(), Some("hls-v7"));
         assert_eq!(resolved.subtitles.len(), 1);
         assert_eq!(resolved.subtitles[0].language, "en");
         assert!(matches!(
@@ -1096,9 +986,9 @@ mod tests {
 
     #[test]
     fn drm_locked_sources_carry_their_key_system() {
-        let locked: Value = serde_json::from_str(r#"{"sources":[{"src":"https://m.test/x.mpd","type":"application/dash+xml","key_systems":{"com.widevine.alpha":{"license_url":"https://l"}}}]}"#).unwrap();
+        let locked: Value = serde_json::from_str(r#"{"sources":[{"src":"https://m.test/x.m3u8","type":"application/x-mpegURL","key_systems":{"com.apple.fps.1_0":{"license_url":"https://l"}}}]}"#).unwrap();
         let variants = variants_of(&locked);
-        assert_eq!(variants[0].drm.as_deref(), Some("widevine"));
+        assert_eq!(variants[0].drm.as_deref(), Some("fairplay"));
         assert!(!variants[0].is_playable());
     }
 
@@ -1109,14 +999,9 @@ mod tests {
         let url = embed_url("1752604059001", "default", "4457254747001");
         let video = resolver.resolve(&url).await.unwrap().media().unwrap();
         assert_eq!(video.title.as_deref(), Some("Sea Marvels Collection"));
-        assert!(
-            video
-                .variants
-                .iter()
-                .any(|v| v.kind == VariantKind::File && v.size == Some(39116979))
-        );
-        assert!(video.variants.iter().any(|v| v.kind == VariantKind::Hls));
-        assert!(video.variants.iter().any(|v| v.kind == VariantKind::Dash));
+        assert!(!video.variants.is_empty());
+        assert!(video.variants.iter().all(|v| v.kind == VariantKind::Hls));
+        assert_one_family(&video.variants);
         let playlist_url = Url::parse("https://players.brightcove.net/1752604059001/default_default/index.html?playlistId=5718313430001").unwrap();
         let Resolution::Playlist(playlist) = resolver.resolve(&playlist_url).await.unwrap() else {
             panic!("expected a playlist");
@@ -1241,16 +1126,17 @@ mod tests {
     }
 
     #[test]
-    fn every_source_kind_becomes_a_variant() {
+    fn only_the_hls_sources_become_variants() {
         let video = serde_json::json!({"duration": 0, "sources": [
-            {"src": "https://h/a.m3u8", "type": "application/x-mpegURL", "ext_x_version": "4"},
+            {"src": "http://h/a.m3u8", "type": "application/x-mpegURL", "ext_x_version": "4", "width": 1280, "height": 720, "avg_bitrate": 2000000},
+            {"src": "https://h/a.m3u8", "type": "application/x-mpegURL", "ext_x_version": "4", "width": 1280, "height": 720, "avg_bitrate": 2000000},
+            {"src": "https://h/b.m3u8", "type": "application/x-mpegURL", "ext_x_version": "7"},
+            {"src": "https://h/ts/master.m3u8", "container": "M2TS"},
             {"src": "https://h/a.mpd", "type": "application/dash+xml"},
             {"src": "https://h/a.ism/manifest", "type": "application/vnd.ms-sstr+xml"},
-            {"src": "http://h/b.mp4", "container": "MP4", "width": 640, "height": 360, "avg_bitrate": 500000, "codec": "H264"},
             {"src": "https://h/b.mp4", "container": "MP4", "width": 640, "height": 360, "avg_bitrate": 500000, "codec": "H264"},
             {"streaming_src": "https://h/stream.mp4", "container": "MP4", "width": 1280, "height": 720},
             {"src": "https://h/audio.m4a", "container": "M4A", "width": 0, "height": 0, "avg_bitrate": 128000},
-            {"src": "https://h/c.webm", "container": "WEBM", "width": 1920, "height": 1080, "codec": "VP9"},
             {"app_name": "rtmp://h/app", "stream_name": "mp4:c.mp4", "container": "MP4", "width": 854, "height": 480},
             {"src": "https://h/d.wvm", "container": "WVM", "width": 640, "height": 360}
         ]});
@@ -1259,32 +1145,16 @@ mod tests {
             .iter()
             .filter_map(|v| v.format_id.as_deref())
             .collect();
+        assert_eq!(ids, vec!["hls-v4", "hls-v7", "hls"]);
+        assert!(variants.iter().all(|v| v.kind == VariantKind::Hls));
+        assert_one_family(&variants);
         assert_eq!(
-            ids,
-            vec![
-                "hls-v4",
-                "dash",
-                "ism",
-                "http-500k-360p",
-                "http-streaming-720p",
-                "http-128k",
-                "http-1080p",
-                "rtmp-480p",
-                "http-360p"
-            ]
-        );
-        assert_eq!(variants[2].kind, VariantKind::Ism);
-        assert_eq!(variants[2].drm.as_deref(), Some("playready"));
-        assert_eq!(
-            variants[3].url.as_str(),
-            "https://h/b.mp4",
+            variants[0].url.as_str(),
+            "https://h/a.m3u8",
             "the HTTPS copy stands for both"
         );
-        assert!(variants[5].audio_only);
-        assert_eq!(variants[6].video, Some(VideoCodec::Vp9));
-        assert_eq!(variants[6].container, Some(Container::Webm));
-        assert_eq!(variants[7].kind, VariantKind::Rtmp);
-        assert_eq!(variants[7].url.as_str(), "rtmp://h/app/mp4:c.mp4");
-        assert_eq!(variants[8].drm.as_deref(), Some("widevine"));
+        assert_eq!(variants[0].height, Some(720));
+        assert_eq!(variants[0].bitrate, Some(2000000));
+        assert_eq!(variants[2].url.as_str(), "https://h/ts/master.m3u8");
     }
 }

@@ -105,6 +105,12 @@ impl Settings {
                 "must be at least 1".into(),
             ));
         }
+        if self.engine.live.max_capture_secs == 0 {
+            return Err(invalid(
+                "engine.live.max_capture_secs",
+                "must be at least 1".into(),
+            ));
+        }
         if self.engine.playlists.max_entries == 0 {
             return Err(invalid(
                 "engine.playlists.max_entries",

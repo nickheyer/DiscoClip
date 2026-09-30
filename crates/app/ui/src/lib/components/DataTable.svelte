@@ -26,7 +26,6 @@
 <script lang="ts" generics="T">
 	import ArrowDownIcon from '@lucide/svelte/icons/arrow-down';
 	import ArrowUpIcon from '@lucide/svelte/icons/arrow-up';
-	import { EMPTY } from '$lib/format';
 
 	interface Props {
 		rows: T[];
@@ -244,9 +243,7 @@
 									{@render column.cell(row)}
 								{:else if column.value}
 									{@const v = column.value(row)}
-									{#if blank(v)}
-										<span class="text-surface-600-400">{EMPTY}</span>
-									{:else}
+									{#if !blank(v)}
 										{v}
 									{/if}
 								{/if}

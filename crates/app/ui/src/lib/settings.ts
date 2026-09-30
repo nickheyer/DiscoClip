@@ -1,7 +1,7 @@
 // Turning the settings tree into the flat, typed fields the Settings page edits.
 
 import type { Json, SettingEntry, SettingSource, SettingsView, Timestamp } from './api/types';
-import { EMPTY, bytes, clock, number } from './format';
+import { bytes, durationText, number } from './format';
 
 /** What one value is edited as. */
 export type ScalarKind = 'boolean' | 'number' | 'string' | 'list' | 'json';
@@ -19,7 +19,7 @@ export interface Unit {
 }
 
 const BYTES: Unit = { label: 'bytes', format: (v) => bytes(v), opaque: true };
-const SECONDS: Unit = { label: 'seconds', format: (v) => clock(v), opaque: true };
+const SECONDS: Unit = { label: 'seconds', format: (v) => durationText(v), opaque: true };
 const MILLISECONDS: Unit = {
 	label: 'milliseconds',
 	format: (v) => `${number(v)} ms`,
@@ -292,9 +292,10 @@ export function fieldsOf(view: SettingsView): SettingField[] {
 	});
 }
 
-/** How a value reads where someone looks at it rather than edits it. */
+/** How a value reads where someone looks at it rather than edits it. Absent, it reads
+ * as nothing. */
 export function display(value: Json, kind: FieldKind, unit: Unit | null = null): string {
-	if (value === null || value === undefined) return EMPTY;
+	if (value === null || value === undefined) return '';
 	switch (kind) {
 		case 'boolean':
 			return value ? 'On' : 'Off';
@@ -303,25 +304,27 @@ export function display(value: Json, kind: FieldKind, unit: Unit | null = null):
 		case 'string':
 			return String(value);
 		case 'list':
-			return Array.isArray(value) && value.length > 0 ? value.map(String).join(', ') : EMPTY;
+			return Array.isArray(value) ? value.map(String).join(', ') : '';
 		case 'json':
 		case 'section':
 			return JSON.stringify(value);
 	}
 }
 
-/** An optional section in one line: each value it holds, secrets hidden. */
+/** An optional section in one line: each value it holds, secrets hidden, absent ones
+ * left out. */
 export function summary(field: SettingField): string {
-	if (field.value === null || field.value === undefined || !field.leaves) return EMPTY;
+	if (field.value === null || field.value === undefined || !field.leaves) return '';
 	return field.leaves
 		.map((leaf) => {
 			const held = leaf.secret
 				? leaf.set
 					? '••••••••'
-					: EMPTY
+					: ''
 				: display(valueAt(field.value, leaf.name) ?? null, leaf.kind, leaf.unit);
-			return `${leaf.name}: ${held}`;
+			return held ? `${leaf.name}: ${held}` : '';
 		})
+		.filter(Boolean)
 		.join(' · ');
 }
 

@@ -9,10 +9,12 @@
 	import DataTable, { type Column } from '$lib/components/DataTable.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import RelativeTime from '$lib/components/RelativeTime.svelte';
+	import Bytes from '$lib/components/Bytes.svelte';
+	import Duration from '$lib/components/Duration.svelte';
+	import Timestamp from '$lib/components/Timestamp.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import Status from '$lib/components/Status.svelte';
-	import { bytes, clock, number } from '$lib/format';
+	import { number } from '$lib/format';
 	import { session } from '$lib/session.svelte';
 	import { notify, reportError } from '$lib/toast.svelte';
 
@@ -68,15 +70,15 @@
 		await load();
 	}
 
-	function limits(profile: Profile): string {
-		const parts: string[] = [];
+	/** Whether a profile names any limit of its own. */
+	function limited(profile: Profile): boolean {
 		const l = profile.limits;
-		if (l?.max_source_bytes) parts.push(bytes(l.max_source_bytes));
-		if (l?.max_duration_secs !== null && l?.max_duration_secs !== undefined)
-			parts.push(l.max_duration_secs === 0 ? 'no live' : clock(l.max_duration_secs));
-		if (l?.max_height) parts.push(`${l.max_height}p`);
-		if (parts.length > 0) return parts.join(' · ');
-		return profile.id === defaultId ? 'Server limits' : 'Inherited';
+		return Boolean(
+			l?.max_source_bytes ||
+			(l?.max_duration_secs !== null && l?.max_duration_secs !== undefined) ||
+			l?.max_height ||
+			l?.max_capture_secs
+		);
 	}
 
 	function platforms(profile: Profile): string {
@@ -91,7 +93,7 @@
 
 	const columns: Column<Profile>[] = [
 		{ key: 'name', label: 'Profile', cell: nameCell, sortable: true, value: (p) => p.name },
-		{ key: 'limits', label: 'Limits', value: limits },
+		{ key: 'limits', label: 'Limits', cell: limitsCell },
 		{ key: 'platforms', label: 'Platforms', value: platforms, class: 'max-w-64 truncate' },
 		{
 			key: 'updated',
@@ -104,6 +106,23 @@
 	];
 </script>
 
+{#snippet limitsCell(profile: Profile)}
+	{@const l = profile.limits}
+	{#if limited(profile)}
+		<span class="flex flex-wrap items-center gap-x-2 gap-y-1">
+			{#if l?.max_source_bytes}<Bytes value={l.max_source_bytes} />{/if}
+			{#if l?.max_duration_secs === 0}
+				<Status label="No live" tone="warning" />
+			{:else if l?.max_duration_secs}
+				<Duration value={l.max_duration_secs} />
+			{/if}
+			{#if l?.max_height}<span>{l.max_height} px</span>{/if}
+			{#if l?.max_capture_secs}<span>capture <Duration value={l.max_capture_secs} /></span>{/if}
+		</span>
+	{:else}
+		{profile.id === defaultId ? 'Server limits' : 'Inherited'}
+	{/if}
+{/snippet}
 {#snippet nameCell(profile: Profile)}
 	<div class="min-w-0">
 		<p class="flex flex-wrap items-center gap-2 font-medium">
@@ -121,7 +140,7 @@
 	</div>
 {/snippet}
 {#snippet updatedCell(profile: Profile)}
-	<RelativeTime at={profile.updated_at} class="whitespace-nowrap" />
+	<Timestamp at={profile.updated_at} class="whitespace-nowrap" />
 {/snippet}
 {#snippet actionsCell(profile: Profile)}
 	{#if canEdit}

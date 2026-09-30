@@ -321,21 +321,6 @@ timeout that lets the graceful shutdown finish. For hardware encoding on a host 
 set `engine.ffmpeg` to an ffmpeg with the encoders and uncomment the device lines in
 the unit.
 
-### Making a release
-
-Set `version` in `Cargo.toml`, tag the commit `v<version>` and push the tag. The
-[release workflow](.github/workflows/release.yml) checks the tag against `Cargo.toml`,
-builds every archive, package and image, smoke-tests the images, installs the packages
-on Debian and Fedora, and publishes the GitHub release with generated notes. A version
-with a pre-release part, such as `1.0.0-rc.1`, is published as a pre-release and moves
-no `latest` tag.
-
-[CI](.github/workflows/ci.yml) runs on every push: `cargo fmt`, `cargo clippy`, the
-tests, the web app's checks, and both images with their smoke tests. `make check` runs
-the same here. The resolver tests that fetch from the sites they cover are marked
-`#[ignore]`; `make test-live` runs them, as does a
-[weekly workflow](.github/workflows/live-tests.yml).
-
 ### Shutdown and health
 
 A stop signal starts a graceful shutdown. The web listener stops taking connections

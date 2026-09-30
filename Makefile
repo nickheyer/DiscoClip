@@ -15,6 +15,7 @@
 #   make dist       the release archive for this machine, in dist/
 #   make deb        the .deb for this machine, in dist/. Needs nfpm
 #   make rpm        the .rpm for this machine, in dist/. Needs nfpm
+#   make release    bump the version, commit, tag and push
 
 CARGO ?= cargo
 NPM   ?= npm
@@ -29,7 +30,7 @@ OS      := $(if $(filter Darwin,$(UNAME_S)),macos,linux)
 ARCH    := $(if $(filter arm64 aarch64,$(UNAME_M)),aarch64,x86_64)
 PKGARCH := $(if $(filter aarch64,$(ARCH)),arm64,amd64)
 
-.PHONY: dev build run test test-live check fmt clean deps image image-gpu smoke dist deb rpm
+.PHONY: dev build run test test-live check fmt clean deps image image-gpu smoke dist deb rpm release
 
 dev: clean
 	$(CARGO) run -- $(ARGS)
@@ -82,3 +83,6 @@ deb: build
 
 rpm: build
 	packaging/package.sh $(BIN) $(PKGARCH) $(DIST) rpm
+
+release:
+	bash scripts/release/pushReleaseTag.sh $(RELEASE_FLAGS)

@@ -1,12 +1,3 @@
-# A tag v<version> publishes the release: archives for Linux, macOS and Windows, the .deb
-# and .rpm packages, the cpu and gpu images on GHCR for amd64 and arm64, a SHA256SUMS
-# file, and build provenance attestations for every file and image.
-#
-# To release: set `version` in Cargo.toml, tag the commit `v<version>`, and push the tag.
-#
-# The tag has to match the version in Cargo.toml. A version with a pre-release part,
-# such as 1.0.0-rc.1, is published as a pre-release and moves no `latest` tag.
-
 name: Release
 
 on:

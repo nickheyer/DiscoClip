@@ -1,36 +1,13 @@
 # syntax=docker/dockerfile:1
 
-# DiscoClip container images.
-#
-#   docker build -t discoclip .                     the server with its embedded ffmpeg: software encoding
-#   docker build --target gpu -t discoclip:gpu .    the same, with an ffmpeg built for NVENC, VA-API,
-#                                                   Quick Sync and Vulkan, and the drivers those need
-#   docker build --target binary -o dist .          the server binary alone, for a host install
-#
-# Stages:
-#   build         compiles the server with the web app embedded. Debian bookworm, so the
-#                 binary runs on glibc 2.35 and newer.
-#   ffmpeg-build  compiles FFmpeg with the hardware encoders and every filter the
-#                 transcoder uses: NVENC and NVDEC, VA-API, Quick Sync, Vulkan and
-#                 libplacebo for Dolby Vision, zscale and tonemap for HDR, libass for subtitles.
-#   runtime       the unprivileged runtime: the server, Chromium for pages that only play
-#                 through a media source extension, and fonts for subtitles burnt into pictures.
-#   gpu           runtime, plus the hardware-capable ffmpeg and the Vulkan and VA-API drivers.
-#   cpu           runtime, the default target.
-#   binary        the server binary alone, for `docker build --target binary --output`.
-
+# DISCOCLIP CONTAINER IMAGE(S)
 ARG RUST_IMAGE=rust:1-bookworm
 ARG NODE_IMAGE=node:22-bookworm-slim
 ARG RUNTIME_IMAGE=debian:trixie-slim
 
 FROM ${NODE_IMAGE} AS node
 
-# ---------------------------------------------------------------------------------------
-# The server, with the web app embedded.
-# ---------------------------------------------------------------------------------------
 FROM ${RUST_IMAGE} AS build
-# cmake, clang and libclang build the TLS library the HTTP client links. Node, taken from
-# the official image of the same Debian release, builds the web app.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates cmake clang libclang-dev pkg-config perl \
@@ -48,15 +25,9 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo build --release --locked \
     && cp target/release/discoclip /discoclip
 
-# ---------------------------------------------------------------------------------------
-# FFmpeg for the gpu image. Built from the release tarball against the runtime's own
-# libraries, so the gpu stage installs exactly the packages the binaries link.
-# ---------------------------------------------------------------------------------------
 FROM ${RUNTIME_IMAGE} AS ffmpeg-build
 ARG FFMPEG_VERSION=7.1.5
 ARG FFMPEG_SHA256=de668509caf9e35e3cd162473441fdb29538c6d96ed080292b3cf9e6fc5d558f
-# The NVIDIA codec headers ffmpeg needs for NVENC, NVDEC and CUVID. Headers only: the
-# driver's libraries come from the host through the NVIDIA Container Toolkit at run time.
 ARG NV_CODEC_HEADERS=n13.1.15.0
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
@@ -105,13 +76,8 @@ RUN ldd /usr/local/bin/ffmpeg /usr/local/bin/ffprobe \
     | xargs -r dpkg -S | cut -d: -f1 | sort -u > /ffmpeg-runtime-deps.txt \
     && test -s /ffmpeg-runtime-deps.txt
 
-# ---------------------------------------------------------------------------------------
-# The runtime.
-# ---------------------------------------------------------------------------------------
 FROM ${RUNTIME_IMAGE} AS runtime
 ENV DEBIAN_FRONTEND=noninteractive
-# tini is the init: it forwards the stop signal to the server and reaps the processes
-# Chromium and ffmpeg leave behind. curl is for the health check.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates curl tzdata tini \
@@ -124,9 +90,6 @@ RUN apt-get update \
     && chown discoclip:discoclip /var/lib/discoclip /var/cache/discoclip
 COPY --from=build /discoclip /usr/local/bin/discoclip
 
-# Where the database, the key, published files and backups live, where the cache and
-# the unpacked ffmpeg live, and how the server listens inside the container. Every value
-# can be overridden the same way, or in a mounted config file, or in the web app.
 ENV DISCOCLIP_DATA_DIR=/var/lib/discoclip \
     DISCOCLIP_ENGINE__CACHE_DIR=/var/cache/discoclip \
     DISCOCLIP_LOCAL__DIR=/var/lib/discoclip/local \
@@ -144,24 +107,11 @@ USER discoclip
 WORKDIR /var/lib/discoclip
 VOLUME ["/var/lib/discoclip", "/var/cache/discoclip"]
 EXPOSE 8080
-# SIGTERM starts the graceful shutdown: running jobs get their grace period, the web
-# listener drains, the bots close their gateway connections.
 STOPSIGNAL SIGTERM
 HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
     CMD curl -fsS http://127.0.0.1:8080/healthz || exit 1
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/discoclip"]
 
-# ---------------------------------------------------------------------------------------
-# The gpu image: the runtime with the hardware-capable ffmpeg and the drivers it opens.
-#
-# NVIDIA: run with the NVIDIA Container Toolkit (`--gpus all`, or the compose device
-# reservation in compose.gpu.yaml). The toolkit mounts the driver's encoder, decoder and
-# Vulkan libraries into the container; the capabilities below ask for all of them.
-# Intel and AMD: pass the render node (`--device /dev/dri`) and the group that owns it.
-# The VA-API and Vulkan drivers for both are installed here, and Quick Sync's VPL
-# runtime on amd64. libplacebo renders Dolby Vision profile 5 on whichever GPU reaches
-# Vulkan.
-# ---------------------------------------------------------------------------------------
 FROM runtime AS gpu
 USER root
 COPY --from=ffmpeg-build /ffmpeg-runtime-deps.txt /usr/local/share/discoclip/ffmpeg-runtime-deps.txt
@@ -182,11 +132,8 @@ ENV DISCOCLIP_ENGINE__FFMPEG=/usr/local/bin/ffmpeg \
     NVIDIA_DRIVER_CAPABILITIES=compute,utility,video,graphics
 USER discoclip
 
-# ---------------------------------------------------------------------------------------
-# The binary alone: docker build --target binary --output dist .
-# ---------------------------------------------------------------------------------------
 FROM scratch AS binary
 COPY --from=build /discoclip /discoclip
 
-# The default target.
+# DEFAULT TARGET
 FROM runtime AS cpu

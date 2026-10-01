@@ -1,16 +1,3 @@
-# docker compose up -d
-#
-# The web app is at http://localhost:8080. Open /setup once to create the admin account.
-# Settings come from the environment here, from a config file mounted at
-# /etc/discoclip/discoclip.toml, where the server looks for one, and from the web app.
-#
-# This runs the published image, which encodes video in software. For hardware
-# encoding, layer the gpu file over this one:
-#
-#   docker compose -f compose.yaml -f compose.gpu.yaml up -d
-#
-# To build the image from this checkout instead of pulling it: docker compose up -d --build
-
 services:
   discoclip:
     image: ghcr.io/nickheyer/discoclip:latest
@@ -21,32 +8,37 @@ services:
     ports:
       - "8080:8080"
     environment:
-      # The address people reach the web app at, for login callbacks and media links.
-      # DISCOCLIP_WEB__PUBLIC_URL: "https://clips.example.com"
-      # Behind a reverse proxy in the same network, trust its forwarded headers.
-      # DISCOCLIP_WEB__TRUSTED_PROXIES: "172.16.0.0/12"
       DISCOCLIP_LOG__LEVEL: info
     volumes:
       - discoclip-data:/var/lib/discoclip
       - discoclip-cache:/var/cache/discoclip
-      # A config file, when one is preferred over the environment:
-      # - ./discoclip.toml:/etc/discoclip/discoclip.toml:ro
-    # A stop gives running jobs their grace period (engine.shutdown.grace_secs, 30 s by
-    # default) and the web listener its drain before the container is killed.
     stop_grace_period: 75s
 
-  # Scrapes /metrics with an API token made under Account in the web app. Put the token
-  # into packaging/prometheus.yml first.
-  # prometheus:
-  #   image: prom/prometheus:latest
-  #   restart: unless-stopped
-  #   ports:
-  #     - "9090:9090"
-  #   volumes:
-  #     - ./packaging/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-  #     - prometheus-data:/prometheus
+  discoclip-nvidia:
+    extends: discoclip
+    profiles: [gpu]
+    image: ghcr.io/nickheyer/discoclip:gpu
+    build:
+      target: gpu
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  discoclip-intel-amd:
+    extends: discoclip
+    profiles: [gpu]
+    image: ghcr.io/nickheyer/discoclip:gpu
+    build:
+      target: gpu
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - "${RENDER_GID:-render}"
 
 volumes:
   discoclip-data:
   discoclip-cache:
-  # prometheus-data:

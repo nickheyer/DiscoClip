@@ -1,355 +1,64 @@
-![DiscoClip interface](https://user-images.githubusercontent.com/60236014/215372009-d6ca97db-f187-4c39-a8d9-d7ac31e5d52a.png)
+<img src="brand/mark.svg" alt="DiscoClip" width="96" height="96">
 
 # DiscoClip
 
-DiscoClip downloads media links from Discord channels and the web app. It converts
-clips to fit the destination, posts the results and can archive the files.
+Download media from Discord channels or a web app, convert it to fit upload limits,
+and post or archive the result. Supports video, audio, images, playlists and live
+stream recording.
 
-## Run
+## Install
+
+Download a binary or Linux package from [Releases](https://github.com/nickheyer/DiscoClip/releases),
+or use the installer on Linux and macOS:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/nickheyer/DiscoClip/main/packaging/install.sh | sh
+```
+
+Run with a config based on [discoclip.example.toml](discoclip.example.toml):
 
 ```sh
 discoclip --config discoclip.toml
 ```
 
-You can also set `DISCOCLIP_CONFIG=discoclip.toml`. See
-[the example config](discoclip.example.toml) for available settings.
+Open `/setup` on the server to create the admin account. Linux binaries require
+glibc 2.35 or newer. For a systemd service, install a `.deb` or `.rpm` package, or
+run the installer as root with `--system`.
 
-On first startup, open `/setup` and create the admin account.
-
-## Build
-
-```sh
-cargo build --release
-```
-
-The build requires Node.js and npm. Cargo builds the SvelteKit web UI in
-`crates/app/ui` and embeds it in the binary.
-
-For web UI development, run the backend, then:
-
-```sh
-cd crates/app/ui
-npm run dev
-```
-
-Vite proxies `/api` to `127.0.0.1:8080`. Set `DISCOCLIP_API` to use another address.
-
-Web UI checks:
-
-```sh
-npm run check
-npm run build
-```
-
-Follow [the UI and writing standards](crates/app/ui/DESIGN.md) when changing the interface.
-
-## Discord
-
-1. Open **Applications** and add a bot token from the Discord Developer Portal.
-2. Use **Add to a server** to invite the bot.
-3. Switch the server on to watch every channel in it, or open it and switch on single
-   channels. A server watched whole can still have channels switched off.
-4. **Options** on the server or a channel set where the media goes and who may post links.
-
-Each application runs its own bot. Its page controls the bot, its settings and the
-servers it is in. `/clip` and `/status` are registered globally when the application
-is added; the API can move them to chosen servers or turn them off. `/clip stop` ends
-the live captures running for the channel it is used in, keeping what was recorded.
-A stopped bot stays stopped until you start it.
-
-The bot supplies channel and role names. Member searches use the Discord API with
-a timeout. When a bot stops, its directory keeps the last known data.
-
-Admins and operators can edit watch rules. A user with a linked Discord account
-can also edit rules for servers they manage on Discord.
-
-## Profiles
-
-Profiles control platform access and media limits. Assignments apply in this order:
-
-1. Global default
-2. Discord server
-3. Channel
-4. Member
-
-Each assignment overrides only the values it specifies. Blank limits and inherited
-platform settings use the preceding assignment. Server limits cap every profile.
-
-A profile can enable all platforms, disable all, inherit access, or select categories.
-Individual platform exceptions override that choice. The built-in Default profile
-enables all platforms and cannot be deleted.
-
-Admins edit profiles and select the global default. Server managers and operators
-assign profiles to a server, its channels and its members from the server page.
-`GET /api/profiles/effective` reports what applies to a channel or member.
-
-Jobs retain the limits and platform restrictions used when submitted. Retries use
-current profiles. Playlist entries inherit the parent job settings. Older watch
-rules with their own limits are migrated to channel profiles.
-
-## Content views
-
-Create a view under **Content views** to share completed media at `/f/<slug>`.
-Pick a profile, the Discord servers or single channels it shows, and whether
-downloads are allowed. With no server or channel picked it shows all media.
-
-A view lets people in by any of these:
-
-- Public access without login
-- A shared PIN, password or access token
-- View accounts, which exist only on that view
-- Configured login providers
-
-Discord login can require membership in all selected servers or restrict access
-to listed users. Viewer sessions last 30 days. Admins manage view accounts
-and end sessions on the view's page.
-
-Enable **Discord links** to post a media page when an upload exceeds the size
-limit or falls below the configured quality thresholds. These links require
-`web.public_url`. The media page includes preview metadata for Discord.
-
-Signed media links work without login until they expire, after 30 days by default.
-Anyone with the link can access that file until expiry. When several views match,
-a channel match takes priority over a server match, followed by unrestricted views.
-Slug order breaks ties.
-
-## Platforms and downloads
-
-The Platforms page lists supported sites, media types, formats, login requirements
-and test results. Checks resolve sample links without downloading media. They run
-daily by default or on request.
-
-| Media | Handling |
-| --- | --- |
-| Video | Choose a rendition and convert it to fit the destination |
-| Audio | Download and process audio tracks |
-| Image | Download the image |
-| File | Download the original file |
-| Playlist | Create one job per entry |
-| Live stream | Record from submission until the stream ends, the capture or byte limit is reached, or a person stops it |
-
-Supported transports include HTTP files, HLS, DASH, Smooth Streaming, RTMP, RTSP,
-RTP and WHEP. HTTP downloads use parallel byte ranges when supported and resume
-interrupted transfers. Changed files restart to avoid combining different versions.
-
-Segmented streams support live recording, subtitles and discontinuities.
-A live capture writes one growing fragmented MP4, `recording.mp4`, from its first
-byte: the job page and content views play it while it is being made, a Discord
-destination with a content view gets the view's link when the capture begins and the
-finished file in that message once the job ends, and Stop on the job, in the jobs
-list or through `/clip stop` ends the capture and keeps the recording, where Cancel
-deletes it. Supported transport encryption is decrypted during download.
-DRM-protected media is rejected. Platform requests use the configured proxies,
-retries and rate limits.
-
-Admins can import browser cookies from a Netscape `cookies.txt` file or a Cookie
-header. Cookies and provider tokens are encrypted under `secret.key` and are not
-shown again. The Platforms page can check or clear each saved session.
-
-## Transcoding
-
-Every container and codec ffmpeg decodes is taken as a source. The picture is
-made to fit the destination:
-
-| Source | Handling |
-| --- | --- |
-| HDR10, HLG and Dolby Vision profiles 7 and 8 | Tone-mapped to SDR |
-| Dolby Vision profile 5 | Rendered with an ffmpeg build that has libplacebo, and refused by name without one |
-| Interlaced pictures, flagged, or found by looking when the file does not say | Deinterlaced |
-| Variable frame rates | Converted to a constant rate |
-| 360° pictures: equirectangular, cubemap and YouTube's equi-angular cubemap | Rendered as a flat 100° view |
-| Stereoscopic pictures | One eye is kept |
-| Anamorphic pixels | Squared |
-| Transparency | Laid over black |
-| Subtitles, when a request asks to burn them in | Drawn into the picture from the fetched track, or from a stream inside the file |
-| Sound alone, when the destination asks for video | Played over the cover art, the platform's thumbnail, or a waveform |
-
-Every job's log says what was done and which encoder made the output.
-
-Each destination has a target: the container, the video and audio codecs, a height
-and frame-rate cap, whether sound alone becomes a video, and which audio, image and
-other files are taken as they are. `local.target` covers web submissions and
-`discord.target` covers Discord. A server can have its own upload limit and target
-under `discord.guilds` by server id. Discord upload limits follow the server's boost
-level under `discord.limits`; Nitro raises limits for people, not for bots.
-
-Video is encoded with the embedded ffmpeg build. `engine.transcode.encoder` is `auto` by
-default: the first of NVENC, Quick Sync, VA-API, AMF, VideoToolbox and V4L2 whose
-encoders run on the machine, else software. A family's name asks for that family, and
-`software` keeps to libx264 and its kin. Set `engine.ffmpeg` to use another installed
-build; the `gpu` container image comes with one built against its drivers and the
-setting made. Each encoder is tried at startup and when the settings change. The Health
-page reports the encoder in use. A hardware encode that fails during a job is redone in
-software and the job's log says so.
-
-## Accounts
-
-| Role | Access |
-| --- | --- |
-| Admin | Accounts, applications, settings, profiles, bots and jobs |
-| Operator | Jobs, bots and watch rules |
-| Viewer | Read access, plus rules for Discord servers they manage |
-
-Use **Account** to change a password, manage sessions, link login providers and
-create API tokens. Tokens use `Authorization: Bearer dc_<secret>` and are limited
-to their selected scopes and the account role. See [the API reference](API.md).
-
-GitHub, Google and OpenID Connect are configured in Settings. Discord login uses
-an application with a client secret and login enabled.
-
-Locked out of an account? The server prints a recovery key on its console, set
-apart from the log, each time it starts. Open `/recover` and enter the key, the
-username and a new password. That ends the account's sessions and the lockout
-and logs you in. The key changes each time it is used.
-
-## Settings and hosting
-
-Settings are stored in the database under `data_dir`, which defaults to `data`.
-TOML, YAML and JSON config files can seed values at startup. Environment variables
-use `DISCOCLIP_<SECTION>__<KEY>` and override the config file. Values saved in the
-web app take priority over provisioning values.
-
-Settings apply when saved. Changes the server cannot apply are rejected before
-storage. Use Settings to search, edit, import or export values. Exports include
-secrets in plain text.
-
-`web.bind` sets the listen address. Configure `[web.tls]` with PEM certificate and
-key files for HTTPS. The server reloads changed certificates automatically.
-Alternatively, serve HTTP behind a reverse proxy.
-
-List proxy addresses or CIDR networks in `web.trusted_proxies` to accept
-`Forwarded` and `X-Forwarded-*` headers. HTTPS connections use secure session cookies.
-Proxies must pass `text/event-stream` responses without buffering. The web app
-shares one event stream across browser tabs.
-
-## Retention and backups
-
-Retention runs on `engine.retention`: done jobs older than `jobs_days` and failed or
-cancelled jobs older than `failed_jobs_days` are removed with their cached files, and
-the cache is trimmed under `cache_max_bytes`, oldest jobs first. A sweep runs shortly
-after startup and then every `sweep_interval_secs`. **Backups** shows the last sweep
-and runs one on request.
-
-The database is backed up on `backup`: one consistent copy every `interval_secs`, and one
-at startup when the newest is older than that, into `backup.dir`, keeping the newest
-`keep`. `secret.key` is copied beside the backups, since the secrets in a backup cannot be
-read without it. **Backups** lists them, makes one on request and hands each out as a
-file. To put one back:
-
-```sh
-discoclip restore data/backups/discoclip-20260924T171500Z.db
-```
-
-The restore checks the backup, refuses to run while the server holds the database, and
-puts the key beside the database when it is missing there. Start the server afterwards.
-
-## Deploying
-
-### Container images
-
-Releases publish two images to GitHub Container Registry, each for amd64 and arm64.
-Both run the server as an unprivileged user with Chromium and subtitle fonts beside it.
-
-| Image | Encoding |
-| --- | --- |
-| `ghcr.io/nickheyer/discoclip:latest` | The embedded ffmpeg, in software |
-| `ghcr.io/nickheyer/discoclip:gpu` | An ffmpeg built with NVENC and NVDEC, VA-API, Quick Sync and Vulkan, with the VA-API and Vulkan drivers for NVIDIA, Intel and AMD GPUs |
-
-Each release is also tagged with its version: `0.1.0` and `0.1`, and `0.1.0-gpu` and
-`0.1-gpu`. The [compose file](compose.yaml) runs the software image with volumes for the
-data and cache directories:
+For Docker, use [compose.yaml](compose.yaml):
 
 ```sh
 docker compose up -d
 ```
 
-The [gpu compose file](compose.gpu.yaml) layers the gpu image and a GPU over it:
+Images are available for amd64 and arm64 at `ghcr.io/nickheyer/discoclip:latest`
+(CPU) and `ghcr.io/nickheyer/discoclip:gpu`. The compose file includes
+`discoclip-nvidia` and `discoclip-intel-amd` services. NVIDIA requires the host
+driver and Container Toolkit; Intel and AMD require access to `/dev/dri`.
 
-```sh
-docker compose -f compose.yaml -f compose.gpu.yaml up -d
-```
+## Use
 
-For NVIDIA GPUs the host needs the NVIDIA driver and the
-[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html),
-which mounts the driver's encoder and Vulkan libraries into the container. The file
-reserves every GPU with those capabilities. For Intel and AMD GPUs the file hands in
-`/dev/dri` and the group that owns it instead; its comments say how. With
-`engine.transcode.encoder` at `auto`, the server tries NVENC, Quick Sync, VA-API and
-the rest in turn at startup and the Health page names the encoder in use.
+1. In **Applications**, add a bot token from the Discord Developer Portal.
+2. Select **Add to a server** to invite it.
+3. Enable watching for a server or individual channels. Use **Options** to choose
+   the output channel and who can submit links.
 
-The [Dockerfile](Dockerfile) builds both images, `--target cpu` and `--target gpu`, and
-exports the bare binary with `--target binary --output dist`. `make image`,
-`make image-gpu` and `make smoke` build them here; the smoke test in
-[packaging/smoke-test.sh](packaging/smoke-test.sh) checks each image's encoders and
-filters, renders through libplacebo on Vulkan, starts the server and stops it cleanly.
+You can also submit links through the web app or `/clip`. Live recordings play
+while they grow; **Stop** or `/clip stop` keeps the recording, while **Cancel**
+deletes it.
 
-### Releases
+**Profiles** set platform access and media limits. Settings inherit from the
+global default through server, channel and member assignments, within server limits.
+**Platforms** lists supported sites and lets admins import cookies for sites
+that require a login.
 
-Every [release](https://github.com/nickheyer/DiscoClip/releases) carries archives for
-Linux x86_64 and aarch64, macOS 11 or newer on Apple silicon and Intel, and Windows x86_64, plus
-`.deb` and `.rpm` packages for both Linux architectures, a `SHA256SUMS` file, and build
-provenance attestations for every file and image:
+**Content views** share media at `/f/<slug>`, with public access or a login requirement.
+Enable **Discord links** to link to media that exceeds upload or quality limits;
+this requires `web.public_url`. Signed media links allow access without login
+until they expire.
 
-```sh
-gh attestation verify discoclip-v0.1.0-linux-x86_64.tar.gz --repo nickheyer/DiscoClip
-```
+Admins manage the server, operators manage jobs and bots, and viewers have read
+access. Users with linked Discord accounts can manage watch rules for servers
+they manage on Discord. Create API tokens under **Account**; see [API.md](API.md)
+for endpoints and authentication.
 
-Linux binaries need glibc 2.35 or newer: Ubuntu 22.04, Debian 12, Fedora 36 and later.
-
-The packages install the binary at `/usr/bin/discoclip`, the systemd unit, the
-`discoclip` service account and `/etc/discoclip/discoclip.toml`, and enable and start
-the service:
-
-```sh
-sudo apt install ./discoclip_0.1.0-1_amd64.deb     # Debian, Ubuntu
-sudo dnf install ./discoclip-0.1.0-1.x86_64.rpm    # Fedora, RHEL
-```
-
-The [installer](packaging/install.sh) does the same from a release archive on any Linux
-with systemd, after checking the download against `SHA256SUMS`:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/nickheyer/DiscoClip/main/packaging/install.sh | sudo sh -s -- --system
-```
-
-Without `--system` it installs the binary alone, under `/usr/local/bin` as root and
-`~/.local/bin` otherwise, on Linux and macOS. `--version v0.1.0` picks a release and
-`--archive` installs from a downloaded file.
-
-The [systemd unit](packaging/discoclip.service) carries the install steps by hand in
-its comments. It sets the data directory to `/var/lib/discoclip` and the cache to
-`/var/cache/discoclip`, as the images do, and stops the server with a signal and a
-timeout that lets the graceful shutdown finish. For hardware encoding on a host install,
-uncomment the device lines in the unit; the embedded build has the encoders, and
-`engine.ffmpeg` can name another build.
-
-### Shutdown and health
-
-A stop signal starts a graceful shutdown. The web listener stops taking connections
-and closes its live feeds, jobs under way get `engine.shutdown.grace_secs` to finish,
-and a job publishing its output finishes regardless. Jobs still running after the
-grace period are queued again and picked up at the next start; a live capture among
-them carries on from its recording as it stands, as if it had been stopped. Then the bots close
-their gateway connections, the database is checkpointed, and the process exits. During
-the shutdown `GET /healthz` answers `503` with `stopping`. A second signal exits at once.
-
-`GET /healthz` takes no credentials and answers `200` while the server works, `503` when
-a part has failed or the server is stopping. The container's health check and the
-readiness probe of an orchestrator use it.
-
-`GET /metrics` serves the Prometheus text exposition to anything that does not ask for
-HTML: job counts by status, resolver outcomes, outgoing requests, bots, cache, database,
-encoder, retention, backups and every health check. It takes the same credentials as the
-API, so Prometheus scrapes it with an API token, as in the
-[example scrape config](packaging/prometheus.yml). Browsers at the same address get the
-Metrics page.
-
-## Monitoring
-
-- **Health** checks the database, engine, storage, ffmpeg, the video encoder, subtitle fonts, bots, platform tests, retention and backups.
-- **Metrics** shows resource use, job counts, requests and storage, refreshed every five seconds.
-- **Server log** shows up to 5,000 retained lines with filters and live updates.
-- **Audit log** records who changed settings, applications, rules, profiles and access.
-
-Audit entries are stored with the associated changes. Secrets are redacted.
-Admins can filter and page through entries in the app or at `GET /api/audit`.

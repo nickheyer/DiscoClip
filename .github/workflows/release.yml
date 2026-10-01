@@ -409,7 +409,7 @@ jobs:
             echo "| \`${IMAGE}:${VERSION}\` | The embedded ffmpeg, in software |"
             echo "| \`${IMAGE}:${VERSION}-gpu\` | An ffmpeg built with NVENC, VA-API, Quick Sync and Vulkan, and the drivers for NVIDIA, Intel and AMD GPUs |"
             echo
-            echo "Both are built for amd64 and arm64. See the README's Deploying section for compose files and the installer."
+            echo "Both are built for amd64 and arm64. See the README's Deploying section for the compose file and the installer."
             echo
           } > notes.md
 

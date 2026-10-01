@@ -530,7 +530,7 @@ mod tests {
             let text = answer.to_string();
             assert!(text.contains(message), "{body}: {answer}");
         }
-        // Only the directories the test app was given are stored.
+        // Only what the test app was given is stored: its directories and its encoder.
         let (_, body) = admin.get("/api/settings").await;
         let stored: Vec<&str> = body["entries"]
             .as_array()
@@ -538,7 +538,15 @@ mod tests {
             .iter()
             .map(|e| e["key"].as_str().unwrap())
             .collect();
-        assert_eq!(stored, vec!["backup.dir", "engine.cache_dir", "local.dir"]);
+        assert_eq!(
+            stored,
+            vec![
+                "backup.dir",
+                "engine.cache_dir",
+                "engine.transcode.encoder",
+                "local.dir"
+            ]
+        );
         assert_eq!(app.state.engine.config().workers, 2);
 
         // An address already in use is refused before it is stored.

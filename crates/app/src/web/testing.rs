@@ -9,6 +9,7 @@ use axum::Router;
 use axum::body::Body;
 use axum::extract::ConnectInfo;
 use axum::http::{Method, Request, StatusCode, header};
+use discoclip_engine::config::EncoderChoice;
 use discoclip_engine::store::sqlite::SqliteStore;
 use serde_json::Value as Json;
 use serde_json::json;
@@ -115,6 +116,11 @@ pub async fn app_with_settings(
     }
     if settings.backup.dir == crate::backup::BackupConfig::default().dir {
         settings.backup.dir = test_dir("backups");
+    }
+    // Each app encodes in software, so the encoder it reports is the same on every
+    // machine, whatever hardware the embedded build could reach on this one.
+    if settings.engine.transcode.encoder == EncoderChoice::default() {
+        settings.engine.transcode.encoder = EncoderChoice::Software;
     }
     let mut tree = std::collections::BTreeMap::new();
     crate::config::json_leaves(&serde_json::to_value(&settings).unwrap(), "", &mut tree);

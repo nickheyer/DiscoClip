@@ -43,7 +43,7 @@ rand = "0.10"
 regex = "1"
 roxmltree = "0.20"
 reqwest = { version = "0.13", features = ["form", "json", "stream", "socks", "gzip", "brotli", "deflate", "zstd"] }
-wreq = { version = "=6.0.0-rc.31", features = ["stream", "socks", "gzip", "brotli", "deflate", "zstd", "prefix-symbols"] }
+wreq = { version = "=6.0.0-rc.31", features = ["stream", "socks", "gzip", "brotli", "deflate", "zstd"] }
 wreq-util = { version = "=3.0.0-rc.14" }
 rusqlite = { version = "0.40", features = ["bundled", "backup"] }
 rustls = "0.23"

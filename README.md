@@ -284,7 +284,7 @@ filters, renders through libplacebo on Vulkan, starts the server and stops it cl
 ### Releases
 
 Every [release](https://github.com/nickheyer/DiscoClip/releases) carries archives for
-Linux x86_64 and aarch64, macOS on Apple silicon and Intel, and Windows x86_64, plus
+Linux x86_64 and aarch64, macOS 11 or newer on Apple silicon and Intel, and Windows x86_64, plus
 `.deb` and `.rpm` packages for both Linux architectures, a `SHA256SUMS` file, and build
 provenance attestations for every file and image:
 

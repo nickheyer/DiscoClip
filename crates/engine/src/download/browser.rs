@@ -28,7 +28,7 @@ use super::segments::{Budget, mux_parts};
 use super::{DownloadContext, DownloadError, Downloaded, Downloader, mp4};
 use crate::browser::{self, Browser, BrowserError, Cdp, Event};
 use crate::event::{Progress, ProgressSender};
-use crate::ffmpeg::{Ffmpeg, summarize};
+use crate::ffmpeg::{Ffmpeg, ended, summarize};
 use crate::http::{Cookie, Http};
 use crate::media::LocalFile;
 use crate::resolve::{Variant, VariantKind};
@@ -719,11 +719,8 @@ impl RunEncoder {
         let stderr = self.stderr.await.unwrap_or_default();
         if !status.success() {
             return Err(process(format!(
-                "run encoder: exit status {}: {}",
-                status
-                    .code()
-                    .map(|c| c.to_string())
-                    .unwrap_or_else(|| "signal".into()),
+                "run encoder: {}: {}",
+                ended(status),
                 summarize(&String::from_utf8_lossy(&stderr))
             )));
         }

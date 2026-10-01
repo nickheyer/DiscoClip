@@ -2317,14 +2317,10 @@ mod ffmpeg_tests {
                 "lavfi",
                 "-i",
                 "sine=f=440:d=2",
+                "-vf",
+                "setparams=color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc",
                 "-pix_fmt",
                 "yuv420p10le",
-                "-color_primaries",
-                "bt2020",
-                "-color_trc",
-                "smpte2084",
-                "-colorspace",
-                "bt2020nc",
                 "-c:v",
                 "libx265",
                 "-x265-params",
@@ -2969,13 +2965,24 @@ mod ffmpeg_tests {
     async fn a_failing_hardware_encoder_falls_back_to_software() {
         let dir = temp_dir("fallback");
         let ffmpeg = tools(&dir).await;
+        // A VA-API encoder on a render node that does not exist fails on every machine,
+        // whatever GPU it has.
+        ffmpeg
+            .configure(
+                &dir.join("tools"),
+                None,
+                EncoderChoice::Software,
+                &dir.join("no-render-node"),
+            )
+            .await
+            .unwrap();
         let mut set = (*ffmpeg.encoders()).clone();
-        set.hardware = Some(Hardware::Nvenc);
+        set.hardware = Some(Hardware::Vaapi);
         set.by_codec.insert(
             "h264".into(),
             Encoder {
-                name: "h264_nvenc".into(),
-                hardware: Some(Hardware::Nvenc),
+                name: "h264_vaapi".into(),
+                hardware: Some(Hardware::Vaapi),
             },
         );
         ffmpeg.set_encoders(set);
@@ -3004,7 +3011,7 @@ mod ffmpeg_tests {
         assert!(
             out.notes
                 .iter()
-                .any(|n| n.starts_with("h264_nvenc failed") && n.contains("libx264")),
+                .any(|n| n.starts_with("h264_vaapi failed") && n.contains("libx264")),
             "{:?}",
             out.notes
         );
@@ -3035,20 +3042,19 @@ mod ffmpeg_tests {
         assert_eq!(set.for_codec(&VideoCodec::Vp9).unwrap().name, "libvpx-vp9");
         assert!(set.shortfall.is_none());
         assert!(set.summary().contains("libx264"));
-        // The embedded build has no NVENC: asking for it is answered with the shortfall.
         let set = ffmpeg
             .configure(
                 &cache,
                 None,
-                EncoderChoice::Nvenc,
-                Path::new("/dev/dri/renderD128"),
+                EncoderChoice::Vaapi,
+                &dir.join("no-render-node"),
             )
             .await
             .unwrap();
         assert_eq!(set.hardware, None);
         let shortfall = set.shortfall.clone().unwrap();
         assert!(
-            shortfall.contains("nvenc") && shortfall.contains("h264_nvenc"),
+            shortfall.contains("vaapi") && shortfall.contains("h264_vaapi"),
             "{shortfall}"
         );
         assert_eq!(set.for_codec(&VideoCodec::H264).unwrap().name, "libx264");

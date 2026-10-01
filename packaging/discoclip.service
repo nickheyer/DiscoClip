@@ -64,9 +64,8 @@ RestrictSUIDSGID=true
 RestrictRealtime=true
 LockPersonality=true
 ReadWritePaths=/var/lib/discoclip /var/cache/discoclip
-# For NVENC, VA-API or Quick Sync through an installed ffmpeg (engine.ffmpeg), let the
-# service reach the GPU. NVIDIA needs the device nodes; Intel and AMD need the render
-# node and its group.
+# For NVENC, VA-API or Quick Sync, let the service reach the GPU. NVIDIA needs the
+# device nodes; Intel and AMD need the render node and its group.
 # SupplementaryGroups=render video
 # DeviceAllow=/dev/dri rw
 # DeviceAllow=/dev/nvidiactl rw

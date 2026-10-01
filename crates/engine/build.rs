@@ -1,6 +1,4 @@
-//! Fetches statically linked FFmpeg and FFprobe builds for the compile target and embeds
-//! them, zstd-compressed, into the crate so the final binary carries its own media tools.
-
+//! Fetches portable FFmpeg and FFprobe builds
 use std::collections::HashMap;
 use std::env;
 use std::fs::{self, File};
@@ -39,13 +37,11 @@ struct Source {
 }
 
 fn source_for(target: &str) -> Option<Source> {
-    let jvs = |url: &'static str| Source {
-        version: "7.0.2",
-        exe_suffix: "",
-        downloads: vec![Download {
-            url,
-            archive: Archive::TarXz,
-        }],
+    // BtbN's GPL builds of the 8.1 release line, for Linux and Windows alike.
+    let btbn = |url: &'static str, archive: Archive, exe_suffix: &'static str| Source {
+        version: "8.1",
+        exe_suffix,
+        downloads: vec![Download { url, archive }],
     };
     let mac = |ffmpeg: &'static str, ffprobe: &'static str| Source {
         version: "release",
@@ -67,26 +63,21 @@ fn source_for(target: &str) -> Option<Source> {
     let os = parts.next().unwrap_or("");
     let env_abi = parts.next().unwrap_or("");
     match (arch, os, env_abi) {
-        ("x86_64", "linux", _) => Some(jvs(
-            "https://johnvansickle.com/ffmpeg/releases/ffmpeg-7.0.2-amd64-static.tar.xz",
+        ("x86_64", "linux", _) => Some(btbn(
+            "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz",
+            Archive::TarXz,
+            "",
         )),
-        ("aarch64", "linux", _) => Some(jvs(
-            "https://johnvansickle.com/ffmpeg/releases/ffmpeg-7.0.2-arm64-static.tar.xz",
+        ("aarch64", "linux", _) => Some(btbn(
+            "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-linuxarm64-gpl-8.1.tar.xz",
+            Archive::TarXz,
+            "",
         )),
-        ("armv7" | "arm", "linux", abi) if abi.ends_with("hf") => Some(jvs(
-            "https://johnvansickle.com/ffmpeg/releases/ffmpeg-7.0.2-armhf-static.tar.xz",
+        ("x86_64", "windows", _) => Some(btbn(
+            "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-win64-gpl-8.1.zip",
+            Archive::Zip,
+            ".exe",
         )),
-        ("i686" | "i586", "linux", _) => Some(jvs(
-            "https://johnvansickle.com/ffmpeg/releases/ffmpeg-7.0.2-i686-static.tar.xz",
-        )),
-        ("x86_64", "windows", _) => Some(Source {
-            version: "8.1",
-            exe_suffix: ".exe",
-            downloads: vec![Download {
-                url: "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-win64-gpl-8.1.zip",
-                archive: Archive::Zip,
-            }],
-        }),
         ("x86_64", "darwin", _) => Some(mac(
             "https://ffmpeg.martin-riedl.de/redirect/latest/macos/amd64/release/ffmpeg.zip",
             "https://ffmpeg.martin-riedl.de/redirect/latest/macos/amd64/release/ffprobe.zip",

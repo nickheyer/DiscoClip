@@ -86,6 +86,19 @@ done
 echo "healthz: $body"
 docker logs "$name" 2>&1 | grep -E 'encoding through|ffmpeg version' || true
 
+if [ "$variant" = cpu ]; then
+    say "transport stream through the embedded ffmpeg"
+    docker exec "$name" sh -euc '
+        ffmpeg=$(find /var/cache/discoclip/ffmpeg -type f -name ffmpeg | head -1)
+        [ -n "$ffmpeg" ] || { echo "no unpacked ffmpeg under /var/cache/discoclip/ffmpeg" >&2; exit 1; }
+        dir=$(dirname "$ffmpeg")
+        "$dir/ffmpeg" -hide_banner -loglevel error -y \
+            -f lavfi -i testsrc2=s=128x72:r=10:d=1 -f lavfi -i sine=d=1 \
+            -c:v libx264 -preset ultrafast -c:a aac -f mpegts /tmp/smoke.ts
+        "$dir/ffprobe" -v error -show_entries format=duration -of csv=p=0 /tmp/smoke.ts
+    ' || fail "the embedded ffmpeg could not read a transport stream on the image"
+fi
+
 say "stop"
 docker stop -t 75 "$name" >/dev/null
 code=$(docker wait "$name")

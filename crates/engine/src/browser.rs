@@ -57,8 +57,8 @@ const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 const VERSION_TIMEOUT: Duration = Duration::from_secs(15);
 /// How long a closing browser gets before it is killed.
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
-/// The lines of the browser's stderr kept for an error report.
-const STDERR_TAIL: usize = 30;
+/// The lines of the browser's stderr kept for an error report
+const STDERR_TAIL: usize = 60;
 /// Events waiting for the capture to take them before the reader stops reading.
 const EVENT_QUEUE: usize = 4096;
 

@@ -528,11 +528,8 @@ impl Ffmpeg {
         let stderr = tail(&stderr_bytes);
         if !status.success() {
             return Err(FfmpegError::Process(format!(
-                "exit status {}: {}",
-                status
-                    .code()
-                    .map(|c| c.to_string())
-                    .unwrap_or_else(|| "signal".into()),
+                "{}: {}",
+                ended(status),
                 summarize(&stderr)
             )));
         }
@@ -642,11 +639,8 @@ impl Ffmpeg {
         let stopped_on_request = asked && status.code() == Some(255);
         if !(status.success() || stopped_on_request) {
             return Err(FfmpegError::Process(format!(
-                "exit status {}: {}",
-                status
-                    .code()
-                    .map(|c| c.to_string())
-                    .unwrap_or_else(|| "signal".into()),
+                "{}: {}",
+                ended(status),
                 summarize(&stderr)
             )));
         }
@@ -1294,6 +1288,14 @@ fn install(exe: &Path, payload: &[u8]) -> Result<(), FfmpegError> {
 fn tail(bytes: &[u8]) -> String {
     let start = bytes.len().saturating_sub(STDERR_TAIL);
     String::from_utf8_lossy(&bytes[start..]).into_owned()
+}
+
+/// How a tool ended, for a message: its exit status, or the signal that took it.
+pub(crate) fn ended(status: std::process::ExitStatus) -> String {
+    match status.code() {
+        Some(code) => format!("exit status {code}"),
+        None => status.to_string(),
+    }
 }
 
 pub(crate) fn summarize(stderr: &str) -> String {

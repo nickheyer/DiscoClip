@@ -173,12 +173,14 @@ other files are taken as they are. `local.target` covers web submissions and
 under `discord.guilds` by server id. Discord upload limits follow the server's boost
 level under `discord.limits`; Nitro raises limits for people, not for bots.
 
-Video is encoded with the embedded ffmpeg build in software. Set `engine.ffmpeg` to an
-installed build and `engine.transcode.encoder` to `auto` or a family to use NVENC,
-VA-API, Quick Sync, AMF, VideoToolbox or V4L2 encoders; the `gpu` container image comes
-with such a build and the setting made. Each encoder is tried at
-startup and when the settings change. The Health page reports the encoder in use. A
-hardware encode that fails during a job is redone in software and the job's log says so.
+Video is encoded with the embedded ffmpeg build. `engine.transcode.encoder` is `auto` by
+default: the first of NVENC, Quick Sync, VA-API, AMF, VideoToolbox and V4L2 whose
+encoders run on the machine, else software. A family's name asks for that family, and
+`software` keeps to libx264 and its kin. Set `engine.ffmpeg` to use another installed
+build; the `gpu` container image comes with one built against its drivers and the
+setting made. Each encoder is tried at startup and when the settings change. The Health
+page reports the encoder in use. A hardware encode that fails during a job is redone in
+software and the job's log says so.
 
 ## Accounts
 
@@ -318,8 +320,8 @@ The [systemd unit](packaging/discoclip.service) carries the install steps by han
 its comments. It sets the data directory to `/var/lib/discoclip` and the cache to
 `/var/cache/discoclip`, as the images do, and stops the server with a signal and a
 timeout that lets the graceful shutdown finish. For hardware encoding on a host install,
-set `engine.ffmpeg` to an ffmpeg with the encoders and uncomment the device lines in
-the unit.
+uncomment the device lines in the unit; the embedded build has the encoders, and
+`engine.ffmpeg` can name another build.
 
 ### Shutdown and health
 

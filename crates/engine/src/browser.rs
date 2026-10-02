@@ -50,7 +50,7 @@ const PLACES: [&str; 12] = [
 ];
 
 /// How long the browser may take to print its DevTools address.
-const LAUNCH_TIMEOUT: Duration = Duration::from_secs(30);
+const LAUNCH_TIMEOUT: Duration = Duration::from_secs(120);
 /// How long one command may take to be answered.
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 /// How long `--version` may take.
@@ -479,8 +479,13 @@ impl Browser {
         let kept = tail.clone();
         tokio::spawn(async move {
             let mut found = Some(found);
-            let mut lines = BufReader::new(stderr).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
+            let mut stderr = BufReader::new(stderr);
+            let mut bytes = Vec::new();
+            while matches!(stderr.read_until(b'\n', &mut bytes).await, Ok(read) if read > 0) {
+                let line = String::from_utf8_lossy(&bytes)
+                    .trim_end_matches(['\n', '\r'])
+                    .to_string();
+                bytes.clear();
                 if let Some(address) = devtools_endpoint(&line)
                     && let Some(sender) = found.take()
                 {
@@ -503,28 +508,42 @@ impl Browser {
                 format!(": {text}")
             }
         };
+        let failed = |what: String| -> BrowserError {
+            BrowserError::Launch(format!("{} {what}{}", executable.display(), said(&tail)))
+        };
+        let exited = |status: std::io::Result<std::process::ExitStatus>| -> String {
+            let status = status
+                .map(|s| s.to_string())
+                .unwrap_or_else(|e| e.to_string());
+            format!("exited before it was ready ({status})")
+        };
         let endpoint = tokio::select! {
             found = tokio::time::timeout(LAUNCH_TIMEOUT, endpoint) => match found {
                 Ok(Ok(address)) => address,
-                Ok(Err(_)) | Err(_) => {
+                Ok(Err(_)) => {
+                    // Its stderr closed without the address: the browser is on its way out.
+                    let what = match tokio::time::timeout(CLOSE_TIMEOUT, child.wait()).await {
+                        Ok(status) => exited(status),
+                        Err(_) => {
+                            let _ = child.kill().await;
+                            "closed its stderr without printing a DevTools address".to_string()
+                        }
+                    };
+                    let _ = tokio::fs::remove_dir_all(profile).await;
+                    return Err(failed(what));
+                }
+                Err(_) => {
                     let _ = child.kill().await;
                     let _ = tokio::fs::remove_dir_all(profile).await;
-                    return Err(BrowserError::Launch(format!(
-                        "{} printed no DevTools address within {}s{}",
-                        executable.display(),
-                        LAUNCH_TIMEOUT.as_secs(),
-                        said(&tail)
+                    return Err(failed(format!(
+                        "printed no DevTools address within {}s",
+                        LAUNCH_TIMEOUT.as_secs()
                     )));
                 }
             },
             status = child.wait() => {
                 let _ = tokio::fs::remove_dir_all(profile).await;
-                let status = status.map(|s| s.to_string()).unwrap_or_else(|e| e.to_string());
-                return Err(BrowserError::Launch(format!(
-                    "{} exited before it was ready ({status}){}",
-                    executable.display(),
-                    said(&tail)
-                )));
+                return Err(failed(exited(status)));
             }
         };
         let (cdp, events) = match Cdp::connect(&endpoint).await {
@@ -726,6 +745,30 @@ mod tests {
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.8010.36 Safari/537.36"
         );
         assert_eq!(version.numbers(), ("153.0.8010.36".into(), "153".into()));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_browser_that_exits_is_reported_with_its_status_and_output() {
+        use std::os::unix::fs::PermissionsExt;
+        let executable = dir("fake").join("chromium");
+        std::fs::write(
+            &executable,
+            b"#!/bin/sh\nprintf 'no bus \\377 here\\n' >&2\nexit 3\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let profile = dir("profile");
+        let message = match Browser::launch(&executable, &[], &profile, None).await {
+            Ok(_) => panic!("a browser that exits at once was launched"),
+            Err(error) => error.to_string(),
+        };
+        assert!(
+            message.contains("exited before it was ready (exit status: 3)"),
+            "{message}"
+        );
+        assert!(message.contains("no bus \u{FFFD} here"), "{message}");
+        assert!(!profile.exists());
     }
 
     #[tokio::test]

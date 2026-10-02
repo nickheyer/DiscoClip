@@ -15,25 +15,20 @@ env:
   CARGO_INCREMENTAL: "0"
 
 jobs:
+  # The tag names the release: v0.2.0 releases 0.2.0, whatever Cargo.toml says.
   verify:
-    name: Check the tag
+    name: Release version
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.version.outputs.version }}
       prerelease: ${{ steps.version.outputs.prerelease }}
       image: ${{ steps.version.outputs.image }}
     steps:
-      - uses: actions/checkout@v5
-
       - id: version
         env:
           OWNER: ${{ github.repository_owner }}
         run: |
-          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::the tag $GITHUB_REF_NAME does not match version $version in Cargo.toml"
-            exit 1
-          fi
+          version=${GITHUB_REF_NAME#v}
           {
             echo "version=$version"
             case "$version" in
@@ -77,6 +72,8 @@ jobs:
           echo "needs glibc $(objdump -T out/discoclip | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)"
 
       - name: Archive
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
         run: packaging/archive.sh out/discoclip linux-${{ matrix.arch }} dist
 
       - uses: actions/upload-artifact@v4
@@ -111,6 +108,8 @@ jobs:
           nfpm --version
 
       - name: Package
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
         run: |
           for pair in x86_64:amd64 aarch64:arm64; do
             arch=${pair%%:*}
@@ -184,6 +183,8 @@ jobs:
           target/release/discoclip --version
 
       - name: Archive
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
         run: packaging/archive.sh target/release/discoclip macos-${{ matrix.arch }} dist
 
       - uses: actions/upload-artifact@v4
@@ -220,6 +221,8 @@ jobs:
 
       - name: Archive
         shell: bash
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
         run: packaging/archive.sh target/release/discoclip.exe windows-x86_64 dist
 
       - uses: actions/upload-artifact@v4

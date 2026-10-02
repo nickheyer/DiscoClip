@@ -3,8 +3,9 @@
 #
 #   packaging/package.sh <binary> <amd64|arm64> <outdir> [deb|rpm ...]
 #
-# The version comes from Cargo.toml. Without packagers named, both are built. nfpm is
-# needed: https://nfpm.goreleaser.com
+# The version is $VERSION when set (the release workflow passes the tag's), otherwise
+# Cargo.toml's. Without packagers named, both are built. nfpm is needed:
+# https://nfpm.goreleaser.com
 
 set -eu
 
@@ -21,7 +22,7 @@ esac
 command -v nfpm >/dev/null 2>&1 || { echo "package.sh: nfpm is needed: https://nfpm.goreleaser.com" >&2; exit 1; }
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
-version=$(sed -n 's/^version = "\(.*\)"/\1/p' "$root/Cargo.toml" | head -1)
+version=${VERSION:-$(sed -n 's/^version = "\(.*\)"/\1/p' "$root/Cargo.toml" | head -1)}
 [ -n "$version" ] || { echo "package.sh: no version in Cargo.toml" >&2; exit 1; }
 mkdir -p "$outdir"
 outdir=$(CDPATH='' cd -- "$outdir" && pwd)

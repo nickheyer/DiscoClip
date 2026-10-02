@@ -4,9 +4,9 @@
 #   packaging/archive.sh <binary> <os-arch> <outdir>
 #
 # <os-arch> names the archive: linux-x86_64, linux-aarch64, macos-aarch64, macos-x86_64
-# or windows-x86_64. The version comes from Cargo.toml. Linux and macOS get a .tar.gz
-# with the systemd unit, the installer and the examples beside the binary; Windows gets
-# a .zip made with 7z.
+# or windows-x86_64. The version is $VERSION when set (the release workflow passes the
+# tag's), otherwise Cargo.toml's. Linux and macOS get a .tar.gz with the systemd unit,
+# the installer and the examples beside the binary; Windows gets a .zip made with 7z.
 
 set -eu
 
@@ -15,7 +15,7 @@ osarch=${2:?os-arch}
 outdir=${3:?outdir}
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
-version=$(sed -n 's/^version = "\(.*\)"/\1/p' "$root/Cargo.toml" | head -1)
+version=${VERSION:-$(sed -n 's/^version = "\(.*\)"/\1/p' "$root/Cargo.toml" | head -1)}
 [ -n "$version" ] || { echo "no version in Cargo.toml" >&2; exit 1; }
 
 name="discoclip-v${version}-${osarch}"

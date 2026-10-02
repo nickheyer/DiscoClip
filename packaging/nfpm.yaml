@@ -2,7 +2,7 @@
 # `make deb` and `make rpm` here and for every Linux architecture in the release
 # workflow, with the binary staged at target/package/discoclip and the environment:
 #
-#   VERSION  the package version, from Cargo.toml
+#   VERSION  the package version: the tag's in the release workflow, Cargo.toml's locally
 #   ARCH     amd64 or arm64
 
 name: discoclip

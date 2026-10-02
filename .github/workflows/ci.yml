@@ -53,11 +53,10 @@ jobs:
       - name: Build the tests
         run: cargo test --workspace --locked --no-run
 
-      - name: Allow Chromium its user namespaces
-        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-
-      - name: Start Chromium once so the tests find it warm
-        run: timeout 300 chromium --headless=new --disable-gpu --no-first-run --user-data-dir="$(mktemp -d)" --dump-dom about:blank > /dev/null
+      - name: Take the runner's snapshot Chromium off PATH so the tests find Google Chrome
+        run: |
+          sudo rm -f /usr/bin/chromium /usr/bin/chromium-browser
+          google-chrome --version
 
       - name: Test
         run: cargo test --workspace --locked

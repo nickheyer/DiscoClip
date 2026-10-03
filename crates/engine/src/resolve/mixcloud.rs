@@ -560,6 +560,7 @@ impl Resolver for MixcloudResolver {
             media: &[MediaKind::Audio],
             tags: &[Tag::Music],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &[
                 "https://www.mixcloud.com/dholbach/cryptkeeper/",
                 "https://www.mixcloud.com/dholbach/",

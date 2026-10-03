@@ -231,6 +231,8 @@ pub struct PlatformCoverage {
     /// What kind of place it is: the presets it belongs to.
     pub tags: &'static [Tag],
     pub session: SessionSupport,
+    /// Whether profiles take the platform's links without naming it
+    pub on_by_default: bool,
     pub fixtures: Vec<FixtureResult>,
     #[serde(flatten)]
     pub summary: PlatformSummary,
@@ -1225,6 +1227,7 @@ fn assemble(
         media: platform.media,
         tags: platform.tags,
         session: platform.session,
+        on_by_default: platform.on_by_default,
         fixtures: links.iter().map(LinkRow::view).collect(),
         summary: summarize(links, last_job_at),
         running,
@@ -1345,6 +1348,7 @@ mod tests {
             media: &[MediaKind::Video],
             tags: &[],
             session: SessionSupport::None,
+            on_by_default: true,
             examples,
         }
     }
@@ -1384,8 +1388,8 @@ mod tests {
     async fn shipped_links_are_seeded_once_and_stay_removed_once_removed() {
         let store = store().await;
         let shipped = platform(&["https://p/a", "https://p/b"]);
-        assert_eq!(store.seed(&[shipped.clone()]).await.unwrap(), 2);
-        assert_eq!(store.seed(&[shipped.clone()]).await.unwrap(), 0);
+        assert_eq!(store.seed(std::slice::from_ref(&shipped)).await.unwrap(), 2);
+        assert_eq!(store.seed(std::slice::from_ref(&shipped)).await.unwrap(), 0);
         let links = store.links("p").await.unwrap();
         assert_eq!(links.len(), 2);
         assert!(
@@ -1604,7 +1608,7 @@ mod tests {
         let store = store().await;
         store.seed(&[platform(&["https://p/a"])]).await.unwrap();
         assert!(
-            store.learn("p", "https://p/a").await.unwrap() == false,
+            !store.learn("p", "https://p/a").await.unwrap(),
             "known already"
         );
         for n in 1..=4 {

@@ -318,6 +318,7 @@ impl Resolver for TelegramResolver {
             media: &[MediaKind::Video, MediaKind::Image],
             tags: &[Tag::Social, Tag::Images, Tag::Files],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &["https://t.me/telegram/459", "https://t.me/durov/536"],
         }
     }

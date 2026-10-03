@@ -142,6 +142,7 @@ impl Resolver for KickResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Basic, Tag::Live],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &["https://kick.com/xqc/clips/clip_01H811MXG4FBR62FXPE1AXABDH"],
         }
     }

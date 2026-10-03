@@ -598,6 +598,7 @@ impl Resolver for SteamResolver {
             media: &[MediaKind::Video, MediaKind::Image],
             tags: &[Tag::Video, Tag::Images],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://store.steampowered.com/app/105600/Terraria/",
                 "https://store.steampowered.com/app/105600/?movie=81300",

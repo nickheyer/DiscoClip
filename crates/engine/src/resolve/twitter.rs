@@ -78,6 +78,7 @@ impl Resolver for TwitterResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Basic, Tag::Social],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &["https://x.com/SpaceX/status/1732824684683784516"],
         }
     }

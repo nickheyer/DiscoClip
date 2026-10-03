@@ -246,6 +246,7 @@ impl Resolver for CoubResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Video, Tag::Images],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &["https://coub.com/view/5u5n1"],
         }
     }

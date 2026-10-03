@@ -461,6 +461,7 @@ impl Resolver for KalturaResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Players],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://cdnapisec.kaltura.com/p/243342/sp/24334200/playManifest/entryId/1_sf5ovm7u/format/url/protocol/https",
                 "https://www.kaltura.com/index.php/extwidget/preview/partner_id/1770401/uiconf_id/37307382/entry_id/0_58u8kme7/embed/iframe",

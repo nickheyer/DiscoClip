@@ -128,6 +128,7 @@ impl Resolver for BusinessinsiderResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::News],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://www.businessinsider.com/how-much-radiation-youre-exposed-to-in-everyday-life-2016-6",
                 "https://www.businessinsider.com/how-wildlife-poaching-works-according-to-an-undercover-investigator-2026-8",

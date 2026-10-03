@@ -253,6 +253,7 @@ impl Resolver for BongacamsResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Nsfw, Tag::Live],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &["https://bongacams.com/", "https://bongacams.com/female"],
         }
     }

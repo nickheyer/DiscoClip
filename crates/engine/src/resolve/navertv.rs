@@ -732,6 +732,7 @@ impl Resolver for NaverTvResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Video, Tag::Live],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://tv.naver.com/v/67838091",
                 "https://tv.naver.com/v/2660764?playlistNo=188601",

@@ -228,6 +228,7 @@ impl Resolver for TwentyMinResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::News],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://www.20min.ch/video/adoptions-serie-dachte-mami-liebt-mich-nicht-adoptierte-suchen-antworten-103468193",
                 "https://videoplayer.20min.ch/?videoId=uv10924877&lang=de",

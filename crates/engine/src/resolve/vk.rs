@@ -16,7 +16,7 @@ use super::{
     timestamp_hint,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::MediaKind;
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "vk";
 const SITE: &str = "https://vk.com/";
@@ -282,16 +282,41 @@ pub fn decode_body(bytes: &[u8], content_type: Option<&str>) -> String {
 
 /// The HLS manifest a player's parameters name, which is the stream the site's own
 /// player loads, as the one variant.
+/// The family the player loads, the HLS master from hls or hls_ondemand, else the url144 to url2160 files
 pub fn variants_of(params: &Value, duration: Option<Duration>, live: bool) -> Vec<Variant> {
-    let Some(url) = params["hls"].as_str().and_then(absolute) else {
-        return Vec::new();
-    };
-    let mut v = Variant::new(url, VariantKind::Hls);
-    v.duration = duration;
-    v.live = live;
-    v.format_id = Some("hls".into());
-    v.headers = vec![("referer".to_string(), SITE.to_string())];
-    vec![v]
+    let referer = vec![("referer".to_string(), SITE.to_string())];
+    if let Some(url) = ["hls", "hls_ondemand"]
+        .into_iter()
+        .find_map(|key| params[key].as_str())
+        .and_then(absolute)
+    {
+        let mut v = Variant::new(url, VariantKind::Hls);
+        v.duration = duration;
+        v.live = live;
+        v.format_id = Some("hls".into());
+        v.headers = referer;
+        return vec![v];
+    }
+    let mut files: Vec<Variant> = params
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter_map(|(key, value)| {
+            let height: u32 = key.strip_prefix("url")?.parse().ok()?;
+            let mut v = Variant::file(value.as_str().and_then(absolute)?);
+            v.container = Some(Container::Mp4);
+            v.video = Some(VideoCodec::H264);
+            v.audio = Some(AudioCodec::Aac);
+            v.height = Some(height);
+            v.duration = duration;
+            v.format_id = Some(key.clone());
+            v.label = Some(format!("{height}p"));
+            v.headers = referer.clone();
+            Some(v)
+        })
+        .collect();
+    files.sort_by_key(|v| std::cmp::Reverse(v.height));
+    files
 }
 
 #[async_trait]
@@ -306,10 +331,11 @@ impl Resolver for VkResolver {
             name: "VK",
             hosts: &["vk.com", "vk.ru", "vkvideo.ru", "vkontakte.ru"],
             features: &["videos", "clips", "embeds", "live", "private share links"],
-            formats: &["hls"],
+            formats: &["hls", "mp4"],
             media: &[MediaKind::Video],
             tags: &[Tag::Social, Tag::Video, Tag::Live],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &[
                 "https://vk.com/video-77521_162222515",
                 "https://vk.com/video_ext.php?oid=-116782009&id=456239250&hash=4fa87c0d3d44c087",
@@ -668,6 +694,39 @@ mod tests {
         ));
         let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
         assert_eq!(resolved.uploader.as_deref(), Some("Noize MC"));
+    }
+
+    #[test]
+    fn on_demand_manifests_and_files_are_read_when_the_player_lists_them() {
+        let on_demand = json!({
+            "hls_ondemand": "https://vkvd419.okcdn.ru/expires/1/ondemand/hls4_3003336100425.m3u8",
+            "url360": "https://vkvd419.okcdn.ru/?expires=1&id=3003336100425&ct=0"
+        });
+        let variants = variants_of(&on_demand, Some(Duration::from_secs(4832)), false);
+        crate::resolve::assert_one_family(&variants);
+        assert_eq!(variants.len(), 1);
+        assert_eq!(variants[0].kind, VariantKind::Hls);
+        assert!(variants[0].url.as_str().contains("ondemand/hls4"));
+        assert_eq!(variants[0].duration, Some(Duration::from_secs(4832)));
+
+        let files_only = json!({
+            "url360": "https://vkvd419.okcdn.ru/?expires=1&id=3003336100425&ct=0",
+            "url720": "https://vkvd419.okcdn.ru/?expires=1&id=3003336100425&ct=2",
+            "urlx": "https://vkvd419.okcdn.ru/?expires=1&id=3003336100425&ct=9"
+        });
+        let variants = variants_of(&files_only, None, false);
+        crate::resolve::assert_one_family(&variants);
+        assert_eq!(variants.len(), 2);
+        assert_eq!(variants[0].kind, VariantKind::File);
+        assert_eq!(variants[0].height, Some(720));
+        assert_eq!(variants[0].format_id.as_deref(), Some("url720"));
+        assert_eq!(variants[0].label.as_deref(), Some("720p"));
+        assert_eq!(variants[1].height, Some(360));
+        assert_eq!(
+            variants[1].headers[0],
+            ("referer".to_string(), SITE.to_string())
+        );
+        assert!(variants_of(&json!({"jpg": "https://x.test/a.jpg"}), None, false).is_empty());
     }
 
     #[tokio::test]

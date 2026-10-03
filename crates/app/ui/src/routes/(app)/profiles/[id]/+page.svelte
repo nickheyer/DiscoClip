@@ -43,7 +43,10 @@
 	const CHAIN =
 		"a member's profile falls back to the channel's, a channel's to the Discord server's, and a Discord server's to the global default";
 	const LIMITS_HELP = `A blank limit takes its value from ${ONE_LEVEL_UP}: ${CHAIN}. Each placeholder shows this DiscoClip server's own limit, which caps every profile.`;
-	const ACCESS_HELP = `Inherit keeps each platform as ${ONE_LEVEL_UP} has it: ${CHAIN}.`;
+	const ACCESS_HELP = `Inherit keeps each platform as ${ONE_LEVEL_UP} has it: ${CHAIN}. All platforms on leaves a platform marked Off until turned on as it is: an exception set to Always on, or a chosen preset that holds it, turns it on.`;
+	/** Said of a platform the engine leaves off until a profile names it */
+	const OFF_UNTIL_NAMED =
+		'Off until turned on: its links flood a chat, so profiles leave it off until an exception or a chosen preset names it.';
 
 	type Result = 'on' | 'off' | 'inherit';
 	const RESULT: Record<Result, { label: string; tone: Tone; title: string }> = {
@@ -60,7 +63,7 @@
 		inherit: {
 			label: 'Inherit',
 			tone: 'secondary',
-			title: `The platform stays as ${ONE_LEVEL_UP} has it.`
+			title: `The platform stays as ${ONE_LEVEL_UP} has it. Under the global default it stays as the server has it out of the box: on, unless it is off until turned on.`
 		}
 	};
 
@@ -185,11 +188,18 @@
 		new Set(presets.filter((p) => chosenPresets.includes(p.id)).flatMap((p) => p.platforms))
 	);
 
+	/** The platforms the engine leaves off until a profile names them */
+	const offUntilNamed = $derived(
+		new Set(coverage.filter((p) => !p.on_by_default).map((p) => p.id))
+	);
+
 	function resultFor(platformId: string): Result {
 		const override = overrides[platformId];
 		if (override !== undefined) return override ? 'on' : 'off';
 		if (access === 'presets') return presetPlatforms.has(platformId) ? 'on' : 'off';
-		return access === 'inherit' ? 'inherit' : access === 'enabled' ? 'on' : 'off';
+		if (access === 'disabled') return 'off';
+		if (access === 'enabled') return offUntilNamed.has(platformId) ? 'inherit' : 'on';
+		return 'inherit';
 	}
 
 	function setOverride(platformId: string, value: 'inherit' | 'on' | 'off') {
@@ -519,7 +529,14 @@
 									{@const override = overrides[platform.id]}
 									<tr>
 										<td class="align-top">
-											<p class="font-medium">{platform.name}</p>
+											<p class="flex flex-wrap items-center gap-2 font-medium">
+												{platform.name}
+												{#if !platform.on_by_default}
+													<span title={OFF_UNTIL_NAMED}>
+														<Status label="Off until turned on" tone="warning" />
+													</span>
+												{/if}
+											</p>
 											<p class="flex flex-wrap items-baseline gap-x-2 text-sm text-surface-600-400">
 												{#if platform.hosts.length > 0}
 													<span class="font-mono text-xs break-words"

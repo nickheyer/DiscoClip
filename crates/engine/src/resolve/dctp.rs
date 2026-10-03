@@ -103,6 +103,7 @@ impl Resolver for DctpResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Video],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &["http://www.dctp.tv/filme/videoinstallation-fuer-eine-kaufhausfassade/"],
         }
     }

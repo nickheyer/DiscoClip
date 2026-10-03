@@ -598,6 +598,7 @@ impl Resolver for AbcResolver {
             media: &[MediaKind::Video, MediaKind::Audio],
             tags: &[Tag::News, Tag::Video],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &[
                 "https://www.abc.net.au/news/2026-09-13/wa-government-to-build-new-rental-apartment-in-cbd/107148268",
                 "https://www.abc.net.au/listen/programs/the-followers-madness-of-two/presents-followers-madness-of-two/105697646",

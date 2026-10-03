@@ -797,6 +797,7 @@ impl Resolver for PornhubResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Nsfw, Tag::Video],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &[
                 "https://www.pornhub.com/view_video.php?viewkey=6a50ebd7cb3ff",
                 "https://www.pornhub.com/embed/6a50ebd7cb3ff",

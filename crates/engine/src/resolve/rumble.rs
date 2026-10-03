@@ -570,6 +570,7 @@ impl Resolver for RumbleResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Video, Tag::Live],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &[
                 "https://rumble.com/v6rrcbh-channel-update-vid.html",
                 "https://rumble.com/embed/v6pkg2n/",

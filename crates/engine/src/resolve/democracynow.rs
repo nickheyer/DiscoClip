@@ -1,5 +1,6 @@
 //! Democracy Now! shows and stories, through the JSON block each page hands its player:
-//! the high-resolution video file with its captions.
+//! the high-resolution video file, the standard one, or the audio alone of the oldest
+//! shows, with its captions.
 
 use std::sync::LazyLock;
 
@@ -69,11 +70,12 @@ impl Resolver for DemocracynowResolver {
             id: PLATFORM,
             name: "Democracy Now!",
             hosts: &["democracynow.org"],
-            features: &["shows", "videos"],
-            formats: &["mp4"],
-            media: &[MediaKind::Video],
+            features: &["shows", "videos", "audio"],
+            formats: &["mp4", "m4a", "mp3"],
+            media: &[MediaKind::Video, MediaKind::Audio],
             tags: &[Tag::News],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "http://www.democracynow.org/shows/2015/7/3",
                 "http://www.democracynow.org/2015/7/3/this_flag_comes_down_today_bree",
@@ -105,10 +107,14 @@ impl Resolver for DemocracynowResolver {
             .as_str()
             .and_then(clean_title)
             .ok_or_else(|| ResolveError::malformed(url, "the player JSON names no title"))?;
-        let Some(mut media_url) = util::url_of(&data["high_res_video"], Some(url)) else {
+        // The high-resolution file, the standard one when there is none, and the audio alone of the oldest shows
+        let Some((source, mut media_url)) = ["high_res_video", "video", "audio"]
+            .into_iter()
+            .find_map(|key| util::url_of(&data[key], Some(url)).map(|found| (key, found)))
+        else {
             return Err(ResolveError::unavailable(
                 url,
-                "the page offers no high-resolution video",
+                "the page offers no video or audio",
             ));
         };
         media_url.set_query(None);
@@ -129,11 +135,30 @@ impl Resolver for DemocracynowResolver {
             .as_deref()
             .and_then(Container::from_extension)
             .or_else(|| extension.clone().map(Container::Other));
-        variant.video = Some(VideoCodec::H264);
-        variant.audio = Some(AudioCodec::Aac);
-        variant.format_id = Some("high_res_video".to_string());
-        variant.label = Some("high resolution".to_string());
-        let mut resolved = Resolved::new(PLATFORM);
+        if source == "audio" {
+            variant.audio_only = true;
+            variant.audio = Some(match variant.container {
+                Some(Container::Mp3) => AudioCodec::Mp3,
+                _ => AudioCodec::Aac,
+            });
+        } else {
+            variant.video = Some(VideoCodec::H264);
+            variant.audio = Some(AudioCodec::Aac);
+        }
+        variant.format_id = Some(source.to_string());
+        variant.label = Some(
+            match source {
+                "high_res_video" => "high resolution",
+                "video" => "standard",
+                _ => "audio",
+            }
+            .to_string(),
+        );
+        let mut resolved = if source == "audio" {
+            Resolved::of(PLATFORM, MediaKind::Audio)
+        } else {
+            Resolved::new(PLATFORM)
+        };
         resolved.variants.push(variant);
         if let Some(caption) = util::url_of(&data["caption_file"], Some(url)) {
             resolved.subtitles.push(SubtitleTrack {
@@ -270,23 +295,79 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn shows_without_a_high_resolution_video_say_so() {
-        let page = r#"<html><head><meta property="og:description" content="Democracy Now! for September 11, 2001."></head><body>
+    async fn shows_fall_back_to_the_standard_video_and_then_the_audio() {
+        let standard = r#"<html><body><script type="text/json" id="player-data">
+        {"video":"https://democracynow.cachefly.net/democracynow/flash/dn2015-0703-001.mp4","high_res_video":"","audio":"https://democracynow.cachefly.net/democracynow/audio-m4a/dn2015-0703-001.m4a","title":"Daily Show for July 03, 2015","locale":"en"}
+        </script></body></html>"#;
+        let audio = r#"<html><head><meta property="og:description" content="Democracy Now! for September 11, 2001."></head><body>
         <script type="text/json" id="player-data">
         {"video":"","high_res_video":"","audio":"https://www.archive.org/download/dn2001-0911/dn2001-0911-1_64kb.mp3","image":"https://assets.democracynow.org/assets/default.jpg","title":"Democracy Now! for September 11, 2001","locale":"en"}
         </script></body></html>"#;
+        let nothing = r#"<html><body><script type="text/json" id="player-data">
+        {"video":"","high_res_video":"","audio":"","title":"Daily Show for July 04, 2015","locale":"en"}
+        </script></body></html>"#;
         let mut fixture = Fixture::new(PLATFORM, None);
+        fixture.exchanges.push(get(
+            "https://www.democracynow.org/shows/2015/7/3",
+            200,
+            "text/html",
+            standard.into(),
+        ));
         fixture.exchanges.push(get(
             "https://www.democracynow.org/shows/2001/9/11",
             200,
             "text/html",
-            page.into(),
+            audio.into(),
+        ));
+        fixture.exchanges.push(get(
+            "https://www.democracynow.org/shows/2015/7/4",
+            200,
+            "text/html",
+            nothing.into(),
         ));
         let resolver = DemocracynowResolver::new(Http::replay(fixture));
-        let url = Url::parse("https://www.democracynow.org/shows/2001/9/11").unwrap();
-        let error = resolver.resolve(&url).await.unwrap_err();
+
+        let resolved = resolver
+            .resolve(&Url::parse("https://www.democracynow.org/shows/2015/7/3").unwrap())
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
+        assert_eq!(resolved.media, MediaKind::Video);
+        crate::resolve::assert_one_family(&resolved.variants);
+        assert_eq!(resolved.variants.len(), 1);
+        let video = &resolved.variants[0];
+        assert_eq!(
+            video.url.as_str(),
+            "https://democracynow.cachefly.net/democracynow/flash/dn2015-0703-001.mp4"
+        );
+        assert_eq!(video.format_id.as_deref(), Some("video"));
+        assert_eq!(video.label.as_deref(), Some("standard"));
+        assert!(!video.audio_only);
+        assert_eq!(resolved.id.as_deref(), Some("2015-0703-001"));
+
+        let resolved = resolver
+            .resolve(&Url::parse("https://www.democracynow.org/shows/2001/9/11").unwrap())
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
+        assert_eq!(resolved.media, MediaKind::Audio);
+        assert_eq!(resolved.variants.len(), 1);
+        let track = &resolved.variants[0];
+        assert!(track.audio_only);
+        assert_eq!(track.container, Some(Container::Mp3));
+        assert_eq!(track.audio, Some(AudioCodec::Mp3));
+        assert_eq!(track.video, None);
+        assert_eq!(track.format_id.as_deref(), Some("audio"));
+        assert_eq!(track.label.as_deref(), Some("audio"));
+
+        let error = resolver
+            .resolve(&Url::parse("https://www.democracynow.org/shows/2015/7/4").unwrap())
+            .await
+            .unwrap_err();
         assert!(
-            matches!(&error, ResolveError::Unavailable { reason, .. } if reason.contains("high-resolution video")),
+            matches!(&error, ResolveError::Unavailable { reason, .. } if reason == "the page offers no video or audio"),
             "{error}"
         );
     }

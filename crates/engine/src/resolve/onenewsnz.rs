@@ -132,6 +132,7 @@ impl Resolver for OneNewsNzResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::News],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://www.1news.co.nz/2022/09/29/cows-painted-green-on-parliament-lawn-in-climate-protest/",
                 "https://www.1news.co.nz/2022/09/29/raw-videos-capture-hurricane-ians-fury-as-it-slams-florida/",

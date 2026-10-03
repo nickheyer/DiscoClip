@@ -807,6 +807,7 @@ impl Resolver for BrightcoveResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Players],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://players.brightcove.net/1752604059001/default_default/index.html?videoId=4457254747001",
             ],

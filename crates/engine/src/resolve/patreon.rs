@@ -894,6 +894,7 @@ impl Resolver for PatreonResolver {
             ],
             tags: &[Tag::Video, Tag::Podcasts, Tag::Images],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &[
                 "https://www.patreon.com/posts/video-sketchbook-32452882",
                 "https://www.patreon.com/posts/1073-unsafe-and-170223332",

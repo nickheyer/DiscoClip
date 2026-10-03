@@ -776,6 +776,7 @@ impl Resolver for SoopResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Live, Tag::Video],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &[
                 "https://vod.sooplive.com/player/20515605",
                 "https://vod.sooplive.co.kr/PLAYER/STATION/20515605",

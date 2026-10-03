@@ -194,6 +194,7 @@ impl Resolver for DropboxResolver {
             ],
             tags: &[Tag::Files],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://www.dropbox.com/scl/fi/cttkzvl75vuqwn2o5ctx0/youtube-dl-test-video-BaW_jenozKc.mp4?rlkey=zae0yts5dh5e6hh4jduo25w7v&dl=0",
                 "https://www.dropbox.com/s/nelirfsxnmcfbfh/youtube-dl%20test%20video%20%27%C3%A4%22BaW_jenozKc.mp4?dl=0",

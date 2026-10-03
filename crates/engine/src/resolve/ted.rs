@@ -324,6 +324,7 @@ impl Resolver for TedResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Video],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://www.ted.com/talks/sir_ken_robinson_do_schools_kill_creativity",
                 "https://embed.ted.com/talks/candace_parker_how_to_break_down_barriers_and_not_accept_limits",

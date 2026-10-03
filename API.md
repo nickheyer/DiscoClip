@@ -2935,6 +2935,7 @@ Reject an unknown command.
 | `media` | `MediaKind[]` |
 | `tags` | `string[]` · preset IDs except `sfw` |
 | `session` | `SessionSupport` |
+| `on_by_default` | `bool` · set to false if it shouldnt be in the default list |
 | `fixtures` | `FixtureResult[]` · in the order a check tries them |
 | `last_run_at` | `timestamp \| null` · when a link was last run |
 | `last_pass_at` | `timestamp \| null` · when a link last resolved |

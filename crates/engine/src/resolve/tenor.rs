@@ -300,8 +300,9 @@ impl Resolver for TenorResolver {
             features: &["gifs", "short links", "media links", "localized pages"],
             formats: &["mp4", "webm", "gif"],
             media: &[MediaKind::Video],
-            tags: &[Tag::Basic, Tag::Images],
+            tags: &[Tag::Images],
             session: SessionSupport::None,
+            on_by_default: false,
             examples: &[
                 "https://tenor.com/view/banana-cat-gif-2736737110227615394",
                 "https://tenor.com/dqkrPHwUKcg.gif",

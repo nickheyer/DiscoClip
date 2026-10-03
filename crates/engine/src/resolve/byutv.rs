@@ -426,6 +426,7 @@ impl Resolver for ByutvResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Video],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://www.byutv.org/0160476a-bfd0-425d-82f9-5757bde3bf37/studio-c-season-9-episode-2",
                 "https://www.byutv.org/watch/0160476a-bfd0-425d-82f9-5757bde3bf37/studio-c-season-9-episode-2",

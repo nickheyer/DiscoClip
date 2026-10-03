@@ -551,6 +551,7 @@ impl Resolver for OkruResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Social, Tag::Video, Tag::Live],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://ok.ru/video/20079905452",
                 "https://ok.ru/videoembed/20079905452",

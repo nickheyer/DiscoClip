@@ -228,6 +228,7 @@ impl Resolver for PinterestResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Social, Tag::Images],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &["https://www.pinterest.com/pin/4855512095534420/"],
         }
     }

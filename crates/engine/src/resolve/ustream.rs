@@ -536,6 +536,7 @@ impl Resolver for UstreamResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Live],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://video.ibm.com/recorded/134842643",
                 "http://www.ustream.tv/recorded/134736279",

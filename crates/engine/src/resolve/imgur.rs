@@ -223,6 +223,7 @@ impl Resolver for ImgurResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Basic, Tag::Images],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://imgur.com/A61SaA1",
                 "https://i.imgur.com/jxBXAMC.gifv",

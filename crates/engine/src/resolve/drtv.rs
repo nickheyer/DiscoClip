@@ -672,6 +672,7 @@ impl Resolver for DrtvResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::News, Tag::Video, Tag::Live],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://www.dr.dk/drtv/se/frank-and-kastaniegaarden_71769",
                 "https://www.dr.dk/drtv/se/spise-med-price_-pasta-selv_397445",

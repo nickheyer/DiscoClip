@@ -570,7 +570,11 @@ impl Transfer<'_> {
                         self.fetch_chunks(end + 1, total, validator).await?;
                         total
                     }
-                    Some(total) => total,
+                    Some(total) => {
+                        // whole file in 1 chunk
+                        file.flush().await?;
+                        total
+                    }
                     None => {
                         self.fetch_rest(&mut file, end + 1, None, None, validator)
                             .await?
@@ -1122,6 +1126,28 @@ mod tests {
         .await;
         assert_eq!(result.unwrap().file.size, 10_000);
         assert_eq!(site.hits(FILE), 1);
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn the_last_write_of_a_single_chunk_file_lands_before_it_is_judged() {
+        let dir = temp_dir("last-write");
+        let ffmpeg = Ffmpeg::provision(&dir.join("tools")).await.unwrap();
+        let job = dir.join("job");
+        tokio::fs::create_dir_all(&job).await.unwrap();
+        tokio::fs::symlink("/dev/full", job.join("source.part"))
+            .await
+            .unwrap();
+        let site = Site::new();
+        site.put(FILE, file_reply(&pattern(500)));
+        let (result, _) = fetch_from(&site, &ffmpeg, &context(3, 16_000, 5), &job, None).await;
+        match result {
+            Err(DownloadError::Io(error)) => {
+                assert_eq!(error.kind(), std::io::ErrorKind::StorageFull, "{error}");
+            }
+            other => panic!("the refused write was not reported: {other:?}"),
+        }
         let _ = tokio::fs::remove_dir_all(&dir).await;
     }
 

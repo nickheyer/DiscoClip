@@ -1021,6 +1021,7 @@ mod shutdown_tests {
                 media: &[MediaKind::File],
                 tags: &[],
                 session: SessionSupport::None,
+                on_by_default: true,
                 examples: &[],
             }
         }

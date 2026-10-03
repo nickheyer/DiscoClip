@@ -2359,6 +2359,7 @@ impl Resolver for BilibiliResolver {
             media: &[MediaKind::Video, MediaKind::Audio],
             tags: &[Tag::Basic, Tag::Video, Tag::Music],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &[
                 "https://www.bilibili.com/video/BV1xx411c7mD/",
                 "https://b23.tv/BV1xx411c7mD",

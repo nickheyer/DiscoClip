@@ -351,6 +351,7 @@ impl Resolver for PixeldrainResolver {
             ],
             tags: &[Tag::Files],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://pixeldrain.com/u/VFjemoqC",
                 "https://pixeldrain.com/u/dt92pNgf",

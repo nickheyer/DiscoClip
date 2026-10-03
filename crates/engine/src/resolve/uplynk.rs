@@ -202,6 +202,7 @@ impl Resolver for UplynkResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Players],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://content.uplynk.com/ext/b82f6b1017f64c7b872b8d80b276b280/0160476a-bfd0-425d-82f9-5757bde3bf37.m3u8",
             ],

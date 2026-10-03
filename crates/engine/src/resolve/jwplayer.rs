@@ -302,6 +302,7 @@ impl Resolver for JwplayerResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Players],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://cdn.jwplayer.com/v2/media/nPripu9l",
                 "https://cdn.jwplayer.com/players/nPripu9l-ALJ3XQCI.js",

@@ -487,6 +487,7 @@ impl Resolver for MediafireResolver {
             ],
             tags: &[Tag::Files],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://www.mediafire.com/file/8x5ol3r8wpb477a/small.mp4/file",
                 "https://www.mediafire.com/file/0003gwq2bqwcfof/12-AudioTrack_12.mp3/file",

@@ -418,6 +418,7 @@ impl Resolver for ChaturbateResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Nsfw, Tag::Live],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://chaturbate.com/",
                 "https://chaturbate.com/female-cams/",

@@ -699,6 +699,7 @@ impl Resolver for FloatplaneResolver {
             media: &[MediaKind::Video, MediaKind::Audio],
             tags: &[Tag::Video, Tag::Podcasts],
             session: SessionSupport::Required,
+            on_by_default: true,
             examples: &[
                 "https://www.floatplane.com/post/957jPKiAOV",
                 "https://www.floatplane.com/channel/linustechtips/home/ltxexpo",

@@ -804,6 +804,7 @@ impl Resolver for ZdfResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::News, Tag::Video, Tag::Live],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://www.zdf.de/video/dokus/ein-tag-im-juli---ahrtalflut-2021-movie-100/terra-x-history-ein-tag-im-juli-ahrtalflut-2021-100",
                 "https://www.zdf.de/dokumentation/dokumentation-sonstige/terra-x-history-ein-tag-im-juli-ahrtalflut-2021-100.html",

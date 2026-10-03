@@ -662,6 +662,7 @@ impl Resolver for DailymotionResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Basic, Tag::Video, Tag::Live],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://www.dailymotion.com/video/x5kesuj",
                 "https://dai.ly/x26ezrb",

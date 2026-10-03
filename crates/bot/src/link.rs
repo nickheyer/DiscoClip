@@ -23,6 +23,12 @@ pub trait LinkTargets: Send + Sync {
     fn link_for(&self, job: &Job) -> Option<MediaLink>;
 }
 
+/// The addresses the app is reached at, so the watcher leaves links to its own pages alone
+pub trait OwnLinks: Send + Sync {
+    /// Whether `url` is under an address the app is reached at
+    fn is_own(&self, url: &Url) -> bool;
+}
+
 /// No front ends: every destination uploads.
 pub struct NoLinks;
 

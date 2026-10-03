@@ -329,11 +329,16 @@ async fn serve(startup: Startup) -> Result<ExitCode, Error> {
                 id: p.id,
                 tags: p.tags,
                 hosts: p.hosts,
+                on_by_default: p.on_by_default,
             })
             .collect(),
     );
     let loaded = profiles.load().await?;
-    tracing::info!(profiles = loaded, "profiles loaded");
+    tracing::info!(
+        profiles = loaded,
+        off_by_default = ?profiles.cache().off_by_default(),
+        "profiles loaded"
+    );
     let public_url = Arc::new(crate::public_url::PublicUrl::new(
         settings.web.public_url.clone(),
         store.clone(),
@@ -394,6 +399,7 @@ async fn serve(startup: Startup) -> Result<ExitCode, Error> {
             guilds: BotGuildStore::new(store.clone()),
             rules: rules.cache(),
             profiles: profiles.cache(),
+            own_links: public_url.clone(),
         },
         shutdown.clone(),
     ));

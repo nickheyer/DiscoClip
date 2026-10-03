@@ -593,6 +593,7 @@ impl Resolver for GoogleDriveResolver {
             ],
             tags: &[Tag::Files],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &[
                 "https://drive.google.com/file/d/0ByeS4oOUV-49Zzh4R1J6R09zazQ/view",
                 "https://drive.google.com/file/d/19E-Y9sAegp7HB6LrE6h838luDnmGrB_G/view",

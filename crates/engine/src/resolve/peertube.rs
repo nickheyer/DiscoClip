@@ -563,6 +563,7 @@ impl Resolver for PeertubeResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Video, Tag::Live],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://framatube.org/w/kkGMgK9ZtnKfYAgnEtQxbv",
                 "https://video.blender.org/videos/watch/7ad3cbee-fe5f-41c2-93ea-b108986939f4",

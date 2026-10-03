@@ -60,6 +60,7 @@ impl Resolver for BundesligaResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Video],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &["https://www.bundesliga.com/en/bundesliga/videos?vid=bhhHkKyN"],
         }
     }

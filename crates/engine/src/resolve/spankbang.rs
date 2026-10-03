@@ -534,6 +534,7 @@ impl Resolver for SpankbangResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Nsfw, Tag::Video],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://spankbang.com/a58qa/video/pornstarplatinum+leya+falcon+gets+pounded+hard+in+a+wild+interracial+play",
                 "https://spankbang.com/a58qa/embed/",

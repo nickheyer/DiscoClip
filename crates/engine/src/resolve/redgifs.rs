@@ -208,6 +208,7 @@ impl Resolver for RedgifsResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Nsfw, Tag::Images],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &["https://www.redgifs.com/watch/messytrustingnutria"],
         }
     }

@@ -340,6 +340,7 @@ impl Resolver for WikimediaResolver {
             ],
             tags: &[Tag::Files, Tag::Images, Tag::Music],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://commons.wikimedia.org/wiki/File:Big_Buck_Bunny_4K.webm",
                 "https://upload.wikimedia.org/wikipedia/commons/c/c0/Big_Buck_Bunny_4K.webm",

@@ -328,8 +328,9 @@ impl Resolver for GiphyResolver {
             ],
             formats: &["mp4", "mov", "gif"],
             media: &[MediaKind::Video],
-            tags: &[Tag::Basic, Tag::Images],
+            tags: &[Tag::Images],
             session: SessionSupport::None,
+            on_by_default: false,
             examples: &[
                 "https://giphy.com/gifs/l0ExbnGIX9sMFS7PG",
                 "https://giphy.com/clips/GHuZnOveABj2uSWgd0",

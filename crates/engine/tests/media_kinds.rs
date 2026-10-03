@@ -57,6 +57,7 @@ impl Resolver for Files {
             ],
             tags: &[Tag::Files],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[],
         }
     }

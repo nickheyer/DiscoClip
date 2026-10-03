@@ -576,6 +576,7 @@ impl Resolver for WebResolver {
             media: &[MediaKind::Video, MediaKind::Audio, MediaKind::Image],
             tags: &[Tag::Video, Tag::Images, Tag::Music],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &["https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"],
         }
     }

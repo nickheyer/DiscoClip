@@ -511,6 +511,7 @@ impl Resolver for BitchuteResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Video],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://www.bitchute.com/video/UGlrF9o9b-Q/",
                 "https://www.bitchute.com/embed/UGlrF9o9b-Q/",

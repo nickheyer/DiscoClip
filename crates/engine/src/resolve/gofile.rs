@@ -449,6 +449,7 @@ impl Resolver for GofileResolver {
             ],
             tags: &[Tag::Files],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &["https://gofile.io/d/b4Ds9u"],
         }
     }

@@ -485,6 +485,7 @@ impl Resolver for StripchatResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Nsfw, Tag::Live],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://stripchat.com/",
                 "https://stripchat.com/girls",

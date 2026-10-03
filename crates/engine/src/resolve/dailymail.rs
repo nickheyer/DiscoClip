@@ -92,6 +92,7 @@ impl Resolver for DailymailResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::News],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://www.dailymail.com/video/royals/video-3692517/Video-Meghan-shares-playful-clips-45th-birthday.html",
                 "https://www.dailymail.co.uk/video/royals/video-3692517/Video-Meghan-shares-playful-clips-45th-birthday.html",

@@ -295,6 +295,7 @@ impl Resolver for MastodonResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Social],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &["https://mastodon.social/@sonic_hedgeblog/117256980960208736"],
         }
     }

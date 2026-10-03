@@ -78,6 +78,15 @@
 		<span class="badge preset-outlined-surface-300-700" style="--badge-size: var(--text-xs)">
 			{SESSION[platform.session]}
 		</span>
+		{#if !platform.on_by_default}
+			<span
+				class="badge preset-tonal-warning"
+				style="--badge-size: var(--text-xs)"
+				title="Profiles leave this platform off until an exception or a chosen preset names it"
+			>
+				Off until turned on
+			</span>
+		{/if}
 		{#if platform.cookies > 0}
 			<span class="badge preset-outlined-surface-300-700" style="--badge-size: var(--text-xs)">
 				{number(platform.cookies)} cookies

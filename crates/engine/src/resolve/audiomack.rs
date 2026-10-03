@@ -492,6 +492,7 @@ impl Resolver for AudiomackResolver {
             media: &[MediaKind::Audio],
             tags: &[Tag::Music],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://audiomack.com/roosh-williams/song/extraordinary",
                 "https://www.audiomack.com/song/roosh-williams/extraordinary",

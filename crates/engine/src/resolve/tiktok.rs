@@ -175,6 +175,7 @@ impl Resolver for TiktokResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Basic, Tag::Social, Tag::Video],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &["https://www.tiktok.com/@tiktok/video/7106594312292453675"],
         }
     }

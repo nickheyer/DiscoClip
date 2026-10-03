@@ -170,6 +170,7 @@ impl Resolver for BundestagResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::News],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://dbtg.tv/cvid/7605304",
                 "https://www.bundestag.de/mediathek?videoid=7602120&url=L21lZGlhdGhla292ZXJsYXk=&mod=mediathek",

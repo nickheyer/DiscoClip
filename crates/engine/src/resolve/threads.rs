@@ -251,6 +251,7 @@ impl Resolver for ThreadsResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Social],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &["https://www.threads.net/@instagram/post/DdHPeall2Bx"],
         }
     }

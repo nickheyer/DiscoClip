@@ -567,6 +567,7 @@ impl Resolver for WeiboResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Social, Tag::Video],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &[
                 "https://weibo.com/7827771738/N4xlMvjhI",
                 "https://m.weibo.cn/status/4189191225395228",

@@ -522,6 +522,7 @@ impl Resolver for MegaResolver {
             ],
             tags: &[Tag::Files],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://mega.nz/file/MR5F3QCI#Vj2aut_FqBVciXFJ9eck22uczDouiElMTBdwmGnk9-g",
                 "https://mega.nz/file/IN4hGQwB#YrQ7z_bFiznfD8tB1RYut7V158j0SSKGriMM6fcJ6yw",

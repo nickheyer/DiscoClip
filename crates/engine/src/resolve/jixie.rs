@@ -296,6 +296,7 @@ impl Resolver for JixieResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Players],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://video.kompas.com/watch/1924197/chitra-subyakto-bajumu-yang-itu-itu-saja-menyelamatkanmu-dan-bumi-beginu-5-tahun",
                 "https://apiv.kompas.com/jixie-stream?metadata=full&video_id=1924197",

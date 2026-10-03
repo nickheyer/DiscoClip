@@ -150,6 +150,7 @@ impl Resolver for NewgroundsResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Video],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &[
                 "https://www.newgrounds.com/portal/view/1004201",
                 "https://www.newgrounds.com/portal/view/297383",

@@ -514,6 +514,7 @@ impl Resolver for EromeResolver {
             media: &[MediaKind::Video, MediaKind::Image],
             tags: &[Tag::Nsfw, Tag::Video, Tag::Images],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://www.erome.com/a/cgalnn9K",
                 "https://www.erome.com/a/z0VWMGch",

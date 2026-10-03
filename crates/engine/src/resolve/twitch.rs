@@ -507,6 +507,7 @@ impl Resolver for TwitchResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Basic, Tag::Live],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &[
                 "https://www.twitch.tv/videos/40791111",
                 "https://clips.twitch.tv/FaintLightGullWholeWheat",

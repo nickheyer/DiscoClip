@@ -159,11 +159,13 @@ pub async fn app_with_settings(
                 id: "nothing",
                 tags: &[],
                 hosts: &[SUPPORTED_HOST],
+                on_by_default: true,
             },
             PlatformFacts {
                 id: "fixtured",
                 tags: &[Tag::Basic, Tag::Video],
                 hosts: &[FIXTURE_HOST],
+                on_by_default: true,
             },
         ],
     );
@@ -203,6 +205,7 @@ pub async fn app_with_settings(
             guilds: crate::discord::BotGuildStore::new(db.clone()),
             rules: rules.cache(),
             profiles: profiles.cache(),
+            own_links: public_url.clone(),
         },
         CancellationToken::new(),
     ));
@@ -321,6 +324,7 @@ impl Resolver for Fixtured {
             media: &[MediaKind::Video],
             tags: &[Tag::Basic, Tag::Video],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &[
                 "https://fixture.test/ok",
                 "https://fixture.test/bad",
@@ -401,6 +405,7 @@ fn stub_engine(
                 media: &[],
                 tags: &[],
                 session: SessionSupport::None,
+                on_by_default: true,
                 examples: &[],
             }
         }

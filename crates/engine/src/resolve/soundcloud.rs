@@ -1111,6 +1111,7 @@ impl Resolver for SoundcloudResolver {
             media: &[MediaKind::Audio],
             tags: &[Tag::Basic, Tag::Music],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &[
                 "https://soundcloud.com/ethmusic/lostin-powers-she-so-heavy",
                 "https://soundcloud.com/jaimemf/youtube-dl-test-video-a-y-baw/s-8Pjrp",

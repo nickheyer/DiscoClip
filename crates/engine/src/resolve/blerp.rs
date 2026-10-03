@@ -197,6 +197,7 @@ impl Resolver for BlerpResolver {
             media: &[MediaKind::Audio],
             tags: &[Tag::Music],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://blerp.com/soundbites/6320fe8745636cb4dd677a5a",
                 "https://blerp.com/soundbites/5bc94ef4796001000498429f",

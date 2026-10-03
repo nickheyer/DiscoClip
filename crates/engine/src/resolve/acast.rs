@@ -200,6 +200,7 @@ impl Resolver for AcastResolver {
             media: &[MediaKind::Audio],
             tags: &[Tag::Podcasts],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://shows.acast.com/sparpodcast/episodes/1-mordet-pa-sargonia-dankha-forsvinnandet",
                 "https://play.acast.com/s/sparpodcast/6a2fbf52685069f99fec1577",

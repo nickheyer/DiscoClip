@@ -286,6 +286,7 @@ impl Resolver for VidyardResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Players],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://play.vidyard.com/oTDMPlUv--51Th455G5u7Q",
                 "https://share.vidyard.com/watch/PaQzDAT1h8JqB8ivEu2j6Y",

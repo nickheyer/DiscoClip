@@ -446,6 +446,16 @@ CREATE INDEX fixture_links_platform ON fixture_links(platform, removed_at, enabl
 DROP TABLE fixture_platforms;
 ",
     },
+    // Rewords the built-in profile's description unless an operator already changed it
+    Migration {
+        version: 26,
+        name: "default_profile_description",
+        sql: "
+UPDATE profiles SET description = 'Every platform that is on by default. In force wherever nothing else is assigned.'
+WHERE id = '00000000-0000-0000-0000-000000000001'
+  AND description = 'Every platform on. In force wherever nothing else is assigned.';
+",
+    },
 ];
 
 /// Brings the application's tables up to date. Returns how many migrations ran.

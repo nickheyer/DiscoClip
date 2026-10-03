@@ -476,6 +476,7 @@ impl Resolver for DouyinResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Social, Tag::Video],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &[
                 "https://www.douyin.com/video/6961737553342991651",
                 "https://v.douyin.com/L4FJNR3/",

@@ -423,6 +423,7 @@ impl Resolver for SeventeenLiveResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Live],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://17.live/profile/r/1789280/clip/1bHQSK8KUieruFXaCH4A4upCzlN",
                 "https://17.live/ja/vod/27323042/2cf84520-e65e-4b22-891e-1d3a00b0f068",

@@ -92,6 +92,7 @@ impl Resolver for BaiduResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Video],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "http://v.baidu.com/comic/1069.htm?frp=bdbrand&q=%E4%B8%AD%E5%8D%8E%E5%B0%8F%E5%BD%93%E5%AE%B6",
                 "http://v.baidu.com/show/10.htm?frp=bdbrand",

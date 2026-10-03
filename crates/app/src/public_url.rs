@@ -131,6 +131,19 @@ impl PublicUrl {
     }
 }
 
+impl discoclip_bot::OwnLinks for PublicUrl {
+    /// Under the configured or learned address, matching the host and the port when one is named
+    fn is_own(&self, url: &Url) -> bool {
+        [self.configured(), self.learned()]
+            .into_iter()
+            .flatten()
+            .any(|own| {
+                own.host_str() == url.host_str()
+                    && (own.port().is_none() || own.port() == url.port())
+            })
+    }
+}
+
 /// `scheme://host[:port]` as a URL with a path of `/`, when it is one the app can be
 /// reached at.
 fn parse_origin(origin: &str) -> Option<Url> {
@@ -199,6 +212,25 @@ mod tests {
                 .unwrap()
         );
         assert_eq!(url.get().unwrap().as_str(), "https://other.example/");
+    }
+
+    #[tokio::test]
+    async fn links_under_the_apps_addresses_are_its_own() {
+        use discoclip_bot::OwnLinks;
+        let url = fresh().await;
+        let link = |s: &str| Url::parse(s).unwrap();
+        assert!(!url.is_own(&link("https://clips.example/f/clips/j/1")));
+        url.learn("http://localhost:8080").await.unwrap();
+        assert!(url.is_own(&link("http://localhost:8080/f/clips/j/1")));
+        assert!(!url.is_own(&link("http://localhost:3000/f/clips/j/1")));
+        url.set_configured(Some(link("https://clips.example")));
+        assert!(url.is_own(&link("https://clips.example/f/clips/j/1")));
+        assert!(url.is_own(&link("http://clips.example/f/clips/j/1")));
+        assert!(
+            url.is_own(&link("http://localhost:8080/")),
+            "the learned address counts beside the configured one"
+        );
+        assert!(!url.is_own(&link("https://clips.example.net/")));
     }
 
     #[tokio::test]

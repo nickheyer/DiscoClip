@@ -272,6 +272,9 @@ impl EpornerResolver {
             return Err(error);
         }
         let html = fetched.text();
+        if html.contains(r#"id="deletedfile""#) {
+            return Err(ResolveError::unavailable(url, "the video has been deleted"));
+        }
         let vid = util::search(&RE_VID, &html).unwrap_or_else(|| id.to_string());
         let page_hash = util::search(&RE_HASH, &html)
             .ok_or_else(|| ResolveError::malformed(url, "the video page carries no hash"))?;
@@ -431,8 +434,9 @@ impl Resolver for EpornerResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Nsfw, Tag::Video],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
-                "https://www.eporner.com/video-bnPrqfNPT34/step-sister-asian-pussy-cures-my-depression/",
+                "https://www.eporner.com/video-2C11I8bWWrY/goth-girlfriend/",
                 "https://www.eporner.com/hd-porn/UF6oacvBq6P/Fantastic-Girl-Banged-By-Masseur/",
                 "https://www.eporner.com/embed/rd6LL5J4ufv/",
                 "https://www.eporner.com/cat/teens/",
@@ -603,6 +607,26 @@ mod tests {
                 }
             }
         })
+    }
+
+    #[tokio::test]
+    async fn deleted_videos_say_so() {
+        let mut fixture = Fixture::new(PLATFORM, None);
+        fixture.exchanges.push(exchange(
+            "https://www.eporner.com/video-bnPrqfNPT34/",
+            200,
+            "text/html",
+            r#"<html><body><div id="movieplayer-left" class="hdpnotfound"><div id="deletedfile"><span><strong>Video has been deleted</strong><br />File has been removed due to copyright owner request.</span></div></div></body></html>"#,
+        ));
+        let resolver = EpornerResolver::new(Http::replay(fixture));
+        let error = resolver
+            .resolve(&Url::parse("https://www.eporner.com/video-bnPrqfNPT34/step-sister/").unwrap())
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&error, ResolveError::Unavailable { reason, .. } if reason == "the video has been deleted"),
+            "{error}"
+        );
     }
 
     #[tokio::test]

@@ -86,6 +86,7 @@ impl Resolver for DaystarResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Video],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &["https://player.daystar.tv/0MTO2ITM"],
         }
     }

@@ -412,6 +412,7 @@ impl Resolver for BlueskyResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Basic, Tag::Social],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &["https://bsky.app/profile/bsky.app/post/3mk4lzkrnk22d"],
         }
     }

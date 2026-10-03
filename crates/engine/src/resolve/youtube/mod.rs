@@ -57,6 +57,13 @@ fn is_youtube_host(host: &str) -> bool {
 
 /// What `url` names, when it is a YouTube link this resolver takes.
 pub fn parse_link(url: &Url) -> Option<Link> {
+    parse_link_within(url, 0)
+}
+
+/// How many wrapping links are opened, the hash router, desktop_uri and attribution_link each carry one
+const MAX_UNWRAP: u8 = 1;
+
+fn parse_link_within(url: &Url, unwrapped: u8) -> Option<Link> {
     if !matches!(url.scheme(), "http" | "https") {
         return None;
     }
@@ -69,13 +76,26 @@ pub fn parse_link(url: &Url) -> Option<Link> {
             .find(|(k, _)| k == name)
             .map(|(_, v)| v.into_owned())
     };
+    let unwrap = |inner: &str| {
+        if unwrapped >= MAX_UNWRAP {
+            return None;
+        }
+        let inner = Url::parse(ORIGIN).ok()?.join(inner).ok()?;
+        parse_link_within(&inner, unwrapped + 1)
+    };
     let segments: Vec<&str> = url
         .path_segments()
         .into_iter()
         .flatten()
         .filter(|s| !s.is_empty())
         .collect();
+    if segments.is_empty()
+        && let Some(routed) = url.fragment().filter(|f| f.starts_with('/'))
+    {
+        return unwrap(routed);
+    }
     let video = |id: &str| {
+        let id = id.trim_end_matches('/');
         RE_VIDEO_ID.is_match(id).then(|| Link::Video {
             id: id.to_string(),
             start: timestamp_hint(url),
@@ -85,14 +105,19 @@ pub fn parse_link(url: &Url) -> Option<Link> {
         return segments.first().and_then(|id| video(id));
     }
     match segments.as_slice() {
-        ["watch"] => query("v").and_then(|id| video(&id)),
+        ["watch"] | ["watch_popup"] => query("v").or_else(|| query("vi")).and_then(|id| video(&id)),
+        ["index"] => query("desktop_uri").and_then(|inner| unwrap(&inner)),
+        ["attribution_link"] => query("u").and_then(|inner| unwrap(&inner)),
         ["playlist"] => query("list")
             .filter(|l| RE_LIST_ID.is_match(l))
             .map(Link::Playlist),
         ["embed", "videoseries"] => query("list")
             .filter(|l| RE_LIST_ID.is_match(l))
             .map(Link::Playlist),
-        ["shorts", id] | ["embed", id] | ["v", id] | ["live", id] | ["e", id] => video(id),
+        ["shorts", id] | ["embed", id] | ["v", id] | ["live", id] | ["e", id] | ["watch", id] => {
+            video(id)
+        }
+        ["source", id, ..] => video(id),
         ["clip", id] => Some(Link::Clip(id.to_string())),
         [first, ..] if first.starts_with('@') => Some(Link::Channel(url.clone())),
         ["channel", _, ..] | ["c", _, ..] | ["user", _, ..] => Some(Link::Channel(url.clone())),
@@ -411,7 +436,13 @@ impl Resolver for YoutubeResolver {
         Platform {
             id: PLATFORM,
             name: "YouTube",
-            hosts: &["youtube.com", "youtu.be", "youtube-nocookie.com"],
+            hosts: &[
+                "youtube.com",
+                "m.youtube.com",
+                "music.youtube.com",
+                "youtu.be",
+                "youtube-nocookie.com",
+            ],
             features: &[
                 "videos",
                 "shorts",
@@ -427,6 +458,7 @@ impl Resolver for YoutubeResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Basic, Tag::Video, Tag::Live, Tag::Music],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &[
                 "https://www.youtube.com/watch?v=jNQXAC9IVRw",
                 "https://youtu.be/dQw4w9WgXcQ",
@@ -556,6 +588,65 @@ mod tests {
             link("https://www.youtube.com/channel/UC4QobU6STFB0P71PMvOGN5A"),
             Some(Link::Channel(_))
         ));
+        // The mobile site and app forms, the hash router, the desktop redirect and share links
+        assert_eq!(
+            link("https://m.youtube.com/#/watch?v=jNQXAC9IVRw"),
+            Some(video("jNQXAC9IVRw"))
+        );
+        assert_eq!(
+            link("https://m.youtube.com/index?desktop_uri=%2Fwatch%3Fv%3DjNQXAC9IVRw"),
+            Some(video("jNQXAC9IVRw"))
+        );
+        assert_eq!(
+            link("https://m.youtube.com/shorts/jNQXAC9IVRw?feature=share"),
+            Some(video("jNQXAC9IVRw"))
+        );
+        assert_eq!(
+            link("https://m.youtube.com/watch/jNQXAC9IVRw"),
+            Some(video("jNQXAC9IVRw"))
+        );
+        assert_eq!(
+            link("https://m.youtube.com/watch?v=jNQXAC9IVRw/"),
+            Some(video("jNQXAC9IVRw"))
+        );
+        assert_eq!(
+            link("https://music.youtube.com/watch?v=jNQXAC9IVRw&si=abc"),
+            Some(video("jNQXAC9IVRw"))
+        );
+        assert_eq!(
+            link(
+                "https://www.youtube.com/attribution_link?a=x&u=%2Fwatch%3Fv%3DjNQXAC9IVRw%26feature%3Dshare"
+            ),
+            Some(video("jNQXAC9IVRw"))
+        );
+        assert_eq!(
+            link("https://www.youtube.com/watch_popup?v=jNQXAC9IVRw"),
+            Some(video("jNQXAC9IVRw"))
+        );
+        assert_eq!(
+            link("https://www.youtube.com/watch?vi=jNQXAC9IVRw"),
+            Some(video("jNQXAC9IVRw"))
+        );
+        assert_eq!(
+            link("https://www.youtube.com/source/jNQXAC9IVRw/shorts"),
+            Some(video("jNQXAC9IVRw"))
+        );
+        // A wrapped link is opened once, not one wrapping another
+        assert_eq!(
+            link(
+                "https://m.youtube.com/index?desktop_uri=%2Findex%3Fdesktop_uri%3D%252Fwatch%253Fv%253DjNQXAC9IVRw"
+            ),
+            None
+        );
+        // Only the root routes through the fragment
+        assert_eq!(
+            link("https://www.youtube.com/watch?v=jNQXAC9IVRw#/other"),
+            Some(video("jNQXAC9IVRw"))
+        );
+        assert_eq!(
+            link("https://www.youtube.com/feed/#/watch?v=jNQXAC9IVRw"),
+            None
+        );
         assert_eq!(link("https://www.youtube.com/watch?v=short"), None);
         assert_eq!(link("https://www.youtube.com/feed/subscriptions"), None);
         assert_eq!(link("https://vimeo.com/123"), None);

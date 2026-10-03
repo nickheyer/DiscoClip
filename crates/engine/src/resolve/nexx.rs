@@ -924,6 +924,7 @@ impl Resolver for NexxResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Players],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://embed.nexx.cloud/741/video/71269984GMIR7QA",
                 "https://api.nexx.cloud/v3.1/741/videos/byid/1701834",

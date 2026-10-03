@@ -273,8 +273,9 @@ impl Resolver for DiscordResolver {
                 MediaKind::Image,
                 MediaKind::File,
             ],
-            tags: &[Tag::Basic, Tag::Social, Tag::Files, Tag::Images],
+            tags: &[Tag::Social, Tag::Files, Tag::Images],
             session: SessionSupport::None,
+            on_by_default: false,
             examples: &[],
         }
     }

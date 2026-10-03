@@ -591,6 +591,7 @@ impl Resolver for BandcampResolver {
             media: &[MediaKind::Audio],
             tags: &[Tag::Music],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://benprunty.bandcamp.com/track/lanius-battle",
                 "https://benprunty.bandcamp.com/album/ftl-advanced-edition-soundtrack",

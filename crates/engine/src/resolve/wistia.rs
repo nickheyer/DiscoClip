@@ -342,6 +342,7 @@ impl Resolver for WistiaResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Players],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://fast.wistia.net/embed/iframe/cmst5825to",
                 "https://fast.wistia.net/embed/playlists/aodt9etokc",

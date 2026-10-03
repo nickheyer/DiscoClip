@@ -1309,6 +1309,7 @@ mod tests {
             id,
             tags: &[],
             hosts: &[],
+            on_by_default: true,
         };
         let profiles = ProfileStore::new(
             db.clone(),

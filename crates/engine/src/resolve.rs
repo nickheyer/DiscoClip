@@ -413,6 +413,8 @@ pub struct Platform {
     /// What kind of place it is, for profiles that turn platforms on by kind.
     pub tags: &'static [Tag],
     pub session: SessionSupport,
+    /// Whether profiles take the platform's links without naming it, false for GIF hosts and the like
+    pub on_by_default: bool,
     /// Public links the scheduled smoke tests resolve.
     pub examples: &'static [&'static str],
 }

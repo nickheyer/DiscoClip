@@ -18,7 +18,7 @@ pub use config::{
     UploadLimits, UploadSettings, WatchRule,
 };
 pub use directory::{ChannelInfo, Directories, Directory, GuildInfo, MemberInfo, RoleInfo};
-pub use link::{LinkTargets, MediaLink, NoLinks};
+pub use link::{LinkTargets, MediaLink, NoLinks, OwnLinks};
 pub use origin::{DiscordOrigin, SOURCE_ID};
 pub use profile::{InForce, PlatformLookup, ProfileSource, turned_off};
 pub use publish::{Clients, DiscordClients, DiscordPublisher};

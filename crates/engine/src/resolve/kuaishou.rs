@@ -540,6 +540,7 @@ impl Resolver for KuaishouResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Social, Tag::Video],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &[
                 "https://www.kuaishou.com/short-video/3x7qbj8xmmgbjbu",
                 "https://v.kuaishou.com/OSuHs3",

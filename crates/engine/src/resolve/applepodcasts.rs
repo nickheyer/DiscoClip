@@ -219,6 +219,7 @@ impl Resolver for ApplePodcastsResolver {
             media: &[MediaKind::Audio],
             tags: &[Tag::Podcasts],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://podcasts.apple.com/us/podcast/urbana-podcast-724-by-david-penn/id1531349107?i=1000748574256",
                 "https://podcasts.apple.com/podcast/id1531349107?i=1000748574256",

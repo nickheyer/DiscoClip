@@ -509,6 +509,7 @@ impl Resolver for NiconicoResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Video],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &[
                 "https://www.nicovideo.jp/watch/sm9",
                 "https://nico.ms/sm9",

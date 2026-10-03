@@ -501,6 +501,7 @@ impl Resolver for XvideosResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Nsfw, Tag::Video],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://www.xvideos.com/video.keecekh888c/what_s_her_name_",
                 "https://www.xvideos.com/video65982001/what_s_her_name",

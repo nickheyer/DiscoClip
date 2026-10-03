@@ -217,6 +217,7 @@ impl Resolver for CpacResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::News],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://www.cpac.ca/episode?id=fc7edcae-4660-47e1-ba61-5b7f29a9db0f",
                 "https://www.cpac.ca/headline-politics/episode/news-conference-to-celebrate-national-kindness-week--february-15-2022?id=fc7edcae-4660-47e1-ba61-5b7f29a9db0f",

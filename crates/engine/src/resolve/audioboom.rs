@@ -71,6 +71,7 @@ impl Resolver for AudioboomResolver {
             media: &[MediaKind::Audio],
             tags: &[Tag::Podcasts],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://audioboom.com/posts/7398103-asim-chaudhry",
                 "https://audioboom.com/posts/8128496.mp3",

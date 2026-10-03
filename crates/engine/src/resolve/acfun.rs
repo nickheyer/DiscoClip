@@ -274,6 +274,7 @@ impl Resolver for AcfunResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Video],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &["https://www.acfun.cn/v/ac35457073"],
         }
     }

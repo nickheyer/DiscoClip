@@ -848,6 +848,7 @@ impl Resolver for XhamsterResolver {
             media: &[MediaKind::Video, MediaKind::Image],
             tags: &[Tag::Nsfw, Tag::Video, Tag::Images],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://xhamster.com/videos/xhamster-awards-2025-the-winners-xh1FC1t",
                 "https://xhamster.com/movies/1509445/femaleagent_shy_beauty_takes_the_bait.html",

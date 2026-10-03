@@ -717,6 +717,7 @@ impl Resolver for ArchiveOrgResolver {
             ],
             tags: &[Tag::Files, Tag::Video, Tag::Music],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &[
                 "https://archive.org/details/BigBuckBunny_124",
                 "https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4",

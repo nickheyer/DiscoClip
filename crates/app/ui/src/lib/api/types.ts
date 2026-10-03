@@ -1212,6 +1212,8 @@ export interface PlatformCoverage {
 	/** What kind of place it is: the preset ids minus `sfw`. */
 	tags: string[];
 	session: SessionSupport;
+	/** Whether profiles take its links without naming it, false for GIF hosts and the like */
+	on_by_default: boolean;
 	fixtures: FixtureResult[];
 	/** When a link of the platform was last run. */
 	last_run_at: Timestamp | null;

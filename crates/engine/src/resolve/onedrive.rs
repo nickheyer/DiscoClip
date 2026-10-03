@@ -329,6 +329,7 @@ impl Resolver for OnedriveResolver {
             ],
             tags: &[Tag::Files],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://1drv.ms/v/c/49e18460ed20d89c/IQA0-4CgNI50R5PRqh3dLEGoAXDFVRoySH969JO0uU1c3mQ?e=35jiOO",
             ],

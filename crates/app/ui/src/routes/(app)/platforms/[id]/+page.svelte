@@ -390,6 +390,15 @@
 					{tag}
 				</span>
 			{/each}
+			{#if !platform.on_by_default}
+				<span
+					class="badge preset-tonal-warning"
+					style="--badge-size: var(--text-xs)"
+					title="Profiles leave this platform off until an exception or a chosen preset names it"
+				>
+					Off until turned on
+				</span>
+			{/if}
 		</div>
 		{#snippet actions()}
 			{#if canCheck}

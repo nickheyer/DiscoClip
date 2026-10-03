@@ -71,6 +71,7 @@ impl Resolver for AllocineResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::News, Tag::Video],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://www.allocine.fr/video/video-19550147/",
                 "https://www.allocine.fr/video/player_gen_cmedia=19540403&cfilm=222257.html",

@@ -419,6 +419,7 @@ impl Resolver for TumblrResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Social, Tag::Images],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &[
                 "https://www.tumblr.com/staff/802565427665502208",
                 "https://staff.tumblr.com/post/802565427665502208",

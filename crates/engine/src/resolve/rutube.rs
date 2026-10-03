@@ -669,6 +669,7 @@ impl Resolver for RutubeResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Video, Tag::Live],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://rutube.ru/video/3eac3b4561676c17df9132a9a1e62e3e/",
                 "https://rutube.ru/shorts/d23980aafd7b0cbd936c23b1f95c9bab/",

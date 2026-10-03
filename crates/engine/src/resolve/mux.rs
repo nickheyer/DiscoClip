@@ -176,6 +176,7 @@ impl Resolver for MuxResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Players],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://stream.mux.com/DS00Spx1CV902MCtPj5WknGlR102V5HFkDe.m3u8",
                 "https://player.mux.com/DS00Spx1CV902MCtPj5WknGlR102V5HFkDe",

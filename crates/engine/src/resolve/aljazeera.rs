@@ -111,6 +111,7 @@ impl Resolver for AljazeeraResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::News],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://www.aljazeera.com/video/inside-story/2026/9/10/will-foreign-workers-leave-south-africa",
             ],

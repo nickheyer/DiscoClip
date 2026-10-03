@@ -1066,6 +1066,7 @@ impl Resolver for ArdResolver {
             media: &[MediaKind::Video, MediaKind::Audio],
             tags: &[Tag::News, Tag::Video, Tag::Podcasts],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &[
                 "https://www.ardmediathek.de/video/tatort/nachtschatten/mdr/Y3JpZDovL21kci5kZS9zZW5kdW5nLzI4MTA2MC8yMDI2MDEwMTIwMTUvdGF0b3J0LW1kci1pbS1lcnN0ZW4tMTE4",
                 "https://www.ardmediathek.de/video/tagesschau-oder-tagesschau-20-00-uhr/das-erste/Y3JpZDovL2Rhc2Vyc3RlLmRlL3RhZ2Vzc2NoYXUvZmM4ZDUxMjgtOTE0ZC00Y2MzLTgzNzAtNDZkNGNiZWJkOTll",

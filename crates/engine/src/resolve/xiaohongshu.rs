@@ -500,6 +500,7 @@ impl Resolver for XiaohongshuResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Social, Tag::Video],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &[
                 "https://www.xiaohongshu.com/discovery/item/6a8212d4000000001102138d?xsec_source=app_share&xsec_token=CBuZUrHoqFVTefcIPvLwx9AVA4vQ2aaSRfsQF8dEcBmYE%3D",
                 "http://xhslink.com/o/6fj5AEdbejP",

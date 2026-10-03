@@ -174,6 +174,7 @@ impl Resolver for BloggerResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Players],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://www.blogger.com/video.g?token=AD6v5dzEe9hfcARr5Hlq1WTkYy6t-fXH3BBahVhGvVHe5szdEUBEloSEDSTA8-b111089KbfWuBvTN7fnbxMtymsHhXAXwVvyzHH4Qch2cfLQdGxKQrrEuFpC1amSl_9GuLWODjPgw",
                 "https://www.blogger.com/video.g?token=AD6v5dx9TdMlBW4zSBTx8we3NdZkcnXpeEnaiL1qr0_IDyC9wTVrt8W4iTdzKQSDUGKl60SkkYwminoaFYiah26YtShVZd4Ph6umwzwiT1_hCgNrbcrtZt0bSiiezJT0XP3wODwj7aA&origin=blog.tomeuvizoso.net",

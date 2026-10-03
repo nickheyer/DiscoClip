@@ -314,6 +314,7 @@ impl Resolver for InstagramResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Basic, Tag::Social, Tag::Video],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &["https://www.instagram.com/p/aye83DjauH/"],
         }
     }

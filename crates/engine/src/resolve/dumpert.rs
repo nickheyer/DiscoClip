@@ -88,6 +88,7 @@ impl Resolver for DumpertResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Video],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://www.dumpert.nl/item/100031688_b317a185",
                 "https://www.dumpert.nl/toppers?selectedId=100031688_b317a185",

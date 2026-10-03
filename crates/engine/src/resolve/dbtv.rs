@@ -82,6 +82,7 @@ impl Resolver for DbtvResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::News],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &["https://www.dagbladet.no/video/ranet-bank-med-chilipulver/J12GzewM"],
         }
     }

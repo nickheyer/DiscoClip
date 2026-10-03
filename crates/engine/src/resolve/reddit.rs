@@ -598,6 +598,7 @@ impl Resolver for RedditResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Basic, Tag::Social, Tag::Video],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &[
                 "https://www.reddit.com/r/videos/comments/6rrwyj/that_small_heart_attack/",
                 "https://redd.it/6rrwyj",

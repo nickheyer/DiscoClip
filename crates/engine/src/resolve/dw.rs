@@ -177,6 +177,7 @@ impl Resolver for DwResolver {
             media: &[MediaKind::Video, MediaKind::Audio],
             tags: &[Tag::News, Tag::Podcasts],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://www.dw.com/en/intelligent-light/video-19112290",
                 "http://www.dw.com/en/intelligent-light/av-19112290",

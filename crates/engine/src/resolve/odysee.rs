@@ -395,6 +395,7 @@ impl Resolver for OdyseeResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Video],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://odysee.com/@lbry:3f/odysee:7a",
                 "https://odysee.com/@lbry:3f",

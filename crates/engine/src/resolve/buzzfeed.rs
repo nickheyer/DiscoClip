@@ -163,6 +163,7 @@ impl Resolver for BuzzfeedResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::News, Tag::Social],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "http://www.buzzfeed.com/abagg/this-angry-ram-destroys-a-punching-bag-like-a-boss?utm_term=4ldqpia",
                 "http://www.buzzfeed.com/craigsilverman/the-most-adorable-crash-landing-ever#.eq7pX0BAmK",

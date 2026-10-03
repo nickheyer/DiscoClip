@@ -1,8 +1,8 @@
 //! Profiles define platform access and media limits. Assignments apply in order: global,
 //! guild, channel, user. Each profile overrides only specified values.
 //!
-//! The built-in Default profile enables all platforms and initially serves as the global
-//! default. Bots and web routes read a shared cache. Changes are audited transactionally.
+//! The built-in Default profile enables every platform on by default and initially serves as
+//! the global default. Bots and web routes read a shared cache. Changes are audited transactionally.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, RwLock};
@@ -28,7 +28,7 @@ use crate::db::{nanos, timestamp, transact};
 pub struct ProfileId(pub Uuid);
 
 impl ProfileId {
-    /// The built-in profile every platform is on in. Assigned to the whole server at first.
+    /// The built-in profile every platform on by default is on in, assigned to the whole server at first
     pub const DEFAULT: ProfileId = ProfileId(Uuid::from_u128(1));
 }
 
@@ -53,6 +53,7 @@ pub enum PlatformDefault {
     /// Left as the parent scope has them.
     #[default]
     Inherit,
+    /// On, except platforms off by default, which stay as the parent scope has them
     Enabled,
     Disabled,
 }
@@ -60,7 +61,8 @@ pub enum PlatformDefault {
 /// Which platforms a profile turns on and off. With `presets` chosen, they are the
 /// whitelist: every platform in any chosen preset is on and every other off, which is
 /// what the presets add up to. Without any, `default` says what happens to the
-/// platforms `overrides` do not name. Overrides win either way.
+/// platforms `overrides` do not name. Overrides win either way. A platform off by
+/// default is on only where a chosen preset holds it or an override names it.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct PlatformToggles {
@@ -70,13 +72,23 @@ pub struct PlatformToggles {
 }
 
 impl PlatformToggles {
-    /// Applies the profile on top of `platforms`, as the scope it is assigned to narrows
-    /// what the wider one allowed. `presets` maps preset ids to their platforms.
-    fn apply(&self, platforms: &mut BTreeMap<String, bool>, presets: &Presets) {
+    /// Applies the profile on top of `platforms`, with `baseline` saying which are on by default
+    fn apply(
+        &self,
+        platforms: &mut BTreeMap<String, bool>,
+        presets: &Presets,
+        baseline: &BTreeMap<String, bool>,
+    ) {
         if self.presets.is_empty() {
             match self.default {
                 PlatformDefault::Inherit => {}
-                PlatformDefault::Enabled => platforms.values_mut().for_each(|on| *on = true),
+                PlatformDefault::Enabled => {
+                    for (platform, on_by_default) in baseline {
+                        if *on_by_default && let Some(on) = platforms.get_mut(platform) {
+                            *on = true;
+                        }
+                    }
+                }
                 PlatformDefault::Disabled => platforms.values_mut().for_each(|on| *on = false),
             }
         } else {
@@ -129,13 +141,14 @@ impl ProfileLimits {
     }
 }
 
-/// A platform as the profiles need it: its id, the kinds it is tagged with, and the
-/// hosts its links come from.
+/// A platform as the profiles need it, with whether it is on before any profile names it
 #[derive(Debug, Clone, Copy)]
 pub struct PlatformFacts {
     pub id: &'static str,
     pub tags: &'static [Tag],
     pub hosts: &'static [&'static str],
+    /// Off for platforms whose links flood a chat, GIF hosts above all
+    pub on_by_default: bool,
 }
 
 /// A preset: a named set of platforms, from the tags the platforms carry.
@@ -591,6 +604,8 @@ struct CacheInner {
 pub struct ProfileCache {
     facts: Arc<Vec<PlatformFacts>>,
     platforms: Arc<Vec<&'static str>>,
+    /// Every platform as the server has it before any profile applies
+    baseline: Arc<BTreeMap<String, bool>>,
     presets: Arc<Presets>,
     inner: Arc<RwLock<CacheInner>>,
 }
@@ -600,9 +615,24 @@ impl ProfileCache {
         Self {
             presets: Arc::new(Presets::from_platforms(&platforms)),
             platforms: Arc::new(platforms.iter().map(|p| p.id).collect()),
+            baseline: Arc::new(
+                platforms
+                    .iter()
+                    .map(|p| (p.id.to_string(), p.on_by_default))
+                    .collect(),
+            ),
             facts: Arc::new(platforms),
             inner: Arc::new(RwLock::new(CacheInner::default())),
         }
+    }
+
+    /// The platforms the engine leaves off until a profile names them
+    pub fn off_by_default(&self) -> Vec<&'static str> {
+        self.facts
+            .iter()
+            .filter(|p| !p.on_by_default)
+            .map(|p| p.id)
+            .collect()
     }
 
     /// The resolver ids the cache knows.
@@ -636,17 +666,14 @@ impl ProfileCache {
         &self.presets
     }
 
-    /// Effective settings for one profile: every platform on, then the profile
-    /// applied. `None` when no such profile exists.
+    /// One profile applied on top of the baseline, or `None` when no such profile exists
     pub fn alone(&self, profile: ProfileId) -> Option<BTreeMap<String, bool>> {
         let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         let cached = inner.profiles.get(&profile)?;
-        let mut platforms: BTreeMap<String, bool> = self
-            .platforms
-            .iter()
-            .map(|id| (id.to_string(), true))
-            .collect();
-        cached.toggles.apply(&mut platforms, &self.presets);
+        let mut platforms = (*self.baseline).clone();
+        cached
+            .toggles
+            .apply(&mut platforms, &self.presets, &self.baseline);
         Some(platforms)
     }
 
@@ -659,14 +686,10 @@ impl ProfileCache {
             .contains_key(&profile)
     }
 
-    /// What the profiles assigned along `scopes` add up to.
+    /// What the profiles assigned along `scopes` add up to, applied over the baseline
     pub fn effective_for(&self, scopes: &[Scope]) -> EffectiveProfile {
         let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
-        let mut platforms: BTreeMap<String, bool> = self
-            .platforms
-            .iter()
-            .map(|id| (id.to_string(), true))
-            .collect();
+        let mut platforms = (*self.baseline).clone();
         let mut limits = RequestLimits::default();
         let mut audio_language = None;
         let mut applied = Vec::new();
@@ -677,7 +700,9 @@ impl ProfileCache {
             let Some(cached) = inner.profiles.get(profile_id) else {
                 continue;
             };
-            cached.toggles.apply(&mut platforms, &self.presets);
+            cached
+                .toggles
+                .apply(&mut platforms, &self.presets, &self.baseline);
             cached.limits.apply(&mut limits);
             if cached.audio_language.is_some() {
                 audio_language = cached.audio_language.clone();
@@ -1418,11 +1443,27 @@ mod tests {
     use super::*;
 
     async fn store() -> ProfileStore {
+        store_with(test_platforms()).await
+    }
+
+    async fn store_with(platforms: Vec<PlatformFacts>) -> ProfileStore {
         let db = SqliteStore::open_in_memory().await.unwrap();
         crate::migrations::apply(&db).await.unwrap();
-        let store = ProfileStore::new(db, test_platforms());
+        let store = ProfileStore::new(db, platforms);
         store.load().await.unwrap();
         store
+    }
+
+    /// The test platforms and a GIF host the engine leaves off by default
+    fn with_giphy() -> Vec<PlatformFacts> {
+        let mut platforms = test_platforms();
+        platforms.push(PlatformFacts {
+            id: "giphy",
+            tags: &[Tag::Images],
+            hosts: &["giphy.com"],
+            on_by_default: false,
+        });
+        platforms
     }
 
     fn test_platforms() -> Vec<PlatformFacts> {
@@ -1431,21 +1472,25 @@ mod tests {
                 id: "youtube",
                 tags: &[Tag::Basic, Tag::Video],
                 hosts: &["youtube.com", "youtu.be"],
+                on_by_default: true,
             },
             PlatformFacts {
                 id: "reddit",
                 tags: &[Tag::Basic, Tag::Social],
                 hosts: &["reddit.com", "redd.it"],
+                on_by_default: true,
             },
             PlatformFacts {
                 id: "web",
                 tags: &[Tag::Video],
                 hosts: &[],
+                on_by_default: true,
             },
             PlatformFacts {
                 id: "redgifs",
                 tags: &[Tag::Nsfw, Tag::Images],
                 hosts: &["redgifs.com"],
+                on_by_default: true,
             },
         ]
     }
@@ -1502,17 +1547,27 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_default_profile_turns_everything_on_everywhere() {
-        let store = store().await;
+    async fn the_default_profile_turns_on_everything_on_by_default_everywhere() {
+        let store = store_with(with_giphy()).await;
         let profiles = store.list().await.unwrap();
         assert_eq!(profiles.len(), 1);
         assert_eq!(profiles[0].id, ProfileId::DEFAULT);
         assert!(profiles[0].builtin);
+        assert_eq!(
+            profiles[0].input.description,
+            "Every platform that is on by default. In force wherever nothing else is assigned."
+        );
         let effective = store.effective(Some("5"), Some("1"), Some("9"));
-        assert!(effective.platforms.values().all(|on| *on));
+        assert!(
+            effective
+                .platforms
+                .iter()
+                .all(|(id, on)| *on == (id != "giphy"))
+        );
         assert_eq!(effective.applied.len(), 1);
         assert_eq!(effective.applied[0].scope, Scope::Global);
-        assert!(effective.disabled().is_empty());
+        assert_eq!(effective.disabled(), vec!["giphy".to_string()]);
+        assert_eq!(store.cache().off_by_default(), vec!["giphy"]);
         assert!(matches!(
             store
                 .delete(&actor(), ProfileId::DEFAULT)
@@ -1524,6 +1579,108 @@ mod tests {
             store.unassign(&actor(), Scope::Global).await.unwrap_err(),
             ProfileError::GlobalRequired
         ));
+    }
+
+    #[tokio::test]
+    async fn platforms_off_by_default_wait_to_be_named() {
+        let store = store_with(with_giphy()).await;
+        let giphy = vec!["giphy".to_string()];
+        assert_eq!(store.effective(None, None, None).disabled(), giphy);
+
+        // Every platform on leaves it off
+        let everything = store
+            .create(
+                &actor(),
+                input("Everything", toggles(PlatformDefault::Enabled, &[])),
+            )
+            .await
+            .unwrap();
+        let guild = Scope::Guild {
+            guild_id: "5".into(),
+        };
+        store.assign(&actor(), guild, everything.id).await.unwrap();
+        assert_eq!(store.effective(Some("5"), None, None).disabled(), giphy);
+        assert!(!store.cache().alone(everything.id).unwrap()["giphy"]);
+
+        // An exception turns it on and a narrower every platform on keeps it on
+        let gifs = store
+            .create(
+                &actor(),
+                input(
+                    "GIFs",
+                    toggles(PlatformDefault::Inherit, &[("giphy", true)]),
+                ),
+            )
+            .await
+            .unwrap();
+        let channel = Scope::Channel {
+            guild_id: "5".into(),
+            channel_id: "1".into(),
+        };
+        store.assign(&actor(), channel, gifs.id).await.unwrap();
+        assert!(
+            store
+                .effective(Some("5"), Some("1"), None)
+                .disabled()
+                .is_empty()
+        );
+        assert!(store.cache().alone(gifs.id).unwrap()["giphy"]);
+        let user = Scope::User {
+            guild_id: "5".into(),
+            user_id: "9".into(),
+        };
+        store.assign(&actor(), user, everything.id).await.unwrap();
+        assert!(
+            store
+                .effective(Some("5"), Some("1"), Some("9"))
+                .disabled()
+                .is_empty()
+        );
+
+        // Every platform off takes it off with the rest
+        let quiet = store
+            .create(
+                &actor(),
+                input("Quiet", toggles(PlatformDefault::Disabled, &[])),
+            )
+            .await
+            .unwrap();
+        let other = Scope::User {
+            guild_id: "5".into(),
+            user_id: "8".into(),
+        };
+        store.assign(&actor(), other, quiet.id).await.unwrap();
+        assert_eq!(
+            store
+                .effective(Some("5"), Some("1"), Some("8"))
+                .disabled()
+                .len(),
+            5
+        );
+
+        // A chosen preset that holds it turns it on
+        let mut images = toggles(PlatformDefault::Inherit, &[]);
+        images.presets = vec!["images".into()];
+        let images = store
+            .create(&actor(), input("Images", images))
+            .await
+            .unwrap();
+        let elsewhere = Scope::Channel {
+            guild_id: "5".into(),
+            channel_id: "2".into(),
+        };
+        store.assign(&actor(), elsewhere, images.id).await.unwrap();
+        let effective = store.effective(Some("5"), Some("2"), None);
+        assert!(effective.platforms["giphy"]);
+        assert!(effective.platforms["redgifs"]);
+        assert_eq!(
+            effective.disabled(),
+            vec![
+                "reddit".to_string(),
+                "web".to_string(),
+                "youtube".to_string()
+            ]
+        );
     }
 
     #[tokio::test]

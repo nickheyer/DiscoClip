@@ -114,6 +114,7 @@ impl Resolver for NinegagResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Social, Tag::Images],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &["https://9gag.com/gag/ae5Ag7B"],
         }
     }

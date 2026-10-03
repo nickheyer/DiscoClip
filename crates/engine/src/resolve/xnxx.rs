@@ -116,6 +116,7 @@ impl Resolver for XnxxResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Nsfw, Tag::Video],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://www.xnxx.com/video-55awb78/skyrim_test_video",
                 "https://www.xnxx.com/embedframe/55awb78",

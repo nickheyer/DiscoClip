@@ -20,6 +20,7 @@ use uuid::Uuid;
 use crate::client::{Bot, BotError, GuildEvent};
 use crate::config::{DiscordConfig, DiscordEndpoints};
 use crate::directory::Directories;
+use crate::link::OwnLinks;
 use crate::profile::ProfileSource;
 use crate::watch::RuleSource;
 
@@ -170,6 +171,8 @@ pub struct BotRuntime {
     pub guild_events: mpsc::Sender<GuildEvent>,
     pub rules: Arc<dyn RuleSource>,
     pub profiles: Arc<dyn ProfileSource>,
+    /// The app's addresses, so the watcher leaves links to its own pages alone
+    pub own_links: Arc<dyn OwnLinks>,
     /// Where the bot keeps what it learns about its guilds, for the app to read.
     pub directories: Directories,
 }

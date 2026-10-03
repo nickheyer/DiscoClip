@@ -8,6 +8,7 @@ use twilight_model::id::marker::{ChannelMarker, GuildMarker};
 use uuid::Uuid;
 
 use crate::config::WatchRule;
+use crate::link::OwnLinks;
 use crate::origin::DiscordOrigin;
 use crate::profile::{PlatformLookup, ProfileSource, turned_off};
 
@@ -26,12 +27,14 @@ pub trait RuleSource: Send + Sync {
 /// Turns messages in watched channels into engine requests. A channel is watched by a
 /// rule of its own, or by the rule watching its guild whole. The profile assigned for the
 /// channel and the author says which platforms count and how big a video may be, and a
-/// link that only turned-off platforms would take is left alone.
+/// link that only turned-off platforms would take is left alone, as is a link to one of
+/// the app's own pages.
 pub struct Watcher {
     application: Uuid,
     rules: Arc<dyn RuleSource>,
     profiles: Arc<dyn ProfileSource>,
     platforms: Arc<dyn PlatformLookup>,
+    own: Arc<dyn OwnLinks>,
 }
 
 impl Watcher {
@@ -40,12 +43,14 @@ impl Watcher {
         rules: Arc<dyn RuleSource>,
         profiles: Arc<dyn ProfileSource>,
         platforms: Arc<dyn PlatformLookup>,
+        own: Arc<dyn OwnLinks>,
     ) -> Self {
         Self {
             application,
             rules,
             profiles,
             platforms,
+            own,
         }
     }
 
@@ -83,6 +88,10 @@ impl Watcher {
         find_urls(&message.content)
             .into_iter()
             .filter(|url| {
+                if self.own.is_own(url) {
+                    tracing::debug!(%url, channel = %message.channel_id, "link left alone: one of the app's own pages");
+                    return false;
+                }
                 match turned_off(&self.platforms.resolvers_for(url), &disabled) {
                     Some(platform) => {
                         tracing::debug!(%url, platform, channel = %message.channel_id, "link left alone: platform turned off here");
@@ -185,6 +194,15 @@ mod tests {
         }
     }
 
+    /// The app is reached at one host
+    struct OwnHost(&'static str);
+
+    impl OwnLinks for OwnHost {
+        fn is_own(&self, url: &url::Url) -> bool {
+            url.host_str() == Some(self.0)
+        }
+    }
+
     fn rule(channel: u64) -> WatchRule {
         WatchRule::for_channel(Id::new(channel))
     }
@@ -244,7 +262,21 @@ mod tests {
             )),
             Arc::new(Off(off.into_iter().map(String::from).collect(), limits)),
             Arc::new(ByHost),
+            Arc::new(OwnHost("clips.example")),
         )
+    }
+
+    #[test]
+    fn links_to_the_apps_own_pages_are_left_alone() {
+        let watcher = watcher(vec![rule(1)]);
+        let picked = watcher.requests(&message(
+            1,
+            9,
+            &[],
+            "https://clips.example/f/clips/j/0199 and https://youtube.com/w",
+        ));
+        assert_eq!(picked.len(), 1);
+        assert_eq!(picked[0].url.as_str(), "https://youtube.com/w");
     }
 
     #[test]

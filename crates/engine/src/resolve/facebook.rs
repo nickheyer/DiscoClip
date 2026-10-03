@@ -151,6 +151,7 @@ impl Resolver for FacebookResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Basic, Tag::Social, Tag::Video],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &["https://www.facebook.com/facebook/videos/10153231379946729/"],
         }
     }

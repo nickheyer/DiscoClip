@@ -649,6 +649,7 @@ impl Resolver for TverResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Video],
             session: SessionSupport::None,
+            on_by_default: true,
             // TVer restricts every episode's playback to Japan, so a series, whose
             // listing resolves from anywhere, stands as the fixture the scheduled smoke
             // tests resolve.

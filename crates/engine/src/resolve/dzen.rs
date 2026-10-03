@@ -644,6 +644,7 @@ impl Resolver for DzenResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Video, Tag::Social],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://dzen.ru/video/watch/6002240ff8b1af50bb2da5e3",
                 "https://dzen.ru/shorts/6aabb0cc21a3b33d21018b48",

@@ -251,6 +251,7 @@ impl Resolver for LoomResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Video],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &["https://www.loom.com/share/43d05f362f734614a2e81b4694a3a523"],
         }
     }

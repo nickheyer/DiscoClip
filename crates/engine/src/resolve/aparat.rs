@@ -67,6 +67,7 @@ impl Resolver for AparatResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Video],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &["https://www.aparat.com/v/wP8On"],
         }
     }

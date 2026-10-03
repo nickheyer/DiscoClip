@@ -794,6 +794,7 @@ impl Resolver for AmpResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Players],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://www.foxnews.com/video/6320653836112",
                 "https://video.foxnews.com/v/video-embed.html?video_id=6320653836112",

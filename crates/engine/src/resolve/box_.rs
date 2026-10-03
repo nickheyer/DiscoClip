@@ -1,7 +1,7 @@
 //! Box shared links (`{account}.app.box.com/s/{name}`): the shared page names its file
 //! and a request token, the token endpoint trades that for a read token, and the files
 //! API then names the video's HLS representation, whose playlists and segments the
-//! token signs.
+//! token signs, or redirects to the signed download of any other file.
 
 use std::sync::LazyLock;
 
@@ -11,15 +11,15 @@ use serde_json::Value;
 use url::Url;
 
 use super::{
-    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag,
+    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag, Variant,
     clean_title, fetch, hls, navigation_headers, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::MediaKind;
+use crate::media::{Container, MediaKind};
 
 pub const PLATFORM: &str = "box";
 const FILES_API: &str = "https://api.box.com/2.0/files/";
-const FILE_FIELDS: &str = "created_at,created_by,description,name,representations";
+const FILE_FIELDS: &str = "authenticated_download_url,created_at,created_by,description,extension,name,representations,size";
 
 static RE_HOST: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(?:[^.]+\.)?(app|ent)\.box\.com$").unwrap());
@@ -91,6 +91,75 @@ impl BoxResolver {
     pub fn new(http: Http) -> Self {
         Self { http }
     }
+
+    /// The file itself for a share Box streams no video of, from the signed link its download redirects to
+    async fn original(
+        &self,
+        file: &Value,
+        file_id: &str,
+        access_token: &str,
+        shared_link: &str,
+        url: &Url,
+    ) -> Result<(MediaKind, Variant), ResolveError> {
+        let download =
+            util::url_of(&file["authenticated_download_url"], None).unwrap_or_else(|| {
+                Url::parse(&format!("{FILES_API}{file_id}/content")).expect("valid")
+            });
+        let headers = vec![
+            (
+                "authorization".to_string(),
+                format!("Bearer {access_token}"),
+            ),
+            ("boxapi".to_string(), format!("shared_link={shared_link}")),
+        ];
+        let response = self
+            .http
+            .get(download.clone())
+            .platform(PLATFORM)
+            .user_agent(BROWSER_UA)
+            .headers(&headers)
+            .follow_redirects(false)
+            .send()
+            .await?;
+        let signed = response
+            .header("location")
+            .and_then(|location| download.join(location).ok());
+        let mut variant = match signed {
+            Some(signed) if response.status.is_redirection() => Variant::file(signed),
+            _ if response.status.is_success() => {
+                let mut variant = Variant::file(download);
+                variant.headers = headers;
+                variant
+            }
+            _ => {
+                return Err(status_error(response.status, url).unwrap_or_else(|| {
+                    ResolveError::malformed(url, "the download link leads nowhere")
+                }));
+            }
+        };
+        let extension = file["extension"]
+            .as_str()
+            .filter(|e| !e.is_empty())
+            .map(str::to_ascii_lowercase)
+            .or_else(|| {
+                file["name"]
+                    .as_str()
+                    .and_then(|name| name.rsplit_once('.'))
+                    .map(|(_, e)| e.to_ascii_lowercase())
+            });
+        variant.container = extension
+            .as_deref()
+            .and_then(Container::from_extension)
+            .or_else(|| extension.clone().map(Container::Other));
+        variant.size = util::uint(&file["size"]);
+        variant.format_id = Some("original".to_string());
+        variant.label = file["name"].as_str().map(str::to_string);
+        let kind = extension
+            .as_deref()
+            .map(MediaKind::from_extension)
+            .unwrap_or(MediaKind::File);
+        Ok((kind, variant))
+    }
 }
 
 #[async_trait]
@@ -104,11 +173,17 @@ impl Resolver for BoxResolver {
             id: PLATFORM,
             name: "Box",
             hosts: &["app.box.com", "ent.box.com"],
-            features: &["videos"],
-            formats: &["hls"],
-            media: &[MediaKind::Video],
+            features: &["videos", "images", "files"],
+            formats: &["hls", "any file"],
+            media: &[
+                MediaKind::Video,
+                MediaKind::Audio,
+                MediaKind::Image,
+                MediaKind::File,
+            ],
             tags: &[Tag::Files],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://mlssoccer.app.box.com/s/0evd2o3e08l60lr4ygukepvnkord1o1x/file/510727257538",
                 "https://app.box.com/s/g23lwdrwzbe3h4xfq1r8t7sr07ko40cc",
@@ -206,24 +281,33 @@ impl Resolver for BoxResolver {
             return Err(error);
         }
         let file = described.json(url)?;
-        let master = hls_master(&file)
-            .ok_or_else(|| ResolveError::unavailable(url, "the shared file has no video stream"))?;
-        // The token signs every playlist and segment request, not the master alone.
-        let signature: Vec<(String, String)> = vec![
-            ("access_token".to_string(), access_token.clone()),
-            ("shared_link".to_string(), shared_link.clone()),
-        ];
-        let expanded =
-            hls::expand_signed(&self.http, &master, PLATFORM, BROWSER_UA, &[], &signature)
-                .await
-                .map_err(|e| e.at(url))?;
-        if expanded.variants.is_empty() {
-            return Err(ResolveError::NotFound(url.clone()));
-        }
         let mut resolved = Resolved::new(PLATFORM);
-        resolved.variants = expanded.variants;
-        resolved.subtitles = expanded.subtitles;
-        resolved.duration = expanded.duration;
+        match hls_master(&file) {
+            Some(master) => {
+                // The token signs every playlist and segment request, not the master alone
+                let signature: Vec<(String, String)> = vec![
+                    ("access_token".to_string(), access_token.clone()),
+                    ("shared_link".to_string(), shared_link.clone()),
+                ];
+                let expanded =
+                    hls::expand_signed(&self.http, &master, PLATFORM, BROWSER_UA, &[], &signature)
+                        .await
+                        .map_err(|e| e.at(url))?;
+                if expanded.variants.is_empty() {
+                    return Err(ResolveError::NotFound(url.clone()));
+                }
+                resolved.variants = expanded.variants;
+                resolved.subtitles = expanded.subtitles;
+                resolved.duration = expanded.duration;
+            }
+            None => {
+                let (kind, variant) = self
+                    .original(&file, &file_id, &access_token, &shared_link, url)
+                    .await?;
+                resolved.media = kind;
+                resolved.variants.push(variant);
+            }
+        }
         resolved.id = Some(file_id);
         resolved.title = file["name"].as_str().and_then(clean_title);
         resolved.description = file["description"].as_str().and_then(clean_title);
@@ -326,7 +410,7 @@ mod tests {
         ));
         fixture.exchanges.push(exchange(
             "GET",
-            "https://api.box.com/2.0/files/510727257538?fields=created_at%2Ccreated_by%2Cdescription%2Cname%2Crepresentations",
+            "https://api.box.com/2.0/files/510727257538?fields=authenticated_download_url%2Ccreated_at%2Ccreated_by%2Cdescription%2Cextension%2Cname%2Crepresentations%2Csize",
             200,
             "application/json",
             json!({"name": "Garber St. Louis will be 28th MLS team.mp4",
@@ -407,70 +491,107 @@ mod tests {
         ));
         fixture.exchanges.push(exchange(
             "GET",
-            &format!("https://api.box.com/2.0/files/{id}?fields=created_at%2Ccreated_by%2Cdescription%2Cname%2Crepresentations"),
+            &format!("https://api.box.com/2.0/files/{id}?fields=authenticated_download_url%2Ccreated_at%2Ccreated_by%2Cdescription%2Cextension%2Cname%2Crepresentations%2Csize"),
             200,
             "application/json",
             file.to_string(),
         ));
     }
 
-    /// The PNG share is a public one whose files API answer is shaped as here: its
-    /// representations are thumbnails, never a stream.
+    /// A public PNG share whose representations are thumbnails alone, so the file itself is taken
     #[tokio::test]
-    async fn files_without_a_video_stream_say_so() {
+    async fn files_without_a_video_stream_are_the_file_itself() {
         let mut fixture = Fixture::new(PLATFORM, None);
         share(
             &mut fixture,
             "g23lwdrwzbe3h4xfq1r8t7sr07ko40cc",
             "390687863449",
-            json!({"name": "Screenshot_20190126_195858.png",
+            json!({"name": "Screenshot_20190126_195858.png", "extension": "png", "size": 47772,
+            "authenticated_download_url": "https://public.boxcloud.com/api/2.0/files/390687863449/content",
             "created_at": "2019-01-26T11:00:41-08:00", "created_by": {"name": "A User", "id": "2"}, "description": "",
             "representations": {"entries": [
                 {"representation": "jpg", "content": {"url_template": "https://public.boxcloud.com/api/2.0/internal_files/390687863449/versions/1/representations/jpg_320x320/content/{+asset_path}"}}
             ]}}),
         );
+        fixture.exchanges.push(Exchange {
+            request: RecordedRequest {
+                method: "GET".into(),
+                url: "https://public.boxcloud.com/api/2.0/files/390687863449/content".into(),
+                headers: Vec::new(),
+                body: None,
+            },
+            response: RecordedResponse {
+                status: 302,
+                url: "https://public.boxcloud.com/api/2.0/files/390687863449/content".into(),
+                headers: vec![
+                    ("content-type".into(), "text/html".into()),
+                    (
+                        "location".into(),
+                        "https://public.boxcloud.com/d/1/b1!signed/download".into(),
+                    ),
+                ],
+                body: RecordedBody::Text(String::new()),
+                truncated: false,
+            },
+        });
         let resolver = BoxResolver::new(Http::replay(fixture));
-        let error = resolver
+        let resolved = resolver
             .resolve(&Url::parse("https://app.box.com/s/g23lwdrwzbe3h4xfq1r8t7sr07ko40cc").unwrap())
             .await
-            .unwrap_err();
-        assert!(
-            matches!(&error, ResolveError::Unavailable { reason, .. } if reason == "the shared file has no video stream"),
-            "{error}"
+            .unwrap()
+            .media()
+            .unwrap();
+        assert_eq!(resolved.media, MediaKind::Image);
+        assert_eq!(
+            resolved.title.as_deref(),
+            Some("Screenshot_20190126_195858.png")
         );
+        crate::resolve::assert_one_family(&resolved.variants);
+        assert_eq!(resolved.variants.len(), 1);
+        let file = &resolved.variants[0];
+        assert_eq!(file.kind, VariantKind::File);
+        assert_eq!(
+            file.url.as_str(),
+            "https://public.boxcloud.com/d/1/b1!signed/download"
+        );
+        assert!(file.headers.is_empty(), "the signed link needs no token");
+        assert_eq!(file.container, Some(Container::Png));
+        assert_eq!(file.size, Some(47772));
+        assert_eq!(file.format_id.as_deref(), Some("original"));
     }
 
-    /// The video among the example links resolves live to its HLS renditions; the image
-    /// and the PDF among them are refused as files without a video stream.
+    /// Live, the example video resolves to HLS renditions and the image and PDF to the files themselves
     #[ignore = "reaches the live site: cargo test -- --ignored"]
     #[tokio::test]
-    async fn live_examples_resolve_to_hls_or_are_refused() {
+    async fn live_examples_resolve_to_hls_or_the_file() {
         use std::time::Duration;
 
         let resolver = BoxResolver::new(Http::new(crate::http::HttpConfig::default()));
         let mut videos = 0;
+        let mut files = 0;
         for link in resolver.platform().examples {
             let url = Url::parse(link).unwrap();
-            let resolution = tokio::time::timeout(Duration::from_secs(60), resolver.resolve(&url))
+            let resolved = tokio::time::timeout(Duration::from_secs(60), resolver.resolve(&url))
                 .await
-                .expect("resolution timed out");
-            match resolution {
-                Ok(resolution) => {
-                    let resolved = resolution.media().unwrap();
-                    assert!(!resolved.variants.is_empty(), "{link}: no variants");
-                    assert!(
-                        resolved.variants.iter().all(|v| v.kind == VariantKind::Hls),
-                        "{link}: a variant other than HLS"
-                    );
-                    crate::resolve::assert_one_family(&resolved.variants);
-                    videos += 1;
-                }
-                Err(error) => assert!(
-                    matches!(&error, ResolveError::Unavailable { reason, .. } if reason == "the shared file has no video stream"),
-                    "{link}: {error}"
-                ),
+                .expect("resolution timed out")
+                .unwrap_or_else(|error| panic!("{link}: {error}"))
+                .media()
+                .unwrap();
+            assert!(!resolved.variants.is_empty(), "{link}: no variants");
+            crate::resolve::assert_one_family(&resolved.variants);
+            if resolved.media == MediaKind::Video {
+                assert!(
+                    resolved.variants.iter().all(|v| v.kind == VariantKind::Hls),
+                    "{link}: a variant other than HLS"
+                );
+                videos += 1;
+            } else {
+                assert_eq!(resolved.variants.len(), 1, "{link}: one file");
+                assert_eq!(resolved.variants[0].kind, VariantKind::File);
+                files += 1;
             }
         }
         assert_eq!(videos, 1, "one example is a video");
+        assert_eq!(files, 2, "an image and a PDF");
     }
 }

@@ -274,6 +274,7 @@ impl Resolver for XResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Basic, Tag::Social],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &["https://x.com/SpaceX/status/1732824684683784516"],
         }
     }

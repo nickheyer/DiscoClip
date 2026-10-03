@@ -140,6 +140,7 @@ impl Resolver for LinkedinResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Social],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &[
                 "https://www.linkedin.com/posts/the-mathworks_2_what-is-mathworks-cloud-center-activity-7151241570371948544-4Gu7",
             ],

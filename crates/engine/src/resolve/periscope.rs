@@ -387,6 +387,7 @@ impl Resolver for PeriscopeResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Live, Tag::Social],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://www.periscope.tv/LularoeHusbandMike/1mrGmgaXAVqxy",
                 "https://www.periscope.tv/LularoeHusbandMike/",

@@ -1,6 +1,6 @@
 //! ABC Owned Television Stations (abc7news.com, abc7ny.com, 6abc.com…): every story and
 //! clip page names its content id, which the stations' content API answers with the
-//! featured video's HLS playlist on Uplynk.
+//! featured video's HLS playlist on Uplynk, and the MP4 file that outlives the playlist.
 
 use std::sync::LazyLock;
 
@@ -10,11 +10,11 @@ use serde_json::Value;
 use url::Url;
 
 use super::{
-    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag,
-    clean_title, fetch, hls, status_error, util,
+    MAX_PAGE, Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag, Variant,
+    clean_title, fetch, hls, probe_file, status_error, util,
 };
 use crate::http::{BROWSER_UA, Http};
-use crate::media::MediaKind;
+use crate::media::{AudioCodec, Container, MediaKind, VideoCodec};
 
 pub const PLATFORM: &str = "abcotvs";
 const API: &str = "https://api.abcotvs.com/v2/content";
@@ -83,6 +83,49 @@ impl AbcotvsResolver {
     pub fn new(http: Http) -> Self {
         Self { http }
     }
+
+    /// The playlist's renditions, or the best MP4 file still served once Uplynk has dropped the playlist
+    async fn streams(&self, video: &Value, url: &Url) -> Result<hls::Expanded, ResolveError> {
+        // The playlist link carries ad parameters the player fills in, without them Uplynk serves the programme
+        if let Some(mut playlist) = util::url_of(&video["m3u8"], None) {
+            playlist.set_query(None);
+            match hls::expand(&self.http, &playlist, PLATFORM, BROWSER_UA, &[]).await {
+                Ok(expanded) if !expanded.variants.is_empty() => return Ok(expanded),
+                Ok(_) => tracing::debug!(%playlist, "abcotvs playlist lists no rendition"),
+                Err(error) => tracing::debug!(%playlist, %error, "abcotvs playlist unavailable"),
+            }
+        }
+        for (key, label) in [("hqMp4", "high quality"), ("mp4", "standard")] {
+            let Some(file) = util::url_of(&video[key], None) else {
+                continue;
+            };
+            let probed = match probe_file(&self.http, &file, PLATFORM, BROWSER_UA, &[]).await {
+                Ok(probed) if probed.status.is_success() => probed,
+                Ok(probed) => {
+                    tracing::debug!(%file, status = %probed.status, "abcotvs file refused");
+                    continue;
+                }
+                Err(error) => {
+                    tracing::debug!(%file, %error, "abcotvs file unreachable");
+                    continue;
+                }
+            };
+            let mut variant = Variant::file(probed.url);
+            variant.container = Some(Container::Mp4);
+            variant.video = Some(VideoCodec::H264);
+            variant.audio = Some(AudioCodec::Aac);
+            variant.size = probed.size;
+            variant.format_id = Some(key.to_string());
+            variant.label = Some(label.to_string());
+            return Ok(hls::Expanded {
+                variants: vec![variant],
+                subtitles: Vec::new(),
+                duration: None,
+                live: false,
+            });
+        }
+        Err(ResolveError::NotFound(url.clone()))
+    }
 }
 
 #[async_trait]
@@ -106,10 +149,11 @@ impl Resolver for AbcotvsResolver {
                 "6abc.com",
             ],
             features: &["videos", "articles"],
-            formats: &["hls"],
+            formats: &["hls", "mp4"],
             media: &[MediaKind::Video],
             tags: &[Tag::News],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://abc7news.com/post/11k-worth-equipment-stolen-richmond-little-leagues-storage-container/19831881/",
                 "https://abc7news.com/injured-san-jose-climber-crawls-to-safety-descending-mount-shasta/19834888/",
@@ -139,19 +183,11 @@ impl Resolver for AbcotvsResolver {
             Value::Object(_) => &data["featuredMedia"]["video"],
             _ => data,
         };
-        // The playlist link carries ad parameters the player fills in. Without them
-        // Uplynk serves the plain programme.
-        let mut playlist = util::url_of(&video["m3u8"], None)
-            .ok_or_else(|| ResolveError::NotFound(url.clone()))?;
-        playlist.set_query(None);
-        let expanded = hls::expand(&self.http, &playlist, PLATFORM, BROWSER_UA, &[]).await?;
-        if expanded.variants.is_empty() {
-            return Err(ResolveError::NotFound(url.clone()));
-        }
+        let streams = self.streams(video, url).await?;
         let mut resolved = Resolved::new(PLATFORM);
-        resolved.variants = expanded.variants;
-        resolved.subtitles = expanded.subtitles;
-        resolved.live = expanded.live;
+        resolved.variants = streams.variants;
+        resolved.subtitles = streams.subtitles;
+        resolved.live = streams.live;
         resolved.id = util::text(&video["id"])
             .or_else(|| util::text(&video["publishedKey"]))
             .or_else(|| Some(link.id.clone()));
@@ -168,7 +204,7 @@ impl Resolver for AbcotvsResolver {
         resolved.thumbnail = util::url_of(&video["image"]["source"], None)
             .or_else(|| util::url_of(&video["image"]["dynamicSource"], None));
         resolved.uploaded_at = util::epoch(&video["date"]);
-        resolved.duration = util::seconds(&video["length"]).or(expanded.duration);
+        resolved.duration = util::seconds(&video["length"]).or(streams.duration);
         resolved.uploader = Some(link.station.to_ascii_uppercase());
         resolved.webpage_url = util::url_of(&video["link"]["canonical"], None)
             .or_else(|| util::url_of(&data["link"]["canonical"], None))
@@ -303,6 +339,73 @@ mod tests {
         assert_eq!(resolved.variants.len(), 1);
         assert_eq!(resolved.variants[0].kind, VariantKind::Hls);
         assert_eq!(resolved.variants[0].height, Some(720));
+    }
+
+    /// A story whose Uplynk playlist is gone and whose high quality file is refused, so the standard one serves
+    #[tokio::test]
+    async fn stories_whose_playlist_is_gone_resolve_to_the_file() {
+        let mut fixture = Fixture::new(PLATFORM, None);
+        fixture.exchanges.push(get(
+            "https://api.abcotvs.com/v2/content?id=472581&key=otv.web.kgo.story&station=kgo",
+            200,
+            "application/json",
+            json!({"data": {"id": 472581, "type": "post", "title": "Story",
+                "featuredMedia": {"video": {
+                    "id": 472548, "title": "East Bay museum celebrates synthesized music", "length": 8092,
+                    "m3u8": "https://content.uplynk.com/ext/4413/museum.m3u8?ad._v=2&ad.preroll=1",
+                    "hqMp4": "https://hq.vcl.abcotv.net/kgo/video/2015/01/12/museum_500.mp4",
+                    "mp4": "https://dig.abclocal.go.com/kgo/video/2015/01/12/museum_500.mp4"
+                }}}}).to_string(),
+        ));
+        fixture.exchanges.push(get(
+            "https://content.uplynk.com/ext/4413/museum.m3u8",
+            404,
+            "text/html",
+            "<html><body>Not found</body></html>".into(),
+        ));
+        fixture.exchanges.push(get(
+            "https://hq.vcl.abcotv.net/kgo/video/2015/01/12/museum_500.mp4",
+            403,
+            "application/xml",
+            "<Error><Code>AccessDenied</Code></Error>".into(),
+        ));
+        fixture.exchanges.push(Exchange {
+            request: RecordedRequest {
+                method: "GET".into(),
+                url: "https://dig.abclocal.go.com/kgo/video/2015/01/12/museum_500.mp4".into(),
+                headers: Vec::new(),
+                body: None,
+            },
+            response: RecordedResponse {
+                status: 206,
+                url: "https://dig.abclocal.go.com/kgo/video/2015/01/12/museum_500.mp4".into(),
+                headers: vec![
+                    ("content-type".into(), "video/mp4".into()),
+                    ("content-range".into(), "bytes 0-0/41230000".into()),
+                ],
+                body: RecordedBody::Text("\0".into()),
+                truncated: false,
+            },
+        });
+        let resolver = AbcotvsResolver::new(Http::replay(fixture));
+        let resolved = resolver
+            .resolve(&Url::parse(STORY).unwrap())
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
+        assert_eq!(resolved.duration, Some(Duration::from_secs(8092)));
+        crate::resolve::assert_one_family(&resolved.variants);
+        assert_eq!(resolved.variants.len(), 1);
+        let file = &resolved.variants[0];
+        assert_eq!(file.kind, VariantKind::File);
+        assert_eq!(
+            file.url.as_str(),
+            "https://dig.abclocal.go.com/kgo/video/2015/01/12/museum_500.mp4"
+        );
+        assert_eq!(file.size, Some(41_230_000));
+        assert_eq!(file.format_id.as_deref(), Some("mp4"));
+        assert_eq!(file.label.as_deref(), Some("standard"));
     }
 
     #[tokio::test]

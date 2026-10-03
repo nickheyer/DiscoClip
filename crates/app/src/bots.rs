@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use discoclip_bot::{
     BotControl, BotRuntime, BotStatus, Clients, ControlError, Directories, Directory,
-    DiscordConfig, DiscordEndpoints, GuildEvent, rest_clients, supervise,
+    DiscordConfig, DiscordEndpoints, GuildEvent, OwnLinks, rest_clients, supervise,
 };
 use discoclip_engine::EngineHandle;
 use serde::Serialize;
@@ -48,6 +48,8 @@ pub struct BotServices {
     pub guilds: BotGuildStore,
     pub rules: RuleCache,
     pub profiles: ProfileCache,
+    /// The app's addresses, so the watchers leave links to its own pages alone
+    pub own_links: Arc<dyn OwnLinks>,
 }
 
 pub struct BotManager {
@@ -58,6 +60,7 @@ pub struct BotManager {
     guilds: BotGuildStore,
     rules: RuleCache,
     profiles: ProfileCache,
+    own_links: Arc<dyn OwnLinks>,
     shutdown: CancellationToken,
     bots: Mutex<HashMap<ApplicationId, Running>>,
     events: broadcast::Sender<BotEvent>,
@@ -76,6 +79,7 @@ impl BotManager {
             guilds,
             rules,
             profiles,
+            own_links,
         } = services;
         Self {
             engine,
@@ -85,6 +89,7 @@ impl BotManager {
             guilds,
             rules,
             profiles,
+            own_links,
             shutdown,
             bots: Mutex::new(HashMap::new()),
             events: broadcast::channel(256).0,
@@ -195,6 +200,7 @@ impl BotManager {
                 guild_events: events,
                 rules: Arc::new(self.rules.clone()),
                 profiles: Arc::new(self.profiles.clone()),
+                own_links: self.own_links.clone(),
                 directories: self.directories.clone(),
             },
             application.enabled,

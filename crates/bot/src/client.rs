@@ -28,6 +28,7 @@ use uuid::Uuid;
 use crate::commands::{self, Invocation};
 use crate::config::{DiscordConfig, DiscordEndpoints};
 use crate::directory::{Directories, Directory};
+use crate::link::OwnLinks;
 use crate::origin::DiscordOrigin;
 use crate::profile::{ProfileSource, turned_off};
 use crate::publish::DiscordClients;
@@ -137,6 +138,7 @@ pub struct Bot {
     guild_events: mpsc::Sender<GuildEvent>,
     rules: Arc<dyn RuleSource>,
     profiles: Arc<dyn ProfileSource>,
+    own_links: Arc<dyn OwnLinks>,
     directories: Directories,
 }
 
@@ -178,6 +180,7 @@ impl Bot {
             guild_events: runtime.guild_events.clone(),
             rules: runtime.rules.clone(),
             profiles: runtime.profiles.clone(),
+            own_links: runtime.own_links.clone(),
             directories: runtime.directories.clone(),
         }
     }
@@ -205,6 +208,7 @@ impl Bot {
                 self.rules.clone(),
                 self.profiles.clone(),
                 Arc::new(self.engine.clone()),
+                self.own_links.clone(),
             ),
             profiles: self.profiles.clone(),
             directory,

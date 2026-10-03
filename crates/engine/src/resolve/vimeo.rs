@@ -894,6 +894,7 @@ impl Resolver for VimeoResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Basic, Tag::Video, Tag::Live],
             session: SessionSupport::Optional,
+            on_by_default: true,
             examples: &[
                 "https://vimeo.com/22439234",
                 "https://player.vimeo.com/video/22439234",

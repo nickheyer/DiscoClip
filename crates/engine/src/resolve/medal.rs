@@ -554,6 +554,7 @@ impl Resolver for MedalResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Video],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://medal.tv/games/valorant/clips/jTBFnLKdLy15K",
                 "https://medal.tv/clips/2um24TWdty0NA",

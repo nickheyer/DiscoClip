@@ -369,6 +369,7 @@ impl Resolver for SnapchatResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Social, Tag::Video],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://www.snapchat.com/spotlight/W7_EDlXWTBiXAEEniNoMPwAAYb2lpY3VwYWFlAZ6JW-cbAZ6JW-bhAAAAAQ",
             ],

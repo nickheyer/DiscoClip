@@ -267,6 +267,7 @@ impl Resolver for BanByeResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Video],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://banbye.com/watch/v_ytfmvkVYLE8T",
                 "https://banbye.com/watch/v_2JjQtqjKUE_F?playlistId=p_Ld82N6gBw_OJ",

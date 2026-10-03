@@ -426,6 +426,7 @@ impl Resolver for SpotifyResolver {
             media: &[MediaKind::Audio],
             tags: &[Tag::Podcasts],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://open.spotify.com/episode/3crGsCZzzR8znh9HPh8qR5",
                 "https://open.spotify.com/episode/082a1V6nazH9ZZqskV1vfz",

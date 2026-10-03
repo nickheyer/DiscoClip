@@ -197,6 +197,7 @@ impl Resolver for CloudflareStreamResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Players],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://customer-f33zs165nr7gyfy4.cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957/iframe",
                 "https://watch.cloudflarestream.com/6b9e68b07dfee8cc2d116e4c51d6a957",

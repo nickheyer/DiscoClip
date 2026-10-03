@@ -974,6 +974,7 @@ impl Resolver for RaiplayResolver {
             media: &[MediaKind::Video, MediaKind::Audio],
             tags: &[Tag::Video, Tag::News, Tag::Live],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://www.raiplay.it/video/2014/04/Report-del-07042014-cb27157f-9dd0-4aee-b788-b1f67643a391.html",
                 "https://www.raiplay.it/dirette/rainews24",

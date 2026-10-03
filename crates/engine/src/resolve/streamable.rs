@@ -137,6 +137,7 @@ impl Resolver for StreamableResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Basic, Tag::Video],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://streamable.com/moo",
                 "https://streamable.com/e/dnd1",

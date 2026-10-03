@@ -292,6 +292,7 @@ impl Resolver for CccResolver {
             media: &[MediaKind::Video],
             tags: &[Tag::Video],
             session: SessionSupport::None,
+            on_by_default: true,
             examples: &[
                 "https://media.ccc.de/v/39c3-schlechte-karten-it-sicherheit-im-jahr-null-der-epa-fur-alle",
                 "https://media.ccc.de/v/32c3-7368-shopshifting#download",

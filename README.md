@@ -50,6 +50,7 @@ deletes it.
 
 **Profiles** set platform access and media limits. Settings inherit from the
 global default through server, channel and member assignments, within server limits.
+
 **Platforms** lists supported sites and lets admins import cookies for sites
 that require a login.
 

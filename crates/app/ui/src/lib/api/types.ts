@@ -90,6 +90,10 @@ export type PlatformDefault = 'inherit' | 'enabled' | 'disabled';
 export type BotState = 'disabled' | 'stopped' | 'starting' | 'connected' | 'retrying' | 'failed';
 export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error';
 export type FixtureStatus = 'pass' | 'fail' | 'login_required' | 'never';
+/** Where a check link came from: shipped with the resolver, added by hand, or a finished job's. */
+export type LinkOrigin = 'builtin' | 'custom' | 'job';
+/** Whether a platform works, by its check links and the jobs that finished on it. */
+export type PlatformHealth = 'working' | 'failing' | 'login_required' | 'unknown';
 export type CookieFormat = 'netscape' | 'header';
 export type HealthStatus = 'ok' | 'warn' | 'fail';
 export type SessionState = 'unsupported' | 'logged_out' | 'logged_in';
@@ -503,6 +507,9 @@ export interface SettingsView {
 	secret_keys: string[];
 	data_dir: string;
 	provisioning_file: string | null;
+	/** The address browsers reach the app at, as links and login callbacks are built on it. */
+	public_url: string | null;
+	public_url_source: 'configured' | 'learned' | null;
 }
 
 export interface SettingEntry {
@@ -605,6 +612,14 @@ export interface Rule extends Required<RuleInput> {
 	guild_id: Snowflake;
 	created_at: Timestamp;
 	updated_at: Timestamp;
+}
+
+/** A rule with the names of the places it points at, as far as the bots know them. */
+export interface RuleView extends Rule {
+	guild_name: string | null;
+	guild_icon: string | null;
+	channel_name: string | null;
+	post_to_name: string | null;
 }
 
 export interface Profile extends Required<ProfileInput> {
@@ -731,7 +746,8 @@ export interface FrontJob {
 	resolver: string;
 	uploader: string | null;
 	webpage_url: Url | null;
-	thumbnail: Url | null;
+	/** Shows the still that stands for the media, with its signed token. */
+	thumbnail: string | null;
 	duration_secs: number | null;
 	/** A recorded stream. */
 	live: boolean;
@@ -745,16 +761,6 @@ export interface FrontJob {
 	/** Plays or shows the media, with its signed token. */
 	media_url: string;
 	download_url: string | null;
-}
-
-export interface Guild {
-	id: Snowflake;
-	name: string;
-	icon: string | null;
-	owner: boolean;
-	permissions: string;
-	manageable: boolean;
-	fetched_at: Timestamp;
 }
 
 export interface Submitted {
@@ -800,7 +806,8 @@ export interface JobSummary {
 	media: MediaKind;
 	uploader: string | null;
 	webpage_url: Url | null;
-	thumbnail: Url | null;
+	/** Where the still that stands for the output is served, once the job has an output. */
+	thumbnail: string | null;
 	duration_secs: number | null;
 	live: boolean;
 	/** A live capture is being recorded, or was. */
@@ -1206,14 +1213,18 @@ export interface PlatformCoverage {
 	tags: string[];
 	session: SessionSupport;
 	fixtures: FixtureResult[];
+	/** When a link of the platform was last run. */
 	last_run_at: Timestamp | null;
-	/** The last run in which every link passed. */
+	/** When a link of the platform last resolved. */
 	last_pass_at: Timestamp | null;
-	last_fail_at: Timestamp | null;
+	/** When a job last finished on the platform. */
+	last_job_at: Timestamp | null;
+	/** Of the links in use, how many last resolved. */
 	passed: number;
 	failed: number;
-	/** Links that resolve only with a login the platform's saved cookies do not give. */
+	/** Links in use that resolve only with a login the platform's saved cookies do not give. */
 	login_required: number;
+	health: PlatformHealth;
 	running: boolean;
 	/** How many cookies the app has saved for the platform. */
 	cookies: number;
@@ -1230,7 +1241,13 @@ export interface SessionOutcome extends PlatformCoverage {
 }
 
 export interface FixtureResult {
+	id: Uuid;
 	url: Url;
+	origin: LinkOrigin;
+	/** Whether runs try the link. */
+	enabled: boolean;
+	/** What the link failed with while another link resolved, when that is why it is off. */
+	disabled_reason: string | null;
 	status: FixtureStatus;
 	run_at: Timestamp | null;
 	last_pass_at: Timestamp | null;
@@ -1248,6 +1265,15 @@ export interface CheckStarted {
 	platforms: string[];
 }
 
+export interface FixtureLinkRequest {
+	url: string;
+}
+
+export interface FixtureLinkChange {
+	url?: string;
+	enabled?: boolean;
+}
+
 export interface Health {
 	status: HealthStatus;
 	version: string;
@@ -1262,6 +1288,8 @@ export interface HealthCheck {
 	label: string;
 	status: HealthStatus;
 	detail: string;
+	/** The page where what the check looks at is seen to. */
+	href: string | null;
 }
 
 export interface Metrics {
@@ -1405,10 +1433,12 @@ export interface DatabaseMetrics {
 
 export interface FixtureMetrics {
 	platforms: number;
+	/** Platforms with a check link in use. */
 	with_fixtures: number;
-	passing: number;
+	working: number;
 	failing: number;
-	never: number;
+	login_required: number;
+	unknown: number;
 	running: number;
 }
 

@@ -1,6 +1,7 @@
-<img src="brand/mark.svg" alt="DiscoClip" width="96" height="96">
-
-# DiscoClip
+<p align="center">
+  <img alt="DiscoClip logo" src="brand/mark.svg" width="300" />
+  <h2 align="center">DiscoClip</h2>
+</p>
 
 Download media from Discord channels or a web app, convert it to fit upload limits,
 and post or archive the result. Supports video, audio, images, playlists and live
@@ -53,9 +54,22 @@ global default through server, channel and member assignments, within server lim
 that require a login.
 
 **Content views** share media at `/f/<slug>`, with public access or a login requirement.
-Enable **Discord links** to link to media that exceeds upload or quality limits;
-this requires `web.public_url`. Signed media links allow access without login
-until they expire.
+Enable **Discord links** to post a page instead of a file for media that exceeds upload or
+quality limits. Pages, login callbacks and link previews are built on the address you
+open the web app at, which the server learns from your own requests; set `web.public_url`
+to fix it. Signed media links allow access without login until they expire.
+
+Every finished job's media is archived under `engine.archive.dir` (`data/archive` by
+default, `/var/lib/discoclip/archive` for the packages and containers), filed by year and
+month beside a JSON record of the job. Retention sweeps the working cache on its schedule
+and leaves the archive alone. Turn the archive off or move it under **Settings**.
+
+**Platforms** shows whether each site still works: a platform is checked with links kept in
+the database, which are the ones it ships with, any you add, and the newest links of jobs
+that finished on it, so real use keeps the set fresh. A check tries the links in turn and
+stops at the first that resolves; a link that fails while another resolves is set aside.
+Links can be run one at a time, edited and removed.
+
 
 Admins manage the server, operators manage jobs and bots, and viewers have read
 access. Users with linked Discord accounts can manage watch rules for servers

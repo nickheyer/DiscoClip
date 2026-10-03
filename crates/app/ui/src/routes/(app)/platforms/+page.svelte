@@ -1,14 +1,16 @@
 <script lang="ts">
 	import PlayIcon from '@lucide/svelte/icons/play';
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import { platforms as platformsApi } from '$lib/api/endpoints';
-	import type { MediaKind, PlatformCoverage, SessionSupport } from '$lib/api/types';
+	import type { MediaKind, PlatformCoverage, PlatformHealth, SessionSupport } from '$lib/api/types';
 	import Card from '$lib/components/Card.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import PlatformSummary from '$lib/components/PlatformSummary.svelte';
+	import PlatformSummary, { HEALTH } from '$lib/components/PlatformSummary.svelte';
 	import SearchInput from '$lib/components/SearchInput.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import { mediaLabel, number } from '$lib/format';
@@ -16,6 +18,7 @@
 	import { notify, reportError } from '$lib/toast.svelte';
 
 	const POLL = 10_000;
+	const HEALTHS: PlatformHealth[] = ['working', 'failing', 'login_required', 'unknown'];
 
 	let platforms = $state<PlatformCoverage[]>([]);
 	let loading = $state(true);
@@ -25,7 +28,22 @@
 	let tag = $state('');
 	let media = $state<MediaKind | ''>('');
 	let sessionFilter = $state<SessionSupport | ''>('');
-	let health = $state<'' | 'failing' | 'passing' | 'never'>('');
+
+	/** The verdict filter lives in the URL, so the health page can point at the failing ones. */
+	const health = $derived.by((): PlatformHealth | '' => {
+		const wanted = page.url.searchParams.get('health');
+		return wanted && HEALTHS.includes(wanted as PlatformHealth) ? (wanted as PlatformHealth) : '';
+	});
+
+	async function pickHealth(value: string) {
+		// The path is this page's own route; only the query changes.
+		// eslint-disable-next-line svelte/no-navigation-without-resolve
+		await goto(value ? `${resolve('/platforms')}?health=${value}` : resolve('/platforms'), {
+			keepFocus: true,
+			noScroll: true,
+			replaceState: true
+		});
+	}
 
 	async function load(quiet = false) {
 		if (!quiet) {
@@ -53,7 +71,7 @@
 		checking = true;
 		try {
 			const started = await platformsApi.checkAll();
-			notify.success(`Running checks on ${number(started.platforms.length)} platforms`);
+			notify.success(`Checking ${number(started.platforms.length)} platforms`);
 			await load(true);
 		} catch (err) {
 			reportError(err, 'Could not start the checks');
@@ -76,20 +94,18 @@
 			if (tag && !p.tags.includes(tag)) return false;
 			if (media && !p.media.includes(media)) return false;
 			if (sessionFilter && p.session !== sessionFilter) return false;
-			if (health === 'failing' && p.failed === 0) return false;
-			if (health === 'passing' && (p.failed > 0 || p.passed === 0)) return false;
-			if (health === 'never' && p.last_run_at !== null) return false;
+			if (health && p.health !== health) return false;
 			return true;
 		})
 	);
 	const running = $derived(platforms.filter((p) => p.running).length);
-	const failing = $derived(platforms.filter((p) => p.failed > 0).length);
+	const failing = $derived(platforms.filter((p) => p.health === 'failing').length);
 	const busy = $derived(checking || running > 0);
 </script>
 
 <PageHeader
 	title="Platforms"
-	description="Every site the server can fetch from, with its latest link checks."
+	description="Every site the server can fetch from, and whether each still works: by its check links, and by the jobs that finish on it."
 >
 	{#snippet actions()}
 		{#if session.can('manage_jobs')}
@@ -101,7 +117,7 @@
 				aria-busy={busy}
 			>
 				{#if busy}<Spinner />{:else}<PlayIcon class="size-4" />{/if}
-				{busy ? 'Running checks…' : 'Run all checks'}
+				{busy ? 'Checking…' : 'Check all'}
 			</button>
 		{/if}
 	{/snippet}
@@ -132,17 +148,26 @@
 				<option value="optional">Login optional</option>
 				<option value="required">Login required</option>
 			</select>
-			<select class="select w-36" bind:value={health} aria-label="Link check result">
-				<option value="">Any result</option>
-				<option value="failing">Failing</option>
-				<option value="passing">All pass</option>
-				<option value="never">Never run</option>
+			<select
+				class="select w-40"
+				value={health}
+				onchange={(event) => pickHealth(event.currentTarget.value)}
+				aria-label="Verdict"
+			>
+				<option value="">Any verdict</option>
+				{#each HEALTHS as verdict (verdict)}
+					<option value={verdict}>{HEALTH[verdict].label}</option>
+				{/each}
 			</select>
 		</div>
 		<p class="text-sm text-surface-600-400">
 			{number(shown.length)} of {number(platforms.length)} platforms
-			{#if running > 0}· {number(running)} running checks{/if}
-			{#if failing > 0}· <span class="text-error-600-400">{number(failing)} failing</span>{/if}
+			{#if running > 0}· {number(running)} checking{/if}
+			{#if failing > 0}
+				· <a href="{resolve('/platforms')}?health=failing" class="anchor text-error-600-400"
+					>{number(failing)} failing</a
+				>
+			{/if}
 		</p>
 	</form>
 </Card>

@@ -1,3 +1,7 @@
+//! The archive: a copy of every finished job's media kept for good, beside a JSON record
+//! of the job, under `dir/YYYY/MM/`. The cache the jobs work in is swept by retention;
+//! the archive is not.
+
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 
@@ -9,11 +13,34 @@ use crate::job::Job;
 use crate::media::safe_stem;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct ArchiveConfig {
+    /// Whether finished jobs are archived at all.
+    pub enabled: bool,
+    /// Where the archive lives.
     pub dir: PathBuf,
-    #[serde(default)]
+    /// Which of a job's files are kept.
     pub keep: Keep,
+}
+
+impl Default for ArchiveConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            dir: PathBuf::from("data/archive"),
+            keep: Keep::Output,
+        }
+    }
+}
+
+impl ArchiveConfig {
+    /// The archive switched off, as a stored `null` once meant.
+    pub fn off() -> Self {
+        Self {
+            enabled: false,
+            ..Self::default()
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -32,17 +59,20 @@ pub trait Archiver: Send + Sync {
     fn enabled(&self) -> bool {
         true
     }
-    /// Takes new settings while running. `None` turns archiving off.
-    fn reconfigure(&self, _config: Option<ArchiveConfig>) {}
+    /// Takes new settings while running.
+    fn reconfigure(&self, _config: ArchiveConfig) {}
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ArchiveEntry {
-    /// Every file written: the media kept and the job record.
+    /// Every file written: the media kept, its still and the job record.
     pub files: Vec<PathBuf>,
     /// The archived copy of the output, when the archive keeps outputs.
     #[serde(default)]
     pub output: Option<PathBuf>,
+    /// The archived copy of the output's still, beside the output.
+    #[serde(default)]
+    pub thumbnail: Option<PathBuf>,
     /// The archived copy of the source, when the archive keeps sources.
     #[serde(default)]
     pub source: Option<PathBuf>,
@@ -66,19 +96,19 @@ pub enum ArchiveError {
 }
 
 /// Stores media under `dir/YYYY/MM/<job>-<title>.<ext>` next to a JSON record of the job.
-/// Its settings can change while it runs. Without any it archives nothing.
+/// Its settings can change while it runs.
 pub struct FsArchiver {
-    config: RwLock<Option<ArchiveConfig>>,
+    config: RwLock<ArchiveConfig>,
 }
 
 impl FsArchiver {
-    pub fn new(config: Option<ArchiveConfig>) -> Self {
+    pub fn new(config: ArchiveConfig) -> Self {
         Self {
             config: RwLock::new(config),
         }
     }
 
-    pub fn config(&self) -> Option<ArchiveConfig> {
+    pub fn config(&self) -> ArchiveConfig {
         self.config
             .read()
             .unwrap_or_else(|e| e.into_inner())
@@ -113,15 +143,18 @@ async fn copy_into(
 #[async_trait]
 impl Archiver for FsArchiver {
     fn enabled(&self) -> bool {
-        self.config().is_some()
+        self.config().enabled
     }
 
-    fn reconfigure(&self, config: Option<ArchiveConfig>) {
+    fn reconfigure(&self, config: ArchiveConfig) {
         *self.config.write().unwrap_or_else(|e| e.into_inner()) = config;
     }
 
     async fn archive(&self, job: &Job) -> Result<ArchiveEntry, ArchiveError> {
-        let config = self.config().ok_or(ArchiveError::Disabled)?;
+        let config = self.config();
+        if !config.enabled {
+            return Err(ArchiveError::Disabled);
+        }
         let dir = Self::target_dir(&config, job);
         tokio::fs::create_dir_all(&dir).await?;
         let id = job.id.to_string();
@@ -136,6 +169,7 @@ impl Archiver for FsArchiver {
         let mut bytes = 0;
         let keep = config.keep;
         let mut archived_output = None;
+        let mut archived_thumbnail = None;
         let mut archived_source = None;
         if matches!(keep, Keep::Output | Keep::Both) {
             let output = job
@@ -147,6 +181,12 @@ impl Archiver for FsArchiver {
             files.push(path.clone());
             archived_output = Some(path);
             bytes += n;
+            if let Some(thumbnail) = &job.artifacts.thumbnail {
+                let (path, n) = copy_into(&thumbnail.path, &dir, &stem, "-thumbnail").await?;
+                files.push(path.clone());
+                archived_thumbnail = Some(path);
+                bytes += n;
+            }
         }
         if matches!(keep, Keep::Source | Keep::Both) {
             let source = job
@@ -169,7 +209,9 @@ impl Archiver for FsArchiver {
         Ok(ArchiveEntry {
             files,
             output: archived_output,
+            thumbnail: archived_thumbnail,
             source: archived_source,
+
             record: Some(record),
             bytes,
             at: Timestamp::now(),

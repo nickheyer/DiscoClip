@@ -26,6 +26,7 @@ use uuid::Uuid;
 use crate::audit::{self, Action, Actor, Target};
 use crate::db::{nanos, timestamp, transact};
 use crate::profiles::{ProfileCache, ProfileId};
+use crate::public_url::PublicUrl;
 use crate::secrets::Keyring;
 use crate::sessions::{hash_token, random_token};
 use crate::users::{check_password, hash_password, hash_secret, verify_password};
@@ -266,7 +267,9 @@ pub enum FrontendError {
     UnknownProfile(ProfileId),
     #[error("no login provider is called {0}")]
     UnknownProvider(String),
-    #[error("posting links needs web.public_url to be set")]
+    #[error(
+        "posting links needs the app's public address: open the app at the address people reach it by, or set web.public_url"
+    )]
     NoPublicUrl,
     #[error("{0}")]
     Password(String),
@@ -314,7 +317,7 @@ pub fn check_slug(slug: &str) -> Result<(), FrontendError> {
 }
 
 /// What a front end is checked against: the profiles and providers that exist, and
-/// whether the server has a public URL to build links from.
+/// whether the server has a public address to build links from.
 #[derive(Clone)]
 pub struct Known {
     pub profiles: ProfileCache,
@@ -436,7 +439,7 @@ struct CacheInner {
 #[derive(Clone)]
 pub struct FrontendCache {
     profiles: ProfileCache,
-    public_url: Arc<RwLock<Option<Url>>>,
+    public_url: Arc<PublicUrl>,
     inner: Arc<RwLock<CacheInner>>,
 }
 
@@ -486,22 +489,19 @@ impl FrontendCache {
             .unwrap_or_default()
     }
 
-    /// The server's public URL, when set.
+    /// The server's public address, configured or learned, when there is one.
     pub fn public_url(&self) -> Option<Url> {
-        self.public_url
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone()
+        self.public_url.get()
     }
 
-    /// The page of `job` on `frontend`, under the public URL.
+    /// The page of `job` on `frontend`, under the public address.
     pub fn page_url(&self, frontend: &Frontend, job: &Job) -> Option<Url> {
         let base = self.public_url()?;
         base.join(&format!("f/{}/j/{}", frontend.input.slug, job.id))
             .ok()
     }
 
-    /// Whether any front end posts links, so the public URL must stay set.
+    /// Whether any front end posts links, so a public address must stay known.
     pub fn any_posting_links(&self) -> bool {
         self.inner
             .read()
@@ -539,7 +539,7 @@ impl LinkTargets for FrontendCache {
             tracing::warn!(
                 frontend = frontend.input.slug,
                 job = %job.id,
-                "Public URL is missing. Uploading the media file."
+                "No public address is known yet. Uploading the media file."
             );
             return None;
         };
@@ -578,7 +578,7 @@ impl FrontendStore {
         db: SqliteStore,
         keyring: Keyring,
         profiles: ProfileCache,
-        public_url: Arc<RwLock<Option<Url>>>,
+        public_url: Arc<PublicUrl>,
     ) -> Self {
         Self {
             db,
@@ -1316,13 +1316,15 @@ mod tests {
         );
         profiles.load().await.unwrap();
         let store = FrontendStore::new(
-            db,
+            db.clone(),
             Keyring::from_key([9; 32]),
             profiles.cache(),
-            Arc::new(RwLock::new(Some(
-                Url::parse("https://clips.example").unwrap(),
-            ))),
+            Arc::new(PublicUrl::new(
+                Some(Url::parse("https://clips.example").unwrap()),
+                db,
+            )),
         );
+
         store.load().await.unwrap();
         (store, profiles)
     }

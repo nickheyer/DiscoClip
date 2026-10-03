@@ -415,6 +415,37 @@ ALTER TABLE profiles ADD COLUMN max_capture_secs INTEGER;
 ALTER TABLE profiles ADD COLUMN audio_language TEXT;
 ",
     },
+    Migration {
+        version: 24,
+        name: "remembered",
+        sql: "
+CREATE TABLE remembered (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+",
+    },
+    Migration {
+        version: 25,
+        name: "fixture_links",
+        sql: "
+CREATE TABLE fixture_links (
+    id TEXT PRIMARY KEY,
+    platform TEXT NOT NULL,
+    url TEXT NOT NULL,
+    origin TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    disabled_reason TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    removed_at INTEGER,
+    UNIQUE (platform, url)
+);
+CREATE INDEX fixture_links_platform ON fixture_links(platform, removed_at, enabled);
+DROP TABLE fixture_platforms;
+",
+    },
 ];
 
 /// Brings the application's tables up to date. Returns how many migrations ran.

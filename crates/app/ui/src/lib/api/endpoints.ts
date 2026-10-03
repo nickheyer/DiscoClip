@@ -122,7 +122,7 @@ export const rules = {
 	forGuild: (id: T.Uuid, guild: T.Snowflake) => get<T.Rule[]>(`${guildOf(id, guild)}/rules`),
 	create: (id: T.Uuid, guild: T.Snowflake, body: T.RuleInput) =>
 		post<T.Rule>(`${guildOf(id, guild)}/rules`, body),
-	list: () => get<T.Rule[]>('/discord/rules'),
+	list: () => get<T.RuleView[]>('/discord/rules'),
 	get: (id: T.Uuid) => get<T.Rule>(`/discord/rules/${enc(id)}`),
 	update: (id: T.Uuid, body: T.RuleInput) => put<T.Rule>(`/discord/rules/${enc(id)}`, body),
 	remove: (id: T.Uuid) => del<void>(`/discord/rules/${enc(id)}`)
@@ -208,8 +208,6 @@ export const front = {
 // ---- Account guilds ----
 
 export const guilds = {
-	list: () => get<T.Guild[]>('/discord/guilds'),
-	refresh: () => post<T.Guild[]>('/discord/guilds/refresh'),
 	/** The applications whose bots have been in a guild the account manages. */
 	applications: (guild: T.Snowflake) =>
 		get<T.GuildApplication[]>(`/discord/guilds/${enc(guild)}/applications`)
@@ -257,6 +255,16 @@ export const platforms = {
 	get: (id: string) => get<T.PlatformCoverage>(`/platforms/${enc(id)}`),
 	checkAll: () => post<T.CheckStarted>('/platforms/check'),
 	check: (id: string) => post<T.PlatformCoverage>(`/platforms/${enc(id)}/check`),
+	// Check links
+	addLink: (id: string, body: T.FixtureLinkRequest) =>
+		post<T.PlatformCoverage>(`/platforms/${enc(id)}/fixtures`, body),
+	changeLink: (id: string, link: T.Uuid, body: T.FixtureLinkChange) =>
+		patch<T.PlatformCoverage>(`/platforms/${enc(id)}/fixtures/${enc(link)}`, body),
+	removeLink: (id: string, link: T.Uuid) =>
+		del<T.PlatformCoverage>(`/platforms/${enc(id)}/fixtures/${enc(link)}`),
+	checkLink: (id: string, link: T.Uuid) =>
+		post<T.PlatformCoverage>(`/platforms/${enc(id)}/fixtures/${enc(link)}/check`),
+
 	// Platform sessions
 	setCookies: (id: string, body: T.CookiesImport) =>
 		put<T.SessionOutcome>(`/platforms/${enc(id)}/cookies`, body),

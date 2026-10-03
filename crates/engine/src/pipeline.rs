@@ -895,6 +895,7 @@ async fn execute(
         Err(error) => return Err(failed(stage)(error)),
     };
     job.artifacts.output = Some(output.clone());
+    job.artifacts.thumbnail = make_thumbnail(ctx, job, job_dir, &output).await;
     ctx.note(
         job,
         Some(stage),
@@ -1316,6 +1317,57 @@ async fn still_source(
                 )
                 .await;
             StillSource::Waveform
+        }
+    }
+}
+
+/// The still that stands for the output, as `poster.jpg` beside it: a frame of a video,
+/// the picture itself scaled down, the cover art of sound that carries one, else the
+/// platform's own picture for sound that carries none. Sound with no picture anywhere,
+/// and a file that is not media, get none. Anything that goes wrong on the way is noted
+/// in the job's log; the output stands without a still.
+async fn make_thumbnail(
+    ctx: &Context,
+    job: &mut Job,
+    job_dir: &Path,
+    output: &LocalFile,
+) -> Option<LocalFile> {
+    let dest = job_dir.join("poster.jpg");
+    let outcome = match ctx.transcoder.thumbnail(output, &dest).await {
+        Ok(file) => Ok(file),
+        Err(TranscodeError::NotMedia) => return None,
+        Err(TranscodeError::NoPicture) => {
+            let platform = job.resolver().unwrap_or("web").to_string();
+            let picture = job
+                .artifacts
+                .resolved
+                .as_ref()
+                .and_then(|r| r.thumbnail.clone())?;
+            match fetch_thumbnail(ctx, &platform, &picture, job_dir).await {
+                Ok(path) => match LocalFile::from_path(path).await {
+                    Ok(fetched) => ctx
+                        .transcoder
+                        .thumbnail(&fetched, &dest)
+                        .await
+                        .map_err(|e| e.to_string()),
+                    Err(error) => Err(error.to_string()),
+                },
+                Err(error) => Err(error),
+            }
+        }
+        Err(error) => Err(error.to_string()),
+    };
+    match outcome {
+        Ok(file) => Some(file),
+        Err(error) => {
+            let _ = ctx
+                .note(
+                    job,
+                    Some(Stage::Transcode),
+                    format!("Thumbnail not made: {error}"),
+                )
+                .await;
+            None
         }
     }
 }

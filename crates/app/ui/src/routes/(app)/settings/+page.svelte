@@ -4,6 +4,7 @@
 	import UploadIcon from '@lucide/svelte/icons/upload';
 	import { Accordion, FileUpload, Menu, Portal } from '@skeletonlabs/skeleton-svelte';
 	import { onMount } from 'svelte';
+	import { page } from '$app/state';
 	import { settings as settingsApi } from '$lib/api/endpoints';
 	import type { Json, SettingsFormat, SettingsView } from '$lib/api/types';
 	import Card from '$lib/components/Card.svelte';
@@ -78,7 +79,8 @@
 	let view = $state<SettingsView | null>(null);
 	let loading = $state(true);
 	let error = $state<unknown>(null);
-	let filter = $state('');
+	/** The filter starts from the URL, so a page can point at one setting. */
+	let filter = $state(page.url.searchParams.get('q') ?? '');
 
 	let importOpen = $state(false);
 	let importFormat = $state<SettingsFormat>('toml');
@@ -247,6 +249,18 @@
 			<KeyValueRow label="Data directory" value={view.data_dir} mono />
 			<KeyValueRow label="Config file" value={view.provisioning_file} mono />
 			<KeyValueRow label="Overridden" value={overridden} />
+			{#if view.public_url}
+				<KeyValueRow label="Public URL">
+					<span class="inline-flex flex-wrap items-center gap-2">
+						<span class="font-mono text-xs break-all">{view.public_url}</span>
+						<span class="badge preset-tonal" style="--badge-size: var(--text-xs)">
+							{view.public_url_source === 'configured'
+								? 'From web.public_url'
+								: 'Learned from your requests'}
+						</span>
+					</span>
+				</KeyValueRow>
+			{/if}
 		</KeyValue>
 	</Card>
 {/if}

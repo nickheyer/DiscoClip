@@ -334,7 +334,15 @@ async fn serve(startup: Startup) -> Result<ExitCode, Error> {
     );
     let loaded = profiles.load().await?;
     tracing::info!(profiles = loaded, "profiles loaded");
-    let public_url = Arc::new(std::sync::RwLock::new(settings.web.public_url.clone()));
+    let public_url = Arc::new(crate::public_url::PublicUrl::new(
+        settings.web.public_url.clone(),
+        store.clone(),
+    ));
+    public_url.load().await?;
+    if let Some(url) = public_url.learned() {
+        tracing::info!(public_url = %url, "public address learned in an earlier run");
+    }
+
     let frontends = FrontendStore::new(
         store.clone(),
         keyring.clone(),
@@ -364,9 +372,14 @@ async fn serve(startup: Startup) -> Result<ExitCode, Error> {
     let shutdown = process_shutdown.child_token();
     cancel_on_signal(process_shutdown)?;
 
+    let fixture_store = FixtureStore::new(store.clone());
+    let seeded = fixture_store.seed(&handle.platforms()).await?;
+    if seeded > 0 {
+        tracing::info!(links = seeded, "check links the platforms ship with added");
+    }
     let fixtures = Arc::new(FixtureRunner::new(
         handle.clone(),
-        FixtureStore::new(store.clone()),
+        fixture_store,
         Arc::new(std::sync::RwLock::new(settings.fixtures.clone())),
     ));
 
@@ -428,6 +441,13 @@ async fn serve(startup: Startup) -> Result<ExitCode, Error> {
         schedule.schedule(token).await;
         Ok("fixtures")
     });
+    let token = shutdown.clone();
+    let learner = fixtures.clone();
+    tasks.spawn(async move {
+        learner.learn_from_jobs(token).await;
+        Ok("fixture learning")
+    });
+
     let token = shutdown.clone();
     let app = WebApp::new(
         &settings,

@@ -338,13 +338,14 @@ pub fn render(metrics: &Metrics, health: &Health) -> String {
     e.family(
         "discoclip_fixture_platforms",
         "gauge",
-        "Platforms with fixtures, by the state of their last run.",
+        "Platforms by what their checks and finished jobs show of them.",
     );
     for (state, count) in [
-        ("passing", metrics.fixtures.passing),
-        ("failing", metrics.fixtures.failing),
-        ("never", metrics.fixtures.never),
-        ("running", metrics.fixtures.running),
+        ("working", metrics.fixtures.counts.working),
+        ("failing", metrics.fixtures.counts.failing),
+        ("login_required", metrics.fixtures.counts.login_required),
+        ("unknown", metrics.fixtures.counts.unknown),
+        ("running", metrics.fixtures.counts.running),
     ] {
         e.sample(
             "discoclip_fixture_platforms",

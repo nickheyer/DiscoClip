@@ -14,12 +14,12 @@ use discoclip_engine::EngineHandle;
 use discoclip_engine::ffmpeg::{Ffmpeg, ToolSource};
 use tokio::net::TcpListener;
 use tokio::sync::watch;
-use url::Url;
 
 use crate::backup::SharedBackupConfig;
 use crate::fixtures::SharedFixtureConfig;
 use crate::local::SharedLocalConfig;
 use crate::oauth::{OAuthService, Registry};
+use crate::public_url::PublicUrl;
 use crate::settings::{Settings, WebConfig};
 use crate::telemetry::LogHandle;
 use crate::web::proxy::Proxies;
@@ -54,7 +54,7 @@ pub struct Live {
     pub local: SharedLocalConfig,
     pub fixtures: SharedFixtureConfig,
     pub oauth: Arc<OAuthService>,
-    pub public_url: Arc<RwLock<Option<Url>>>,
+    pub public_url: Arc<PublicUrl>,
     pub proxies: Arc<RwLock<Proxies>>,
     /// The `discord` settings as the Discord publisher reads them.
     pub discord: SharedDiscordSettings,
@@ -91,11 +91,10 @@ impl Live {
                 .await
                 .map_err(|e| LiveError::rejected("engine.ffmpeg", e))?;
         }
-        if next.engine.archive != current.engine.archive
-            && let Some(archive) = &next.engine.archive
-        {
-            check_dir("engine.archive.dir", &archive.dir).await?;
+        if next.engine.archive != current.engine.archive && next.engine.archive.enabled {
+            check_dir("engine.archive.dir", &next.engine.archive.dir).await?;
         }
+
         if next.local.dir != current.local.dir {
             check_dir("local.dir", &next.local.dir).await?;
         }
@@ -123,8 +122,9 @@ impl Live {
         self.oauth
             .signup
             .store(settings.auth.oauth_signup, Ordering::Relaxed);
-        *self.public_url.write().unwrap_or_else(|e| e.into_inner()) =
-            settings.web.public_url.clone();
+        self.public_url
+            .set_configured(settings.web.public_url.clone());
+
         *self.proxies.write().unwrap_or_else(|e| e.into_inner()) =
             Proxies::new(settings.web.trusted_proxies.clone());
         self.web.send_replace(settings.web.clone());

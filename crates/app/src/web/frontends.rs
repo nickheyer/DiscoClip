@@ -36,11 +36,7 @@ pub(super) fn known(state: &AppState) -> Known {
     Known {
         profiles: state.profiles.cache(),
         providers: state.oauth.providers().into_iter().map(|p| p.id).collect(),
-        public_url: state
-            .public_url
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .is_some(),
+        public_url: state.public_url.get().is_some(),
     }
 }
 

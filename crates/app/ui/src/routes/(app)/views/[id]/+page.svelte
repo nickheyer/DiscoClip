@@ -664,7 +664,7 @@
 
 			<Card
 				title="Discord links"
-				description="Post a page from this view instead of the file when an upload is too large or the output falls below these thresholds. Needs web.public_url in Settings."
+				description="Post a page from this view instead of the file when an upload is too large or the output falls below these thresholds. Pages are built on the address this app is reached at, or web.public_url when set."
 			>
 				<div class="space-y-4">
 					{@render toggleSwitch('Post links', linksEnabled, (value) => (linksEnabled = value))}

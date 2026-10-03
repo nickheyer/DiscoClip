@@ -237,10 +237,12 @@
 				</StatTile>
 				<StatTile
 					label="Platform checks"
-					value="{number(m.fixtures.passing)} / {number(m.fixtures.with_fixtures)}"
-					hint="passing · {number(m.fixtures.failing)} failing · {number(
-						m.fixtures.never
-					)} never · {number(m.fixtures.running)} running"
+					value="{number(m.fixtures.working)} / {number(m.fixtures.platforms)}"
+					hint="working · {number(m.fixtures.failing)} failing · {number(
+						m.fixtures.login_required
+					)} need a login · {number(m.fixtures.unknown)} not checked · {number(
+						m.fixtures.running
+					)} running"
 					tone={m.fixtures.failing > 0 ? 'warning' : 'surface'}
 				/>
 				<StatTile

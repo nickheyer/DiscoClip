@@ -65,9 +65,11 @@
 	// Settings
 	let name = $state('');
 	let newToken = $state('');
+	let saving = $state(false);
+	// Discord login
 	let newSecret = $state('');
 	let login = $state(false);
-	let saving = $state(false);
+	let savingLogin = $state(false);
 
 	function syncForm(view: ApplicationView) {
 		name = view.name;
@@ -137,9 +139,7 @@
 		try {
 			app = await applications.update(id, {
 				name: name.trim() !== app.name ? name.trim() : undefined,
-				bot_token: newToken.trim() || undefined,
-				client_secret: newSecret.trim() || undefined,
-				login: login !== app.login ? login : undefined
+				bot_token: newToken.trim() || undefined
 			});
 			syncForm(app);
 			notify.success('Settings saved');
@@ -147,6 +147,24 @@
 			reportError(err, 'Could not save the settings');
 		} finally {
 			saving = false;
+		}
+	}
+
+	async function saveLogin(event: SubmitEvent) {
+		event.preventDefault();
+		if (!app) return;
+		savingLogin = true;
+		try {
+			app = await applications.update(id, {
+				client_secret: newSecret.trim() || undefined,
+				login: login !== app.login ? login : undefined
+			});
+			syncForm(app);
+			notify.success(app.login ? 'Discord login on' : 'Discord login off');
+		} catch (err) {
+			reportError(err, 'Could not save the Discord login');
+		} finally {
+			savingLogin = false;
 		}
 	}
 
@@ -408,31 +426,47 @@
 			</DataTable>
 		</Card>
 
-		<Card title="Settings">
-			<form class="space-y-4" onsubmit={save}>
-				<Field label="Name" for="app-name" required>
-					<input id="app-name" class="input" type="text" bind:value={name} required />
-				</Field>
-				<Field label="Bot token" for="app-token">
-					<input
-						id="app-token"
-						class="input font-mono"
-						type="password"
-						bind:value={newToken}
-						autocomplete="off"
-						placeholder="Unchanged"
-					/>
-				</Field>
-				<Switch checked={login} onCheckedChange={(details) => (login = details.checked)}>
-					<Switch.Control><Switch.Thumb /></Switch.Control>
-					<Switch.Label>Let people sign in with Discord</Switch.Label>
-					<Switch.HiddenInput />
-				</Switch>
-				{#if login}
+		<div class="flex min-w-0 flex-col gap-6">
+			<Card title="Settings">
+				<form class="space-y-4" onsubmit={save}>
+					<Field label="Name" for="app-name" required>
+						<input id="app-name" class="input" type="text" bind:value={name} required />
+					</Field>
+					<Field label="Bot token" for="app-token">
+						<input
+							id="app-token"
+							class="input font-mono"
+							type="password"
+							bind:value={newToken}
+							autocomplete="off"
+							placeholder="********"
+						/>
+					</Field>
+					<div class="flex justify-end">
+						<button type="submit" class="btn preset-filled" disabled={saving}>
+							{#if saving}<Spinner />{/if}
+							Save
+						</button>
+					</div>
+				</form>
+			</Card>
+
+			<!-- Discord login: the switch, the client secret it needs, and the redirect the
+			     Developer Portal must know, kept apart from the bot's own settings. -->
+			<Card title="Discord login">
+				{#snippet actions()}
+					<Status enabled={app?.login ?? false} />
+				{/snippet}
+				<form class="space-y-4" onsubmit={saveLogin}>
+					<Switch checked={login} onCheckedChange={(details) => (login = details.checked)}>
+						<Switch.Control><Switch.Thumb /></Switch.Control>
+						<Switch.Label>Let people sign in with Discord</Switch.Label>
+						<Switch.HiddenInput />
+					</Switch>
 					<Field
 						label="Client secret"
 						for="app-secret"
-						required={!app.has_client_secret}
+						required={login && !app.has_client_secret}
 						help="From the OAuth2 page of the application in the Developer Portal."
 					>
 						<input
@@ -441,8 +475,8 @@
 							type="password"
 							bind:value={newSecret}
 							autocomplete="off"
-							required={!app.has_client_secret}
-							placeholder={app.has_client_secret ? 'Unchanged' : ''}
+							required={login && !app.has_client_secret}
+							placeholder={app.has_client_secret ? '********' : ''}
 						/>
 					</Field>
 					<div class="label min-w-0">
@@ -453,15 +487,15 @@
 						</p>
 						<p class="text-xs text-surface-600-400">Add it under Redirects on that same page.</p>
 					</div>
-				{/if}
-				<div class="flex justify-end">
-					<button type="submit" class="btn preset-filled" disabled={saving}>
-						{#if saving}<Spinner />{/if}
-						Save
-					</button>
-				</div>
-			</form>
-		</Card>
+					<div class="flex justify-end">
+						<button type="submit" class="btn preset-filled" disabled={savingLogin}>
+							{#if savingLogin}<Spinner />{/if}
+							Save
+						</button>
+					</div>
+				</form>
+			</Card>
+		</div>
 	</div>
 {/if}
 

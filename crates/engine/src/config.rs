@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::archive::ArchiveConfig;
 
@@ -13,7 +13,8 @@ pub struct EngineConfig {
     pub ffmpeg: Option<PathBuf>,
     pub workers: usize,
     pub limits: Limits,
-    pub archive: Option<ArchiveConfig>,
+    #[serde(deserialize_with = "archive_or_off")]
+    pub archive: ArchiveConfig,
     pub playlists: PlaylistConfig,
     pub live: LiveConfig,
     pub download: DownloadConfig,
@@ -30,7 +31,7 @@ impl Default for EngineConfig {
             ffmpeg: None,
             workers: 2,
             limits: Limits::default(),
-            archive: None,
+            archive: ArchiveConfig::default(),
             playlists: PlaylistConfig::default(),
             live: LiveConfig::default(),
             download: DownloadConfig::default(),
@@ -42,7 +43,12 @@ impl Default for EngineConfig {
     }
 }
 
+fn archive_or_off<'de, D: Deserializer<'de>>(deserializer: D) -> Result<ArchiveConfig, D::Error> {
+    Ok(Option::<ArchiveConfig>::deserialize(deserializer)?.unwrap_or_else(ArchiveConfig::off))
+}
+
 /// Which video encoders the transcoder may run.
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EncoderChoice {

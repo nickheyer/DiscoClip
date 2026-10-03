@@ -20,7 +20,9 @@ use url::Url;
 
 use super::AppState;
 use super::error::ApiError;
-use super::jobs::{Artifact, DownloadQuery, locate, recording_grows, serve_file};
+use super::jobs::{
+    Artifact, DownloadQuery, has_thumbnail, locate, recording_grows, serve_file, serve_thumbnail,
+};
 use super::oauth::callback_url;
 use super::proxy::{Client, ClientInfo, Scheme};
 use super::{assets, front};
@@ -326,7 +328,9 @@ pub struct FrontJob {
     pub resolver: String,
     pub uploader: Option<String>,
     pub webpage_url: Option<Url>,
-    pub thumbnail: Option<Url>,
+    /// Shows the still that stands for the media. Carries the token that opens it without
+    /// a session, as the media link does.
+    pub thumbnail: Option<String>,
     pub duration_secs: Option<f64>,
     /// A recorded stream.
     pub live: bool,
@@ -383,7 +387,7 @@ fn front_job(state: &AppState, frontend: &Frontend, job: &Job) -> Option<FrontJo
         resolver: resolved.resolver.clone(),
         uploader: resolved.uploader.clone(),
         webpage_url: resolved.webpage_url.clone(),
-        thumbnail: resolved.thumbnail.clone(),
+        thumbnail: has_thumbnail(job).then(|| format!("{base}/thumbnail?t={token}")),
         duration_secs: if recording {
             None
         } else {
@@ -555,6 +559,36 @@ pub async fn media(
     serve_file(&path, &filename, true, &headers, growing).await
 }
 
+/// The still that stands for the media: for a viewer, or for anyone holding a signed
+/// token, as link unfurlers do.
+pub async fn thumbnail(
+    State(state): State<AppState>,
+    Path((slug, id)): Path<(String, String)>,
+    Query(query): Query<MediaQuery>,
+    jar: CookieJar,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    let frontend = frontend(&state, &slug)?;
+    let id: JobId = super::auth::parse_id(&id)?;
+    let ticketed = query
+        .t
+        .as_deref()
+        .is_some_and(|t| state.frontends.verify_media(frontend.id, id.0, t));
+    if !ticketed {
+        admitted(&state, &frontend, &jar).await?;
+    }
+    let job = state.engine.get(id).await?.ok_or(ApiError::NotFound)?;
+    if !shown(&state, &frontend, &job) {
+        return Err(ApiError::NotFound);
+    }
+    let file = state
+        .engine
+        .thumbnail(id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    serve_thumbnail(&file.path, &headers).await
+}
+
 /// The file to keep, when the front end allows downloads.
 pub async fn download(
     State(state): State<AppState>,
@@ -611,7 +645,8 @@ fn meta_name(name: &str, content: &str) -> String {
 
 /// The head a front end's media page carries: what Discord and other unfurlers read to
 /// show the title and thumbnail and to play a video or audio inline from a plain link.
-/// The media link is signed so the unfurler needs no session.
+/// The media and thumbnail links are signed so the unfurler needs no session, and every
+/// link is absolute under the app's public address.
 pub fn media_head(base: &Url, frontend: &Frontend, job: &FrontJob) -> String {
     let page = base
         .join(&format!("f/{}/j/{}", frontend.input.slug, job.id))
@@ -619,6 +654,10 @@ pub fn media_head(base: &Url, frontend: &Frontend, job: &FrontJob) -> String {
     let media = base
         .join(job.media_url.trim_start_matches('/'))
         .expect("a media path joins");
+    let thumbnail = job.thumbnail.as_deref().map(|path| {
+        base.join(path.trim_start_matches('/'))
+            .expect("a thumbnail path joins")
+    });
     let title = job
         .title
         .clone()
@@ -647,13 +686,13 @@ pub fn media_head(base: &Url, frontend: &Frontend, job: &FrontJob) -> String {
                 head.push_str(&meta("og:video:width", &w.to_string()));
                 head.push_str(&meta("og:video:height", &h.to_string()));
             }
-            if let Some(thumbnail) = &job.thumbnail {
+            if let Some(thumbnail) = &thumbnail {
                 head.push_str(&meta("og:image", thumbnail.as_str()));
                 head.push_str(&meta_name("twitter:image", thumbnail.as_str()));
             }
             head.push_str(&meta_name("twitter:card", "player"));
             head.push_str(&meta_name("twitter:title", &title));
-            head.push_str(&meta_name("twitter:player", page.as_str()));
+            head.push_str(&meta_name("twitter:player", media.as_str()));
             head.push_str(&meta_name("twitter:player:stream", media.as_str()));
             head.push_str(&meta_name(
                 "twitter:player:stream:content_type",
@@ -670,8 +709,9 @@ pub fn media_head(base: &Url, frontend: &Frontend, job: &FrontJob) -> String {
             head.push_str(&meta("og:audio:url", media.as_str()));
             head.push_str(&meta("og:audio:secure_url", media.as_str()));
             head.push_str(&meta("og:audio:type", &job.content_type));
-            if let Some(thumbnail) = &job.thumbnail {
+            if let Some(thumbnail) = &thumbnail {
                 head.push_str(&meta("og:image", thumbnail.as_str()));
+                head.push_str(&meta_name("twitter:image", thumbnail.as_str()));
             }
             head.push_str(&meta_name("twitter:card", "summary_large_image"));
         }
@@ -690,7 +730,7 @@ pub fn media_head(base: &Url, frontend: &Frontend, job: &FrontJob) -> String {
         }
         MediaKind::File => {
             head.push_str(&meta("og:type", "website"));
-            if let Some(thumbnail) = &job.thumbnail {
+            if let Some(thumbnail) = &thumbnail {
                 head.push_str(&meta("og:image", thumbnail.as_str()));
             }
             head.push_str(&meta_name("twitter:card", "summary"));
@@ -732,10 +772,9 @@ pub async fn page(
     };
     let base = state
         .public_url
-        .read()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone()
+        .get()
         .or_else(|| client.origin().and_then(|o| Url::parse(&o).ok()));
+
     let Some(base) = base else {
         return assets::page_with_head("");
     };
@@ -925,9 +964,34 @@ mod tests {
             r#"<meta property="og:video" content="http://localhost:8080/api/f/five/jobs/{}/media?t="#,
             in_guild.id
         )), "{html}");
-        assert!(html.contains(r#"<meta property="og:image" content="https://thumbs.test/t.jpg">"#));
+        // The poster is the app's own still of the output, signed like the media, so
+        // Discord shows it and nothing depends on the platform's picture staying up.
+        let thumbnail_url = jobs[0]["thumbnail"].as_str().unwrap().to_string();
+        assert!(
+            thumbnail_url.starts_with(&format!("/api/f/five/jobs/{}/thumbnail?t=", in_guild.id)),
+            "{thumbnail_url}"
+        );
+        assert!(
+            html.contains(&format!(
+                r#"<meta property="og:image" content="http://localhost:8080/api/f/five/jobs/{}/thumbnail?t="#,
+                in_guild.id
+            )),
+            "{html}"
+        );
         assert!(html.contains(r#"<meta name="twitter:card" content="player">"#));
+        assert!(
+            html.contains(&format!(
+                r#"<meta name="twitter:player" content="http://localhost:8080/api/f/five/jobs/{}/media?t="#,
+                in_guild.id
+            )),
+            "{html}"
+        );
+
         assert!(html.contains("<title>Clip a</title>"));
+        let (status, _, bytes) = stranger.raw(&thumbnail_url).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(bytes, b"0123456789".to_vec());
+
         let (status, html) = stranger.get(&format!("/f/five/j/{}", other_guild.id)).await;
         assert_eq!(status, StatusCode::OK);
         assert!(!html.as_str().unwrap().contains("og:video"));
@@ -994,6 +1058,15 @@ mod tests {
                 .0,
             StatusCode::UNAUTHORIZED
         );
+        assert_eq!(
+            stranger
+                .get(&format!("/api/f/five/jobs/{}/thumbnail", in_guild.id))
+                .await
+                .0,
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(stranger.raw(&thumbnail_url).await.0, StatusCode::OK);
+
         let (status, sessions) = admin.get(&format!("/api/frontends/{id}/sessions")).await;
         assert_eq!(status, StatusCode::OK, "{sessions}");
         assert_eq!(sessions.as_array().unwrap().len(), 1);
@@ -1041,7 +1114,13 @@ mod tests {
             StatusCode::UNAUTHORIZED
         );
 
-        // Links need a public URL, and the URL stays while links are posted.
+        // Links are built on the app's public address. None is set, but the admin's own
+        // requests taught the server where it is reached, so links can be posted. A set
+        // web.public_url wins over what was learned, and clearing it falls back to it.
+        assert_eq!(
+            app.state.public_url.get().unwrap().as_str(),
+            "http://localhost:8080/"
+        );
         let (status, body) = admin
             .send(
                 Method::PUT,
@@ -1053,7 +1132,15 @@ mod tests {
                 })),
             )
             .await;
-        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let (status, html) = stranger.get(&format!("/f/five/j/{}", in_guild.id)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            html.as_str()
+                .unwrap()
+                .contains(r#"<meta property="og:url" content="http://localhost:8080/f/five/j/"#),
+            "{html}"
+        );
         let (status, body) = admin
             .send(
                 Method::PATCH,
@@ -1062,26 +1149,8 @@ mod tests {
             )
             .await;
         assert_eq!(status, StatusCode::OK, "{body}");
-        let (status, body) = admin
-            .send(
-                Method::PUT,
-                &format!("/api/frontends/{id}"),
-                Some(json!({
-                    "name": "Guild Five", "slug": "five", "profile_id": profile["id"],
-                    "scope": {"guilds": ["5"]}, "access": {"open": true},
-                    "links": {"enabled": true}
-                })),
-            )
-            .await;
-        assert_eq!(status, StatusCode::OK, "{body}");
-        let (status, body) = admin
-            .send(
-                Method::PATCH,
-                "/api/settings",
-                Some(json!({"reset": ["web.public_url"]})),
-            )
-            .await;
-        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        assert_eq!(body["public_url"], "https://clips.example/");
+        assert_eq!(body["public_url_source"], "configured");
         let (status, html) = stranger.get(&format!("/f/five/j/{}", in_guild.id)).await;
         assert_eq!(status, StatusCode::OK);
         assert!(
@@ -1089,6 +1158,17 @@ mod tests {
                 .unwrap()
                 .contains(r#"<meta property="og:url" content="https://clips.example/f/five/j/"#)
         );
+        let (status, body) = admin
+            .send(
+                Method::PATCH,
+                "/api/settings",
+                Some(json!({"reset": ["web.public_url"]})),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["public_url"], "http://localhost:8080/");
+        assert_eq!(body["public_url_source"], "learned");
+
         // Deleting the front end closes its pages.
         assert_eq!(
             admin.delete(&format!("/api/frontends/{id}")).await.0,

@@ -22,20 +22,15 @@ pub async fn providers(State(state): State<AppState>) -> Json<Vec<ProviderInfo>>
     Json(state.oauth.providers())
 }
 
-/// Where a provider sends the browser back to: under `web.public_url`, or the scheme and
-/// host the request came to, as the trusted proxies report them. It is what the provider
-/// must have registered as a redirect for the application.
+/// Where a provider sends the browser back to: under the public address, configured or
+/// learned, or the scheme and host the request came to, as the trusted proxies report
+/// them. It is what the provider must have registered as a redirect for the application.
 pub(super) fn callback_url(
     state: &AppState,
     client: &ClientInfo,
     provider: &str,
 ) -> Result<Url, ApiError> {
-    let public_url = state
-        .public_url
-        .read()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone();
-    let base = match public_url {
+    let base = match state.public_url.get() {
         Some(url) => url,
         None => {
             let origin = client

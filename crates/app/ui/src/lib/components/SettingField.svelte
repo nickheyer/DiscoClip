@@ -261,6 +261,9 @@
 		{#if field.stored}
 			<Timestamp at={field.stored.updated_at} class="text-xs text-surface-600-400" />
 		{/if}
+		{#if field.description}
+			<p class="basis-full text-xs text-surface-600-400">{field.description}</p>
+		{/if}
 	</div>
 
 	<div class="min-w-0 text-sm">
@@ -342,7 +345,7 @@
 											class="input {leaf.secret ? 'font-mono' : ''}"
 											type={leaf.secret ? 'password' : 'text'}
 											autocomplete="off"
-											placeholder={leaf.secret ? (leaf.set ? 'Unchanged' : '') : leaf.placeholder}
+											placeholder={leaf.secret ? (leaf.set ? '********' : '') : leaf.placeholder}
 											bind:value={parts[leaf.name]}
 										/>
 									{/if}
@@ -378,7 +381,7 @@
 						type={field.secret ? 'password' : 'text'}
 						bind:value={text}
 						autocomplete="off"
-						placeholder={field.secret ? 'New value' : ''}
+						placeholder={field.secret ? '********' : ''}
 					/>
 				{:else if field.kind === 'list'}
 					<textarea

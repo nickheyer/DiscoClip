@@ -256,7 +256,7 @@
 					href: resolve('/(app)/applications/[id]', { id }),
 					label: application?.name ?? 'Application'
 				}
-			: { href: resolve('/servers'), label: 'Servers' }
+			: { href: resolve('/'), label: 'Dashboard' }
 	);
 </script>
 

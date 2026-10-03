@@ -93,6 +93,7 @@ COPY --from=build /discoclip /usr/local/bin/discoclip
 ENV DISCOCLIP_DATA_DIR=/var/lib/discoclip \
     DISCOCLIP_ENGINE__CACHE_DIR=/var/cache/discoclip \
     DISCOCLIP_LOCAL__DIR=/var/lib/discoclip/local \
+    DISCOCLIP_ENGINE__ARCHIVE__DIR=/var/lib/discoclip/archive \
     DISCOCLIP_BACKUP__DIR=/var/lib/discoclip/backups \
     DISCOCLIP_WEB__BIND=0.0.0.0:8080 \
     DISCOCLIP_ENGINE__BROWSER__EXECUTABLE=/usr/bin/chromium \

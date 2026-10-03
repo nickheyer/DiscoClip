@@ -17,7 +17,9 @@ use super::error::ApiError;
 use crate::audit::Action;
 use crate::config::{Format, Provisioning};
 use crate::live::LiveError;
+use crate::public_url::PublicUrlSource;
 use crate::settings::{Change, SettingsError, View};
+
 use crate::users::Permission;
 
 impl From<SettingsError> for ApiError {
@@ -43,7 +45,7 @@ impl From<LiveError> for ApiError {
     }
 }
 
-/// The settings with what only provisioning sets beside them.
+/// The settings with what only provisioning sets beside them, and the address in force.
 #[derive(Debug, Serialize)]
 pub struct SettingsView {
     #[serde(flatten)]
@@ -52,6 +54,10 @@ pub struct SettingsView {
     pub data_dir: String,
     /// The provisioning file read at startup, when one was.
     pub provisioning_file: Option<String>,
+    /// The address browsers reach the app at, as links and login callbacks are built on
+    /// it: `web.public_url`, else the one learned from the operators' requests.
+    pub public_url: Option<String>,
+    pub public_url_source: Option<PublicUrlSource>,
 }
 
 async fn view(state: &AppState) -> Result<Json<SettingsView>, ApiError> {
@@ -62,6 +68,8 @@ async fn view(state: &AppState) -> Result<Json<SettingsView>, ApiError> {
             .provisioning_file
             .as_ref()
             .map(|path| path.display().to_string()),
+        public_url: state.public_url.get().map(|url| url.to_string()),
+        public_url_source: state.public_url.source(),
     }))
 }
 
@@ -87,11 +95,15 @@ async fn change(
     }
     let current = state.settings.load().await?;
     let next = state.settings.preview(change).await?;
-    if next.web.public_url.is_none() && state.frontends.cache().any_posting_links() {
+    if next.web.public_url.is_none()
+        && state.public_url.learned().is_none()
+        && state.frontends.cache().any_posting_links()
+    {
         return Err(ApiError::Conflict(
             "Disable Discord links on content views before clearing the public URL.".into(),
         ));
     }
+
     state.live.check(&current, &next).await?;
     if let Err(error) = state.live.apply(&next).await {
         restore(state, &current).await;
@@ -406,15 +418,10 @@ mod tests {
         assert_eq!(app.state.live.fixtures.read().unwrap().interval_secs, 3600);
         assert_eq!(app.state.fixtures.config().interval_secs, 3600);
         assert_eq!(
-            app.state
-                .public_url
-                .read()
-                .unwrap()
-                .as_ref()
-                .unwrap()
-                .as_str(),
+            app.state.public_url.get().unwrap().as_str(),
             "https://clips.example.com/"
         );
+
         assert!(
             app.state
                 .proxies

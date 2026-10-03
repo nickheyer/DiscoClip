@@ -193,7 +193,36 @@ pub async fn identify(
             ip,
         });
     }
+    // An account's request says where the app is reached: the address its browser shows,
+    // which the browser names in Origin and Referer, else the one the request arrived at.
+    if request.extensions().get::<Identity>().is_some()
+        && let Some(origin) = request_origin(&request)
+    {
+        state.public_url.learn(&origin).await?;
+    }
     Ok(next.run(request).await)
+}
+
+/// The origin the browser is on, from its `Origin` header, else its `Referer`, else the
+/// scheme and host the request came to as the trusted proxies report them.
+fn request_origin(request: &Request) -> Option<String> {
+    let headed = |name: header::HeaderName| {
+        request
+            .headers()
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| url::Url::parse(value).ok())
+            .filter(|url| matches!(url.scheme(), "http" | "https") && url.host().is_some())
+            .map(|url| url.origin().ascii_serialization())
+    };
+    headed(header::ORIGIN)
+        .or_else(|| headed(header::REFERER))
+        .or_else(|| {
+            request
+                .extensions()
+                .get::<ClientInfo>()
+                .and_then(|info| info.origin())
+        })
 }
 
 /// Refuses cross-site state changes: the request's origin must be this host, and a

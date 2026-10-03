@@ -644,7 +644,7 @@ mod tests {
         );
         let file = temp_file("unknown.toml", "[engine]\nbogus = 1\n");
         assert!(resolve(Some(&file), vars(&[])).is_err());
-        let file = temp_file("partial.toml", "[engine.archive]\nkeep = \"both\"\n");
+        let file = temp_file("partial.toml", "[web.tls]\ncert = \"cert.pem\"\n");
         assert!(resolve(Some(&file), vars(&[])).is_err());
         let file = temp_file("broken.toml", "[engine\nworkers = 1\n");
         assert!(matches!(
@@ -667,12 +667,12 @@ mod tests {
     #[test]
     fn a_partial_section_is_checked_over_what_is_stored() {
         let provisioning =
-            Provisioning::from_text("[engine.archive]\nkeep = \"both\"\n", Format::Toml).unwrap();
+            Provisioning::from_text("[web.tls]\ncert = \"cert.pem\"\n", Format::Toml).unwrap();
         let values = provisioning
-            .resolve(&json!({"engine": {"archive": {"dir": "stored"}}}))
+            .resolve(&json!({"web": {"tls": {"key": "stored.pem"}}}))
             .unwrap();
         assert_eq!(values.len(), 1);
-        assert_eq!(values["engine.archive.keep"], json!("both"));
+        assert_eq!(values["web.tls.cert"], json!("cert.pem"));
         assert!(provisioning.resolve(&json!({})).is_err());
     }
 

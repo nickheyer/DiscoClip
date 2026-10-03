@@ -58,10 +58,6 @@ impl Settings {
         };
         let mut settings = Settings::default();
         settings.engine.ffmpeg = Some(PathBuf::from("/usr/bin/ffmpeg"));
-        settings.engine.archive = Some(discoclip_engine::archive::ArchiveConfig {
-            dir: PathBuf::from("archive"),
-            keep: discoclip_engine::archive::Keep::Output,
-        });
         settings.engine.limits.max_duration_secs = Some(0);
         settings.http.proxies.default =
             Some(Url::parse("http://proxy.invalid:3128").expect("valid"));
@@ -159,9 +155,7 @@ impl Settings {
         self.discord
             .check()
             .map_err(|(path, message)| invalid(&path, message))?;
-        if let Some(archive) = &self.engine.archive
-            && archive.dir.as_os_str().is_empty()
-        {
+        if self.engine.archive.dir.as_os_str().is_empty() {
             return Err(invalid("engine.archive.dir", "cannot be empty".into()));
         }
         if self.http.user_agent.trim().is_empty() {
@@ -1197,9 +1191,10 @@ mod tests {
             ))
             .await
             .unwrap();
-        let archive = boot.settings.engine.archive.unwrap();
+        let archive = boot.settings.engine.archive;
         assert_eq!(archive.dir, std::path::PathBuf::from("from-app"));
         assert_eq!(archive.keep, discoclip_engine::archive::Keep::Both);
+        assert!(archive.enabled);
     }
 
     #[tokio::test]
@@ -1242,11 +1237,12 @@ mod tests {
             ))
             .await
             .unwrap();
+        // A stored null, from before the archive had a switch, still turns it off.
         let settings = store
             .set(&actor(), "engine.archive", Json::Null)
             .await
             .unwrap();
-        assert!(settings.engine.archive.is_none());
+        assert!(!settings.engine.archive.enabled);
         let entries = store.entries().await.unwrap();
         assert_eq!(keys(&entries), vec![("engine.archive", Source::App)]);
 
@@ -1256,7 +1252,7 @@ mod tests {
             ))
             .await
             .unwrap();
-        assert!(boot.settings.engine.archive.is_none());
+        assert!(!boot.settings.engine.archive.enabled);
         assert_eq!(boot.kept, vec!["engine.archive.dir".to_string()]);
     }
 
@@ -1378,19 +1374,16 @@ mod tests {
         let store = store().await;
         store
             .bootstrap(&provisioning(json!({
-                "engine": {"archive": {"dir": "a", "keep": "both"}, "workers": 5}
+                "web": {"tls": {"cert": "a.pem", "key": "b.pem"}}, "engine": {"workers": 5}
             })))
             .await
             .unwrap();
-        let error = store
-            .reset(&actor(), "engine.archive.dir")
-            .await
-            .unwrap_err();
+        let error = store.reset(&actor(), "web.tls.cert").await.unwrap_err();
         assert!(matches!(error, SettingsError::Invalid { .. }));
-        assert!(store.load().await.unwrap().engine.archive.is_some());
+        assert!(store.load().await.unwrap().web.tls.is_some());
 
-        let settings = store.reset(&actor(), "engine.archive").await.unwrap();
-        assert!(settings.engine.archive.is_none());
+        let settings = store.reset(&actor(), "web.tls").await.unwrap();
+        assert!(settings.web.tls.is_none());
         assert_eq!(settings.engine.workers, 5);
         let settings = store.reset(&actor(), "engine.workers").await.unwrap();
         assert_eq!(settings.engine.workers, 2);
@@ -1726,7 +1719,9 @@ mod tests {
             .set(&actor(), "engine.archive.dir", json!("arch"))
             .await
             .unwrap();
-        assert_eq!(settings.engine.archive.unwrap().dir, PathBuf::from("arch"));
+        assert_eq!(settings.engine.archive.dir, PathBuf::from("arch"));
+        assert!(settings.engine.archive.enabled);
+
         assert!(
             store
                 .entries()

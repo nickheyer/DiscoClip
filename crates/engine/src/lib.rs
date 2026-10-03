@@ -29,8 +29,9 @@ pub use config::{
 };
 pub use engine::{
     CancelError, DeleteError, Engine, EngineBuilder, EngineError, EngineHandle, PlatformSession,
-    RetryError, StopError, SubmitError, Utilisation,
+    RetryError, StopError, SubmitError, ThumbnailError, Utilisation,
 };
+
 pub use event::{EngineEvent, EventKind, Progress};
 pub use http::{Http, HttpConfig};
 pub use job::{

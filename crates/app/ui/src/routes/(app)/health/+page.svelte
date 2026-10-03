@@ -48,12 +48,21 @@
 	const attention = $derived(checks.filter((check) => check.status !== 'ok').length);
 
 	const columns: Column<HealthCheck>[] = [
-		{ key: 'label', label: 'Check', value: (check) => check.label, class: 'font-medium' },
+		{ key: 'label', label: 'Check', cell: labelCell, value: (check) => check.label },
 		{ key: 'status', label: 'Status', cell: statusCell },
 		{ key: 'detail', label: 'Detail', value: (check) => check.detail, class: 'text-sm' }
 	];
 </script>
 
+<!-- A check names the page where what it looks at is seen to, filtered to the trouble. -->
+{#snippet labelCell(check: HealthCheck)}
+	{#if check.href}
+		<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
+		<a href={check.href} class="anchor font-medium">{check.label}</a>
+	{:else}
+		<span class="font-medium">{check.label}</span>
+	{/if}
+{/snippet}
 {#snippet statusCell(check: HealthCheck)}
 	<Status health={check.status} />
 {/snippet}

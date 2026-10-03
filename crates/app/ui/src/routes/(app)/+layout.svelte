@@ -13,7 +13,6 @@
 	import LogOutIcon from '@lucide/svelte/icons/log-out';
 	import MenuIcon from '@lucide/svelte/icons/menu';
 	import ScrollTextIcon from '@lucide/svelte/icons/scroll-text';
-	import ServerIcon from '@lucide/svelte/icons/server';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import SlidersHorizontalIcon from '@lucide/svelte/icons/sliders-horizontal';
 	import TerminalIcon from '@lucide/svelte/icons/terminal';
@@ -28,22 +27,20 @@
 	import type { Permission } from '$lib/api/types';
 	import Wordmark from '$lib/brand/Wordmark.svelte';
 	import ModeToggle from '$lib/components/ModeToggle.svelte';
-	import Status, { type Tone } from '$lib/components/Status.svelte';
+	import Status from '$lib/components/Status.svelte';
 	import SubmitDialog from '$lib/components/SubmitDialog.svelte';
 	import { feed } from '$lib/events.svelte';
 	import { session } from '$lib/session.svelte';
 	import { submitDialog } from '$lib/submit.svelte';
 	import { pageTitle } from '$lib/title.svelte';
 
-	let { data, children } = $props();
+	let { children } = $props();
 
 	interface Entry {
 		label: string;
 		href: string;
 		icon: Component<{ class?: string }>;
 		permission?: Permission;
-		/** Shown only to accounts with a Discord identity. */
-		discord?: boolean;
 	}
 
 	const ENTRIES: Entry[] = [
@@ -55,7 +52,6 @@
 			icon: BotIcon,
 			permission: 'manage_applications'
 		},
-		{ label: 'Servers', href: resolve('/servers'), icon: ServerIcon, discord: true },
 		{ label: 'Profiles', href: resolve('/profiles'), icon: SlidersHorizontalIcon },
 		{
 			label: 'Views',
@@ -84,16 +80,13 @@
 	];
 
 	const entries = $derived(
-		ENTRIES.filter(
-			(entry) =>
-				(!entry.permission || session.can(entry.permission)) && (!entry.discord || data.hasDiscord)
-		)
+		ENTRIES.filter((entry) => !entry.permission || session.can(entry.permission))
 	);
 
 	const GROUPS = [
 		{
 			label: 'Workspace',
-			paths: [resolve('/'), resolve('/jobs'), resolve('/applications'), resolve('/servers')]
+			paths: [resolve('/'), resolve('/jobs'), resolve('/applications')]
 		},
 		{
 			label: 'Configuration',
@@ -171,12 +164,6 @@
 		return () => feed.stop();
 	});
 
-	const FEED: Record<typeof feed.state, { label: string; tone: Tone }> = {
-		connecting: { label: 'Connecting', tone: 'warning' },
-		live: { label: 'Live updates', tone: 'success' },
-		offline: { label: 'Reconnecting', tone: 'error' }
-	};
-
 	async function onAccountSelect(value: string) {
 		if (value === 'account') await goto(resolve('/account'));
 		if (value === 'logout') await session.logout();
@@ -216,14 +203,13 @@
 	{/each}
 {/snippet}
 
+<!-- The live feed is silent while it works. Only its loss is shown, while it reconnects. -->
 {#snippet connection()}
-	<div class="px-2" role="status">
-		<Status
-			label={FEED[feed.state].label}
-			tone={FEED[feed.state].tone}
-			pulse={feed.state !== 'live'}
-		/>
-	</div>
+	{#if feed.state === 'offline'}
+		<div class="px-2" role="status">
+			<Status label="Reconnecting" tone="error" pulse />
+		</div>
+	{/if}
 {/snippet}
 
 <a
@@ -237,7 +223,7 @@
 		<Navigation
 			layout="sidebar"
 			aria-label="Main navigation"
-			class="grid h-full grid-rows-[auto_minmax(0,1fr)_auto] gap-4 border-r border-surface-200-800"
+			class="grid h-full w-56! grid-rows-[auto_minmax(0,1fr)_auto] gap-4 border-r border-surface-200-800"
 		>
 			<Navigation.Header class="px-2">
 				<a href={resolve('/')} aria-label="DiscoClip dashboard"><Wordmark size={28} /></a>

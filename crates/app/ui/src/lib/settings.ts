@@ -51,6 +51,38 @@ const VIDEO_CONTAINERS = ['mp4', 'mov', 'mkv', 'webm'];
 const VIDEO_CODECS = ['h264', 'h265', 'vp9', 'vp8', 'av1'];
 const AUDIO_CODECS = ['aac', 'mp3', 'opus', 'vorbis', 'flac'];
 
+/** What a key does, where its name does not say. */
+export const DESCRIPTIONS: Record<string, string> = {
+	'engine.archive.enabled':
+		'Keep a copy of every finished job’s media for good, filed by year and month under the archive directory beside a JSON record of the job. The cache the jobs work in is swept by retention; the archive is not.',
+	'engine.archive.dir':
+		'Where the archive is kept. A relative path is under the working directory.',
+	'engine.archive.keep':
+		'Which files are archived: the output as it was posted, the source as it was downloaded, or both.',
+	'engine.cache_dir':
+		'Where jobs are worked on: sources, outputs and stills, kept until retention removes the job or trims the cache.',
+	'engine.retention.jobs_days':
+		'Finished jobs older than this are removed from the cache and the job list. 0 keeps them forever. The archive keeps its copies.',
+	'engine.retention.failed_jobs_days':
+		'Failed and cancelled jobs older than this are removed. 0 keeps them forever.',
+	'engine.retention.cache_max_bytes':
+		'The cache is trimmed back under this size, oldest jobs first. 0 never trims.',
+	'engine.retention.sweep_interval_secs': 'How often retention runs.',
+	'engine.workers': 'How many jobs are worked on at once.',
+	'fixtures.interval_secs':
+		'How often each platform’s check links are tried, to show whether the platform still works. 0 runs them only on request.',
+	'fixtures.timeout_secs':
+		'How long one check link may take to resolve before it counts as failed.',
+	'web.public_url':
+		'The address browsers reach the app at, which login callbacks and the pages posted to Discord are built on. Left empty, the address the operators open the app at is used.',
+	'web.trusted_proxies':
+		'Reverse proxies in front of the app, whose forwarding headers are believed for the browser’s address, scheme and host.',
+	'local.dir': 'Where media from links submitted in the web app is kept.',
+	'local.max_bytes': 'The largest file kept for a link submitted in the web app.',
+	'backup.dir': 'Where database backups are written.',
+	'backup.keep': 'How many backups are kept before the oldest is removed.'
+};
+
 /** Keys that take one of a fixed set of words. */
 const CHOICES: Record<string, string[]> = {
 	'engine.archive.keep': ['output', 'source', 'both'],
@@ -115,6 +147,8 @@ export interface SettingField {
 	choices: string[] | null;
 	/** The values an optional section holds, in key order. Only a section has them. */
 	leaves: Leaf[] | null;
+	/** What the key does, where its name does not say. */
+	description: string | null;
 }
 
 const isObject = (v: Json): v is Record<string, Json> =>
@@ -274,7 +308,8 @@ export function fieldsOf(view: SettingsView): SettingField[] {
 				secret: false,
 				stored,
 				choices: null,
-				leaves
+				leaves,
+				description: DESCRIPTIONS[f.key] ?? null
 			};
 		}
 		return {
@@ -287,7 +322,8 @@ export function fieldsOf(view: SettingsView): SettingField[] {
 			secret: view.secret_keys.includes(f.key),
 			stored,
 			choices: CHOICES[f.key] ?? null,
-			leaves: null
+			leaves: null,
+			description: DESCRIPTIONS[f.key] ?? null
 		};
 	});
 }

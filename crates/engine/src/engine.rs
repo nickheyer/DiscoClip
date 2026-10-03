@@ -17,13 +17,14 @@ use crate::download::Downloader;
 use crate::event::{EngineEvent, EventKind};
 use crate::http::Http;
 use crate::job::{Job, JobId, JobStatus, Request, RequestLimits, SourceId, Stage, StatusKind};
+use crate::media::LocalFile;
 use crate::pipeline::{self, Context};
 use crate::publish::Publisher;
 use crate::resolve::{
     Platform, Resolution, ResolveError, Resolver, ResolverRegistry, SessionCheck,
 };
 use crate::store::{JobFilter, JobStore, ResolverStats, Stats, StoreError};
-use crate::transcode::Transcoder;
+use crate::transcode::{TranscodeError, Transcoder};
 
 const EVENT_CAPACITY: usize = 4096;
 const QUEUE_CAPACITY: usize = 10_000;
@@ -136,6 +137,7 @@ impl EngineBuilder {
             queued: AtomicUsize::new(0),
             config: config.clone(),
             archiver: self.archiver.clone(),
+            transcoder: transcoder.clone(),
         });
         let context = Arc::new(Context {
             config,
@@ -370,6 +372,8 @@ struct Shared {
     queued: AtomicUsize,
     config: Arc<RwLock<EngineConfig>>,
     archiver: Option<Arc<dyn Archiver>>,
+    /// Makes the stills of outputs that finished before stills were made with them.
+    transcoder: Arc<dyn Transcoder>,
 }
 
 impl Shared {
@@ -406,6 +410,19 @@ impl Shared {
             });
         }
     }
+}
+
+/// Why a job's still could not be had.
+#[derive(Debug, thiserror::Error)]
+pub enum ThumbnailError {
+    #[error("job {0} not found")]
+    NotFound(JobId),
+    #[error(transparent)]
+    Store(#[from] StoreError),
+    #[error("thumbnail not made: {0}")]
+    Transcode(#[from] TranscodeError),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
 }
 
 /// How busy the engine is right now.
@@ -498,6 +515,7 @@ impl EngineHandle {
         if let Some(archiver) = &self.shared.archiver {
             archiver.reconfigure(config.archive.clone());
         }
+
         self.shared.resize_workers(config.workers);
         *self
             .shared
@@ -775,6 +793,71 @@ impl EngineHandle {
         self.shared.store.get(id).await
     }
 
+    /// The still that stands for `id`'s output: the one made with the job, or, for a job
+    /// that finished before stills were made, one made now from the output, in the cache
+    /// or the archive, and kept with the job. `None` for a job without an output on disk,
+    /// or whose output has no picture to take.
+    pub async fn thumbnail(&self, id: JobId) -> Result<Option<LocalFile>, ThumbnailError> {
+        let mut job = self
+            .shared
+            .store
+            .get(id)
+            .await?
+            .ok_or(ThumbnailError::NotFound(id))?;
+        let archived = job.artifacts.archived.as_ref();
+        if let Some(thumbnail) = &job.artifacts.thumbnail {
+            for path in
+                std::iter::once(&thumbnail.path).chain(archived.and_then(|a| a.thumbnail.as_ref()))
+            {
+                if let Ok(meta) = tokio::fs::metadata(path).await
+                    && meta.is_file()
+                {
+                    return Ok(Some(LocalFile {
+                        path: path.clone(),
+                        size: meta.len(),
+                        info: thumbnail.info.clone(),
+                    }));
+                }
+            }
+        }
+        // A job under way is the pipeline's to write; its still arrives with its output.
+        if !job.status.is_terminal() {
+            return Ok(None);
+        }
+        let Some(output) = job.artifacts.output.clone() else {
+            return Ok(None);
+        };
+        let mut source = None;
+        for path in std::iter::once(&output.path).chain(archived.and_then(|a| a.output.as_ref())) {
+            if tokio::fs::metadata(path).await.is_ok_and(|m| m.is_file()) {
+                source = Some(LocalFile {
+                    path: path.clone(),
+                    size: output.size,
+                    info: output.info.clone(),
+                });
+                break;
+            }
+        }
+        let Some(source) = source else {
+            return Ok(None);
+        };
+        let dir = self.shared.cache_dir().join("jobs").join(id.to_string());
+        tokio::fs::create_dir_all(&dir).await?;
+        let made = match self
+            .shared
+            .transcoder
+            .thumbnail(&source, &dir.join("poster.jpg"))
+            .await
+        {
+            Ok(file) => file,
+            Err(TranscodeError::NoPicture | TranscodeError::NotMedia) => return Ok(None),
+            Err(error) => return Err(error.into()),
+        };
+        job.artifacts.thumbnail = Some(made.clone());
+        self.shared.store.update(&job).await?;
+        Ok(Some(made))
+    }
+
     pub async fn list(&self, filter: &JobFilter) -> Result<Vec<Job>, StoreError> {
         self.shared.store.list(filter).await
     }
@@ -993,6 +1076,10 @@ mod shutdown_tests {
             _: ProgressSender,
         ) -> Result<Transcoded, TranscodeError> {
             unreachable!("a file that fits is never converted")
+        }
+
+        async fn thumbnail(&self, _: &LocalFile, _: &Path) -> Result<LocalFile, TranscodeError> {
+            Err(TranscodeError::NotMedia)
         }
     }
 

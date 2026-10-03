@@ -16,6 +16,7 @@ use serde::Serialize;
 use super::AppState;
 use super::auth::Auth;
 use super::error::ApiError;
+use crate::fixtures::{PlatformCoverage, PlatformHealth};
 
 /// How a part is doing. The worst of them is the server's status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
@@ -33,6 +34,9 @@ pub struct Check {
     pub label: &'static str,
     pub status: Status,
     pub detail: String,
+    /// The page in the app where what the check looks at is seen to, filtered to the
+    /// trouble when the page filters.
+    pub href: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -136,8 +140,20 @@ pub async fn read_health(state: &AppState) -> Health {
     let checks = vec![
         database(&state.db).await,
         engine(state),
-        directory("cache", "Cache directory", &state.engine.cache_dir()).await,
-        directory("local", "Local publishing directory", &local_dir).await,
+        directory(
+            "cache",
+            "Cache directory",
+            &state.engine.cache_dir(),
+            "engine.cache_dir",
+        )
+        .await,
+        directory(
+            "local",
+            "Local publishing directory",
+            &local_dir,
+            "local.dir",
+        )
+        .await,
         ffmpeg(state).await,
         encoder(state),
         fonts(state).await,
@@ -191,30 +207,49 @@ pub fn human_bytes(bytes: u64) -> String {
     }
 }
 
+/// A check with where it is seen to.
+fn check(
+    name: &'static str,
+    label: &'static str,
+    status: Status,
+    detail: String,
+    href: Option<&str>,
+) -> Check {
+    Check {
+        name,
+        label,
+        status,
+        detail,
+        href: href.map(str::to_string),
+    }
+}
+
 async fn database(db: &SqliteStore) -> Check {
     match database_bytes(db).await {
-        Ok(bytes) => Check {
-            name: "database",
-            label: "Database",
-            status: Status::Ok,
-            detail: format!("SQLite answers. {} on disk.", human_bytes(bytes)),
-        },
-        Err(error) => Check {
-            name: "database",
-            label: "Database",
-            status: Status::Fail,
-            detail: format!("SQLite does not answer: {error}"),
-        },
+        Ok(bytes) => check(
+            "database",
+            "Database",
+            Status::Ok,
+            format!("SQLite answers. {} on disk.", human_bytes(bytes)),
+            Some("/backups"),
+        ),
+        Err(error) => check(
+            "database",
+            "Database",
+            Status::Fail,
+            format!("SQLite does not answer: {error}"),
+            Some("/backups"),
+        ),
     }
 }
 
 fn engine(state: &AppState) -> Check {
     let load = state.engine.utilisation();
-    Check {
-        name: "engine",
-        label: "Job engine",
-        status: Status::Ok,
-        detail: format!(
+    check(
+        "engine",
+        "Job engine",
+        Status::Ok,
+        format!(
             "{} {}, {} busy, {} waiting",
             load.workers,
             if load.workers == 1 {
@@ -225,11 +260,13 @@ fn engine(state: &AppState) -> Check {
             load.active,
             load.waiting
         ),
-    }
+        Some("/jobs?status=running"),
+    )
 }
 
-/// Whether a file can be written under `dir`, creating it when it is missing.
-async fn directory(name: &'static str, label: &'static str, dir: &Path) -> Check {
+/// Whether a file can be written under `dir`, creating it when it is missing. `setting`
+/// names the key the directory comes from.
+async fn directory(name: &'static str, label: &'static str, dir: &Path, setting: &str) -> Check {
     let probe = dir.join(format!(".health-{}", uuid::Uuid::now_v7()));
     let written = async {
         tokio::fs::create_dir_all(dir).await?;
@@ -237,55 +274,58 @@ async fn directory(name: &'static str, label: &'static str, dir: &Path) -> Check
         tokio::fs::remove_file(&probe).await
     }
     .await;
+    let href = format!("/settings?q={setting}");
     match written {
-        Ok(()) => Check {
+        Ok(()) => check(
             name,
             label,
-            status: Status::Ok,
-            detail: format!("writable at {}", dir.display()),
-        },
-        Err(error) => Check {
+            Status::Ok,
+            format!("writable at {}", dir.display()),
+            Some(&href),
+        ),
+        Err(error) => check(
             name,
             label,
-            status: Status::Fail,
-            detail: format!("cannot write to {}: {error}", dir.display()),
-        },
+            Status::Fail,
+            format!("cannot write to {}: {error}", dir.display()),
+            Some(&href),
+        ),
     }
 }
 
 async fn ffmpeg(state: &AppState) -> Check {
+    let href = Some("/settings?q=engine.ffmpeg");
     match state.live.ffmpeg.version().await {
-        Ok(version) => Check {
-            name: "ffmpeg",
-            label: "FFmpeg",
-            status: Status::Ok,
-            detail: version,
-        },
-        Err(error) => Check {
-            name: "ffmpeg",
-            label: "FFmpeg",
-            status: Status::Fail,
-            detail: format!("ffmpeg does not run: {error}"),
-        },
+        Ok(version) => check("ffmpeg", "FFmpeg", Status::Ok, version, href),
+        Err(error) => check(
+            "ffmpeg",
+            "FFmpeg",
+            Status::Fail,
+            format!("ffmpeg does not run: {error}"),
+            href,
+        ),
     }
 }
 
 /// Which encoders the settings asked for and which run, as the transcoder has them.
 fn encoder(state: &AppState) -> Check {
     let set = state.live.ffmpeg.encoders();
+    let href = Some("/settings?q=engine.transcode.encoder");
     match &set.shortfall {
-        Some(shortfall) => Check {
-            name: "encoder",
-            label: "Video encoder",
-            status: Status::Fail,
-            detail: shortfall.clone(),
-        },
-        None => Check {
-            name: "encoder",
-            label: "Video encoder",
-            status: Status::Ok,
-            detail: format!("{} ({} chosen)", set.summary(), set.choice.as_str()),
-        },
+        Some(shortfall) => check(
+            "encoder",
+            "Video encoder",
+            Status::Fail,
+            shortfall.clone(),
+            href,
+        ),
+        None => check(
+            "encoder",
+            "Video encoder",
+            Status::Ok,
+            format!("{} ({} chosen)", set.summary(), set.choice.as_str()),
+            href,
+        ),
     }
 }
 
@@ -293,18 +333,20 @@ fn encoder(state: &AppState) -> Check {
 async fn fonts(state: &AppState) -> Check {
     let dir = state.engine.cache_dir().join("health");
     match state.live.ffmpeg.check_fonts(&dir).await {
-        Ok(font) => Check {
-            name: "fonts",
-            label: "Subtitle fonts",
-            status: Status::Ok,
-            detail: format!("subtitles render with {font}"),
-        },
-        Err(error) => Check {
-            name: "fonts",
-            label: "Subtitle fonts",
-            status: Status::Fail,
-            detail: format!("subtitles cannot be burnt in: {error}"),
-        },
+        Ok(font) => check(
+            "fonts",
+            "Subtitle fonts",
+            Status::Ok,
+            format!("subtitles render with {font}"),
+            None,
+        ),
+        Err(error) => check(
+            "fonts",
+            "Subtitle fonts",
+            Status::Fail,
+            format!("subtitles cannot be burnt in: {error}"),
+            None,
+        ),
     }
 }
 
@@ -312,16 +354,18 @@ async fn fonts(state: &AppState) -> Check {
 fn retention(state: &AppState) -> Check {
     let status = state.retention.status();
     let config = state.retention.config();
+    let href = Some("/settings?q=engine.retention");
     match status.last {
-        None => Check {
-            name: "retention",
-            label: "Retention",
-            status: Status::Ok,
-            detail: format!(
+        None => check(
+            "retention",
+            "Retention",
+            Status::Ok,
+            format!(
                 "no sweep yet. Sweeps run every {}.",
                 human_secs(config.sweep_interval_secs)
             ),
-        },
+            href,
+        ),
         Some(report) => {
             let summary = format!(
                 "last sweep {} ago removed {} jobs and freed {}",
@@ -330,18 +374,14 @@ fn retention(state: &AppState) -> Check {
                 human_bytes(report.bytes_freed)
             );
             match report.error {
-                Some(error) => Check {
-                    name: "retention",
-                    label: "Retention",
-                    status: Status::Warn,
-                    detail: format!("{summary}. {error}"),
-                },
-                None => Check {
-                    name: "retention",
-                    label: "Retention",
-                    status: Status::Ok,
-                    detail: summary,
-                },
+                Some(error) => check(
+                    "retention",
+                    "Retention",
+                    Status::Warn,
+                    format!("{summary}. {error}"),
+                    href,
+                ),
+                None => check("retention", "Retention", Status::Ok, summary, href),
             }
         }
     }
@@ -350,45 +390,50 @@ fn retention(state: &AppState) -> Check {
 /// Whether the database has been backed up lately: off, never, overdue, failed, or fine.
 async fn backups(state: &AppState) -> Check {
     let config = state.backups.config();
+    let href = Some("/backups");
     if !config.enabled {
-        return Check {
-            name: "backups",
-            label: "Backups",
-            status: Status::Ok,
-            detail: "backups are turned off".into(),
-        };
+        return check(
+            "backups",
+            "Backups",
+            Status::Ok,
+            "backups are turned off".into(),
+            Some("/settings?q=backup"),
+        );
     }
     let status = state.backups.status();
     let listed = match state.backups.list().await {
         Ok(listed) => listed,
         Err(error) => {
-            return Check {
-                name: "backups",
-                label: "Backups",
-                status: Status::Fail,
-                detail: format!("backups not listed: {error}"),
-            };
+            return check(
+                "backups",
+                "Backups",
+                Status::Fail,
+                format!("backups not listed: {error}"),
+                href,
+            );
         }
     };
     if let Some(error) = status.last_error {
-        return Check {
-            name: "backups",
-            label: "Backups",
-            status: Status::Fail,
-            detail: format!("the last backup failed: {error}"),
-        };
+        return check(
+            "backups",
+            "Backups",
+            Status::Fail,
+            format!("the last backup failed: {error}"),
+            href,
+        );
     }
     let Some(newest) = listed.first() else {
-        return Check {
-            name: "backups",
-            label: "Backups",
-            status: Status::Ok,
-            detail: format!(
+        return check(
+            "backups",
+            "Backups",
+            Status::Ok,
+            format!(
                 "no backup yet. One is made every {} in {}.",
                 human_secs(config.interval_secs),
                 config.dir.display()
             ),
-        };
+            href,
+        );
     };
     let age = uptime_secs(newest.at, Timestamp::now());
     let detail = format!(
@@ -403,16 +448,17 @@ async fn backups(state: &AppState) -> Check {
         human_secs(age),
         human_bytes(newest.bytes)
     );
-    Check {
-        name: "backups",
-        label: "Backups",
-        status: if age > config.interval_secs.saturating_mul(2) {
+    check(
+        "backups",
+        "Backups",
+        if age > config.interval_secs.saturating_mul(2) {
             Status::Warn
         } else {
             Status::Ok
         },
         detail,
-    }
+        href,
+    )
 }
 
 /// `2 days`, `3 hours`, `15 minutes`, `40 seconds`.
@@ -444,12 +490,13 @@ pub fn bot_state_name(state: &BotState) -> &'static str {
 async fn bots(state: &AppState) -> Check {
     let statuses = state.bots.statuses().await;
     if statuses.is_empty() {
-        return Check {
-            name: "bots",
-            label: "Discord bots",
-            status: Status::Ok,
-            detail: "no Discord applications".into(),
-        };
+        return check(
+            "bots",
+            "Discord bots",
+            Status::Ok,
+            "no Discord applications".into(),
+            Some("/applications"),
+        );
     }
     let mut counts: std::collections::BTreeMap<&'static str, usize> = Default::default();
     for status in statuses.values() {
@@ -476,74 +523,87 @@ async fn bots(state: &AppState) -> Check {
     .map(|name| format!("{} {name}", count(name)))
     .collect::<Vec<_>>()
     .join(", ");
-    Check {
-        name: "bots",
-        label: "Discord bots",
+    check(
+        "bots",
+        "Discord bots",
         status,
         detail,
-    }
+        Some("/applications"),
+    )
 }
 
+/// How many platforms work, fail, want a login or have not been checked, by their links
+/// and the jobs that finished on them. Failing platforms are a warning, and the check
+/// points at them.
 async fn fixtures(state: &AppState) -> Check {
     match state.fixtures.coverage().await {
-        Err(error) => Check {
-            name: "fixtures",
-            label: "Platform fixtures",
-            status: Status::Fail,
-            detail: format!("fixture results not read: {error}"),
-        },
+        Err(error) => check(
+            "fixtures",
+            "Platform checks",
+            Status::Fail,
+            format!("check results not read: {error}"),
+            Some("/platforms"),
+        ),
         Ok(platforms) => {
-            let with: Vec<_> = platforms
-                .iter()
-                .filter(|p| !p.fixtures.is_empty())
-                .collect();
-            if with.is_empty() {
-                return Check {
-                    name: "fixtures",
-                    label: "Platform fixtures",
-                    status: Status::Ok,
-                    detail: "no platform has fixtures".into(),
-                };
-            }
-            let never = with
-                .iter()
-                .filter(|p| p.summary.last_run_at.is_none())
-                .count();
-            let failing = with
-                .iter()
-                .filter(|p| p.summary.last_run_at.is_some() && p.summary.failed > 0)
-                .count();
-            let passing = with.len() - never - failing;
-            let running = with.iter().filter(|p| p.running).count();
+            let counts = PlatformCounts::of(&platforms);
             let mut detail = format!(
-                "{passing} of {} {} passing",
-                with.len(),
-                if with.len() == 1 {
+                "{} of {} {} working",
+                counts.working,
+                platforms.len(),
+                if platforms.len() == 1 {
                     "platform"
                 } else {
                     "platforms"
                 }
             );
-            if failing > 0 {
-                detail.push_str(&format!(", {failing} failing"));
+            if counts.failing > 0 {
+                detail.push_str(&format!(", {} failing", counts.failing));
             }
-            if never > 0 {
-                detail.push_str(&format!(", {never} not run yet"));
+            if counts.login_required > 0 {
+                detail.push_str(&format!(", {} need a login", counts.login_required));
             }
-            if running > 0 {
-                detail.push_str(&format!(", {running} running now"));
+            if counts.unknown > 0 {
+                detail.push_str(&format!(", {} not checked yet", counts.unknown));
             }
-            Check {
-                name: "fixtures",
-                label: "Platform fixtures",
-                status: if failing > 0 {
-                    Status::Warn
-                } else {
-                    Status::Ok
-                },
-                detail,
+            if counts.running > 0 {
+                detail.push_str(&format!(", {} running now", counts.running));
+            }
+            let (status, href) = if counts.failing > 0 {
+                (Status::Warn, "/platforms?health=failing")
+            } else {
+                (Status::Ok, "/platforms")
+            };
+            check("fixtures", "Platform checks", status, detail, Some(href))
+        }
+    }
+}
+
+/// Platforms by the verdict their checks and jobs give.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+pub struct PlatformCounts {
+    pub working: usize,
+    pub failing: usize,
+    pub login_required: usize,
+    pub unknown: usize,
+    /// Platforms whose checks run right now, whatever their verdict so far.
+    pub running: usize,
+}
+
+impl PlatformCounts {
+    pub fn of(platforms: &[PlatformCoverage]) -> Self {
+        let mut counts = Self::default();
+        for platform in platforms {
+            match platform.summary.health {
+                PlatformHealth::Working => counts.working += 1,
+                PlatformHealth::Failing => counts.failing += 1,
+                PlatformHealth::LoginRequired => counts.login_required += 1,
+                PlatformHealth::Unknown => counts.unknown += 1,
+            }
+            if platform.running {
+                counts.running += 1;
             }
         }
+        counts
     }
 }
 
@@ -638,8 +698,13 @@ mod tests {
         assert_eq!(named("bots")["detail"], "no Discord applications");
         assert_eq!(
             named("fixtures")["detail"],
-            "0 of 1 platform passing, 1 not run yet"
+            "0 of 2 platforms working, 2 not checked yet"
         );
+        assert_eq!(named("fixtures")["href"], "/platforms");
+        assert_eq!(named("bots")["href"], "/applications");
+        assert_eq!(named("cache")["href"], "/settings?q=engine.cache_dir");
+        assert!(named("fonts")["href"].is_null());
+
         assert_eq!(named("retention")["status"], "ok");
         assert!(
             named("retention")["detail"]

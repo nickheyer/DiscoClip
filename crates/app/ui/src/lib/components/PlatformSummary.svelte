@@ -1,8 +1,33 @@
+<script lang="ts" module>
+	import type { PlatformHealth } from '$lib/api/types';
+	import type { Tone } from './Status.svelte';
+
+	/** How a platform's verdict reads, and in what tone. */
+	export const HEALTH: Record<PlatformHealth, { label: string; tone: Tone }> = {
+		working: { label: 'Working', tone: 'success' },
+		failing: { label: 'Failing', tone: 'error' },
+		login_required: { label: 'Needs login', tone: 'warning' },
+		unknown: { label: 'Not checked', tone: 'surface' }
+	};
+
+	/** What proves a platform works, newest first: a finished job, or a link that resolved. */
+	export function proofOf(platform: {
+		last_job_at: string | null;
+		last_pass_at: string | null;
+	}): { by: 'job' | 'link'; at: string } | null {
+		const job = platform.last_job_at;
+		const link = platform.last_pass_at;
+		if (job && (!link || Date.parse(job) >= Date.parse(link))) return { by: 'job', at: job };
+		if (link) return { by: 'link', at: link };
+		return null;
+	}
+</script>
+
 <script lang="ts">
 	import type { PlatformCoverage } from '$lib/api/types';
 	import MediaKindIcon from './MediaKindIcon.svelte';
 	import Timestamp from './Timestamp.svelte';
-	import Status, { type Tone } from './Status.svelte';
+	import Status from './Status.svelte';
 	import { mediaLabel, number } from '$lib/format';
 
 	interface Props {
@@ -17,13 +42,9 @@
 		required: 'Login required'
 	} as const;
 
-	const health = $derived.by((): { label: string; tone: Tone } => {
-		if (platform.running) return { label: 'Running', tone: 'primary' };
-		if (platform.fixtures.length === 0) return { label: 'No links', tone: 'surface' };
-		if (platform.failed > 0) return { label: `${number(platform.failed)} failing`, tone: 'error' };
-		if (platform.passed === platform.fixtures.length) return { label: 'All pass', tone: 'success' };
-		return { label: 'Not run', tone: 'surface' };
-	});
+	const health = $derived(
+		platform.running ? { label: 'Checking', tone: 'primary' as Tone } : HEALTH[platform.health]
+	);
 
 	/** The tags worth a badge: one that repeats a media kind says nothing the kind has not. */
 	const tags = $derived.by(() => {
@@ -31,13 +52,8 @@
 		return platform.tags.filter((tag) => !kinds.has(tag.toLowerCase()));
 	});
 
-	/** How the last run went, link by link. */
-	const links = $derived.by(() => {
-		let text = `${number(platform.passed)} of ${number(platform.fixtures.length)} pass`;
-		if (platform.failed > 0) text += ` · ${number(platform.failed)} fail`;
-		if (platform.login_required > 0) text += ` · ${number(platform.login_required)} need login`;
-		return text;
-	});
+	const proof = $derived(proofOf(platform));
+	const inUse = $derived(platform.fixtures.filter((f) => f.enabled).length);
 </script>
 
 <div class="space-y-3">
@@ -74,11 +90,16 @@
 		{/each}
 	</div>
 	<p class="text-sm text-surface-600-400">
-		{#if platform.last_run_at}
-			Run <Timestamp at={platform.last_run_at} />
+		{#if proof?.by === 'job'}
+			Job finished <Timestamp at={proof.at} />
+		{:else if proof?.by === 'link'}
+			Link resolved <Timestamp at={proof.at} />
+		{:else if platform.last_run_at}
+			Checked <Timestamp at={platform.last_run_at} />
 		{:else}
-			Never run
+			Never checked
 		{/if}
-		· {links}
+		· {number(inUse)}
+		{inUse === 1 ? 'link' : 'links'}
 	</p>
 </div>

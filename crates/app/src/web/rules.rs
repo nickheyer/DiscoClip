@@ -3,6 +3,7 @@
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
+use serde::Serialize;
 use twilight_model::id::Id;
 
 use super::AppState;
@@ -11,6 +12,52 @@ use super::error::ApiError;
 use crate::applications::ApplicationId;
 use crate::rules::{Rule, RuleId, RuleInput};
 use crate::users::Permission;
+
+/// A rule with the names of the places it points at, for a list across every server:
+/// the server from what its bot recorded on joining, the channels from what the bot
+/// knows while it runs.
+#[derive(Debug, Clone, Serialize)]
+pub struct RuleView {
+    #[serde(flatten)]
+    pub rule: Rule,
+    pub guild_name: Option<String>,
+    /// The server's icon hash on Discord's CDN.
+    pub guild_icon: Option<String>,
+    /// The watched channel's name, for a rule of one channel whose bot sees it.
+    pub channel_name: Option<String>,
+    /// The name of the channel results go to, when the rule sends them elsewhere.
+    pub post_to_name: Option<String>,
+}
+
+/// Names `rules`' servers and channels as far as the bots know them.
+async fn named(state: &AppState, rules: Vec<Rule>) -> Result<Vec<RuleView>, ApiError> {
+    let guilds = state.bot_guilds.list_all().await?;
+    let name_of = |application: ApplicationId, id: Option<&str>| {
+        let id: u64 = id?.parse().ok()?;
+        let directory = state.bots.directory(application)?;
+        directory
+            .channel(Id::new_checked(id)?)
+            .map(|channel| channel.name)
+    };
+    Ok(rules
+        .into_iter()
+        .map(|rule| {
+            let guild = guilds
+                .iter()
+                .find(|g| g.application_id == rule.application_id && g.guild_id == rule.guild_id);
+            let channel_name = name_of(rule.application_id, rule.input.channel_id.as_deref());
+            let post_to_name = name_of(rule.application_id, rule.input.post_to.as_deref());
+
+            RuleView {
+                guild_name: guild.map(|g| g.name.clone()),
+                guild_icon: guild.and_then(|g| g.icon.clone()),
+                channel_name,
+                post_to_name,
+                rule,
+            }
+        })
+        .collect())
+}
 
 /// 403 unless the account may edit `guild`'s rules: through its role, or because it
 /// manages the guild on Discord (from a browser session, as API tokens carry no guilds).
@@ -128,13 +175,14 @@ pub async fn create(
     Ok((StatusCode::CREATED, Json(rule)))
 }
 
-/// Every rule of every application, for operators.
+/// Every rule of every application, for operators, with its places named.
 pub async fn list_all(
     State(state): State<AppState>,
     Auth(identity): Auth,
-) -> Result<Json<Vec<Rule>>, ApiError> {
+) -> Result<Json<Vec<RuleView>>, ApiError> {
     identity.require(Permission::ManageWatchRules)?;
-    Ok(Json(state.rules.list_all().await?))
+    let rules = state.rules.list_all().await?;
+    Ok(Json(named(&state, rules).await?))
 }
 
 pub async fn get(

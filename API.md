@@ -759,12 +759,12 @@ Create a watch rule.
 
 ### GET /api/discord/rules
 
-List watch rules.
+List watch rules across every application, with their servers and channels named.
 
 | Field | Value |
 |---|---|
 | Auth | `manage_watch_rules` |
-| Response | `200` `Rule[]` |
+| Response | `200` `RuleView[]` |
 | Errors | `401` `403` |
 
 ### GET /api/discord/rules/{id}
@@ -1143,6 +1143,20 @@ Stream a media file.
 | Errors | `401` `404` `416` |
 | Token | Signed `t` from `FrontJob.media_url` · valid until expiry |
 
+### GET /api/f/{slug}/jobs/{id}/thumbnail
+
+Serve the still that stands for the media: a frame of a video, the picture scaled down, or the cover art of sound. Made with the job, or on first request from an output that predates stills.
+
+| Field | Value |
+|---|---|
+| Auth | viewer, unless open, or a valid `t` |
+| Path | `slug` · `id` `uuid` |
+| Query | `t` optional |
+| Response | `200` JPEG |
+| Errors | `401` `404` |
+| Token | Signed `t` from `FrontJob.thumbnail` · the media token |
+| Cache | `private, max-age=86400` |
+
 ### GET /api/f/{slug}/jobs/{id}/download
 
 Download a media file.
@@ -1334,6 +1348,19 @@ Download a job artifact.
 | Live range response | `Content-Range: bytes a-b/*` |
 | Live range wait | Up to 10 seconds for bytes beyond the current end |
 
+### GET /api/jobs/{id}/thumbnail
+
+Serve the still that stands for the job's output: a frame of a video, the picture scaled down, or the cover art of sound. Made with the job, or on first request from an output that predates stills, and kept with the job.
+
+| Field | Value |
+|---|---|
+| Auth | any |
+| Path | `id` `uuid` |
+| Response | `200` JPEG |
+| Errors | `401` `404` |
+| Storage | Cache or archive |
+| Cache | `private, max-age=86400` |
+
 ### GET /api/jobs/{id}/children
 
 List playlist child jobs.
@@ -1362,9 +1389,11 @@ List audit entries.
 
 ## Platforms
 
+A platform is checked with links kept in the database: the ones its resolver ships with (`builtin`), ones added by hand (`custom`), and the newest links of jobs that finished on it (`job`, the three newest kept). A check tries the platform's links in use in turn, the one that resolved most recently first, and stops at the first that resolves. A link that fails while another resolves in the same run is switched off with the failure as `disabled_reason`; nothing is switched off when no link resolves. A platform's `health` is `working` when a link resolved at its last check or a job finished on it since, `failing` when every link tried failed, `login_required` when every link tried wanted a login, and `unknown` with nothing to go on. Profiles alone decide whether a platform's links are taken; checks only report.
+
 ### GET /api/platforms
 
-List platform capabilities and test results.
+List platforms with their check links, latest results and verdicts.
 
 | Field | Value |
 |---|---|
@@ -1385,7 +1414,7 @@ Get platform details and test results.
 
 ### POST /api/platforms/check
 
-Start platform tests.
+Start a check of every platform with a link in use.
 
 | Field | Value |
 |---|---|
@@ -1396,7 +1425,7 @@ Start platform tests.
 
 ### POST /api/platforms/{id}/check
 
-Test one platform.
+Check one platform: its links in use, in turn, until one resolves.
 
 | Field | Value |
 |---|---|
@@ -1404,6 +1433,54 @@ Test one platform.
 | Path | `id` `string` |
 | Response | `202` `PlatformCoverage` |
 | Errors | `400` `401` `403` `404` `409` |
+| `400` | No link in use |
+
+### POST /api/platforms/{id}/fixtures
+
+Add a check link. The link must be one the platform's resolver takes.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_jobs` |
+| Path | `id` `string` |
+| Body | `FixtureLinkRequest` |
+| Response | `201` `PlatformCoverage` |
+| Errors | `400` `401` `403` `404` `409` |
+| Conflict | `409` for a link the platform already checks |
+
+### PATCH /api/platforms/{id}/fixtures/{link}
+
+Change a check link's address, switch it on or off, or both. A new address starts the link over, in use again.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_jobs` |
+| Path | `id` `string` · `link` `uuid` |
+| Body | `FixtureLinkChange` · at least one field |
+| Response | `200` `PlatformCoverage` |
+| Errors | `400` `401` `403` `404` `409` |
+
+### DELETE /api/platforms/{id}/fixtures/{link}
+
+Remove a check link. A shipped link stays removed across restarts.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_jobs` |
+| Path | `id` `string` · `link` `uuid` |
+| Response | `200` `PlatformCoverage` |
+| Errors | `401` `403` `404` |
+
+### POST /api/platforms/{id}/fixtures/{link}/check
+
+Check one link, in use or not. Its result is recorded; nothing is switched off over it.
+
+| Field | Value |
+|---|---|
+| Auth | `manage_jobs` |
+| Path | `id` `string` · `link` `uuid` |
+| Response | `202` `PlatformCoverage` |
+| Errors | `401` `403` `404` `409` |
 
 ## Platform sessions
 
@@ -2023,6 +2100,8 @@ Reject an unknown command.
 | `secret_keys` | `string[]` · all secret keys |
 | `data_dir` | `string` |
 | `provisioning_file` | `string \| null` |
+| `public_url` | `string \| null` · the address links and login callbacks are built on |
+| `public_url_source` | `"configured" \| "learned" \| null` · `web.public_url`, or learned from operators' requests |
 
 ### SettingEntry
 
@@ -2159,6 +2238,16 @@ Reject an unknown command.
 | `created_at` | `timestamp` |
 | `updated_at` | `timestamp` |
 
+### RuleView
+
+| Field | Type |
+|---|---|
+| `...Rule` | `Rule` |
+| `guild_name` | `string \| null` · as the bot recorded it on joining |
+| `guild_icon` | `string \| null` · icon hash on Discord's CDN |
+| `channel_name` | `string \| null` · while the bot sees the channel |
+| `post_to_name` | `string \| null` · while the bot sees the channel |
+
 ### Profile
 
 | Field | Type |
@@ -2292,7 +2381,7 @@ Reject an unknown command.
 | `resolver` | `string` |
 | `uploader` | `string \| null` |
 | `webpage_url` | `url \| null` |
-| `thumbnail` | `url \| null` |
+| `thumbnail` | `string \| null` · signed path to the still, see `GET /api/f/{slug}/jobs/{id}/thumbnail` |
 | `duration_secs` | `number \| null` |
 | `live` | `bool` · recorded live stream |
 | `recording` | `bool` · recording in progress |
@@ -2377,10 +2466,11 @@ Reject an unknown command.
 | `media` | `MediaKind` · probe → resolver → `video` |
 | `uploader` | `string \| null` |
 | `webpage_url` | `url \| null` |
-| `thumbnail` | `url \| null` |
+| `thumbnail` | `string \| null` · `/api/jobs/{id}/thumbnail` once the job has an output a still can stand for |
 | `duration_secs` | `number \| null` |
 | `live` | `bool` |
 | `recording` | `bool` · current or past live capture |
+
 | `output_bytes` | `integer \| null` |
 | `published_url` | `url \| null` |
 | `published_reference` | `string \| null` |
@@ -2845,13 +2935,14 @@ Reject an unknown command.
 | `media` | `MediaKind[]` |
 | `tags` | `string[]` · preset IDs except `sfw` |
 | `session` | `SessionSupport` |
-| `fixtures` | `FixtureResult[]` |
-| `last_run_at` | `timestamp \| null` |
-| `last_pass_at` | `timestamp \| null` · last fully passing run |
-| `last_fail_at` | `timestamp \| null` |
-| `passed` | `integer` |
-| `failed` | `integer` |
-| `login_required` | `integer` · fixtures needing authentication |
+| `fixtures` | `FixtureResult[]` · in the order a check tries them |
+| `last_run_at` | `timestamp \| null` · when a link was last run |
+| `last_pass_at` | `timestamp \| null` · when a link last resolved |
+| `last_job_at` | `timestamp \| null` · when a job last finished on the platform |
+| `passed` | `integer` · links in use whose last run resolved |
+| `failed` | `integer` · links in use whose last run failed |
+| `login_required` | `integer` · links in use whose last run wanted a login |
+| `health` | `PlatformHealth` |
 | `running` | `bool` |
 | `cookies` | `integer` · saved cookie count |
 | `cookies_updated_at` | `timestamp \| null` |
@@ -2876,7 +2967,11 @@ Reject an unknown command.
 
 | Field | Type |
 |---|---|
+| `id` | `uuid` |
 | `url` | `url` |
+| `origin` | `LinkOrigin` |
+| `enabled` | `bool` · whether checks try the link |
+| `disabled_reason` | `string \| null` · what it failed with while another link resolved, when that is why it is off |
 | `status` | `FixtureStatus` |
 | `run_at` | `timestamp \| null` |
 | `last_pass_at` | `timestamp \| null` |
@@ -2903,6 +2998,28 @@ Reject an unknown command.
 | Field | Type |
 |---|---|
 | `platforms` | `string[]` |
+
+### FixtureLinkRequest
+
+| Field | Type | Required |
+|---|---|---|
+| `url` | `url` · http or https, taken by the platform's resolver | yes |
+
+### FixtureLinkChange
+
+| Field | Type | Required |
+|---|---|---|
+| `url` | `url` | no |
+| `enabled` | `bool` | no |
+
+### LinkOrigin
+
+`"builtin"` · `"custom"` · `"job"`
+
+### PlatformHealth
+
+`"working"` · `"failing"` · `"login_required"` · `"unknown"`
+
 
 ### Health
 
@@ -2931,20 +3048,21 @@ Reject an unknown command.
 | `label` | `string` |
 | `status` | `HealthStatus` |
 | `detail` | `string` |
+| `href` | `string \| null` · the app page where the check's trouble is seen to, filtered to it |
 
-| `name` | Check |
-|---|---|
-| `database` | SQLite query |
-| `engine` | Worker status and load |
-| `cache` | Cache write access |
-| `local` | Local output write access |
-| `ffmpeg` | FFmpeg executable |
-| `encoder` | Configured video encoders |
-| `fonts` | Subtitle rendering |
-| `bots` | Bot failures/retries/missing tokens |
-| `fixtures` | Platform test failures |
-| `retention` | Last retention sweep |
-| `backups` | Last run successful · newest backup ≤ 2 × interval |
+| `name` | Check | `href` |
+|---|---|---|
+| `database` | SQLite query | `/backups` |
+| `engine` | Worker status and load | `/jobs?status=running` |
+| `cache` | Cache write access | `/settings?q=engine.cache_dir` |
+| `local` | Local output write access | `/settings?q=local.dir` |
+| `ffmpeg` | FFmpeg executable | `/settings?q=engine.ffmpeg` |
+| `encoder` | Configured video encoders | `/settings?q=engine.transcode.encoder` |
+| `fonts` | Subtitle rendering | none |
+| `bots` | Bot failures/retries/missing tokens | `/applications` |
+| `fixtures` | Platforms failing by their check links and finished jobs · `warn` when any fails | `/platforms?health=failing`, else `/platforms` |
+| `retention` | Last retention sweep | `/settings?q=engine.retention` |
+| `backups` | Last run successful · newest backup ≤ 2 × interval | `/backups` |
 
 ### Metrics
 
@@ -3040,10 +3158,11 @@ Reject an unknown command.
 | Field | Type |
 |---|---|
 | `platforms` | `integer` |
-| `with_fixtures` | `integer` |
-| `passing` | `integer` |
+| `with_fixtures` | `integer` · platforms with a check link in use |
+| `working` | `integer` |
 | `failing` | `integer` |
-| `never` | `integer` |
+| `login_required` | `integer` |
+| `unknown` | `integer` |
 | `running` | `integer` |
 
 ### LogMetrics

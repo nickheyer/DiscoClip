@@ -1,15 +1,20 @@
-//! Platform fixtures: every resolver names public links that stand for what it covers.
-//! Running a platform's fixtures resolves each link, without downloading anything, and
-//! records what came of it, so the platforms page shows which platforms work right now and
-//! when each last passed in full. Runs happen on a schedule and on request from the app.
+//! Platform checks: whether each platform's links still resolve. Every platform is
+//! checked with links kept in the database: the ones its resolver ships with, ones added
+//! by hand, and the newest links of jobs that finished on it, so real use keeps the set
+//! fresh as hard-coded links go stale. A run tries the platform's links in turn, the one
+//! that passed most recently first, and stops at the first that resolves. A link that
+//! fails while another resolves is a dead link, not a broken platform, and is switched
+//! off quietly. A platform is working when a link resolved, or when a job finished on it
+//! since the last check. Nothing here turns a platform on or off: profiles do that.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use discoclip_engine::media::MediaKind;
 use discoclip_engine::resolve::{Platform, Resolution, ResolveError, SessionSupport, Tag};
-use discoclip_engine::rusqlite::{OptionalExtension, params};
+use discoclip_engine::rusqlite::{OptionalExtension, Row, params};
 use discoclip_engine::store::sqlite::SqliteStore;
 use discoclip_engine::{EngineHandle, StoreError};
 use jiff::{SignedDuration, Timestamp};
@@ -17,21 +22,24 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 use url::Url;
+use uuid::Uuid;
 
 use crate::db::{nanos, timestamp, transact};
 
-/// How many platforms' fixtures run at the same time.
+/// How many platforms' checks run at the same time.
 const PARALLEL: usize = 4;
 /// How often the schedule looks at whether a run is due.
 const TICK: Duration = Duration::from_secs(60);
 /// How long after startup the first scheduled run may happen.
 const STARTUP_DELAY: Duration = Duration::from_secs(30);
+/// How many links learned from jobs a platform keeps, the newest staying.
+pub const LEARNED_LINKS: usize = 3;
 
-/// How fixtures are run: how often on their own, and how long one link may take.
+/// How checks are run: how often on their own, and how long one link may take.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct FixtureConfig {
-    /// Every platform's fixtures are run this often. `0` runs them only on request.
+    /// Every platform's links are checked this often. `0` checks them only on request.
     pub interval_secs: u64,
     /// The longest one link may take to resolve before it counts as failed.
     pub timeout_secs: u64,
@@ -49,7 +57,7 @@ impl Default for FixtureConfig {
 /// The `fixtures` settings as the runner reads them, replaced when they change in the app.
 pub type SharedFixtureConfig = Arc<RwLock<FixtureConfig>>;
 
-/// How a fixture's last run went.
+/// How a link's last run went.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FixtureStatus {
@@ -59,6 +67,39 @@ pub enum FixtureStatus {
     LoginRequired,
     /// The link has not been run.
     Never,
+}
+
+/// Where a check link came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LinkOrigin {
+    /// Shipped with the platform's resolver.
+    Builtin,
+    /// Added by hand.
+    Custom,
+    /// The link of a job that finished on the platform.
+    Job,
+}
+
+impl LinkOrigin {
+    fn as_str(self) -> &'static str {
+        match self {
+            LinkOrigin::Builtin => "builtin",
+            LinkOrigin::Custom => "custom",
+            LinkOrigin::Job => "job",
+        }
+    }
+
+    fn parse(text: &str) -> Result<Self, StoreError> {
+        match text {
+            "builtin" => Ok(LinkOrigin::Builtin),
+            "custom" => Ok(LinkOrigin::Custom),
+            "job" => Ok(LinkOrigin::Job),
+            other => Err(StoreError::Corrupt(format!(
+                "fixture_links.origin: {other:?}"
+            ))),
+        }
+    }
 }
 
 /// What a link resolved to: media of a kind with so many playable variants, or a
@@ -96,10 +137,30 @@ impl Found {
     }
 }
 
-/// One fixture link and what its last run made of it.
+/// One link a platform is checked with, as stored.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct FixtureLink {
+    pub id: Uuid,
+    pub platform: String,
+    pub url: String,
+    pub origin: LinkOrigin,
+    /// Whether runs try the link. A link switched off on its own carries the reason.
+    pub enabled: bool,
+    /// What the link failed with while another link of the platform resolved, when that
+    /// is why it is off.
+    pub disabled_reason: Option<String>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+}
+
+/// One check link and what its last run made of it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct FixtureResult {
+    pub id: Uuid,
     pub url: String,
+    pub origin: LinkOrigin,
+    pub enabled: bool,
+    pub disabled_reason: Option<String>,
     pub status: FixtureStatus,
     pub run_at: Option<Timestamp>,
     /// When the link last resolved, whatever the last run found.
@@ -112,23 +173,52 @@ pub struct FixtureResult {
     pub duration_ms: Option<u64>,
 }
 
-/// What a platform's runs add up to.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+/// Whether a platform works, as far as anything shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlatformHealth {
+    /// A link resolved at the last check, or a job finished on the platform since.
+    Working,
+    /// Every link tried at the last check failed, and no job has finished since.
+    Failing,
+    /// Every link tried at the last check wanted a login the platform's jar lacks.
+    LoginRequired,
+    /// Nothing has been checked and no job has finished.
+    Unknown,
+}
+
+/// What a platform's links and jobs add up to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PlatformSummary {
+    /// When a link of the platform was last run.
     pub last_run_at: Option<Timestamp>,
-    /// When every fixture of the platform last passed in one run.
+    /// When a link of the platform last resolved.
     pub last_pass_at: Option<Timestamp>,
-    /// When a run last had a failing fixture.
-    pub last_fail_at: Option<Timestamp>,
-    /// How the last run went: links that resolved, links that failed, and links that
-    /// resolve only with a login the platform's jar lacks, which is neither.
+    /// When a job last finished on the platform: real use, which proves it works.
+    pub last_job_at: Option<Timestamp>,
+    /// Of the links in use, how many last resolved, failed, or wanted a login.
     pub passed: u32,
     pub failed: u32,
     pub login_required: u32,
+    pub health: PlatformHealth,
+}
+
+impl Default for PlatformSummary {
+    fn default() -> Self {
+        Self {
+            last_run_at: None,
+            last_pass_at: None,
+            last_job_at: None,
+            passed: 0,
+            failed: 0,
+            login_required: 0,
+            health: PlatformHealth::Unknown,
+        }
+    }
 }
 
 /// A platform as the platforms page shows it: what its resolver covers, and what its
-/// fixtures last found.
+/// links and jobs show of it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PlatformCoverage {
     pub id: &'static str,
@@ -144,7 +234,7 @@ pub struct PlatformCoverage {
     pub fixtures: Vec<FixtureResult>,
     #[serde(flatten)]
     pub summary: PlatformSummary,
-    /// A run of the platform's fixtures is in progress.
+    /// A run of the platform's links is in progress.
     pub running: bool,
 }
 
@@ -164,7 +254,6 @@ pub struct Outcome {
 /// A link's stored result.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Recorded {
-    pub url: String,
     pub run_at: Timestamp,
     pub ok: bool,
     pub login_required: bool,
@@ -175,31 +264,214 @@ pub struct Recorded {
     pub last_pass_at: Option<Timestamp>,
 }
 
-/// Everything stored about one platform.
+/// A link with its latest result, when it has been run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinkRow {
+    pub link: FixtureLink,
+    pub result: Option<Recorded>,
+}
+
+impl LinkRow {
+    fn status(&self) -> FixtureStatus {
+        match &self.result {
+            None => FixtureStatus::Never,
+            Some(result) if result.ok => FixtureStatus::Pass,
+            Some(result) if result.login_required => FixtureStatus::LoginRequired,
+            Some(_) => FixtureStatus::Fail,
+        }
+    }
+
+    fn view(&self) -> FixtureResult {
+        FixtureResult {
+            id: self.link.id,
+            url: self.link.url.clone(),
+            origin: self.link.origin,
+            enabled: self.link.enabled,
+            disabled_reason: self.link.disabled_reason.clone(),
+            status: self.status(),
+            run_at: self.result.as_ref().map(|r| r.run_at),
+            last_pass_at: self.result.as_ref().and_then(|r| r.last_pass_at),
+            error: self.result.as_ref().and_then(|r| r.error.clone()),
+            title: self.result.as_ref().and_then(|r| r.title.clone()),
+            found: self.result.as_ref().and_then(|r| r.found),
+            duration_ms: self.result.as_ref().map(|r| r.duration_ms),
+        }
+    }
+}
+
+/// Everything stored about one platform's links.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Stored {
-    pub summary: PlatformSummary,
-    pub results: Vec<Recorded>,
+    pub links: Vec<LinkRow>,
+}
+
+/// What a platform's links and its newest finished job add up to. Only links in use count
+/// towards the verdict: one switched off failed while another resolved, which says nothing
+/// against the platform.
+pub fn summarize(links: &[LinkRow], last_job_at: Option<Timestamp>) -> PlatformSummary {
+    let last_run_at = links
+        .iter()
+        .filter_map(|row| row.result.as_ref().map(|r| r.run_at))
+        .max();
+    let last_pass_at = links
+        .iter()
+        .filter_map(|row| row.result.as_ref().and_then(|r| r.last_pass_at))
+        .max();
+    let in_use = links.iter().filter(|row| row.link.enabled);
+    let (mut passed, mut failed, mut login_required) = (0u32, 0u32, 0u32);
+    for row in in_use {
+        match row.status() {
+            FixtureStatus::Pass => passed += 1,
+            FixtureStatus::Fail => failed += 1,
+            FixtureStatus::LoginRequired => login_required += 1,
+            FixtureStatus::Never => {}
+        }
+    }
+    let job_since_run = match (last_job_at, last_run_at) {
+        (Some(job), Some(run)) => job >= run,
+        (Some(_), None) => true,
+        (None, _) => false,
+    };
+    let health = if passed > 0 || job_since_run {
+        PlatformHealth::Working
+    } else if failed > 0 {
+        PlatformHealth::Failing
+    } else if login_required > 0 {
+        PlatformHealth::LoginRequired
+    } else {
+        PlatformHealth::Unknown
+    };
+    PlatformSummary {
+        last_run_at,
+        last_pass_at,
+        last_job_at,
+        passed,
+        failed,
+        login_required,
+        health,
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum RunError {
     #[error("no platform is called {0}")]
     Unknown(String),
-    #[error("{0} has no fixtures")]
+    #[error("{0} has no check links in use")]
     NoFixtures(String),
-    #[error("no platform has fixtures")]
+    #[error("no platform has check links in use")]
     Nothing,
-    #[error("the fixtures of {0} are already running")]
+    #[error("the checks of {0} are already running")]
     Busy(String),
-    #[error("every platform's fixtures are already running")]
+    #[error("every platform's checks are already running")]
     AllBusy,
+    #[error("no check link is called {0}")]
+    UnknownLink(Uuid),
+    #[error(transparent)]
+    Store(#[from] StoreError),
 }
 
-/// Fixture results, kept in the application's database.
+#[derive(Debug, thiserror::Error)]
+pub enum LinkError {
+    #[error("{platform} already checks {url}")]
+    Duplicate { platform: String, url: String },
+    #[error("no check link is called {0}")]
+    NotFound(Uuid),
+    #[error(transparent)]
+    Store(#[from] StoreError),
+}
+
+impl From<discoclip_engine::rusqlite::Error> for LinkError {
+    fn from(error: discoclip_engine::rusqlite::Error) -> Self {
+        LinkError::Store(error.into())
+    }
+}
+
+/// Check links and their results, kept in the application's database.
 #[derive(Clone)]
 pub struct FixtureStore {
     db: SqliteStore,
+}
+
+const LINK_SELECT: &str = "SELECT l.id, l.platform, l.url, l.origin, l.enabled, l.disabled_reason, \
+     l.created_at, l.updated_at, r.run_at, r.ok, r.login_required, r.error, r.title, \
+     r.duration_ms, r.last_pass_at, r.found_kind, r.found_count \
+     FROM fixture_links l LEFT JOIN fixture_results r ON r.platform = l.platform AND r.url = l.url";
+
+/// Links in use first by when they last resolved, newest first, links never run after
+/// them in the order they were added: what a run tries, in order.
+const LINK_ORDER: &str =
+    "ORDER BY r.last_pass_at IS NULL, r.last_pass_at DESC, l.created_at ASC, l.id";
+
+fn row_to_link(row: &Row<'_>) -> Result<LinkRow, StoreError> {
+    let id: String = row.get(0)?;
+    let origin: String = row.get(3)?;
+    let created_at: i64 = row.get(6)?;
+    let updated_at: i64 = row.get(7)?;
+    let run_at: Option<i64> = row.get(8)?;
+    let result = match run_at {
+        None => None,
+        Some(run_at) => {
+            let last_pass: Option<i64> = row.get(14)?;
+            let duration_ms: i64 = row.get(13)?;
+            Some(Recorded {
+                run_at: timestamp("fixture_results.run_at", run_at)?,
+                ok: row.get(9)?,
+                login_required: row.get(10)?,
+                error: row.get(11)?,
+                title: row.get(12)?,
+                duration_ms: duration_ms.max(0) as u64,
+                last_pass_at: last_pass
+                    .map(|n| timestamp("fixture_results.last_pass_at", n))
+                    .transpose()?,
+                found: Found::from_columns(row.get(15)?, row.get(16)?)?,
+            })
+        }
+    };
+    Ok(LinkRow {
+        link: FixtureLink {
+            id: id
+                .parse()
+                .map_err(|e| StoreError::Corrupt(format!("fixture_links.id {id}: {e}")))?,
+            platform: row.get(1)?,
+            url: row.get(2)?,
+            origin: LinkOrigin::parse(&origin)?,
+            enabled: row.get(4)?,
+            disabled_reason: row.get(5)?,
+            created_at: timestamp("fixture_links.created_at", created_at)?,
+            updated_at: timestamp("fixture_links.updated_at", updated_at)?,
+        },
+        result,
+    })
+}
+
+fn links_where(
+    tx: &discoclip_engine::rusqlite::Transaction<'_>,
+    condition: &str,
+    args: &[&dyn discoclip_engine::rusqlite::ToSql],
+) -> Result<Vec<LinkRow>, StoreError> {
+    let mut stmt = tx.prepare(&format!(
+        "{LINK_SELECT} WHERE l.removed_at IS NULL AND {condition} {LINK_ORDER}"
+    ))?;
+    let rows = stmt.query_map(args, |row| {
+        row_to_link(row).map_err(|e| {
+            discoclip_engine::rusqlite::Error::FromSqlConversionFailure(
+                0,
+                discoclip_engine::rusqlite::types::Type::Text,
+                Box::new(e),
+            )
+        })
+    })?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
+fn link_in(
+    tx: &discoclip_engine::rusqlite::Transaction<'_>,
+    id: Uuid,
+) -> Result<FixtureLink, LinkError> {
+    let mut rows = links_where(tx, "l.id = ?1", &[&id.to_string()])?;
+    rows.pop()
+        .map(|row| row.link)
+        .ok_or(LinkError::NotFound(id))
 }
 
 impl FixtureStore {
@@ -207,126 +479,231 @@ impl FixtureStore {
         Self { db }
     }
 
-    /// Everything stored, by platform id.
+    /// Adds the links `platforms` ship with that are not stored yet. A shipped link that
+    /// was removed by hand stays removed. How many were added.
+    pub async fn seed(&self, platforms: &[Platform]) -> Result<usize, StoreError> {
+        let shipped: Vec<(&'static str, &'static str)> = platforms
+            .iter()
+            .flat_map(|p| p.examples.iter().map(move |url| (p.id, *url)))
+            .collect();
+        transact(&self.db, move |tx| {
+            let now = nanos(Timestamp::now());
+            let mut added = 0;
+            for (platform, url) in shipped {
+                added += tx.execute(
+                    "INSERT OR IGNORE INTO fixture_links
+                        (id, platform, url, origin, enabled, disabled_reason, created_at, updated_at, removed_at)
+                     VALUES (?1, ?2, ?3, 'builtin', 1, NULL, ?4, ?4, NULL)",
+                    params![Uuid::now_v7().to_string(), platform, url, now],
+                )?;
+            }
+            Ok::<_, StoreError>(added)
+        })
+        .await
+    }
+
+    /// Every platform's links with their latest results, by platform id.
     pub async fn all(&self) -> Result<BTreeMap<String, Stored>, StoreError> {
         transact(&self.db, |tx| {
             let mut out: BTreeMap<String, Stored> = BTreeMap::new();
-            let mut platforms = tx.prepare(
-                "SELECT platform, last_run_at, last_pass_at, last_fail_at, passed, failed,
-                        login_required
-                 FROM fixture_platforms",
-            )?;
-            let rows = platforms.query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, i64>(1)?,
-                    row.get::<_, Option<i64>>(2)?,
-                    row.get::<_, Option<i64>>(3)?,
-                    row.get::<_, u32>(4)?,
-                    row.get::<_, u32>(5)?,
-                    row.get::<_, u32>(6)?,
-                ))
-            })?;
-            for row in rows {
-                let (platform, run, pass, fail, passed, failed, login_required) = row?;
-                out.entry(platform).or_default().summary = PlatformSummary {
-                    last_run_at: Some(timestamp("last_run_at", run)?),
-                    last_pass_at: pass.map(|n| timestamp("last_pass_at", n)).transpose()?,
-                    last_fail_at: fail.map(|n| timestamp("last_fail_at", n)).transpose()?,
-                    passed,
-                    failed,
-                    login_required,
-                };
-            }
-            let mut results = tx.prepare(
-                "SELECT platform, url, run_at, ok, login_required, error, title, duration_ms,
-                        last_pass_at, found_kind, found_count
-                 FROM fixture_results ORDER BY platform, url",
-            )?;
-            let rows = results.query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, i64>(2)?,
-                    row.get::<_, bool>(3)?,
-                    row.get::<_, bool>(4)?,
-                    row.get::<_, Option<String>>(5)?,
-                    row.get::<_, Option<String>>(6)?,
-                    row.get::<_, i64>(7)?,
-                    row.get::<_, Option<i64>>(8)?,
-                    row.get::<_, Option<String>>(9)?,
-                    row.get::<_, Option<u32>>(10)?,
-                ))
-            })?;
-            for row in rows {
-                let (
-                    platform,
-                    url,
-                    run_at,
-                    ok,
-                    login_required,
-                    error,
-                    title,
-                    duration_ms,
-                    last_pass,
-                    found_kind,
-                    found_count,
-                ) = row?;
-                out.entry(platform).or_default().results.push(Recorded {
-                    url,
-                    run_at: timestamp("run_at", run_at)?,
-                    ok,
-                    login_required,
-                    error,
-                    title,
-                    found: Found::from_columns(found_kind, found_count)?,
-                    duration_ms: duration_ms.max(0) as u64,
-                    last_pass_at: last_pass
-                        .map(|n| timestamp("last_pass_at", n))
-                        .transpose()?,
-                });
+            for row in links_where(tx, "1 = 1", &[])? {
+                out.entry(row.link.platform.clone())
+                    .or_default()
+                    .links
+                    .push(row);
             }
             Ok(out)
         })
         .await
     }
 
-    /// Stores what a run of `platform`'s fixtures found, as its latest results, and
-    /// returns the platform's summary. Results for links the platform no longer names go.
+    /// `platform`'s links with their latest results, in the order a run tries them.
+    pub async fn links(&self, platform: &str) -> Result<Vec<LinkRow>, StoreError> {
+        let platform = platform.to_string();
+        transact(&self.db, move |tx| {
+            links_where(tx, "l.platform = ?1", &[&platform])
+        })
+        .await
+    }
+
+    /// One link, by id.
+    pub async fn link(&self, id: Uuid) -> Result<Option<FixtureLink>, StoreError> {
+        transact(&self.db, move |tx| {
+            Ok::<_, StoreError>(
+                links_where(tx, "l.id = ?1", &[&id.to_string()])?
+                    .pop()
+                    .map(|row| row.link),
+            )
+        })
+        .await
+    }
+
+    /// Adds a link for `platform`.
+    pub async fn add_link(
+        &self,
+        platform: &str,
+        url: &str,
+        origin: LinkOrigin,
+    ) -> Result<FixtureLink, LinkError> {
+        let platform = platform.to_string();
+        let url = url.to_string();
+        transact(&self.db, move |tx| {
+            let taken: Option<String> = tx
+                .query_row(
+                    "SELECT id FROM fixture_links WHERE platform = ?1 AND url = ?2",
+                    params![platform, url],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if taken.is_some() {
+                return Err(LinkError::Duplicate { platform, url });
+            }
+            let id = Uuid::now_v7();
+            let now = nanos(Timestamp::now());
+            tx.execute(
+                "INSERT INTO fixture_links
+                    (id, platform, url, origin, enabled, disabled_reason, created_at, updated_at, removed_at)
+                 VALUES (?1, ?2, ?3, ?4, 1, NULL, ?5, ?5, NULL)",
+                params![id.to_string(), platform, url, origin.as_str(), now],
+            )?;
+            link_in(tx, id)
+        })
+        .await
+    }
+
+    /// Points a link at `url`. Its result goes with the old address, and it is in use again.
+    pub async fn edit_link(&self, id: Uuid, url: &str) -> Result<FixtureLink, LinkError> {
+        let url = url.to_string();
+        transact(&self.db, move |tx| {
+            let current = link_in(tx, id)?;
+            if current.url != url {
+                let taken: Option<String> = tx
+                    .query_row(
+                        "SELECT id FROM fixture_links WHERE platform = ?1 AND url = ?2",
+                        params![current.platform, url],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                if taken.is_some() {
+                    return Err(LinkError::Duplicate {
+                        platform: current.platform,
+                        url,
+                    });
+                }
+                tx.execute(
+                    "DELETE FROM fixture_results WHERE platform = ?1 AND url = ?2",
+                    params![current.platform, current.url],
+                )?;
+            }
+            tx.execute(
+                "UPDATE fixture_links SET url = ?2, enabled = 1, disabled_reason = NULL, updated_at = ?3
+                 WHERE id = ?1",
+                params![id.to_string(), url, nanos(Timestamp::now())],
+            )?;
+            link_in(tx, id)
+        })
+        .await
+    }
+
+    /// Switches a link on or off by hand. Switching it on clears why it went off.
+    pub async fn set_enabled(&self, id: Uuid, enabled: bool) -> Result<FixtureLink, LinkError> {
+        transact(&self.db, move |tx| {
+            link_in(tx, id)?;
+            tx.execute(
+                "UPDATE fixture_links SET enabled = ?2, disabled_reason = NULL, updated_at = ?3
+                 WHERE id = ?1",
+                params![id.to_string(), enabled, nanos(Timestamp::now())],
+            )?;
+            link_in(tx, id)
+        })
+        .await
+    }
+
+    /// Removes a link and its result. A shipped link is marked removed so seeding does not
+    /// bring it back. Whether there was one.
+    pub async fn remove_link(&self, id: Uuid) -> Result<bool, StoreError> {
+        transact(&self.db, move |tx| {
+            let Ok(link) = link_in(tx, id) else {
+                return Ok::<_, StoreError>(false);
+            };
+            tx.execute(
+                "DELETE FROM fixture_results WHERE platform = ?1 AND url = ?2",
+                params![link.platform, link.url],
+            )?;
+            match link.origin {
+                LinkOrigin::Builtin => tx.execute(
+                    "UPDATE fixture_links SET removed_at = ?2, updated_at = ?2 WHERE id = ?1",
+                    params![id.to_string(), nanos(Timestamp::now())],
+                )?,
+                LinkOrigin::Custom | LinkOrigin::Job => tx.execute(
+                    "DELETE FROM fixture_links WHERE id = ?1",
+                    params![id.to_string()],
+                )?,
+            };
+            Ok(true)
+        })
+        .await
+    }
+
+    /// Keeps the link of a job that finished on `platform` as a check link, when the
+    /// platform does not have it already, dropping the oldest learned links beyond
+    /// [`LEARNED_LINKS`]. A link removed by hand is not learned again. Whether it was added.
+    pub async fn learn(&self, platform: &str, url: &str) -> Result<bool, StoreError> {
+        let platform = platform.to_string();
+        let url = url.to_string();
+        transact(&self.db, move |tx| {
+            let known: Option<String> = tx
+                .query_row(
+                    "SELECT id FROM fixture_links WHERE platform = ?1 AND url = ?2",
+                    params![platform, url],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if known.is_some() {
+                return Ok::<_, StoreError>(false);
+            }
+            let now = nanos(Timestamp::now());
+            tx.execute(
+                "INSERT INTO fixture_links
+                    (id, platform, url, origin, enabled, disabled_reason, created_at, updated_at, removed_at)
+                 VALUES (?1, ?2, ?3, 'job', 1, NULL, ?4, ?4, NULL)",
+                params![Uuid::now_v7().to_string(), platform, url, now],
+            )?;
+            let mut stmt = tx.prepare(
+                "SELECT id, url FROM fixture_links
+                 WHERE platform = ?1 AND origin = 'job' AND removed_at IS NULL
+                 ORDER BY created_at DESC, id DESC",
+            )?;
+            let learned: Vec<(String, String)> = stmt
+                .query_map(params![platform], |row| Ok((row.get(0)?, row.get(1)?)))?
+                .collect::<Result<_, _>>()?;
+            for (id, old) in learned.into_iter().skip(LEARNED_LINKS) {
+                tx.execute(
+                    "DELETE FROM fixture_results WHERE platform = ?1 AND url = ?2",
+                    params![platform, old],
+                )?;
+                tx.execute("DELETE FROM fixture_links WHERE id = ?1", params![id])?;
+            }
+            Ok(true)
+        })
+        .await
+    }
+
+    /// Stores what a run of `platform`'s links found, as their latest results. With
+    /// `retire_failed`, a link that failed while another resolved in the same run is
+    /// switched off, with what it failed with as the reason. The platform's links as they
+    /// stand.
     pub async fn record(
         &self,
         platform: &str,
         finished_at: Timestamp,
         outcomes: Vec<Outcome>,
-    ) -> Result<PlatformSummary, StoreError> {
+        retire_failed: bool,
+    ) -> Result<Vec<LinkRow>, StoreError> {
         let platform = platform.to_string();
         transact(&self.db, move |tx| {
-            let urls: HashSet<&str> = outcomes.iter().map(|o| o.url.as_str()).collect();
-            let stale: Vec<String> = {
-                let mut stmt =
-                    tx.prepare("SELECT url FROM fixture_results WHERE platform = ?1")?;
-                let rows = stmt.query_map(params![platform], |row| row.get::<_, String>(0))?;
-                rows.collect::<Result<Vec<_>, _>>()?
-                    .into_iter()
-                    .filter(|url| !urls.contains(url.as_str()))
-                    .collect()
-            };
-            for url in stale {
-                tx.execute(
-                    "DELETE FROM fixture_results WHERE platform = ?1 AND url = ?2",
-                    params![platform, url],
-                )?;
-            }
             let at = nanos(finished_at);
-            let (mut passed, mut failed, mut login_required) = (0u32, 0u32, 0u32);
             for outcome in &outcomes {
-                if outcome.ok {
-                    passed += 1;
-                } else if outcome.login_required {
-                    login_required += 1;
-                } else {
-                    failed += 1;
-                }
                 let (found_kind, found_count) = match outcome.found {
                     Some(found) => {
                         let (kind, count) = found.columns();
@@ -360,64 +737,32 @@ impl FixtureStore {
                     ],
                 )?;
             }
-            let previous: Option<(Option<i64>, Option<i64>)> = tx
-                .query_row(
-                    "SELECT last_pass_at, last_fail_at FROM fixture_platforms WHERE platform = ?1",
-                    params![platform],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
-                )
-                .optional()?;
-            let (previous_pass, previous_fail) = previous.unwrap_or((None, None));
-            // A link that wants a login neither passes nor fails: the platform did not pass
-            // in full, and nothing is broken.
-            let last_pass_at = if failed == 0 && login_required == 0 && passed > 0 {
-                Some(at)
-            } else {
-                previous_pass
-            };
-            let last_fail_at = if failed > 0 { Some(at) } else { previous_fail };
-            tx.execute(
-                "INSERT INTO fixture_platforms
-                    (platform, last_run_at, last_pass_at, last_fail_at, passed, failed,
-                     login_required)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-                 ON CONFLICT(platform) DO UPDATE SET
-                    last_run_at = excluded.last_run_at, last_pass_at = excluded.last_pass_at,
-                    last_fail_at = excluded.last_fail_at, passed = excluded.passed,
-                    failed = excluded.failed, login_required = excluded.login_required",
-                params![
-                    platform,
-                    at,
-                    last_pass_at,
-                    last_fail_at,
-                    passed,
-                    failed,
-                    login_required
-                ],
-            )?;
-            Ok(PlatformSummary {
-                last_run_at: Some(finished_at),
-                last_pass_at: last_pass_at
-                    .map(|n| timestamp("last_pass_at", n))
-                    .transpose()?,
-                last_fail_at: last_fail_at
-                    .map(|n| timestamp("last_fail_at", n))
-                    .transpose()?,
-                passed,
-                failed,
-                login_required,
-            })
+            if retire_failed && outcomes.iter().any(|o| o.ok) {
+                for dead in outcomes.iter().filter(|o| !o.ok && !o.login_required) {
+                    tx.execute(
+                        "UPDATE fixture_links SET enabled = 0, disabled_reason = ?3, updated_at = ?4
+                         WHERE platform = ?1 AND url = ?2 AND removed_at IS NULL AND enabled = 1",
+                        params![
+                            platform,
+                            dead.url,
+                            dead.error.clone().unwrap_or_else(|| "did not resolve".into()),
+                            at
+                        ],
+                    )?;
+                }
+            }
+            links_where(tx, "l.platform = ?1", &[&platform])
         })
         .await
     }
 }
 
-/// Runs platforms' fixtures through the engine's resolvers and keeps the results.
+/// Runs platforms' checks through the engine's resolvers and keeps the results.
 pub struct FixtureRunner {
     engine: EngineHandle,
     store: FixtureStore,
     pub config: SharedFixtureConfig,
-    /// The platforms whose fixtures are running right now.
+    /// The platforms whose checks are running right now.
     running: Mutex<HashSet<&'static str>>,
     slots: Arc<Semaphore>,
 }
@@ -470,110 +815,137 @@ impl FixtureRunner {
             .contains(platform)
     }
 
-    /// Every registered platform with what its fixtures last found.
+    fn platform_named(&self, id: &str) -> Result<Platform, RunError> {
+        self.engine
+            .platforms()
+            .into_iter()
+            .find(|p| p.id == id)
+            .ok_or_else(|| RunError::Unknown(id.to_string()))
+    }
+
+    /// When a job last finished on each platform.
+    async fn last_jobs(&self) -> Result<HashMap<String, Timestamp>, StoreError> {
+        Ok(self
+            .engine
+            .resolver_stats()
+            .await?
+            .into_iter()
+            .filter_map(|stats| stats.last_done_at.map(|at| (stats.resolver, at)))
+            .collect())
+    }
+
+    /// Every registered platform with what its links and jobs show of it.
     pub async fn coverage(&self) -> Result<Vec<PlatformCoverage>, StoreError> {
         let stored = self.store.all().await?;
+        let jobs = self.last_jobs().await?;
         let running = self.running();
         Ok(self
             .engine
             .platforms()
             .into_iter()
-            .map(|platform| self.assemble(platform, &stored, &running))
+            .map(|platform| {
+                let links = stored
+                    .get(platform.id)
+                    .map(|s| s.links.as_slice())
+                    .unwrap_or(&[]);
+                let last_job_at = jobs.get(platform.id).copied();
+                let busy = running.contains(platform.id);
+                assemble(platform, links, last_job_at, busy)
+            })
             .collect())
     }
 
-    /// One platform with what its fixtures last found.
+    /// One platform with what its links and jobs show of it.
     pub async fn platform(&self, id: &str) -> Result<Option<PlatformCoverage>, StoreError> {
         let Some(platform) = self.engine.platforms().into_iter().find(|p| p.id == id) else {
             return Ok(None);
         };
-        let stored = self.store.all().await?;
-        let running = self.running();
-        Ok(Some(self.assemble(platform, &stored, &running)))
+        let links = self.store.links(id).await?;
+        let last_job_at = self.last_jobs().await?.get(id).copied();
+        Ok(Some(assemble(
+            platform,
+            &links,
+            last_job_at,
+            self.is_running(id),
+        )))
     }
 
-    fn assemble(
-        &self,
-        platform: Platform,
-        stored: &BTreeMap<String, Stored>,
-        running: &HashSet<&'static str>,
-    ) -> PlatformCoverage {
-        let record = stored.get(platform.id);
-        let fixtures = platform
-            .examples
-            .iter()
-            .map(|url| {
-                match record.and_then(|r| r.results.iter().find(|result| result.url == *url)) {
-                    Some(result) => FixtureResult {
-                        url: url.to_string(),
-                        status: if result.ok {
-                            FixtureStatus::Pass
-                        } else if result.login_required {
-                            FixtureStatus::LoginRequired
-                        } else {
-                            FixtureStatus::Fail
-                        },
-                        run_at: Some(result.run_at),
-                        last_pass_at: result.last_pass_at,
-                        error: result.error.clone(),
-                        title: result.title.clone(),
-                        found: result.found,
-                        duration_ms: Some(result.duration_ms),
-                    },
-                    None => FixtureResult {
-                        url: url.to_string(),
-                        status: FixtureStatus::Never,
-                        run_at: None,
-                        last_pass_at: None,
-                        error: None,
-                        title: None,
-                        found: None,
-                        duration_ms: None,
-                    },
-                }
-            })
-            .collect();
-        PlatformCoverage {
-            id: platform.id,
-            name: platform.name,
-            hosts: platform.hosts,
-            features: platform.features,
-            formats: platform.formats,
-            media: platform.media,
-            tags: platform.tags,
-            session: platform.session,
-            fixtures,
-            summary: record.map(|r| r.summary.clone()).unwrap_or_default(),
-            running: running.contains(platform.id),
-        }
+    /// Adds a link for `platform` by hand.
+    pub async fn add_link(&self, platform: &str, url: &str) -> Result<FixtureLink, LinkError> {
+        self.store.add_link(platform, url, LinkOrigin::Custom).await
     }
 
-    /// Starts a run of `platform`'s fixtures in the background.
-    pub fn start(self: &Arc<Self>, platform: &str) -> Result<(), RunError> {
-        let found = self
-            .engine
-            .platforms()
+    pub async fn edit_link(&self, id: Uuid, url: &str) -> Result<FixtureLink, LinkError> {
+        self.store.edit_link(id, url).await
+    }
+
+    pub async fn set_enabled(&self, id: Uuid, enabled: bool) -> Result<FixtureLink, LinkError> {
+        self.store.set_enabled(id, enabled).await
+    }
+
+    pub async fn remove_link(&self, id: Uuid) -> Result<bool, StoreError> {
+        self.store.remove_link(id).await
+    }
+
+    pub async fn link(&self, id: Uuid) -> Result<Option<FixtureLink>, StoreError> {
+        self.store.link(id).await
+    }
+
+    /// Keeps the link of a job that finished on `platform`, when it is new there.
+    pub async fn learn(&self, platform: &str, url: &str) -> Result<bool, StoreError> {
+        self.store.learn(platform, url).await
+    }
+
+    /// Starts a run of `platform`'s links in the background.
+    pub async fn start(self: &Arc<Self>, platform: &str) -> Result<(), RunError> {
+        let found = self.platform_named(platform)?;
+        let links: Vec<FixtureLink> = self
+            .store
+            .links(found.id)
+            .await?
             .into_iter()
-            .find(|p| p.id == platform)
-            .ok_or_else(|| RunError::Unknown(platform.to_string()))?;
-        if found.examples.is_empty() {
+            .filter(|row| row.link.enabled)
+            .map(|row| row.link)
+            .collect();
+        if links.is_empty() {
             return Err(RunError::NoFixtures(platform.to_string()));
         }
         if !self.claim(found.id) {
             return Err(RunError::Busy(platform.to_string()));
         }
-        self.spawn(found);
+        self.spawn(found, Work::Platform(links));
         Ok(())
     }
 
-    /// Starts a run for every platform with fixtures that is not already running. The
-    /// ids started.
-    pub fn start_all(self: &Arc<Self>) -> Result<Vec<&'static str>, RunError> {
-        let platforms: Vec<Platform> = self
+    /// Starts a run of one of `platform`'s links in the background, whether or not the
+    /// link is in use. Its result is recorded; nothing is switched off over it.
+    pub async fn start_link(self: &Arc<Self>, platform: &str, link: Uuid) -> Result<(), RunError> {
+        let found = self.platform_named(platform)?;
+        let link = self
+            .store
+            .link(link)
+            .await?
+            .filter(|l| l.platform == found.id)
+            .ok_or(RunError::UnknownLink(link))?;
+        if !self.claim(found.id) {
+            return Err(RunError::Busy(platform.to_string()));
+        }
+        self.spawn(found, Work::Link(link));
+        Ok(())
+    }
+
+    /// Starts a run for every platform with links in use that is not already running.
+    /// The ids started.
+    pub async fn start_all(self: &Arc<Self>) -> Result<Vec<&'static str>, RunError> {
+        let stored = self.store.all().await?;
+        let platforms: Vec<(Platform, Vec<FixtureLink>)> = self
             .engine
             .platforms()
             .into_iter()
-            .filter(|p| !p.examples.is_empty())
+            .filter_map(|p| {
+                let links = in_use(stored.get(p.id));
+                (!links.is_empty()).then_some((p, links))
+            })
             .collect();
         if platforms.is_empty() {
             return Err(RunError::Nothing);
@@ -585,33 +957,46 @@ impl FixtureRunner {
         Ok(started)
     }
 
-    /// Starts a run for every platform whose fixtures are due: never run, or run longer
-    /// ago than the interval. The ids started.
+    /// Starts a run for every platform whose links are due: never run, or run longer ago
+    /// than the interval. The ids started.
     pub async fn start_due(self: &Arc<Self>) -> Result<Vec<&'static str>, StoreError> {
         let interval = SignedDuration::from_secs(self.config().interval_secs as i64);
         let stored = self.store.all().await?;
         let now = Timestamp::now();
-        let due: Vec<Platform> = self
+        let due: Vec<(Platform, Vec<FixtureLink>)> = self
             .engine
             .platforms()
             .into_iter()
-            .filter(|p| !p.examples.is_empty())
-            .filter(|p| {
-                stored
-                    .get(p.id)
-                    .and_then(|s| s.summary.last_run_at)
+            .filter_map(|p| {
+                let rows = stored.get(p.id);
+                let links = in_use(rows);
+                if links.is_empty() {
+                    return None;
+                }
+                let last_run = rows.and_then(|s| {
+                    s.links
+                        .iter()
+                        .filter(|row| row.link.enabled)
+                        .filter_map(|row| row.result.as_ref().map(|r| r.run_at))
+                        .max()
+                });
+                last_run
                     .is_none_or(|at| now.duration_since(at) >= interval)
+                    .then_some((p, links))
             })
             .collect();
         Ok(self.start_each(due))
     }
 
-    fn start_each(self: &Arc<Self>, platforms: Vec<Platform>) -> Vec<&'static str> {
+    fn start_each(
+        self: &Arc<Self>,
+        platforms: Vec<(Platform, Vec<FixtureLink>)>,
+    ) -> Vec<&'static str> {
         let mut started = Vec::new();
-        for platform in platforms {
+        for (platform, links) in platforms {
             if self.claim(platform.id) {
                 started.push(platform.id);
-                self.spawn(platform);
+                self.spawn(platform, Work::Platform(links));
             }
         }
         started
@@ -625,7 +1010,7 @@ impl FixtureRunner {
             .insert(platform)
     }
 
-    fn spawn(self: &Arc<Self>, platform: Platform) {
+    fn spawn(self: &Arc<Self>, platform: Platform, work: Work) {
         let claim = Claim {
             runner: self.clone(),
             platform: platform.id,
@@ -636,74 +1021,107 @@ impl FixtureRunner {
             let Ok(_slot) = runner.slots.clone().acquire_owned().await else {
                 return;
             };
-            match runner.run(&platform).await {
-                Ok(summary) => tracing::info!(
-                    platform = platform.id,
-                    passed = summary.passed,
-                    failed = summary.failed,
-                    "fixtures run"
-                ),
-                Err(error) => tracing::error!(
-                    platform = platform.id,
-                    "fixture results not stored: {error}"
-                ),
+            let result = match work {
+                Work::Platform(links) => runner.run(&platform, links).await,
+                Work::Link(link) => runner.run_link(&platform, link).await,
+            };
+            match result {
+                Ok(links) => {
+                    let summary = summarize(&links, None);
+                    tracing::info!(
+                        platform = platform.id,
+                        passed = summary.passed,
+                        failed = summary.failed,
+                        "platform checked"
+                    );
+                }
+                Err(error) => {
+                    tracing::error!(platform = platform.id, "check results not stored: {error}")
+                }
             }
         });
     }
 
-    /// Resolves each of `platform`'s fixture links and records what came of it.
-    async fn run(&self, platform: &Platform) -> Result<PlatformSummary, StoreError> {
-        let timeout = Duration::from_secs(self.config().timeout_secs.max(1));
-        let mut outcomes = Vec::with_capacity(platform.examples.len());
-        for example in platform.examples {
-            let began = Instant::now();
-            let outcome = match Url::parse(example) {
-                Err(error) => Outcome {
-                    url: example.to_string(),
+    /// Resolves one link within the configured time.
+    async fn try_link(&self, url: &str, timeout: Duration) -> Outcome {
+        let began = Instant::now();
+        let outcome = match Url::parse(url) {
+            Err(error) => Outcome {
+                url: url.to_string(),
+                ok: false,
+                login_required: false,
+                error: Some(format!("Not a URL: {error}")),
+                title: None,
+                found: None,
+                duration: began.elapsed(),
+            },
+            Ok(parsed) => match tokio::time::timeout(timeout, self.engine.resolve(&parsed)).await {
+                Err(_) => Outcome {
+                    url: url.to_string(),
                     ok: false,
                     login_required: false,
-                    error: Some(format!("Not a URL: {error}")),
+                    error: Some(format!("No answer within {}s", timeout.as_secs())),
                     title: None,
                     found: None,
                     duration: began.elapsed(),
                 },
-                Ok(url) => match tokio::time::timeout(timeout, self.engine.resolve(&url)).await {
-                    Err(_) => Outcome {
-                        url: example.to_string(),
-                        ok: false,
-                        login_required: false,
-                        error: Some(format!("No answer within {}s", timeout.as_secs())),
-                        title: None,
-                        found: None,
-                        duration: began.elapsed(),
-                    },
-                    Ok(Err(error)) => Outcome {
-                        url: example.to_string(),
-                        ok: false,
-                        login_required: matches!(error, ResolveError::LoginRequired { .. }),
-                        error: Some(message(example, &error)),
-                        title: None,
-                        found: None,
-                        duration: began.elapsed(),
-                    },
-                    Ok(Ok(resolution)) => judge(example, resolution, began.elapsed()),
+                Ok(Err(error)) => Outcome {
+                    url: url.to_string(),
+                    ok: false,
+                    login_required: matches!(error, ResolveError::LoginRequired { .. }),
+                    error: Some(message(url, &error)),
+                    title: None,
+                    found: None,
+                    duration: began.elapsed(),
                 },
-            };
-            tracing::debug!(
-                platform = platform.id,
-                url = example,
-                ok = outcome.ok,
-                error = outcome.error.as_deref().unwrap_or(""),
-                "fixture resolved"
-            );
+                Ok(Ok(resolution)) => judge(url, resolution, began.elapsed()),
+            },
+        };
+        tracing::debug!(
+            url,
+            ok = outcome.ok,
+            error = outcome.error.as_deref().unwrap_or(""),
+            "check link resolved"
+        );
+        outcome
+    }
+
+    /// Tries `links` in turn until one resolves, and records what came of each. Links that
+    /// failed on the way to one that resolved are switched off.
+    async fn run(
+        &self,
+        platform: &Platform,
+        links: Vec<FixtureLink>,
+    ) -> Result<Vec<LinkRow>, StoreError> {
+        let timeout = Duration::from_secs(self.config().timeout_secs.max(1));
+        let mut outcomes = Vec::with_capacity(links.len());
+        for link in &links {
+            let outcome = self.try_link(&link.url, timeout).await;
+            let ok = outcome.ok;
             outcomes.push(outcome);
+            if ok {
+                break;
+            }
         }
         self.store
-            .record(platform.id, Timestamp::now(), outcomes)
+            .record(platform.id, Timestamp::now(), outcomes, true)
             .await
     }
 
-    /// Runs the fixtures that are due, on the configured interval, until `shutdown`.
+    /// Resolves one link and records what came of it.
+    async fn run_link(
+        &self,
+        platform: &Platform,
+        link: FixtureLink,
+    ) -> Result<Vec<LinkRow>, StoreError> {
+        let timeout = Duration::from_secs(self.config().timeout_secs.max(1));
+        let outcome = self.try_link(&link.url, timeout).await;
+        self.store
+            .record(platform.id, Timestamp::now(), vec![outcome], false)
+            .await
+    }
+
+    /// Runs the checks that are due, on the configured interval, until `shutdown`.
     pub async fn schedule(self: Arc<Self>, shutdown: CancellationToken) {
         tokio::select! {
             _ = shutdown.cancelled() => return,
@@ -713,10 +1131,10 @@ impl FixtureRunner {
             if self.config().interval_secs > 0 {
                 match self.start_due().await {
                     Ok(started) if !started.is_empty() => {
-                        tracing::info!(platforms = ?started, "scheduled fixture run");
+                        tracing::info!(platforms = ?started, "scheduled platform checks");
                     }
                     Ok(_) => {}
-                    Err(error) => tracing::error!("fixture runs not read: {error}"),
+                    Err(error) => tracing::error!("check runs not read: {error}"),
                 }
             }
             tokio::select! {
@@ -724,6 +1142,92 @@ impl FixtureRunner {
                 _ = tokio::time::sleep(TICK) => {}
             }
         }
+    }
+
+    /// Keeps the link of every job that finishes as a check link of its platform, until
+    /// `shutdown`.
+    pub async fn learn_from_jobs(self: Arc<Self>, shutdown: CancellationToken) {
+        use discoclip_engine::{EventKind, JobStatus};
+        let mut events = self.engine.subscribe();
+        loop {
+            let event = tokio::select! {
+                _ = shutdown.cancelled() => return,
+                event = events.recv() => event,
+            };
+            let event = match event {
+                Ok(event) => event,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+            };
+            if !matches!(
+                event.kind,
+                EventKind::Status {
+                    status: JobStatus::Done
+                }
+            ) {
+                continue;
+            }
+            let job = match self.engine.get(event.job).await {
+                Ok(Some(job)) => job,
+                Ok(None) => continue,
+                Err(error) => {
+                    tracing::warn!(job = %event.job, "finished job not read: {error}");
+                    continue;
+                }
+            };
+            let Some(platform) = job.resolver() else {
+                continue;
+            };
+            match self.learn(platform, job.request.url.as_str()).await {
+                Ok(true) => tracing::info!(
+                    platform,
+                    url = %job.request.url,
+                    "check link learned from a finished job"
+                ),
+                Ok(false) => {}
+                Err(error) => tracing::warn!(platform, "check link not learned: {error}"),
+            }
+        }
+    }
+}
+
+/// What a background run does.
+enum Work {
+    Platform(Vec<FixtureLink>),
+    Link(FixtureLink),
+}
+
+/// The links of a platform that runs try.
+fn in_use(stored: Option<&Stored>) -> Vec<FixtureLink> {
+    stored
+        .map(|s| {
+            s.links
+                .iter()
+                .filter(|row| row.link.enabled)
+                .map(|row| row.link.clone())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn assemble(
+    platform: Platform,
+    links: &[LinkRow],
+    last_job_at: Option<Timestamp>,
+    running: bool,
+) -> PlatformCoverage {
+    PlatformCoverage {
+        id: platform.id,
+        name: platform.name,
+        hosts: platform.hosts,
+        features: platform.features,
+        formats: platform.formats,
+        media: platform.media,
+        tags: platform.tags,
+        session: platform.session,
+        fixtures: links.iter().map(LinkRow::view).collect(),
+        summary: summarize(links, last_job_at),
+        running,
     }
 }
 
@@ -831,6 +1335,20 @@ mod tests {
         FixtureStore::new(db)
     }
 
+    fn platform(examples: &'static [&'static str]) -> Platform {
+        Platform {
+            id: "p",
+            name: "P",
+            hosts: &["p"],
+            features: &[],
+            formats: &[],
+            media: &[MediaKind::Video],
+            tags: &[],
+            session: SessionSupport::None,
+            examples,
+        }
+    }
+
     fn outcome(url: &str, ok: bool) -> Outcome {
         Outcome {
             url: url.into(),
@@ -858,123 +1376,285 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn links_wanting_a_login_neither_pass_nor_fail() {
-        let store = store().await;
-        let first = Timestamp::from_second(1_700_000_000).unwrap();
-        let summary = store
-            .record(
-                "p",
-                first,
-                vec![outcome("https://p/a", true), wants_login("https://p/post")],
-            )
-            .await
-            .unwrap();
-        assert_eq!(
-            (summary.passed, summary.failed, summary.login_required),
-            (1, 0, 1)
-        );
-        assert_eq!(
-            summary.last_pass_at, None,
-            "the platform did not pass in full"
-        );
-        assert_eq!(summary.last_fail_at, None, "nothing is broken");
-        let stored = store.all().await.unwrap();
-        assert_eq!(stored["p"].summary.login_required, 1);
-        let post = stored["p"]
-            .results
-            .iter()
-            .find(|r| r.url == "https://p/post")
-            .unwrap();
-        assert!(!post.ok);
-        assert!(post.login_required);
-        assert!(post.error.as_ref().unwrap().contains("Needs a logged-in"));
-        assert_eq!(post.last_pass_at, None);
-
-        // With the session in place the link passes, and the platform with it.
-        let second = Timestamp::from_second(1_700_000_600).unwrap();
-        let summary = store
-            .record(
-                "p",
-                second,
-                vec![
-                    outcome("https://p/a", true),
-                    outcome("https://p/post", true),
-                ],
-            )
-            .await
-            .unwrap();
-        assert_eq!(
-            (summary.passed, summary.failed, summary.login_required),
-            (2, 0, 0)
-        );
-        assert_eq!(summary.last_pass_at, Some(second));
-        let stored = store.all().await.unwrap();
-        let post = stored["p"]
-            .results
-            .iter()
-            .find(|r| r.url == "https://p/post")
-            .unwrap();
-        assert!(post.ok && !post.login_required);
-        assert_eq!(post.last_pass_at, Some(second));
+    fn by_url<'a>(links: &'a [LinkRow], url: &str) -> &'a LinkRow {
+        links.iter().find(|row| row.link.url == url).unwrap()
     }
 
     #[tokio::test]
-    async fn results_keep_the_latest_run_and_when_each_link_last_passed() {
+    async fn shipped_links_are_seeded_once_and_stay_removed_once_removed() {
         let store = store().await;
-        let first = Timestamp::from_second(1_700_000_000).unwrap();
-        let summary = store
-            .record(
-                "p",
-                first,
-                vec![outcome("https://p/a", true), outcome("https://p/b", false)],
-            )
-            .await
-            .unwrap();
-        assert_eq!(summary.last_run_at, Some(first));
-        assert_eq!(summary.last_pass_at, None);
-        assert_eq!(summary.last_fail_at, Some(first));
-        assert_eq!((summary.passed, summary.failed), (1, 1));
-
-        let second = Timestamp::from_second(1_700_000_600).unwrap();
-        let summary = store
-            .record(
-                "p",
-                second,
-                vec![outcome("https://p/a", false), outcome("https://p/c", true)],
-            )
-            .await
-            .unwrap();
-        assert_eq!(summary.last_pass_at, None);
-        assert_eq!(summary.last_fail_at, Some(second));
-        let stored = store.all().await.unwrap();
-        let results = &stored["p"].results;
-        assert_eq!(results.len(), 2, "the link no longer named is gone");
-        let a = results.iter().find(|r| r.url == "https://p/a").unwrap();
-        assert!(!a.ok);
-        assert_eq!(a.run_at, second);
-        assert_eq!(a.last_pass_at, Some(first));
-        let c = results.iter().find(|r| r.url == "https://p/c").unwrap();
-        assert_eq!(c.last_pass_at, Some(second));
-
-        let third = Timestamp::from_second(1_700_001_200).unwrap();
-        let summary = store
-            .record(
-                "p",
-                third,
-                vec![outcome("https://p/a", true), outcome("https://p/c", true)],
-            )
-            .await
-            .unwrap();
-        assert_eq!(summary.last_pass_at, Some(third));
-        assert_eq!(summary.last_fail_at, Some(second));
-        let summary = store.record("p", third, vec![]).await.unwrap();
-        assert_eq!(
-            summary.last_pass_at,
-            Some(third),
-            "a run of nothing passes nothing"
+        let shipped = platform(&["https://p/a", "https://p/b"]);
+        assert_eq!(store.seed(&[shipped.clone()]).await.unwrap(), 2);
+        assert_eq!(store.seed(&[shipped.clone()]).await.unwrap(), 0);
+        let links = store.links("p").await.unwrap();
+        assert_eq!(links.len(), 2);
+        assert!(
+            links
+                .iter()
+                .all(|row| row.link.origin == LinkOrigin::Builtin)
         );
-        assert!(store.all().await.unwrap()["p"].results.is_empty());
+        assert!(links.iter().all(|row| row.link.enabled));
+        let a = by_url(&links, "https://p/a").link.id;
+        assert!(store.remove_link(a).await.unwrap());
+        assert!(!store.remove_link(a).await.unwrap());
+        assert_eq!(
+            store.seed(&[shipped]).await.unwrap(),
+            0,
+            "a removed link stays removed"
+        );
+        let links = store.links("p").await.unwrap();
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].link.url, "https://p/b");
+        assert!(store.all().await.unwrap()["p"].links.len() == 1);
+    }
+
+    #[tokio::test]
+    async fn links_are_added_edited_switched_and_removed() {
+        let store = store().await;
+        store.seed(&[platform(&["https://p/a"])]).await.unwrap();
+        let added = store
+            .add_link("p", "https://p/mine", LinkOrigin::Custom)
+            .await
+            .unwrap();
+        assert_eq!(added.origin, LinkOrigin::Custom);
+        assert!(matches!(
+            store
+                .add_link("p", "https://p/mine", LinkOrigin::Custom)
+                .await,
+            Err(LinkError::Duplicate { .. })
+        ));
+        store
+            .record(
+                "p",
+                Timestamp::now(),
+                vec![outcome("https://p/mine", true)],
+                false,
+            )
+            .await
+            .unwrap();
+        let links = store.links("p").await.unwrap();
+        assert_eq!(
+            by_url(&links, "https://p/mine").status(),
+            FixtureStatus::Pass
+        );
+
+        // A new address starts over, and may not be one the platform already checks.
+        assert!(matches!(
+            store.edit_link(added.id, "https://p/a").await,
+            Err(LinkError::Duplicate { .. })
+        ));
+        let edited = store.edit_link(added.id, "https://p/moved").await.unwrap();
+        assert_eq!(edited.url, "https://p/moved");
+        let links = store.links("p").await.unwrap();
+        assert_eq!(
+            by_url(&links, "https://p/moved").status(),
+            FixtureStatus::Never
+        );
+        assert!(links.iter().all(|row| row.link.url != "https://p/mine"));
+
+        let off = store.set_enabled(added.id, false).await.unwrap();
+        assert!(!off.enabled);
+        assert!(off.disabled_reason.is_none());
+        let on = store.set_enabled(added.id, true).await.unwrap();
+        assert!(on.enabled);
+        assert!(matches!(
+            store.set_enabled(Uuid::now_v7(), true).await,
+            Err(LinkError::NotFound(_))
+        ));
+        assert!(store.remove_link(added.id).await.unwrap());
+        assert_eq!(store.links("p").await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_link_that_fails_while_another_resolves_is_switched_off() {
+        let store = store().await;
+        store
+            .seed(&[platform(&[
+                "https://p/dead",
+                "https://p/live",
+                "https://p/post",
+            ])])
+            .await
+            .unwrap();
+        let at = Timestamp::from_second(1_700_000_000).unwrap();
+        let links = store
+            .record(
+                "p",
+                at,
+                vec![
+                    outcome("https://p/dead", false),
+                    wants_login("https://p/post"),
+                    outcome("https://p/live", true),
+                ],
+                true,
+            )
+            .await
+            .unwrap();
+        let dead = by_url(&links, "https://p/dead");
+        assert!(!dead.link.enabled);
+        assert_eq!(dead.link.disabled_reason.as_deref(), Some("No video found"));
+        assert_eq!(dead.status(), FixtureStatus::Fail);
+        let post = by_url(&links, "https://p/post");
+        assert!(post.link.enabled, "a link wanting a login is not dead");
+        assert_eq!(post.status(), FixtureStatus::LoginRequired);
+        let live = by_url(&links, "https://p/live");
+        assert!(live.link.enabled);
+        assert_eq!(live.result.as_ref().unwrap().last_pass_at, Some(at));
+        let summary = summarize(&links, None);
+        assert_eq!(summary.health, PlatformHealth::Working);
+        assert_eq!(
+            (summary.passed, summary.failed, summary.login_required),
+            (1, 0, 1),
+            "the link switched off does not count"
+        );
+        assert_eq!(summary.last_run_at, Some(at));
+        assert_eq!(summary.last_pass_at, Some(at));
+
+        // With nothing resolving, nothing is switched off: the platform may be down.
+        let later = Timestamp::from_second(1_700_000_600).unwrap();
+        let links = store
+            .record(
+                "p",
+                later,
+                vec![
+                    outcome("https://p/live", false),
+                    wants_login("https://p/post"),
+                ],
+                true,
+            )
+            .await
+            .unwrap();
+        assert!(by_url(&links, "https://p/live").link.enabled);
+        let summary = summarize(&links, None);
+        assert_eq!(summary.health, PlatformHealth::Failing);
+        assert_eq!(summary.last_pass_at, Some(at), "when a link last resolved");
+        assert_eq!(summary.last_run_at, Some(later));
+        // A job finishing on the platform since says it works after all.
+        let worked = Timestamp::from_second(1_700_000_700).unwrap();
+        assert_eq!(
+            summarize(&links, Some(worked)).health,
+            PlatformHealth::Working
+        );
+        let before = Timestamp::from_second(1_700_000_500).unwrap();
+        assert_eq!(
+            summarize(&links, Some(before)).health,
+            PlatformHealth::Failing
+        );
+        // A single link run records its result and switches nothing off.
+        let links = store
+            .record("p", later, vec![outcome("https://p/dead", false)], false)
+            .await
+            .unwrap();
+        assert!(!by_url(&links, "https://p/dead").link.enabled);
+        assert!(by_url(&links, "https://p/live").link.enabled);
+    }
+
+    #[tokio::test]
+    async fn links_wanting_a_login_alone_make_the_platform_want_a_login() {
+        let store = store().await;
+        store.seed(&[platform(&["https://p/post"])]).await.unwrap();
+        let links = store
+            .record(
+                "p",
+                Timestamp::now(),
+                vec![wants_login("https://p/post")],
+                true,
+            )
+            .await
+            .unwrap();
+        let summary = summarize(&links, None);
+        assert_eq!(summary.health, PlatformHealth::LoginRequired);
+        assert_eq!(summary.login_required, 1);
+        assert_eq!(summary.last_pass_at, None);
+        // With the session in place the link passes, and the platform with it.
+        let links = store
+            .record(
+                "p",
+                Timestamp::now(),
+                vec![outcome("https://p/post", true)],
+                true,
+            )
+            .await
+            .unwrap();
+        assert_eq!(summarize(&links, None).health, PlatformHealth::Working);
+        assert!(
+            !by_url(&links, "https://p/post")
+                .result
+                .as_ref()
+                .unwrap()
+                .login_required
+        );
+    }
+
+    #[tokio::test]
+    async fn nothing_checked_and_no_jobs_is_unknown() {
+        let store = store().await;
+        store.seed(&[platform(&["https://p/a"])]).await.unwrap();
+        let links = store.links("p").await.unwrap();
+        assert_eq!(summarize(&links, None).health, PlatformHealth::Unknown);
+        let job = Timestamp::now();
+        let summary = summarize(&links, Some(job));
+        assert_eq!(summary.health, PlatformHealth::Working);
+        assert_eq!(summary.last_job_at, Some(job));
+        assert_eq!(summarize(&[], None).health, PlatformHealth::Unknown);
+    }
+
+    #[tokio::test]
+    async fn links_are_learned_from_jobs_and_the_newest_three_stay() {
+        let store = store().await;
+        store.seed(&[platform(&["https://p/a"])]).await.unwrap();
+        assert!(
+            store.learn("p", "https://p/a").await.unwrap() == false,
+            "known already"
+        );
+        for n in 1..=4 {
+            assert!(
+                store
+                    .learn("p", &format!("https://p/job{n}"))
+                    .await
+                    .unwrap()
+            );
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+        assert!(!store.learn("p", "https://p/job4").await.unwrap());
+        let links = store.links("p").await.unwrap();
+        let learned: Vec<&str> = links
+            .iter()
+            .filter(|row| row.link.origin == LinkOrigin::Job)
+            .map(|row| row.link.url.as_str())
+            .collect();
+        assert_eq!(learned.len(), LEARNED_LINKS);
+        assert!(!learned.contains(&"https://p/job1"), "{learned:?}");
+        assert!(learned.contains(&"https://p/job4"));
+        assert_eq!(links.len(), 1 + LEARNED_LINKS);
+        // A learned link removed by hand is not learned again.
+        let job4 = by_url(&links, "https://p/job4").link.id;
+        assert!(store.remove_link(job4).await.unwrap());
+        assert!(
+            store.learn("p", "https://p/job4").await.unwrap(),
+            "a deleted learned link may come back"
+        );
+    }
+
+    #[tokio::test]
+    async fn runs_try_the_last_resolving_link_first() {
+        let store = store().await;
+        store
+            .seed(&[platform(&["https://p/a", "https://p/b", "https://p/c"])])
+            .await
+            .unwrap();
+        let first = Timestamp::from_second(1_700_000_000).unwrap();
+        store
+            .record("p", first, vec![outcome("https://p/b", true)], true)
+            .await
+            .unwrap();
+        let second = Timestamp::from_second(1_700_000_600).unwrap();
+        let links = store
+            .record("p", second, vec![outcome("https://p/c", true)], true)
+            .await
+            .unwrap();
+        let order: Vec<&str> = links.iter().map(|row| row.link.url.as_str()).collect();
+        assert_eq!(order, vec!["https://p/c", "https://p/b", "https://p/a"]);
     }
 
     #[test]

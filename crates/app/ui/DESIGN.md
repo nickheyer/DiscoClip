@@ -64,11 +64,13 @@ action, the active navigation entry's tonal tint and icon, and the brand mark. L
 ## Layout
 
 - The operator shell in `src/routes/(app)/+layout.svelte` is Skeleton Navigation in
-  `sidebar` layout from `lg`, with Skeleton's own width, padding and trigger styling. Its
+  `sidebar` layout from `lg`, 14rem wide (`w-56!`, over Skeleton's own 17.5rem, which left
+  half the rail empty beside the labels), with Skeleton's padding and trigger styling. Its
   header holds the wordmark, its content the four groups (Workspace, Configuration,
   Administration, Monitoring) as `Navigation.Group`s with a `Navigation.Label` each, and its
-  footer the live-updates `Status` badge. The active entry gets `preset-tonal-primary` and its
-  icon `text-primary-500`.
+  footer a `Status` badge only while the live feed is lost and reconnecting: a feed that
+  works says nothing. The active entry gets `preset-tonal-primary` and its icon
+  `text-primary-500`.
 - Below `lg`, Skeleton Navigation in `bar` layout is fixed to the bottom with Dashboard, Jobs,
   Profiles and More. More and the app bar's menu button open the same Skeleton Dialog, used
   as a drawer, holding the sidebar Navigation with every group plus Account.
@@ -170,6 +172,11 @@ The implementation follows the official [Skeleton v5 Svelte reference](https://w
   the card, not both. Rows that share a shape share one table, so a job in flight and a job
   finished sit in the same table on the dashboard, and a health check is one row of one
   table.
+- Discord's places are named, never numbered: a server shows its icon and name, a channel
+  its `#name`. An id stands in only where no bot has seen the place.
+- A problem reported anywhere links to where it is fixed: a health check's label opens the
+  page its trouble lives on, filtered to the trouble (`/platforms?health=failing`,
+  `/settings?q=engine.retention`). Pages that filter read their filter from the URL query.
 - Internal links and `goto` calls use `resolve()` from `$app/paths`. Parameterised routes use
   their full id including the group, such as `/(app)/jobs/[id]`.
 - Filters that people share live in the URL query (jobs).
@@ -186,7 +193,9 @@ The implementation follows the official [Skeleton v5 Svelte reference](https://w
 - A list of values is a `ChipList`.
 - An absent value renders nothing, and its row is omitted. No word stands for absence.
 - A placeholder is the literal default value that applies when the field is left empty,
-  rendered by the matching component, or there is no placeholder.
+  rendered by the matching component, or there is no placeholder. A secret that is stored
+  shows `********` as its placeholder: leaving the field blank keeps it.
+
 - No description line on a page, card, dialog, field or empty state. No help line under a
   field: a unit is an inline addon.
 - No example text anywhere.

@@ -168,7 +168,12 @@ pub async fn app_with_settings(
         ],
     );
     profiles.load().await.unwrap();
-    let public_url = Arc::new(std::sync::RwLock::new(settings.web.public_url.clone()));
+    let public_url = Arc::new(crate::public_url::PublicUrl::new(
+        settings.web.public_url.clone(),
+        db.clone(),
+    ));
+    public_url.load().await.unwrap();
+
     let frontends = FrontendStore::new(
         db.clone(),
         Keyring::from_key([3; 32]),
@@ -212,9 +217,11 @@ pub async fn app_with_settings(
         .clone();
     let log = crate::telemetry::detached(&settings.log.level);
     let local = Arc::new(std::sync::RwLock::new(settings.local.clone()));
+    let fixture_store = FixtureStore::new(db.clone());
+    fixture_store.seed(&handle.platforms()).await.unwrap();
     let fixtures = Arc::new(FixtureRunner::new(
         handle.clone(),
-        FixtureStore::new(db.clone()),
+        fixture_store,
         Arc::new(std::sync::RwLock::new(settings.fixtures.clone())),
     ));
     let app = WebApp::new(
@@ -438,6 +445,21 @@ fn stub_engine(
             _: ProgressSender,
         ) -> Result<discoclip_engine::transcode::Transcoded, TranscodeError> {
             unreachable!("the stub engine never runs a job")
+        }
+
+        /// A still is a copy of the output, so the pages that show one can be tested
+        /// without ffmpeg.
+        async fn thumbnail(
+            &self,
+            input: &LocalFile,
+            dest: &std::path::Path,
+        ) -> Result<LocalFile, TranscodeError> {
+            let size = tokio::fs::copy(&input.path, dest).await?;
+            Ok(LocalFile {
+                path: dest.to_path_buf(),
+                size,
+                info: None,
+            })
         }
     }
 

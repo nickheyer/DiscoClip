@@ -18,10 +18,13 @@ max_source_bytes = 2147483648  # maximum download size
 max_duration_secs = 10800      # maximum duration in seconds
 max_height = 1080              # taller sources are downscaled
 
-# Uncomment to keep a copy of every finished video.
-# [engine.archive]
-# dir = "archive"
-# keep = "output"              # "output", "source" or "both"
+# The archive keeps a copy of every finished job's media for good, filed by year and month
+# beside a JSON record of the job. Retention sweeps the cache; it never touches the archive.
+[engine.archive]
+enabled = true
+dir = "data/archive"
+keep = "output"                # "output", "source" or "both"
+
 
 [engine.playlists]
 enabled = true                 # create one job per entry

@@ -34,7 +34,9 @@ ExecStart=/usr/bin/discoclip --config /etc/discoclip/discoclip.toml
 Environment=DISCOCLIP_DATA_DIR=/var/lib/discoclip
 Environment=DISCOCLIP_ENGINE__CACHE_DIR=/var/cache/discoclip
 Environment=DISCOCLIP_LOCAL__DIR=/var/lib/discoclip/local
+Environment=DISCOCLIP_ENGINE__ARCHIVE__DIR=/var/lib/discoclip/archive
 Environment=DISCOCLIP_BACKUP__DIR=/var/lib/discoclip/backups
+
 StateDirectory=discoclip
 CacheDirectory=discoclip
 ConfigurationDirectory=discoclip

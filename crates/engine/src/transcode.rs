@@ -27,7 +27,10 @@ pub trait Transcoder: Send + Sync {
         dest_dir: &Path,
         progress: ProgressSender,
     ) -> Result<Transcoded, TranscodeError>;
+    async fn thumbnail(&self, input: &LocalFile, dest: &Path) -> Result<LocalFile, TranscodeError>;
 }
+
+pub const THUMBNAIL_WIDTH: u32 = 640;
 
 /// The output, and what was done on the way to it, for the job's log.
 #[derive(Debug, Clone, PartialEq)]
@@ -1745,6 +1748,75 @@ impl FfmpegTranscoder {
 impl Transcoder for FfmpegTranscoder {
     async fn probe(&self, path: &Path) -> Result<MediaInfo, TranscodeError> {
         Ok(self.ffmpeg.inspect(path).await?)
+    }
+
+    async fn thumbnail(&self, input: &LocalFile, dest: &Path) -> Result<LocalFile, TranscodeError> {
+        let info = match &input.info {
+            Some(info) => info.clone(),
+            None => self.ffmpeg.inspect(&input.path).await?,
+        };
+        let one_frame = |front: Vec<OsString>| -> Vec<OsString> {
+            let mut args = front;
+            args.extend([
+                OsString::from("-i"),
+                input.path.clone().into_os_string(),
+                "-an".into(),
+                "-sn".into(),
+                "-dn".into(),
+                "-frames:v".into(),
+                "1".into(),
+                "-update".into(),
+                "1".into(),
+                "-vf".into(),
+                format!("scale='min({THUMBNAIL_WIDTH},iw)':-2").into(),
+                "-q:v".into(),
+                "3".into(),
+                "-f".into(),
+                "image2".into(),
+                dest.as_os_str().to_owned(),
+            ]);
+            args
+        };
+        // A video is read a tenth of the way in, past any black lead-in
+        let mut attempts: Vec<Vec<OsString>> = Vec::new();
+        match info.kind {
+            MediaKind::Video => {
+                if let Some(duration) = info.duration {
+                    let at = (duration.as_secs_f64() * 0.1).min(10.0);
+                    if at >= 0.5 {
+                        attempts.push(one_frame(vec!["-ss".into(), format!("{at:.3}").into()]));
+                    }
+                }
+                attempts.push(one_frame(Vec::new()));
+            }
+            MediaKind::Image => attempts.push(one_frame(Vec::new())),
+            MediaKind::Audio => {
+                if info.cover.is_none() {
+                    return Err(TranscodeError::NoPicture);
+                }
+                attempts.push(one_frame(Vec::new()));
+            }
+            MediaKind::File => return Err(TranscodeError::NotMedia),
+        }
+        let mut last_error = TranscodeError::NoPicture;
+        for args in attempts {
+            let _ = tokio::fs::remove_file(dest).await;
+            match self.ffmpeg.run(args, |_| {}).await {
+                Ok(_) => match tokio::fs::metadata(dest).await {
+                    Ok(meta) if meta.len() > 0 => {
+                        let probed = self.ffmpeg.inspect(dest).await?;
+                        return Ok(LocalFile {
+                            path: dest.to_path_buf(),
+                            size: meta.len(),
+                            info: Some(probed),
+                        });
+                    }
+                    _ => last_error = TranscodeError::Process("ffmpeg wrote no picture".into()),
+                },
+                Err(error) => last_error = error.into(),
+            }
+        }
+        Err(last_error)
     }
 
     async fn transcode(

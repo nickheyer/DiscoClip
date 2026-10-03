@@ -9,7 +9,8 @@ use std::time::Duration;
 
 use axum::Router;
 use axum::middleware::{from_fn, from_fn_with_state};
-use axum::routing::{delete, get, post, put};
+use axum::routing::{delete, get, patch, post, put};
+
 use discoclip_bot::DiscordEndpoints;
 use discoclip_engine::ffmpeg::Ffmpeg;
 use discoclip_engine::store::sqlite::SqliteStore;
@@ -22,7 +23,6 @@ use tower_http::trace::TraceLayer;
 
 use discoclip_engine::http::APP_UA;
 use discoclip_engine::reqwest;
-use url::Url;
 
 use crate::applications::ApplicationStore;
 use crate::audit::AuditStore;
@@ -36,7 +36,9 @@ use crate::live::Live;
 use crate::local::SharedLocalConfig;
 use crate::oauth::{OAuthService, OAuthStore, PendingStates, Provider, Registry};
 use crate::profiles::ProfileStore;
+use crate::public_url::PublicUrl;
 use crate::ratelimit::RateLimiter;
+
 use crate::retention::Retention;
 use crate::rules::RuleStore;
 use crate::secrets::Keyring;
@@ -135,8 +137,9 @@ pub struct AppState {
     /// never logged, and replaced each time it is used.
     pub recovery_key: Arc<Mutex<String>>,
     pub oauth: Arc<OAuthService>,
-    /// `web.public_url`, as it stands.
-    pub public_url: Arc<RwLock<Option<Url>>>,
+    /// The address browsers reach the app at: `web.public_url`, else the one learned
+    /// from the operators' requests.
+    pub public_url: Arc<PublicUrl>,
     pub applications: ApplicationStore,
     pub bots: Arc<BotManager>,
     pub bot_guilds: BotGuildStore,
@@ -215,8 +218,8 @@ pub struct Services {
     pub rules: RuleStore,
     pub profiles: ProfileStore,
     pub frontends: FrontendStore,
-    /// `web.public_url` as the composition shares it with the stores that build links.
-    pub public_url: Arc<RwLock<Option<Url>>>,
+    /// The public address as the composition shares it with the stores that build links.
+    pub public_url: Arc<PublicUrl>,
     pub discord: DiscordEndpoints,
     pub engine: EngineHandle,
     pub fixtures: Arc<FixtureRunner>,
@@ -290,7 +293,8 @@ impl WebApp {
             states: PendingStates::default(),
             signup: AtomicBool::new(settings.auth.oauth_signup),
         });
-        *public_url.write().unwrap_or_else(|e| e.into_inner()) = settings.web.public_url.clone();
+        public_url.set_configured(settings.web.public_url.clone());
+
         let proxies = Arc::new(RwLock::new(Proxies::new(
             settings.web.trusted_proxies.clone(),
         )));
@@ -682,6 +686,7 @@ fn api(state: AppState) -> Router {
         .route("/f/{slug}/jobs", get(front::list))
         .route("/f/{slug}/jobs/{id}", get(front::get_job))
         .route("/f/{slug}/jobs/{id}/media", get(front::media))
+        .route("/f/{slug}/jobs/{id}/thumbnail", get(front::thumbnail))
         .route("/f/{slug}/jobs/{id}/download", get(front::download))
         .route("/profiles", get(profiles::list).post(profiles::create))
         .route("/profiles/presets", get(profiles::presets))
@@ -701,6 +706,15 @@ fn api(state: AppState) -> Router {
         .route("/platforms/check", post(platforms::check_all))
         .route("/platforms/{id}", get(platforms::get))
         .route("/platforms/{id}/check", post(platforms::check))
+        .route("/platforms/{id}/fixtures", post(platforms::add_link))
+        .route(
+            "/platforms/{id}/fixtures/{link}",
+            patch(platforms::change_link).delete(platforms::remove_link),
+        )
+        .route(
+            "/platforms/{id}/fixtures/{link}/check",
+            post(platforms::check_link),
+        )
         .route(
             "/platforms/{id}/cookies",
             put(platforms::import_cookies).delete(platforms::clear_cookies),
@@ -733,6 +747,7 @@ fn api(state: AppState) -> Router {
         .route("/jobs/{id}/cancel", post(jobs::cancel))
         .route("/jobs/{id}/stop", post(jobs::stop))
         .route("/jobs/{id}/download", get(jobs::download))
+        .route("/jobs/{id}/thumbnail", get(jobs::thumbnail))
         .route("/auth/{provider}/start", get(oauth::start))
         .route("/auth/{provider}/callback", get(oauth::callback))
         .fallback(api_not_found)

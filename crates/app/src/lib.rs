@@ -19,7 +19,9 @@ pub mod local;
 pub mod migrations;
 pub mod oauth;
 pub mod profiles;
+pub mod public_url;
 pub mod ratelimit;
+
 pub mod restore;
 pub mod retention;
 pub mod rules;

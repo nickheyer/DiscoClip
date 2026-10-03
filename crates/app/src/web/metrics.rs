@@ -15,7 +15,8 @@ use sysinfo::{Disks, MemoryRefreshKind, Pid, ProcessRefreshKind, ProcessesToUpda
 use super::AppState;
 use super::auth::Auth;
 use super::error::ApiError;
-use super::health::{bot_state_name, database_bytes, uptime_secs};
+use super::health::{PlatformCounts, bot_state_name, database_bytes, uptime_secs};
+
 use super::jobs::{JobStats, read_stats};
 use crate::telemetry::LOG_CAPACITY;
 
@@ -178,14 +179,13 @@ pub struct DatabaseMetrics {
     pub bytes: u64,
 }
 
+/// Platforms by the verdict their checks and jobs give, and how many have links to check.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct FixtureMetrics {
     pub platforms: usize,
     pub with_fixtures: usize,
-    pub passing: usize,
-    pub failing: usize,
-    pub never: usize,
-    pub running: usize,
+    #[serde(flatten)]
+    pub counts: PlatformCounts,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -264,9 +264,10 @@ pub async fn read_metrics(state: &AppState) -> Result<Metrics, ApiError> {
         ("data", state.data_dir.clone()),
         ("local", local_dir),
     ];
-    if let Some(archive) = &engine_config.archive {
-        dirs.push(("archive", archive.dir.clone()));
+    if engine_config.archive.enabled {
+        dirs.push(("archive", engine_config.archive.dir.clone()));
     }
+
     let sampler = Arc::clone(&state.sampler);
     let (process, system) = tokio::task::spawn_blocking(move || sampler.sample(&dirs))
         .await
@@ -297,17 +298,9 @@ pub async fn read_metrics(state: &AppState) -> Result<Metrics, ApiError> {
         }
     };
     let platforms = state.fixtures.coverage().await?;
-    let with: Vec<_> = platforms
+    let with_fixtures = platforms
         .iter()
-        .filter(|p| !p.fixtures.is_empty())
-        .collect();
-    let never = with
-        .iter()
-        .filter(|p| p.summary.last_run_at.is_none())
-        .count();
-    let failing = with
-        .iter()
-        .filter(|p| p.summary.last_run_at.is_some() && p.summary.failed > 0)
+        .filter(|p| p.fixtures.iter().any(|f| f.enabled))
         .count();
     Ok(Metrics {
         at: now,
@@ -346,12 +339,10 @@ pub async fn read_metrics(state: &AppState) -> Result<Metrics, ApiError> {
         },
         fixtures: FixtureMetrics {
             platforms: platforms.len(),
-            with_fixtures: with.len(),
-            passing: with.len() - never - failing,
-            failing,
-            never,
-            running: with.iter().filter(|p| p.running).count(),
+            with_fixtures,
+            counts: PlatformCounts::of(&platforms),
         },
+
         logs: LogMetrics {
             buffered: state.live.log.buffer.len(),
             capacity: LOG_CAPACITY,
@@ -429,8 +420,11 @@ mod tests {
         assert_eq!(body["bots"]["applications"], 0);
         assert_eq!(body["cache"]["jobs"], 0);
         assert!(body["database"]["bytes"].as_u64().unwrap() > 0);
+        assert_eq!(body["fixtures"]["platforms"], 2);
         assert_eq!(body["fixtures"]["with_fixtures"], 1);
-        assert_eq!(body["fixtures"]["never"], 1);
+        assert_eq!(body["fixtures"]["unknown"], 2);
+        assert_eq!(body["fixtures"]["working"], 0);
+
         assert_eq!(body["logs"]["capacity"], crate::telemetry::LOG_CAPACITY);
         assert_eq!(body["transcode"]["source"], "embedded");
         assert_eq!(body["transcode"]["choice"], "software");

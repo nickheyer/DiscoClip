@@ -368,8 +368,12 @@ pub struct Artifacts {
     pub announced: Option<Published>,
     pub source: Option<LocalFile>,
     pub output: Option<LocalFile>,
+    /// A still that stands for the output: a frame of a video, the picture itself scaled
+    /// down, or the cover art sound was played over. `poster.jpg` in the job directory.
+    pub thumbnail: Option<LocalFile>,
     /// Whether the output was handed over or linked to. Decided before publishing.
     pub delivery: Delivery,
+
     /// Why a link was posted rather than the file, when one was.
     pub link_reason: Option<String>,
     pub published: Option<Published>,

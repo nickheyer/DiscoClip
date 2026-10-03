@@ -18,8 +18,9 @@ use discoclip_engine::job::{
 use discoclip_engine::media::{Container, MediaKind, safe_stem};
 use discoclip_engine::{
     EngineConfig, EngineEvent, EventKind, JobFilter, Order, ResolverStats, Stats, StatusKind,
-    Utilisation,
+    ThumbnailError, Utilisation,
 };
+
 use futures::{Stream, StreamExt};
 use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
@@ -115,6 +116,66 @@ impl Place {
     }
 }
 
+/// Whether a still stands for the job's output: one was made with the job, or the job
+/// finished with a video or picture one can be made from on request.
+pub(super) fn has_thumbnail(job: &Job) -> bool {
+    if job.artifacts.thumbnail.is_some() {
+        return true;
+    }
+    let Some(output) = job.artifacts.output.as_ref() else {
+        return false;
+    };
+    let kind = output
+        .info
+        .as_ref()
+        .map(|info| info.kind)
+        .unwrap_or_else(|| job.media());
+    job.status.is_terminal() && matches!(kind, MediaKind::Video | MediaKind::Image)
+}
+
+/// The job's still, served to be shown inline and kept by the browser for a day.
+pub async fn thumbnail(
+    State(state): State<AppState>,
+    Auth(_): Auth,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    let id: JobId = parse_id(&id)?;
+    let file = state
+        .engine
+        .thumbnail(id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    serve_thumbnail(&file.path, &headers).await
+}
+
+/// How long a browser keeps a still before asking again.
+const THUMBNAIL_CACHE: &str = "private, max-age=86400";
+
+/// Serves a still inline, kept by the browser for a day.
+pub(super) async fn serve_thumbnail(
+    path: &FsPath,
+    headers: &HeaderMap,
+) -> Result<Response, ApiError> {
+    let mut response = serve_file(path, "thumbnail.jpg", true, headers, false).await?;
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static(THUMBNAIL_CACHE),
+    );
+    Ok(response)
+}
+
+impl From<ThumbnailError> for ApiError {
+    fn from(error: ThumbnailError) -> Self {
+        match error {
+            ThumbnailError::NotFound(_) => ApiError::NotFound,
+            ThumbnailError::Store(_) | ThumbnailError::Transcode(_) | ThumbnailError::Io(_) => {
+                ApiError::Internal(error.to_string())
+            }
+        }
+    }
+}
+
 /// A job as a listing shows it: what was asked, where it stands, and what came of it.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct JobSummary {
@@ -136,7 +197,9 @@ pub struct JobSummary {
     pub media: MediaKind,
     pub uploader: Option<String>,
     pub webpage_url: Option<Url>,
-    pub thumbnail: Option<Url>,
+    /// Where the still that stands for the output is served, for a job that has one or
+    /// has an output to take one from.
+    pub thumbnail: Option<String>,
     /// Seconds of media, when the resolver said.
     pub duration_secs: Option<f64>,
     pub live: bool,
@@ -177,7 +240,7 @@ impl JobSummary {
             media: job.media(),
             uploader: resolved.and_then(|r| r.uploader.clone()),
             webpage_url: resolved.and_then(|r| r.webpage_url.clone()),
-            thumbnail: resolved.and_then(|r| r.thumbnail.clone()),
+            thumbnail: has_thumbnail(job).then(|| format!("/api/jobs/{}/thumbnail", job.id)),
             duration_secs: resolved.and_then(|r| r.duration).map(|d| d.as_secs_f64()),
             live: resolved.is_some_and(|r| r.live),
             recording: job.artifacts.recording.is_some(),

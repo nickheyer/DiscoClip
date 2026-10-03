@@ -4,11 +4,12 @@
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { applications, rules as rulesApi } from '$lib/api/endpoints';
-	import type { ApplicationView, Rule } from '$lib/api/types';
+	import type { ApplicationView, RuleView } from '$lib/api/types';
 	import DataTable, { type Column } from '$lib/components/DataTable.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
 	import Field from '$lib/components/Field.svelte';
+	import GuildIcon from '$lib/components/GuildIcon.svelte';
 	import KeyValue from '$lib/components/KeyValue.svelte';
 	import KeyValueRow from '$lib/components/KeyValueRow.svelte';
 	import Modal from '$lib/components/Modal.svelte';
@@ -24,7 +25,7 @@
 	type Tab = 'applications' | 'rules';
 
 	let apps = $state<ApplicationView[]>([]);
-	let rules = $state<Rule[]>([]);
+	let rules = $state<RuleView[]>([]);
 	let loading = $state(true);
 	let error = $state<unknown>(null);
 	let tab = $state<Tab>('applications');
@@ -88,20 +89,21 @@
 
 	const appName = (id: string) => apps.find((app) => app.id === id)?.name ?? id;
 
-	const ruleColumns: Column<Rule>[] = [
-		{ key: 'application', label: 'Application', value: (rule) => appName(rule.application_id) },
-		{ key: 'guild', label: 'Server', value: (rule) => rule.guild_id, class: 'font-mono text-xs' },
+	const ruleColumns: Column<RuleView>[] = [
 		{
-			key: 'channel',
-			label: 'Channel',
-			value: (rule) => rule.channel_id ?? 'Every channel',
-			class: 'font-mono text-xs'
+			key: 'guild',
+			label: 'Server',
+			cell: guildCell,
+			sortable: true,
+			value: (rule) => rule.guild_name ?? rule.guild_id
 		},
+		{ key: 'channel', label: 'Channel', cell: channelCell },
+		{ key: 'post_to', label: 'Posts to', cell: postToCell },
 		{
-			key: 'post_to',
-			label: 'Posts to',
-			value: (rule) => rule.post_to ?? 'Same channel',
-			class: 'font-mono text-xs'
+			key: 'application',
+			label: 'Application',
+			sortable: true,
+			value: (rule) => appName(rule.application_id)
 		},
 		{
 			key: 'allow',
@@ -114,10 +116,48 @@
 	];
 </script>
 
-{#snippet enabledCell(rule: Rule)}
+<!-- The server by its name and icon as its bot recorded them; the id stands in for a server the bot never saw. -->
+{#snippet guildCell(rule: RuleView)}
+	<span class="flex items-center gap-3">
+		<GuildIcon
+			guild={rule.guild_id}
+			hash={rule.guild_icon}
+			name={rule.guild_name ?? rule.guild_id}
+			size={28}
+		/>
+		{#if rule.guild_name}
+			<span class="truncate font-medium">{rule.guild_name}</span>
+		{:else}
+			<span class="truncate font-mono text-xs">{rule.guild_id}</span>
+		{/if}
+	</span>
+{/snippet}
+<!-- A channel by its name while the bot sees it, else by its id. -->
+{#snippet channelName(id: string, name: string | null)}
+	{#if name}
+		<span>#{name}</span>
+	{:else}
+		<span class="font-mono text-xs">{id}</span>
+	{/if}
+{/snippet}
+{#snippet channelCell(rule: RuleView)}
+	{#if rule.channel_id}
+		{@render channelName(rule.channel_id, rule.channel_name)}
+	{:else}
+		Every channel
+	{/if}
+{/snippet}
+{#snippet postToCell(rule: RuleView)}
+	{#if rule.post_to && rule.post_to !== rule.channel_id}
+		{@render channelName(rule.post_to, rule.post_to_name)}
+	{:else}
+		Same channel
+	{/if}
+{/snippet}
+{#snippet enabledCell(rule: RuleView)}
 	<Status enabled={rule.enabled} />
 {/snippet}
-{#snippet updatedCell(rule: Rule)}
+{#snippet updatedCell(rule: RuleView)}
 	<Timestamp at={rule.updated_at} class="whitespace-nowrap" />
 {/snippet}
 

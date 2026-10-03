@@ -56,9 +56,10 @@ that require a login.
 
 **Content views** share media at `/f/<slug>`, with public access or a login requirement.
 Enable **Discord links** to post a page instead of a file for media that exceeds upload or
-quality limits. Pages, login callbacks and link previews are built on the address you
-open the web app at, which the server learns from your own requests; set `web.public_url`
-to fix it. Signed media links allow access without login until they expire.
+quality limits. A posted page unfurls with an inline player for video up to 80 MB and
+with a thumbnail card above that. Pages, login callbacks and link previews are built on
+the address you open the web app at, which the server learns from your own requests; set
+`web.public_url` to fix it. Signed media links allow access without login until they expire.
 
 Every finished job's media is archived under `engine.archive.dir` (`data/archive` by
 default, `/var/lib/discoclip/archive` for the packages and containers), filed by year and

@@ -64,8 +64,7 @@ pub struct JobFilter {
     /// Only jobs whose origin names one of these channels. Empty means any.
     pub channels: Vec<String>,
     pub media: Option<crate::media::MediaKind>,
-    /// Only jobs with media the web can play or hand out: finished with an output, or
-    /// running with the recording of a live capture.
+    /// Only jobs with an output, done or being published or archived, or running with a live recording
     pub with_output: bool,
     pub order: Order,
 }

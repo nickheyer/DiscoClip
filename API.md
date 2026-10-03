@@ -1157,6 +1157,17 @@ Serve the still that stands for the media: a frame of a video, the picture scale
 | Token | Signed `t` from `FrontJob.thumbnail` · the media token |
 | Cache | `private, max-age=86400` |
 
+### GET /api/f/{slug}/jobs/{id}/oembed
+
+The oEmbed document of a media page, which link unfurlers such as Discord read for the provider and author lines of a preview. The page links to it from its head.
+
+| Field | Value |
+|---|---|
+| Auth | none |
+| Path | `slug` · `id` `uuid` |
+| Response | `200` `OEmbed` |
+| Errors | `404` |
+
 ### GET /api/f/{slug}/jobs/{id}/download
 
 Download a media file.
@@ -2379,7 +2390,9 @@ Reject an unknown command.
 | `title` | `string \| null` |
 | `media` | `MediaKind` |
 | `resolver` | `string` |
+| `platform` | `string` · the resolver's display name |
 | `uploader` | `string \| null` |
+| `uploader_url` | `url \| null` |
 | `webpage_url` | `url \| null` |
 | `thumbnail` | `string \| null` · signed path to the still, see `GET /api/f/{slug}/jobs/{id}/thumbnail` |
 | `duration_secs` | `number \| null` |
@@ -2392,6 +2405,18 @@ Reject an unknown command.
 | `published_at` | `timestamp` |
 | `media_url` | `string` · signed media URL |
 | `download_url` | `string \| null` |
+
+### OEmbed
+
+| Field | Type |
+|---|---|
+| `version` | `"1.0"` |
+| `type` | `"link"` |
+| `title` | `string` |
+| `author_name` | `string` · the uploader, else the platform |
+| `author_url` | `url` · the source page, when known |
+| `provider_name` | `string` · the view's name |
+| `provider_url` | `url` · the view |
 
 ### Guild
 

@@ -11,7 +11,7 @@ use axum_extra::extract::CookieJar;
 use axum_extra::extract::cookie::{Cookie, SameSite};
 use std::path::PathBuf;
 
-use discoclip_engine::job::{Job, JobId, JobStatus};
+use discoclip_engine::job::{Job, JobId, JobStatus, Stage};
 use discoclip_engine::media::{Container, LocalFile, MediaKind};
 use discoclip_engine::store::{JobFilter, Order};
 use jiff::Timestamp;
@@ -326,7 +326,10 @@ pub struct FrontJob {
     pub title: Option<String>,
     pub media: MediaKind,
     pub resolver: String,
+    /// The resolver's display name
+    pub platform: String,
     pub uploader: Option<String>,
+    pub uploader_url: Option<Url>,
     pub webpage_url: Option<Url>,
     /// Shows the still that stands for the media. Carries the token that opens it without
     /// a session, as the media link does.
@@ -348,16 +351,16 @@ pub struct FrontJob {
     pub download_url: Option<String>,
 }
 
-/// The media a front end plays for `job`: its output once it has one, else the
-/// recording of its live capture while the job runs.
+/// The output from the moment it is made and being posted on, else the growing recording of a capture
 fn playable(job: &Job) -> Option<(&LocalFile, bool)> {
-    if job.status == JobStatus::Done {
-        return job.artifacts.output.as_ref().map(|file| (file, false));
+    match &job.status {
+        JobStatus::Done
+        | JobStatus::Running {
+            stage: Stage::Publish | Stage::Archive,
+        } => job.artifacts.output.as_ref().map(|file| (file, false)),
+        JobStatus::Running { .. } => job.artifacts.recording.as_ref().map(|file| (file, true)),
+        _ => None,
     }
-    if matches!(job.status, JobStatus::Running { .. }) {
-        return job.artifacts.recording.as_ref().map(|file| (file, true));
-    }
-    None
 }
 
 fn front_job(state: &AppState, frontend: &Frontend, job: &Job) -> Option<FrontJob> {
@@ -385,7 +388,9 @@ fn front_job(state: &AppState, frontend: &Frontend, job: &Job) -> Option<FrontJo
         title: resolved.title.clone(),
         media: job.media(),
         resolver: resolved.resolver.clone(),
+        platform: platform_name(state, &resolved.resolver),
         uploader: resolved.uploader.clone(),
+        uploader_url: resolved.uploader_url.clone(),
         webpage_url: resolved.webpage_url.clone(),
         thumbnail: has_thumbnail(job).then(|| format!("{base}/thumbnail?t={token}")),
         duration_secs: if recording {
@@ -411,8 +416,18 @@ fn front_job(state: &AppState, frontend: &Frontend, job: &Job) -> Option<FrontJo
     })
 }
 
-/// Whether `frontend` shows `job`: finished with an output or capturing live with a
-/// recording, in scope, on a shown platform.
+/// The display name of the platform behind the resolver id, else the id itself
+fn platform_name(state: &AppState, resolver: &str) -> String {
+    state
+        .engine
+        .platforms()
+        .into_iter()
+        .find(|p| p.id == resolver)
+        .map(|p| p.name.to_string())
+        .unwrap_or_else(|| resolver.to_string())
+}
+
+/// Whether the job has a playable file, lies in the front end's scope and sits on a shown platform
 fn shown(state: &AppState, frontend: &Frontend, job: &Job) -> bool {
     playable(job).is_some()
         && state.frontends.cache().shows(
@@ -643,6 +658,57 @@ fn meta_name(name: &str, content: &str) -> String {
     )
 }
 
+/// Discord plays an external video inline up to about this size and drops the whole embed above it
+pub const INLINE_VIDEO_LIMIT: u64 = 80 * 1024 * 1024;
+
+/// The coral of the brand mark, drawn by Discord as the bar beside a preview
+const BRAND_COLOR: &str = "#f2542d";
+
+/// The title the page and its oEmbed document carry, the media kind on the view when the source gave none
+fn page_title(frontend: &Frontend, job: &FrontJob) -> String {
+    job.title
+        .clone()
+        .unwrap_or_else(|| format!("{} on {}", job.media, frontend.input.name))
+}
+
+/// What link unfurlers show as the provider and author lines of a media page's preview
+#[derive(Debug, Serialize)]
+pub struct OEmbed {
+    pub version: &'static str,
+    #[serde(rename = "type")]
+    pub kind: &'static str,
+    pub title: String,
+    pub author_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub author_url: Option<Url>,
+    pub provider_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_url: Option<Url>,
+}
+
+/// The view as the provider and the uploader as the author, linked to their page or else the source
+pub fn oembed_document(base: Option<&Url>, frontend: &Frontend, job: &FrontJob) -> OEmbed {
+    let (author_name, author_url) = match &job.uploader {
+        Some(uploader) => (
+            uploader.clone(),
+            job.uploader_url.clone().or_else(|| job.webpage_url.clone()),
+        ),
+        None => (job.platform.clone(), job.webpage_url.clone()),
+    };
+    OEmbed {
+        version: "1.0",
+        kind: "link",
+        title: page_title(frontend, job),
+        author_name,
+        author_url,
+        provider_name: frontend.input.name.clone(),
+        provider_url: base.map(|base| {
+            base.join(&format!("f/{}", frontend.input.slug))
+                .expect("a view path joins")
+        }),
+    }
+}
+
 /// The head a front end's media page carries: what Discord and other unfurlers read to
 /// show the title and thumbnail and to play a video or audio inline from a plain link.
 /// The media and thumbnail links are signed so the unfurler needs no session, and every
@@ -654,19 +720,25 @@ pub fn media_head(base: &Url, frontend: &Frontend, job: &FrontJob) -> String {
     let media = base
         .join(job.media_url.trim_start_matches('/'))
         .expect("a media path joins");
-    let thumbnail = job.thumbnail.as_deref().map(|path| {
-        base.join(path.trim_start_matches('/'))
-            .expect("a thumbnail path joins")
-    });
-    let title = job
-        .title
-        .clone()
-        .unwrap_or_else(|| format!("{} on {}", job.media, frontend.input.name));
-    let description = match (&job.uploader, job.duration_secs) {
-        (Some(uploader), Some(secs)) => format!("{uploader} · {}", clock(secs)),
-        (Some(uploader), None) => uploader.clone(),
-        (None, Some(secs)) => clock(secs),
-        (None, None) => frontend.input.description.clone(),
+    let image = job
+        .thumbnail
+        .as_deref()
+        .map(|path| {
+            base.join(path.trim_start_matches('/'))
+                .expect("a thumbnail path joins")
+        })
+        .unwrap_or_else(|| base.join("icons/icon-512.png").expect("an icon path joins"));
+    let oembed = base
+        .join(&format!(
+            "api/f/{}/jobs/{}/oembed",
+            frontend.input.slug, job.id
+        ))
+        .expect("an oembed path joins");
+    let title = page_title(frontend, job);
+    let description = match job.duration_secs {
+        Some(secs) => format!("{} · {}", job.platform, clock(secs)),
+        None if job.live => format!("{} · live", job.platform),
+        None => job.platform.clone(),
     };
     let mut head = String::new();
     head.push_str(&format!("<title>{}</title>\n", escape(&title)));
@@ -675,8 +747,14 @@ pub fn media_head(base: &Url, frontend: &Frontend, job: &FrontJob) -> String {
     head.push_str(&meta("og:url", page.as_str()));
     head.push_str(&meta("og:description", &description));
     head.push_str(&meta_name("description", &description));
+    head.push_str(&meta("theme-color", BRAND_COLOR));
+    head.push_str(&format!(
+        "<link rel=\"alternate\" type=\"application/json+oembed\" href=\"{}\" title=\"{}\">\n",
+        escape(oembed.as_str()),
+        escape(&title)
+    ));
     match job.media {
-        MediaKind::Video => {
+        MediaKind::Video if job.size <= INLINE_VIDEO_LIMIT => {
             head.push_str(&meta("og:type", "video.other"));
             head.push_str(&meta("og:video", media.as_str()));
             head.push_str(&meta("og:video:url", media.as_str()));
@@ -686,10 +764,8 @@ pub fn media_head(base: &Url, frontend: &Frontend, job: &FrontJob) -> String {
                 head.push_str(&meta("og:video:width", &w.to_string()));
                 head.push_str(&meta("og:video:height", &h.to_string()));
             }
-            if let Some(thumbnail) = &thumbnail {
-                head.push_str(&meta("og:image", thumbnail.as_str()));
-                head.push_str(&meta_name("twitter:image", thumbnail.as_str()));
-            }
+            head.push_str(&meta("og:image", image.as_str()));
+            head.push_str(&meta_name("twitter:image", image.as_str()));
             head.push_str(&meta_name("twitter:card", "player"));
             head.push_str(&meta_name("twitter:title", &title));
             head.push_str(&meta_name("twitter:player", media.as_str()));
@@ -703,16 +779,21 @@ pub fn media_head(base: &Url, frontend: &Frontend, job: &FrontJob) -> String {
                 head.push_str(&meta_name("twitter:player:height", &h.to_string()));
             }
         }
+        MediaKind::Video => {
+            head.push_str(&meta("og:type", "website"));
+            head.push_str(&meta("og:image", image.as_str()));
+            head.push_str(&meta_name("twitter:image", image.as_str()));
+            head.push_str(&meta_name("twitter:card", "summary_large_image"));
+            head.push_str(&meta_name("twitter:title", &title));
+        }
         MediaKind::Audio => {
             head.push_str(&meta("og:type", "music.song"));
             head.push_str(&meta("og:audio", media.as_str()));
             head.push_str(&meta("og:audio:url", media.as_str()));
             head.push_str(&meta("og:audio:secure_url", media.as_str()));
             head.push_str(&meta("og:audio:type", &job.content_type));
-            if let Some(thumbnail) = &thumbnail {
-                head.push_str(&meta("og:image", thumbnail.as_str()));
-                head.push_str(&meta_name("twitter:image", thumbnail.as_str()));
-            }
+            head.push_str(&meta("og:image", image.as_str()));
+            head.push_str(&meta_name("twitter:image", image.as_str()));
             head.push_str(&meta_name("twitter:card", "summary_large_image"));
         }
         MediaKind::Image => {
@@ -730,9 +811,7 @@ pub fn media_head(base: &Url, frontend: &Frontend, job: &FrontJob) -> String {
         }
         MediaKind::File => {
             head.push_str(&meta("og:type", "website"));
-            if let Some(thumbnail) = &thumbnail {
-                head.push_str(&meta("og:image", thumbnail.as_str()));
-            }
+            head.push_str(&meta("og:image", image.as_str()));
             head.push_str(&meta_name("twitter:card", "summary"));
         }
     }
@@ -781,6 +860,26 @@ pub async fn page(
     assets::page_with_head(&front::media_head(&base, &frontend, &front))
 }
 
+/// The oEmbed document of a media page, open to anyone as the page's head is
+pub async fn oembed(
+    State(state): State<AppState>,
+    Path((slug, id)): Path<(String, String)>,
+    Client(client): Client,
+) -> Result<Json<OEmbed>, ApiError> {
+    let frontend = frontend(&state, &slug)?;
+    let id: JobId = super::auth::parse_id(&id)?;
+    let job = state.engine.get(id).await?.ok_or(ApiError::NotFound)?;
+    if !shown(&state, &frontend, &job) {
+        return Err(ApiError::NotFound);
+    }
+    let front = front_job(&state, &frontend, &job).ok_or(ApiError::NotFound)?;
+    let base = state
+        .public_url
+        .get()
+        .or_else(|| client.origin().and_then(|o| Url::parse(&o).ok()));
+    Ok(Json(oembed_document(base.as_ref(), &frontend, &front)))
+}
+
 impl IntoResponse for FrontInfo {
     fn into_response(self) -> Response {
         Json(self).into_response()
@@ -790,8 +889,8 @@ impl IntoResponse for FrontInfo {
 #[cfg(test)]
 mod tests {
     use axum::http::{Method, StatusCode};
-    use discoclip_engine::job::{JobStatus, Origin, Request, SourceId};
-    use discoclip_engine::media::LocalFile;
+    use discoclip_engine::job::{JobStatus, Origin, Request, SourceId, Stage};
+    use discoclip_engine::media::{LocalFile, MediaKind};
     use discoclip_engine::store::sqlite::SqliteStore;
     use discoclip_engine::{Job, JobStore};
     use serde_json::json;
@@ -836,6 +935,10 @@ mod tests {
         let mut resolved = discoclip_engine::Resolved::new(resolver);
         resolved.title = Some(format!("Clip {name}"));
         resolved.uploader = Some("someone".into());
+        resolved.uploader_url =
+            Some(Url::parse(&format!("https://{SUPPORTED_HOST}/someone")).unwrap());
+        resolved.webpage_url =
+            Some(Url::parse(&format!("https://{SUPPORTED_HOST}/watch/{name}")).unwrap());
         resolved.thumbnail = Some(Url::parse("https://thumbs.test/t.jpg").unwrap());
         job.artifacts.resolved = Some(resolved);
         job.artifacts.output = Some(LocalFile {
@@ -1197,6 +1300,280 @@ mod tests {
         assert!(actions.contains(&"frontend.user.create"));
         assert!(actions.contains(&"frontend.secret.set"));
         assert!(actions.contains(&"frontend.create"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+    /// A seeded guild 5 job with the still the transcode made, left at the given status
+    async fn seed_at(
+        db: &SqliteStore,
+        dir: &std::path::Path,
+        name: &str,
+        status: JobStatus,
+    ) -> Job {
+        let mut job = seed(db, dir, name, Some("5"), Some("1"), "fixtured").await;
+        let poster = dir.join(format!("{name}-poster.jpg"));
+        std::fs::write(&poster, b"poster").unwrap();
+        job.artifacts.thumbnail = Some(LocalFile {
+            path: poster,
+            size: 6,
+            info: None,
+        });
+        job.status = status;
+        job.finished_at = None;
+        db.update(&job).await.unwrap();
+        job
+    }
+
+    /// Opens an open front end over guild 5 as the admin
+    async fn open_guild_five(app: &WebApp) {
+        let mut admin = Client::new(app);
+        admin.login("nick", "correct horse").await;
+        let (status, profile) = admin.post("/api/profiles", json!({"name": "Any"})).await;
+        assert_eq!(status, StatusCode::CREATED, "{profile}");
+        let (status, body) = admin
+            .post(
+                "/api/frontends",
+                json!({
+                    "name": "Guild Five", "slug": "five", "profile_id": profile["id"],
+                    "scope": {"guilds": ["5"]}, "access": {"open": true}, "downloads": false
+                }),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+    }
+
+    /// The bot posts the page mid publish and Discord reads it at once, before the job is done
+    #[tokio::test]
+    async fn the_page_unfurls_while_the_job_is_still_being_published() {
+        let (app, db) = app_with_admin_db().await;
+        let dir = std::env::temp_dir().join(format!("discoclip-front-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let publishing = seed_at(
+            &db,
+            &dir,
+            "p",
+            JobStatus::Running {
+                stage: Stage::Publish,
+            },
+        )
+        .await;
+        let archiving = seed_at(
+            &db,
+            &dir,
+            "r",
+            JobStatus::Running {
+                stage: Stage::Archive,
+            },
+        )
+        .await;
+        let transcoding = seed_at(
+            &db,
+            &dir,
+            "t",
+            JobStatus::Running {
+                stage: Stage::Transcode,
+            },
+        )
+        .await;
+        open_guild_five(&app).await;
+
+        let mut guest = visitor(&app);
+        for job in [&publishing, &archiving] {
+            let (status, html) = guest.get(&format!("/f/five/j/{}", job.id)).await;
+            assert_eq!(status, StatusCode::OK);
+            let html = html.as_str().unwrap();
+            let video = format!(
+                r#"<meta property="og:video" content="http://localhost:8080/api/f/five/jobs/{}/media?t="#,
+                job.id
+            );
+            assert!(html.contains(&video), "{html}");
+            assert!(html.contains(&format!(
+                r#"<meta property="og:image" content="http://localhost:8080/api/f/five/jobs/{}/thumbnail?t="#,
+                job.id
+            )), "{html}");
+            // The crawler follows the signed links with no session of its own
+            let rest = &html[html.find(&video).unwrap() + video.len()..];
+            let token = &rest[..rest.find('"').unwrap()];
+            let mut crawler = Client::new(&app);
+            let (status, body) = crawler
+                .get(&format!("/api/f/five/jobs/{}/media?t={token}", job.id))
+                .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            assert_eq!(body, json!("0123456789"));
+            let (status, _, bytes) = crawler
+                .raw(&format!("/api/f/five/jobs/{}/thumbnail?t={token}", job.id))
+                .await;
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(bytes, b"poster".to_vec());
+        }
+        let (status, html) = guest.get(&format!("/f/five/j/{}", transcoding.id)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(!html.as_str().unwrap().contains("og:"), "{html}");
+
+        let (status, page) = guest.get("/api/f/five/jobs").await;
+        assert_eq!(status, StatusCode::OK, "{page}");
+        let listed: Vec<&str> = page["jobs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|j| j["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(listed.len(), 2, "{page}");
+        assert!(listed.contains(&publishing.id.to_string().as_str()));
+        assert!(listed.contains(&archiving.id.to_string().as_str()));
+        assert_eq!(
+            guest
+                .get(&format!("/api/f/five/jobs/{}", transcoding.id))
+                .await
+                .0,
+            StatusCode::NOT_FOUND
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Discord drops the whole embed of a video past its proxy's limit, so it unfurls as a card
+    #[tokio::test]
+    async fn a_video_past_the_inline_limit_unfurls_as_a_card() {
+        let (app, db) = app_with_admin_db().await;
+        let dir = std::env::temp_dir().join(format!("discoclip-front-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut big = seed(&db, &dir, "big", Some("5"), Some("1"), "fixtured").await;
+        big.artifacts.output.as_mut().unwrap().size = super::INLINE_VIDEO_LIMIT + 1;
+        db.update(&big).await.unwrap();
+        let mut fits = seed(&db, &dir, "fits", Some("5"), Some("1"), "fixtured").await;
+        fits.artifacts.output.as_mut().unwrap().size = super::INLINE_VIDEO_LIMIT;
+        db.update(&fits).await.unwrap();
+        open_guild_five(&app).await;
+
+        let mut guest = visitor(&app);
+        let (status, html) = guest.get(&format!("/f/five/j/{}", big.id)).await;
+        assert_eq!(status, StatusCode::OK);
+        let html = html.as_str().unwrap();
+        assert!(!html.contains("og:video"), "{html}");
+        assert!(!html.contains("twitter:player"), "{html}");
+        assert!(
+            html.contains(r#"<meta property="og:type" content="website">"#),
+            "{html}"
+        );
+        assert!(
+            html.contains(r#"<meta name="twitter:card" content="summary_large_image">"#),
+            "{html}"
+        );
+        assert!(html.contains("<title>Clip big</title>"), "{html}");
+        assert!(
+            html.contains(r#"<meta property="og:description" content="Fixtured">"#),
+            "{html}"
+        );
+        assert!(html.contains(&format!(
+            r#"<meta property="og:image" content="http://localhost:8080/api/f/five/jobs/{}/thumbnail?t="#,
+            big.id
+        )), "{html}");
+
+        let (status, html) = guest.get(&format!("/f/five/j/{}", fits.id)).await;
+        assert_eq!(status, StatusCode::OK);
+        let html = html.as_str().unwrap();
+        assert!(
+            html.contains(r#"<meta property="og:type" content="video.other">"#),
+            "{html}"
+        );
+        assert!(
+            html.contains(r#"<meta name="twitter:card" content="player">"#),
+            "{html}"
+        );
+
+        // The page's own player is told where the media is either way
+        let (status, page) = guest.get("/api/f/five/jobs").await;
+        assert_eq!(status, StatusCode::OK, "{page}");
+        for job in page["jobs"].as_array().unwrap() {
+            assert_eq!(job["media"], "video");
+            let (status, body) = guest.get(job["media_url"].as_str().unwrap()).await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+    /// Discord lays the provider and author lines out from the oEmbed document the page links to
+    #[tokio::test]
+    async fn the_page_names_its_view_and_uploader_through_oembed() {
+        let (app, db) = app_with_admin_db().await;
+        let dir = std::env::temp_dir().join(format!("discoclip-front-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let video = seed(&db, &dir, "v", Some("5"), Some("1"), "fixtured").await;
+        let mut sound = seed(&db, &dir, "s", Some("5"), Some("1"), "fixtured").await;
+        let resolved = sound.artifacts.resolved.as_mut().unwrap();
+        resolved.media = MediaKind::Audio;
+        resolved.uploader = None;
+        db.update(&sound).await.unwrap();
+        let elsewhere = seed(&db, &dir, "e", Some("6"), Some("2"), "fixtured").await;
+        open_guild_five(&app).await;
+
+        let mut guest = visitor(&app);
+        let (status, html) = guest.get(&format!("/f/five/j/{}", video.id)).await;
+        assert_eq!(status, StatusCode::OK);
+        let html = html.as_str().unwrap();
+        assert!(html.contains(&format!(
+            r#"<link rel="alternate" type="application/json+oembed" href="http://localhost:8080/api/f/five/jobs/{}/oembed" title="Clip v">"#,
+            video.id
+        )), "{html}");
+        assert!(
+            html.contains(r##"<meta property="theme-color" content="#f2542d">"##),
+            "{html}"
+        );
+        assert!(
+            html.contains(r#"<meta property="og:description" content="Fixtured">"#),
+            "{html}"
+        );
+        let (status, doc) = guest
+            .get(&format!("/api/f/five/jobs/{}/oembed", video.id))
+            .await;
+        assert_eq!(status, StatusCode::OK, "{doc}");
+        assert_eq!(
+            doc,
+            json!({
+                "version": "1.0", "type": "link", "title": "Clip v",
+                "author_name": "someone", "author_url": "https://video.test/someone",
+                "provider_name": "Guild Five", "provider_url": "http://localhost:8080/f/five"
+            })
+        );
+        let (status, job) = guest.get(&format!("/api/f/five/jobs/{}", video.id)).await;
+        assert_eq!(status, StatusCode::OK, "{job}");
+        assert_eq!(job["platform"], "Fixtured");
+        assert_eq!(job["uploader_url"], "https://video.test/someone");
+
+        // Sound without cover art shows the app's own mark, and the platform stands as the author
+        let (status, html) = guest.get(&format!("/f/five/j/{}", sound.id)).await;
+        assert_eq!(status, StatusCode::OK);
+        let html = html.as_str().unwrap();
+        assert!(
+            html.contains(r#"<meta property="og:type" content="music.song">"#),
+            "{html}"
+        );
+        assert!(
+            html.contains(
+                r#"<meta property="og:image" content="http://localhost:8080/icons/icon-512.png">"#
+            ),
+            "{html}"
+        );
+        let (status, doc) = guest
+            .get(&format!("/api/f/five/jobs/{}/oembed", sound.id))
+            .await;
+        assert_eq!(status, StatusCode::OK, "{doc}");
+        assert_eq!(doc["author_name"], "Fixtured");
+        assert_eq!(doc["author_url"], "https://video.test/watch/s");
+        let (status, headers, bytes) = guest.raw("/icons/icon-512.png").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(headers["content-type"], "image/png");
+        assert!(bytes.starts_with(b"\x89PNG"));
+
+        assert_eq!(
+            guest
+                .get(&format!("/api/f/five/jobs/{}/oembed", elsewhere.id))
+                .await
+                .0,
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            guest.get("/api/f/nope/jobs/x/oembed").await.0,
+            StatusCode::NOT_FOUND
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

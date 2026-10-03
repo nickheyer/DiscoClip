@@ -687,6 +687,7 @@ fn api(state: AppState) -> Router {
         .route("/f/{slug}/jobs/{id}", get(front::get_job))
         .route("/f/{slug}/jobs/{id}/media", get(front::media))
         .route("/f/{slug}/jobs/{id}/thumbnail", get(front::thumbnail))
+        .route("/f/{slug}/jobs/{id}/oembed", get(front::oembed))
         .route("/f/{slug}/jobs/{id}/download", get(front::download))
         .route("/profiles", get(profiles::list).post(profiles::create))
         .route("/profiles/presets", get(profiles::presets))

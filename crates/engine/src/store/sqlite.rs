@@ -298,7 +298,9 @@ fn clauses(filter: &JobFilter) -> (String, Vec<Value>) {
     if filter.with_output {
         clauses.push(
             "((status = 'done' AND json_extract(data, '$.artifacts.output') IS NOT NULL) \
-              OR (status = 'running' AND json_extract(data, '$.artifacts.recording') IS NOT NULL))"
+              OR (status = 'running' AND (json_extract(data, '$.artifacts.recording') IS NOT NULL \
+                  OR (json_extract(data, '$.status.stage') IN ('publish', 'archive') \
+                      AND json_extract(data, '$.artifacts.output') IS NOT NULL))))"
                 .into(),
         );
     }

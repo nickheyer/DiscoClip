@@ -250,7 +250,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -315,7 +315,7 @@ jobs:
           path: digests
           merge-multiple: true
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}

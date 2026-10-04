@@ -259,7 +259,7 @@ jobs:
       - uses: docker/setup-buildx-action@v3
 
       - id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ needs.verify.outputs.image }}
 
@@ -325,7 +325,7 @@ jobs:
 
       # cpu: 0.2.0, 0.2, latest. gpu: 0.2.0-gpu, 0.2-gpu, latest-gpu, gpu.
       - id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ needs.verify.outputs.image }}
           flavor: |

@@ -76,7 +76,7 @@ jobs:
           VERSION: ${{ needs.verify.outputs.version }}
         run: packaging/archive.sh out/discoclip linux-${{ matrix.arch }} dist
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-linux-${{ matrix.arch }}
           path: dist/*
@@ -146,7 +146,7 @@ jobs:
             dnf remove -y -q discoclip
           '
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-packages
           path: dist/*
@@ -187,7 +187,7 @@ jobs:
           VERSION: ${{ needs.verify.outputs.version }}
         run: packaging/archive.sh target/release/discoclip macos-${{ matrix.arch }} dist
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-macos-${{ matrix.arch }}
           path: dist/*
@@ -225,7 +225,7 @@ jobs:
           VERSION: ${{ needs.verify.outputs.version }}
         run: packaging/archive.sh target/release/discoclip.exe windows-x86_64 dist
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-windows-x86_64
           path: dist/*
@@ -293,7 +293,7 @@ jobs:
           mkdir -p digests
           touch "digests/${DIGEST#sha256:}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: digests-${{ matrix.variant }}-${{ matrix.arch }}
           path: digests/*

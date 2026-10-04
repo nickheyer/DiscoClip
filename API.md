@@ -985,7 +985,7 @@ Delete a content view and its accounts.
 | Auth | `manage_settings` |
 | Path | `id` `uuid` |
 | Response | `204` |
-| Errors | `401` `403` `404` |
+| Errors | `401` `403` `404` `409` a profile sends media to the view |
 | Also deleted | Viewer sessions |
 
 ### PUT /api/frontends/{id}/secret
@@ -1128,7 +1128,7 @@ Start a provider login for a content view.
 
 ### GET /api/f/{slug}/jobs
 
-List a view's media.
+List the media the profiles published on the view: jobs whose `delivery.view` names it.
 
 | Field | Value |
 |---|---|
@@ -1922,7 +1922,7 @@ Whether the destination gets the file or a link to the page that plays it. A lin
 | Field | Type | Required |
 |---|---|---|
 | `mode` | `"auto" \| "upload" \| "link"` · `"auto"`: the file, unless too large or too reduced | no |
-| `view` | `"auto" \| uuid` · the content view a link points at · `"auto"`: the closest one that shows the job | no |
+| `view` | `"none" \| uuid` · the content view the media is published on and a link points at · `"none"`: kept off the web | no |
 | `floor` | `FloorOverlay` | no |
 | `under_floor` | `"link" \| "upload" \| "skip"` · a video the upload budget would reduce under the floor | no |
 | `over_limit` | `"link" \| "skip"` · media the destination cannot take at any size | no |
@@ -2002,23 +2002,9 @@ Each section present replaces the scope's own whole.
 | `slug` | `string` · `[a-z0-9-]` | yes |
 | `description` | `string` | no |
 | `enabled` | `bool` | no · default `true` |
-| `profile_id` | `uuid` | no · default: built-in profile |
-| `scope` | `ContentScope` | no · default: all jobs |
 | `access` | `Access` | no · default: no access |
 | `downloads` | `bool` | no · default `true` |
 | `signed_link_days` | `integer` · > 0 · how long the link a page hands Discord to play the media stays good | no · default `30` |
-
-### ContentScope
-
-| Field | Type | Required |
-|---|---|---|
-| `guilds` | `snowflake[]` | no |
-| `channels` | `snowflake[]` | no |
-
-| Selection | Jobs |
-|---|---|
-| Any listed server or channel | Included |
-| Both lists empty | All |
 
 ### Access
 
@@ -2028,7 +2014,7 @@ Each section present replaces the scope's own whole.
 | `secret_kind` | `"pin" \| "password" \| "token" \| null` | no |
 | `accounts` | `bool` · view account login | no |
 | `providers` | `string[]` · provider IDs | no |
-| `discord_members` | `bool` · membership required in all scoped servers including channel servers | no |
+| `discord_guilds` | `snowflake[]` · a Discord login must belong to one of these servers | no |
 | `discord_users` | `snowflake[]` · allowed Discord users | no |
 
 ### SubmitRequest
@@ -2503,7 +2489,7 @@ What the profiles assigned at a place add up to, every value settled. The built-
 | Field | Type |
 |---|---|
 | `mode` | `"auto" \| "upload" \| "link"` |
-| `view` | `"auto" \| uuid` |
+| `view` | `"none" \| uuid` |
 | `floor` | `QualityFloor` |
 | `under_floor` | `"link" \| "upload" \| "skip"` |
 | `over_limit` | `"link" \| "skip"` |
@@ -2609,8 +2595,7 @@ What the engine runs a job under, stamped on its request when it is submitted.
 | `name` | `string` |
 | `description` | `string` |
 | `downloads` | `bool` |
-| `access` | `{ open, secret: "pin" \| "password" \| "token" \| null, accounts, providers: [{ id, name }], discord_members }` |
-| `platforms` | `string[]` · resolver IDs |
+| `access` | `{ open, secret: "pin" \| "password" \| "token" \| null, accounts, providers: [{ id, name }], discord_members }` · `discord_members`: a Discord login must belong to one of the view's servers |
 | `viewer` | `{ frontend_id, subject, display } \| null` |
 
 ### FrontPage

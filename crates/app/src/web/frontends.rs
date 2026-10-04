@@ -1,5 +1,5 @@
-//! Front ends as admins manage them: what each shows, who it lets in, its accounts and
-//! its viewers' sessions. What the front ends serve to the public is in `front`.
+//! Front ends as admins manage them: who each lets in, its accounts and its viewers'
+//! sessions. What the front ends serve to the public is in `front`.
 
 use axum::Json;
 use axum::extract::{Path, State};
@@ -20,13 +20,14 @@ impl From<FrontendError> for ApiError {
         match error {
             FrontendError::NotFound(_) => ApiError::NotFound,
             FrontendError::Invalid(_)
-            | FrontendError::UnknownProfile(_)
             | FrontendError::UnknownProvider(_)
             | FrontendError::Password(_) => ApiError::BadRequest(error.to_string()),
             FrontendError::DuplicateSlug(_)
             | FrontendError::DuplicateUser(..)
             | FrontendError::InUse(_) => ApiError::Conflict(error.to_string()),
-            FrontendError::Store(_) => ApiError::Internal(error.to_string()),
+            FrontendError::Store(_) | FrontendError::Profiles(_) => {
+                ApiError::Internal(error.to_string())
+            }
         }
     }
 }
@@ -34,7 +35,6 @@ impl From<FrontendError> for ApiError {
 /// What front ends are checked against as the server stands.
 pub(super) fn known(state: &AppState) -> Known {
     Known {
-        profiles: state.profiles.cache(),
         providers: state.oauth.providers().into_iter().map(|p| p.id).collect(),
     }
 }

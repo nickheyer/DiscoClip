@@ -903,6 +903,9 @@ pub fn check_sections(
     if sections.can_link() && !known.public_url {
         return Err(ProfileError::NoPublicUrl);
     }
+    if sections.can_link() && sections.delivery.view == Some(View::None) {
+        return Err(ProfileError::NoView);
+    }
     if let Some(Some(channel)) = &sections.message.destination {
         snowflake("destination channel", channel)?;
     }

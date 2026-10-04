@@ -83,6 +83,7 @@ pub struct FrontAccess {
     pub secret: Option<SecretKind>,
     pub accounts: bool,
     pub providers: Vec<FrontProvider>,
+    /// A Discord login has to belong to one of the view's servers
     pub discord_members: bool,
 }
 
@@ -103,7 +104,7 @@ fn front_access(state: &AppState, frontend: &Frontend) -> FrontAccess {
                 })
             })
             .collect(),
-        discord_members: access.discord_members,
+        discord_members: !access.discord_guilds.is_empty(),
     }
 }
 
@@ -115,8 +116,6 @@ pub struct FrontInfo {
     pub description: String,
     pub downloads: bool,
     pub access: FrontAccess,
-    /// The platforms shown, by resolver id.
-    pub platforms: Vec<String>,
     /// The visitor, when logged in.
     pub viewer: Option<Viewer>,
 }
@@ -132,7 +131,6 @@ async fn info(
         description: frontend.input.description.clone(),
         downloads: frontend.input.downloads,
         access: front_access(state, frontend),
-        platforms: state.frontends.cache().platforms_of(frontend),
         viewer: viewer(state, frontend, jar).await?,
     })
 }
@@ -427,15 +425,9 @@ fn platform_name(state: &AppState, resolver: &str) -> String {
         .unwrap_or_else(|| resolver.to_string())
 }
 
-/// Whether the job has a playable file, lies in the front end's scope and sits on a shown platform
-fn shown(state: &AppState, frontend: &Frontend, job: &Job) -> bool {
-    playable(job).is_some()
-        && state.frontends.cache().shows(
-            frontend,
-            job.resolver(),
-            job.request.origin.guild.as_deref(),
-            job.request.origin.channel.as_deref(),
-        )
+/// Whether the job has a playable file and its profile published it on the front end
+fn shown(frontend: &Frontend, job: &Job) -> bool {
+    playable(job).is_some() && frontend.shows(job)
 }
 
 /// Where the media a front end plays for `job` is: the output, or the recording of a
@@ -464,7 +456,7 @@ pub struct FrontPage {
 
 const PAGE_LIMIT: usize = 48;
 
-/// The media the front end shows, newest first.
+/// The media the profiles published on the front end, newest first
 pub async fn list(
     State(state): State<AppState>,
     Path(slug): Path<String>,
@@ -473,23 +465,6 @@ pub async fn list(
 ) -> Result<Json<FrontPage>, ApiError> {
     let frontend = frontend(&state, &slug)?;
     admitted(&state, &frontend, &jar).await?;
-    let platforms = state.frontends.cache().platforms_of(&frontend);
-    if platforms.is_empty() {
-        return Ok(Json(FrontPage {
-            jobs: Vec::new(),
-            next: None,
-        }));
-    }
-    let resolvers = match &query.resolver {
-        Some(resolver) if platforms.iter().any(|p| p == resolver) => vec![resolver.clone()],
-        Some(_) => {
-            return Ok(Json(FrontPage {
-                jobs: Vec::new(),
-                next: None,
-            }));
-        }
-        None => platforms,
-    };
     let limit = query.limit.unwrap_or(PAGE_LIMIT).clamp(1, PAGE_LIMIT);
     let filter = JobFilter {
         source: None,
@@ -499,12 +474,11 @@ pub async fn list(
         limit: Some(limit + 1),
         offset: None,
         q: query.q,
-        resolver: None,
-        resolvers,
+        resolver: query.resolver,
+        resolvers: Vec::new(),
         parent: None,
         top_level: false,
-        guilds: frontend.input.scope.guilds.clone(),
-        channels: frontend.input.scope.channels.clone(),
+        view: Some(frontend.id.to_string()),
         media: query.media,
         with_output: true,
         order: Order::Newest,
@@ -533,7 +507,7 @@ pub async fn get_job(
     admitted(&state, &frontend, &jar).await?;
     let id: JobId = super::auth::parse_id(&id)?;
     let job = state.engine.get(id).await?.ok_or(ApiError::NotFound)?;
-    if !shown(&state, &frontend, &job) {
+    if !shown(&frontend, &job) {
         return Err(ApiError::NotFound);
     }
     front_job(&state, &frontend, &job)
@@ -567,7 +541,7 @@ pub async fn media(
         admitted(&state, &frontend, &jar).await?;
     }
     let job = state.engine.get(id).await?.ok_or(ApiError::NotFound)?;
-    if !shown(&state, &frontend, &job) {
+    if !shown(&frontend, &job) {
         return Err(ApiError::NotFound);
     }
     let (path, filename, growing) = media_file(&job).await?;
@@ -593,7 +567,7 @@ pub async fn thumbnail(
         admitted(&state, &frontend, &jar).await?;
     }
     let job = state.engine.get(id).await?.ok_or(ApiError::NotFound)?;
-    if !shown(&state, &frontend, &job) {
+    if !shown(&frontend, &job) {
         return Err(ApiError::NotFound);
     }
     let file = state
@@ -620,7 +594,7 @@ pub async fn download(
     }
     let id: JobId = super::auth::parse_id(&id)?;
     let job = state.engine.get(id).await?.ok_or(ApiError::NotFound)?;
-    if !shown(&state, &frontend, &job) {
+    if !shown(&frontend, &job) {
         return Err(ApiError::NotFound);
     }
     let (path, filename, growing) = media_file(&job).await?;
@@ -843,7 +817,7 @@ pub async fn page(
         return assets::page_with_head("");
     };
     let job = match state.engine.get(id).await {
-        Ok(Some(job)) if shown(&state, &frontend, &job) => job,
+        Ok(Some(job)) if shown(&frontend, &job) => job,
         _ => return assets::page_with_head(""),
     };
     let Some(front) = front_job(&state, &frontend, &job) else {
@@ -869,7 +843,7 @@ pub async fn oembed(
     let frontend = frontend(&state, &slug)?;
     let id: JobId = super::auth::parse_id(&id)?;
     let job = state.engine.get(id).await?.ok_or(ApiError::NotFound)?;
-    if !shown(&state, &frontend, &job) {
+    if !shown(&frontend, &job) {
         return Err(ApiError::NotFound);
     }
     let front = front_job(&state, &frontend, &job).ok_or(ApiError::NotFound)?;
@@ -891,6 +865,7 @@ mod tests {
     use axum::http::{Method, StatusCode};
     use discoclip_engine::job::{JobStatus, Origin, Request, SourceId, Stage};
     use discoclip_engine::media::{LocalFile, MediaKind};
+    use discoclip_engine::policy::View;
     use discoclip_engine::store::sqlite::SqliteStore;
     use discoclip_engine::{Job, JobStore};
     use serde_json::json;
@@ -909,6 +884,7 @@ mod tests {
         guild: Option<&str>,
         channel: Option<&str>,
         resolver: &str,
+        view: Option<&str>,
     ) -> Job {
         let output = dir.join(format!("{name}.mp4"));
         std::fs::write(&output, b"0123456789").unwrap();
@@ -932,6 +908,9 @@ mod tests {
             origin,
             Url::parse(&format!("https://{SUPPORTED_HOST}/{name}")).unwrap(),
         ));
+        if let Some(view) = view {
+            job.request.policy.delivery.view = View::Id(view.to_string());
+        }
         let mut resolved = discoclip_engine::Resolved::new(resolver);
         resolved.title = Some(format!("Clip {name}"));
         resolved.uploader = Some("someone".into());
@@ -971,31 +950,29 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn front_ends_show_their_scope_to_the_viewers_they_let_in() {
+    async fn front_ends_show_what_the_profiles_send_them_to_the_viewers_they_let_in() {
         let (app, db) = app_with_admin_db().await;
         let dir = std::env::temp_dir().join(format!("discoclip-front-{}", uuid::Uuid::now_v7()));
         std::fs::create_dir_all(&dir).unwrap();
-        let in_guild = seed(&db, &dir, "a", Some("5"), Some("1"), "fixtured").await;
-        let other_guild = seed(&db, &dir, "b", Some("6"), Some("2"), "fixtured").await;
-        let hidden_platform = seed(&db, &dir, "c", Some("5"), Some("1"), "nothing").await;
-        let local = seed(&db, &dir, "d", None, None, "fixtured").await;
         let mut admin = Client::new(&app);
         admin.login("nick", "correct horse").await;
 
-        // A profile without the `nothing` platform, and an open front end over guild 5.
-        let (status, profile) = admin
-            .post(
-                "/api/profiles",
-                json!({"name": "Fixtured only", "platforms": {"overrides": {"nothing": false}}}),
-            )
-            .await;
-        assert_eq!(status, StatusCode::CREATED, "{profile}");
+        // An open front end. The old view fields are gone: a profile routes media here.
+        assert_eq!(
+            admin
+                .post(
+                    "/api/frontends",
+                    json!({"name": "Guild Five", "slug": "five", "scope": {"guilds": ["5"]}}),
+                )
+                .await
+                .0,
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
         let (status, body) = admin
             .post(
                 "/api/frontends",
                 json!({
-                    "name": "Guild Five", "slug": "five", "profile_id": profile["id"],
-                    "scope": {"guilds": ["5"]}, "access": {"open": true}, "downloads": false
+                    "name": "Guild Five", "slug": "five", "access": {"open": true}, "downloads": false
                 }),
             )
             .await;
@@ -1003,28 +980,49 @@ mod tests {
         let id = body["id"].as_str().unwrap().to_string();
         assert_eq!(body["has_secret"], false);
         assert_eq!(body["signed_link_days"], 30);
+        assert_eq!(body["access"]["discord_guilds"], json!([]));
+
+        // What shows is what a profile published here, wherever the link was seen.
+        let other_guild = seed(
+            &db,
+            &dir,
+            "b",
+            Some("6"),
+            Some("2"),
+            "fixtured",
+            Some("other"),
+        )
+        .await;
+        let unrouted = seed(&db, &dir, "c", Some("5"), Some("1"), "nothing", None).await;
+        let in_guild = seed(&db, &dir, "a", Some("5"), Some("1"), "fixtured", Some(&id)).await;
+        let local = seed(&db, &dir, "d", None, None, "fixtured", Some(&id)).await;
 
         let mut guest = visitor(&app);
         let (status, info) = guest.get("/api/f/five").await;
         assert_eq!(status, StatusCode::OK, "{info}");
         assert_eq!(info["name"], "Guild Five");
         assert_eq!(info["access"]["open"], true);
-        assert_eq!(info["platforms"], json!(["fixtured"]));
+        assert_eq!(info["access"]["discord_members"], false);
+        assert!(info.get("platforms").is_none());
         assert!(info["viewer"].is_null());
         assert_eq!(guest.get("/api/f/nope").await.0, StatusCode::NOT_FOUND);
 
         let (status, page) = guest.get("/api/f/five/jobs").await;
         assert_eq!(status, StatusCode::OK, "{page}");
         let jobs = page["jobs"].as_array().unwrap();
-        assert_eq!(jobs.len(), 1, "{page}");
-        assert_eq!(jobs[0]["id"], in_guild.id.to_string());
-        assert_eq!(jobs[0]["title"], "Clip a");
-        assert_eq!(jobs[0]["media"], "video");
-        assert_eq!(jobs[0]["content_type"], "video/mp4");
-        assert!(jobs[0]["download_url"].is_null());
-        let media_url = jobs[0]["media_url"].as_str().unwrap().to_string();
+        assert_eq!(jobs.len(), 2, "{page}");
+        assert_eq!(jobs[0]["id"], local.id.to_string());
+        assert_eq!(jobs[1]["id"], in_guild.id.to_string());
+        assert_eq!(jobs[1]["title"], "Clip a");
+        assert_eq!(jobs[1]["media"], "video");
+        assert_eq!(jobs[1]["content_type"], "video/mp4");
+        assert!(jobs[1]["download_url"].is_null());
+        let media_url = jobs[1]["media_url"].as_str().unwrap().to_string();
         assert!(media_url.starts_with(&format!("/api/f/five/jobs/{}/media?t=", in_guild.id)));
-        for gone in [&other_guild, &hidden_platform, &local] {
+        let (status, page) = guest.get("/api/f/five/jobs?resolver=nothing").await;
+        assert_eq!(status, StatusCode::OK, "{page}");
+        assert!(page["jobs"].as_array().unwrap().is_empty());
+        for gone in [&other_guild, &unrouted] {
             assert_eq!(
                 guest.get(&format!("/api/f/five/jobs/{}", gone.id)).await.0,
                 StatusCode::NOT_FOUND
@@ -1069,7 +1067,7 @@ mod tests {
         )), "{html}");
         // The poster is the app's own still of the output, signed like the media, so
         // Discord shows it and nothing depends on the platform's picture staying up.
-        let thumbnail_url = jobs[0]["thumbnail"].as_str().unwrap().to_string();
+        let thumbnail_url = jobs[1]["thumbnail"].as_str().unwrap().to_string();
         assert!(
             thumbnail_url.starts_with(&format!("/api/f/five/jobs/{}/thumbnail?t=", in_guild.id)),
             "{thumbnail_url}"
@@ -1105,8 +1103,7 @@ mod tests {
                 Method::PUT,
                 &format!("/api/frontends/{id}"),
                 Some(json!({
-                    "name": "Guild Five", "slug": "five", "profile_id": profile["id"],
-                    "scope": {"guilds": ["5"]},
+                    "name": "Guild Five", "slug": "five",
                     "access": {"open": false, "secret_kind": "pin", "accounts": true},
                     "downloads": true
                 })),
@@ -1146,7 +1143,7 @@ mod tests {
         keep_cookie(&mut viewer, "five");
         let (status, page) = viewer.get("/api/f/five/jobs").await;
         assert_eq!(status, StatusCode::OK, "{page}");
-        assert_eq!(page["jobs"].as_array().unwrap().len(), 1);
+        assert_eq!(page["jobs"].as_array().unwrap().len(), 2);
         assert!(page["jobs"][0]["download_url"].is_string());
         let (status, body) = viewer
             .get(&format!("/api/f/five/jobs/{}/download", in_guild.id))
@@ -1229,8 +1226,7 @@ mod tests {
                 Method::PUT,
                 &format!("/api/frontends/{id}"),
                 Some(json!({
-                    "name": "Guild Five", "slug": "five", "profile_id": profile["id"],
-                    "scope": {"guilds": ["5"]}, "access": {"open": true},
+                    "name": "Guild Five", "slug": "five", "access": {"open": true},
                     "signed_link_days": 7
                 })),
             )
@@ -1302,14 +1298,15 @@ mod tests {
         assert!(actions.contains(&"frontend.create"));
         let _ = std::fs::remove_dir_all(&dir);
     }
-    /// A seeded guild 5 job with the still the transcode made, left at the given status
+    /// A seeded job published on `view` with the still the transcode made, left at the given status
     async fn seed_at(
         db: &SqliteStore,
         dir: &std::path::Path,
         name: &str,
+        view: &str,
         status: JobStatus,
     ) -> Job {
-        let mut job = seed(db, dir, name, Some("5"), Some("1"), "fixtured").await;
+        let mut job = seed(db, dir, name, Some("5"), Some("1"), "fixtured", Some(view)).await;
         let poster = dir.join(format!("{name}-poster.jpg"));
         std::fs::write(&poster, b"poster").unwrap();
         job.artifacts.thumbnail = Some(LocalFile {
@@ -1323,22 +1320,20 @@ mod tests {
         job
     }
 
-    /// Opens an open front end over guild 5 as the admin
-    async fn open_guild_five(app: &WebApp) {
+    /// Opens an open front end as the admin. Its id, for the profiles' routing.
+    async fn open_guild_five(app: &WebApp) -> String {
         let mut admin = Client::new(app);
         admin.login("nick", "correct horse").await;
-        let (status, profile) = admin.post("/api/profiles", json!({"name": "Any"})).await;
-        assert_eq!(status, StatusCode::CREATED, "{profile}");
         let (status, body) = admin
             .post(
                 "/api/frontends",
                 json!({
-                    "name": "Guild Five", "slug": "five", "profile_id": profile["id"],
-                    "scope": {"guilds": ["5"]}, "access": {"open": true}, "downloads": false
+                    "name": "Guild Five", "slug": "five", "access": {"open": true}, "downloads": false
                 }),
             )
             .await;
         assert_eq!(status, StatusCode::CREATED, "{body}");
+        body["id"].as_str().unwrap().to_string()
     }
 
     /// The bot posts the page mid publish and Discord reads it at once, before the job is done
@@ -1347,10 +1342,12 @@ mod tests {
         let (app, db) = app_with_admin_db().await;
         let dir = std::env::temp_dir().join(format!("discoclip-front-{}", uuid::Uuid::now_v7()));
         std::fs::create_dir_all(&dir).unwrap();
+        let five = open_guild_five(&app).await;
         let publishing = seed_at(
             &db,
             &dir,
             "p",
+            &five,
             JobStatus::Running {
                 stage: Stage::Publish,
             },
@@ -1360,6 +1357,7 @@ mod tests {
             &db,
             &dir,
             "r",
+            &five,
             JobStatus::Running {
                 stage: Stage::Archive,
             },
@@ -1369,12 +1367,12 @@ mod tests {
             &db,
             &dir,
             "t",
+            &five,
             JobStatus::Running {
                 stage: Stage::Transcode,
             },
         )
         .await;
-        open_guild_five(&app).await;
 
         let mut guest = visitor(&app);
         for job in [&publishing, &archiving] {
@@ -1436,13 +1434,31 @@ mod tests {
         let (app, db) = app_with_admin_db().await;
         let dir = std::env::temp_dir().join(format!("discoclip-front-{}", uuid::Uuid::now_v7()));
         std::fs::create_dir_all(&dir).unwrap();
-        let mut big = seed(&db, &dir, "big", Some("5"), Some("1"), "fixtured").await;
+        let five = open_guild_five(&app).await;
+        let mut big = seed(
+            &db,
+            &dir,
+            "big",
+            Some("5"),
+            Some("1"),
+            "fixtured",
+            Some(&five),
+        )
+        .await;
         big.artifacts.output.as_mut().unwrap().size = super::INLINE_VIDEO_LIMIT + 1;
         db.update(&big).await.unwrap();
-        let mut fits = seed(&db, &dir, "fits", Some("5"), Some("1"), "fixtured").await;
+        let mut fits = seed(
+            &db,
+            &dir,
+            "fits",
+            Some("5"),
+            Some("1"),
+            "fixtured",
+            Some(&five),
+        )
+        .await;
         fits.artifacts.output.as_mut().unwrap().size = super::INLINE_VIDEO_LIMIT;
         db.update(&fits).await.unwrap();
-        open_guild_five(&app).await;
 
         let mut guest = visitor(&app);
         let (status, html) = guest.get(&format!("/f/five/j/{}", big.id)).await;
@@ -1496,14 +1512,41 @@ mod tests {
         let (app, db) = app_with_admin_db().await;
         let dir = std::env::temp_dir().join(format!("discoclip-front-{}", uuid::Uuid::now_v7()));
         std::fs::create_dir_all(&dir).unwrap();
-        let video = seed(&db, &dir, "v", Some("5"), Some("1"), "fixtured").await;
-        let mut sound = seed(&db, &dir, "s", Some("5"), Some("1"), "fixtured").await;
+        let five = open_guild_five(&app).await;
+        let video = seed(
+            &db,
+            &dir,
+            "v",
+            Some("5"),
+            Some("1"),
+            "fixtured",
+            Some(&five),
+        )
+        .await;
+        let mut sound = seed(
+            &db,
+            &dir,
+            "s",
+            Some("5"),
+            Some("1"),
+            "fixtured",
+            Some(&five),
+        )
+        .await;
         let resolved = sound.artifacts.resolved.as_mut().unwrap();
         resolved.media = MediaKind::Audio;
         resolved.uploader = None;
         db.update(&sound).await.unwrap();
-        let elsewhere = seed(&db, &dir, "e", Some("6"), Some("2"), "fixtured").await;
-        open_guild_five(&app).await;
+        let elsewhere = seed(
+            &db,
+            &dir,
+            "e",
+            Some("6"),
+            Some("2"),
+            "fixtured",
+            Some("other"),
+        )
+        .await;
 
         let mut guest = visitor(&app);
         let (status, html) = guest.get(&format!("/f/five/j/{}", video.id)).await;

@@ -258,7 +258,7 @@ async fn front_login(
             );
             return Ok((jar, failed(&intent, "not_listed")));
         }
-        if access.discord_members {
+        if !access.discord_guilds.is_empty() {
             let guilds_url = match provider.discord_guilds_url(&state.oauth.http).await {
                 Ok(Some(url)) => url,
                 Ok(None) => return Ok((jar, failed(&intent, "provider"))),
@@ -280,30 +280,11 @@ async fn front_login(
                     return Ok((jar, failed(&intent, "guilds")));
                 }
             };
-            let mut wanted: Vec<String> = frontend.input.scope.guilds.clone();
-            for channel in &frontend.input.scope.channels {
-                let guild = channel
-                    .parse::<u64>()
-                    .ok()
-                    .and_then(twilight_model::id::Id::new_checked)
-                    .and_then(|id| state.bots.guild_of_channel(id));
-                let Some(guild) = guild else {
-                    tracing::warn!(
-                        frontend = slug,
-                        channel,
-                        "front end login refused: no bot names the channel's server"
-                    );
-                    return Ok((jar, failed(&intent, "channels")));
-                };
-                let guild = guild.to_string();
-                if !wanted.contains(&guild) {
-                    wanted.push(guild);
-                }
-            }
-            let member_of_all = wanted
+            let member = access
+                .discord_guilds
                 .iter()
-                .all(|wanted| guilds.iter().any(|g| &g.id == wanted));
-            if !member_of_all {
+                .any(|wanted| guilds.iter().any(|g| &g.id == wanted));
+            if !member {
                 tracing::info!(
                     frontend = slug,
                     subject = remote.subject,

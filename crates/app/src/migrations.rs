@@ -554,6 +554,74 @@ UPDATE frontends SET config = json_remove(
     '$.links');
 ",
     },
+    // Stages what each view picked jobs by for the store to turn into profile routing
+    // Rebuilds the table without the profile column, children first so no drop cascades
+    Migration {
+        version: 31,
+        name: "frontend_routing",
+        sql: "
+CREATE TABLE frontend_routing (
+    frontend_id TEXT PRIMARY KEY,
+    slug TEXT NOT NULL,
+    enabled INTEGER NOT NULL,
+    profile_id TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    discord_members INTEGER NOT NULL
+);
+INSERT INTO frontend_routing (frontend_id, slug, enabled, profile_id, scope, discord_members)
+SELECT id, slug, enabled, profile_id,
+    COALESCE(json_extract(config, '$.scope'), '{}'),
+    COALESCE(json_extract(config, '$.access.discord_members'), 0)
+FROM frontends;
+CREATE TABLE frontends_routed (
+    id TEXT PRIMARY KEY,
+    slug TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    config TEXT NOT NULL,
+    secret_hash TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+INSERT INTO frontends_routed (id, slug, name, description, enabled, config, secret_hash, created_at, updated_at)
+SELECT id, slug, name, description, enabled,
+    json_remove(config, '$.scope', '$.access.discord_members'), secret_hash, created_at, updated_at
+FROM frontends;
+CREATE TABLE frontend_users_routed (
+    id TEXT PRIMARY KEY,
+    frontend_id TEXT NOT NULL REFERENCES frontends_routed(id) ON DELETE CASCADE,
+    username TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+INSERT INTO frontend_users_routed SELECT id, frontend_id, username, password_hash, created_at FROM frontend_users;
+CREATE TABLE frontend_sessions_routed (
+    id TEXT PRIMARY KEY,
+    frontend_id TEXT NOT NULL REFERENCES frontends_routed(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL UNIQUE,
+    subject TEXT NOT NULL,
+    display TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_seen_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    ip TEXT,
+    user_agent TEXT
+);
+INSERT INTO frontend_sessions_routed
+SELECT id, frontend_id, token_hash, subject, display, created_at, last_seen_at, expires_at, ip, user_agent
+FROM frontend_sessions;
+DROP TABLE frontend_sessions;
+DROP TABLE frontend_users;
+DROP TABLE frontends;
+ALTER TABLE frontends_routed RENAME TO frontends;
+ALTER TABLE frontend_users_routed RENAME TO frontend_users;
+ALTER TABLE frontend_sessions_routed RENAME TO frontend_sessions;
+CREATE UNIQUE INDEX frontends_slug ON frontends(slug COLLATE NOCASE);
+CREATE UNIQUE INDEX frontend_users_name ON frontend_users(frontend_id, username COLLATE NOCASE);
+CREATE INDEX frontend_sessions_frontend ON frontend_sessions(frontend_id, last_seen_at DESC);
+",
+    },
 ];
 
 /// Brings the application's tables up to date. Returns how many migrations ran.

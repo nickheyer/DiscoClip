@@ -29,13 +29,13 @@
 	import DataTable, { type Column } from '$lib/components/DataTable.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
 	import Field from '$lib/components/Field.svelte';
+	import GuildIcon from '$lib/components/GuildIcon.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import NumberInput from '$lib/components/NumberInput.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Timestamp from '$lib/components/Timestamp.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import Status from '$lib/components/Status.svelte';
-	import ScopePicker from '$lib/components/guild/ScopePicker.svelte';
 	import { number } from '$lib/format';
 	import { notify, reportError } from '$lib/toast.svelte';
 
@@ -63,17 +63,13 @@
 	let slugTouched = $state(false);
 	let description = $state('');
 	let enabled = $state(true);
-	let profileId = $state('');
 	let downloads = $state(true);
-	// Scope
-	let scopeGuilds = $state<Snowflake[]>([]);
-	let scopeChannels = $state<Snowflake[]>([]);
 	// Access
 	let open = $state(false);
 	let secretKind = $state<SecretKind | ''>('');
 	let accounts = $state(false);
 	let accessProviders = $state<string[]>([]);
-	let discordMembers = $state(false);
+	let discordGuilds = $state<Snowflake[]>([]);
 	let discordUsers = $state<Snowflake[]>([]);
 	/** How long the link the page hands Discord to play the media stays good, in days. */
 	let signedDays = $state<number | null>(30);
@@ -103,16 +99,13 @@
 		slugTouched = source !== null;
 		description = source?.description ?? '';
 		enabled = source?.enabled ?? true;
-		profileId = source?.profile_id ?? '';
 		downloads = source?.downloads ?? true;
-		scopeGuilds = [...(source?.scope?.guilds ?? [])];
-		scopeChannels = [...(source?.scope?.channels ?? [])];
 		const a = source?.access;
 		open = a?.open ?? false;
 		secretKind = a?.secret_kind ?? '';
 		accounts = a?.accounts ?? false;
 		accessProviders = [...(a?.providers ?? [])];
-		discordMembers = a?.discord_members ?? false;
+		discordGuilds = [...(a?.discord_guilds ?? [])];
 		discordUsers = [...(a?.discord_users ?? [])];
 		signedDays = source?.signed_link_days ?? 30;
 	}
@@ -177,6 +170,26 @@
 		return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
 	}
 
+	/** The profiles whose delivery publishes media on this view */
+	const senders = $derived.by(() => {
+		const current = view;
+		return current ? profiles.filter((p) => p.delivery?.view === current.id) : [];
+	});
+
+	/** Every server a bot is in, plus ids kept from an earlier save of a server no bot is in */
+	const serverRows = $derived.by(() => {
+		const known = botGuilds.map(({ guild }) => ({
+			id: guild.guild_id,
+			name: guild.name,
+			icon: guild.icon
+		}));
+		const ids = new Set(known.map((row) => row.id));
+		const unknown = discordGuilds
+			.filter((id) => !ids.has(id))
+			.map((id) => ({ id, name: id, icon: null }));
+		return [...known, ...unknown];
+	});
+
 	const secretPlaceholder = $derived(
 		secretKind === 'pin' ? 'New PIN' : secretKind === 'token' ? 'New access token' : 'New password'
 	);
@@ -200,14 +213,12 @@
 			slug,
 			description: description.trim(),
 			enabled,
-			profile_id: profileId || undefined,
-			scope: { guilds: scopeGuilds, channels: scopeChannels },
 			access: {
 				open,
 				secret_kind: secretKind || null,
 				accounts,
 				providers: accessProviders,
-				discord_members: discordMembers,
+				discord_guilds: discordGuilds,
 				discord_users: discordUsers
 			},
 			downloads,
@@ -439,18 +450,6 @@
 					<Field label="Description" for="view-description" class="md:col-span-2">
 						<input id="view-description" class="input" type="text" bind:value={description} />
 					</Field>
-					<Field
-						label="Profile"
-						for="view-profile"
-						help="Only media from platforms the profile enables is shown."
-					>
-						<select id="view-profile" class="select" bind:value={profileId}>
-							<option value="">Built-in default</option>
-							{#each profiles as profile (profile.id)}
-								<option value={profile.id}>{profile.name}</option>
-							{/each}
-						</select>
-					</Field>
 					<Field label="Signed links last" for="view-signed-days" error={errors.signedDays}>
 						<NumberInput id="view-signed-days" bind:value={signedDays} min={1} unit="days" />
 					</Field>
@@ -465,12 +464,30 @@
 				</div>
 			</Card>
 
-			<Card
-				title="What it shows"
-				description="Tick a server to show every channel in it, including channels made later. Open it and untick channels to narrow. With nothing ticked, every finished job shows."
-			>
-				<ScopePicker servers={botGuilds} bind:guilds={scopeGuilds} bind:channels={scopeChannels} />
-			</Card>
+			{#if view}
+				<Card
+					title="What it shows"
+					description="The media of every profile that names this view under Delivery, wherever the link was seen."
+				>
+					{#if senders.length === 0}
+						<p class="text-sm text-surface-600-400">
+							No profile sends media here yet. Choose this view under Delivery in a
+							<a href={resolve('/profiles')} class="anchor">profile</a>.
+						</p>
+					{:else}
+						<ul class="flex flex-wrap gap-2">
+							{#each senders as profile (profile.id)}
+								<li>
+									<a
+										href={resolve('/(app)/profiles/[id]', { id: profile.id })}
+										class="chip preset-tonal">{profile.name}</a
+									>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				</Card>
+			{/if}
 
 			<Card title="Who gets in">
 				<div class="space-y-4">
@@ -591,11 +608,36 @@
 									{/each}
 								</fieldset>
 								{#if accessProviders.includes('discord')}
-									{@render toggleSwitch(
-										'A Discord login must belong to every server in the scope',
-										discordMembers,
-										(value) => (discordMembers = value)
-									)}
+									<fieldset class="fieldset space-y-2">
+										<legend class="legend">Allowed Discord servers</legend>
+										{#if serverRows.length === 0}
+											<p class="text-sm text-surface-600-400">
+												No bot is in a server yet. Any Discord login gets in.
+											</p>
+										{:else}
+											<p class="text-xs text-surface-600-400">
+												A Discord login must belong to one of the ticked servers. None ticked lets
+												any Discord login in.
+											</p>
+										{/if}
+										{#each serverRows as server (server.id)}
+											<label class="flex items-center gap-2 text-sm">
+												<input
+													class="checkbox"
+													type="checkbox"
+													checked={discordGuilds.includes(server.id)}
+													onchange={() => (discordGuilds = toggle(discordGuilds, server.id))}
+												/>
+												<GuildIcon
+													guild={server.id}
+													hash={server.icon}
+													name={server.name}
+													size={20}
+												/>
+												<span class="truncate">{server.name}</span>
+											</label>
+										{/each}
+									</fieldset>
 									<Field
 										label="Allowed Discord users"
 										for="view-discord-users"

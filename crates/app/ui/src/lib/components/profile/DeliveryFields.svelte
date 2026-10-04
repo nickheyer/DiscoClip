@@ -49,12 +49,12 @@
 	}
 
 	const viewName = (id: string) =>
-		id === 'auto' ? 'Auto' : (views.find((v) => v.id === id)?.name ?? id);
-	/** Every page a link may point at, plus the one chosen when the list lacks it */
+		id === 'none' ? 'None' : (views.find((v) => v.id === id)?.name ?? id);
+	/** Every view media may be published on, plus the one chosen when the list lacks it */
 	const pages = $derived<Option<string>[]>([
-		['auto', 'Auto'],
+		['none', 'None'],
 		...views.map((view): Option<string> => [view.id, view.name]),
-		...(value.view !== undefined && value.view !== 'auto' && !views.some((v) => v.id === value.view)
+		...(value.view !== undefined && value.view !== 'none' && !views.some((v) => v.id === value.view)
 			? [[value.view, value.view] as Option<string>]
 			: [])
 	]);
@@ -88,7 +88,12 @@
 			inherit={inh(labelOf(DELIVERY_MODES, effective.delivery.mode))}
 		/>
 	</Field>
-	<Field label="Page" for="delivery-view" error={problems['delivery.view']}>
+	<Field
+		label="Content view"
+		for="delivery-view"
+		help="Where the media is published on the web, and the page a link points at."
+		error={problems['delivery.view']}
+	>
 		<Choice
 			id="delivery-view"
 			bind:value={value.view}

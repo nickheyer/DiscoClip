@@ -183,7 +183,7 @@ impl Default for DeliveryPolicy {
     fn default() -> Self {
         Self {
             mode: DeliveryMode::Auto,
-            view: View::Auto,
+            view: View::None,
             floor: QualityFloor {
                 min_height: 720,
                 min_bitrate: 1_500_000,
@@ -205,19 +205,29 @@ pub enum DeliveryMode {
     Link,
 }
 
-/// The page a link points at, chosen by the app or left to it
+/// The content view the media is published on and a link points at, or none
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(from = "String", into = "String")]
 pub enum View {
     #[default]
-    Auto,
+    None,
     Id(String),
 }
 
+impl View {
+    pub fn id(&self) -> Option<&str> {
+        match self {
+            View::None => None,
+            View::Id(id) => Some(id),
+        }
+    }
+}
+
 impl From<String> for View {
+    /// Reads `none`, and `auto` as older records spelled the unchosen view
     fn from(value: String) -> Self {
-        if value.is_empty() || value == "auto" {
-            View::Auto
+        if value.is_empty() || value == "auto" || value == "none" {
+            View::None
         } else {
             View::Id(value)
         }
@@ -227,7 +237,7 @@ impl From<String> for View {
 impl From<View> for String {
     fn from(value: View) -> Self {
         match value {
-            View::Auto => "auto".to_string(),
+            View::None => "none".to_string(),
             View::Id(id) => id,
         }
     }
@@ -312,18 +322,22 @@ mod tests {
     }
 
     #[test]
-    fn views_read_auto_or_an_id() {
-        let policy: DeliveryPolicy = serde_json::from_str(r#"{"view":"auto"}"#).unwrap();
-        assert_eq!(policy.view, View::Auto);
+    fn views_read_none_or_an_id() {
+        let policy: DeliveryPolicy = serde_json::from_str(r#"{"view":"none"}"#).unwrap();
+        assert_eq!(policy.view, View::None);
+        let older: DeliveryPolicy = serde_json::from_str(r#"{"view":"auto"}"#).unwrap();
+        assert_eq!(older.view, View::None);
         let named: DeliveryPolicy = serde_json::from_str(r#"{"view":"abc"}"#).unwrap();
         assert_eq!(named.view, View::Id("abc".into()));
+        assert_eq!(named.view.id(), Some("abc"));
+        assert_eq!(View::None.id(), None);
         assert_eq!(
             serde_json::to_value(&named).unwrap()["view"],
             serde_json::json!("abc")
         );
         assert_eq!(
             serde_json::to_value(DeliveryPolicy::default()).unwrap()["view"],
-            serde_json::json!("auto")
+            serde_json::json!("none")
         );
     }
 

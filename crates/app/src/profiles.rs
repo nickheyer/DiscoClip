@@ -492,6 +492,8 @@ pub enum ProfileError {
         "posting links needs the app's public address: open the app at the address people reach it by, or set web.public_url"
     )]
     NoPublicUrl,
+    #[error("posting links needs a content view: choose one under Delivery")]
+    NoView,
     #[error("the built-in profile has to name every value, and leaves out {0}")]
     Incomplete(String),
     #[error("Assign another global profile before removing this assignment.")]
@@ -757,6 +759,16 @@ impl ProfileCache {
             .collect()
     }
 
+    /// The content view the profile assigned at `scope` names itself, when it names one
+    pub fn view_named_at(&self, scope: &Scope) -> Option<String> {
+        let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
+        let (id, _) = inner.assignments.get(&scope.key())?;
+        match &inner.profiles.get(id)?.sections.delivery.view {
+            Some(View::Id(view)) => Some(view.clone()),
+            _ => None,
+        }
+    }
+
     /// The profile assigned at `scope`, and whether it is assigned elsewhere too or built in
     pub fn overlay_at(&self, scope: &Scope) -> Option<(ProfileId, bool, bool)> {
         let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
@@ -807,7 +819,7 @@ const SELECT: &str = "SELECT id, name, description, platforms, builtin, created_
      FROM profiles";
 
 /// What the staging tables of older schemas are turned into profiles by
-const CONVERTED_BY: Actor = Actor::Provisioning { file: None };
+pub(crate) const CONVERTED_BY: Actor = Actor::Provisioning { file: None };
 
 impl ProfileStore {
     /// Over a database the application's migrations have been applied to, for the
@@ -1161,7 +1173,7 @@ impl ProfileStore {
         let cache = self.cache.clone();
         let actor = actor.clone();
         transact(&self.db, move |tx| {
-            let id = ensure_overlay(tx, &cache, &scope, &patch, &actor, None)?;
+            let id = ensure_overlay(tx, &cache, &scope, &|s| patch.apply(s), &actor, None)?;
             get_in(tx, id)?.ok_or(ProfileError::NotFound(id))
         })
         .await
@@ -1345,14 +1357,14 @@ fn insert_uniquely(
     }
 }
 
-/// Lays `patch` over what is in force at `scope` alone: the profile assigned there when
+/// Applies `change` to what is in force at `scope` alone: the profile assigned there when
 /// it is nobody else's, else a new profile for the scope, assigned and audited. `from`
 /// names where the values came from in the log.
-fn ensure_overlay(
+pub(crate) fn ensure_overlay(
     conn: &Connection,
     cache: &ProfileCache,
     scope: &Scope,
-    patch: &SectionsPatch,
+    change: &dyn Fn(&mut Sections),
     actor: &Actor,
     from: Option<serde_json::Value>,
 ) -> Result<ProfileId, ProfileError> {
@@ -1368,7 +1380,7 @@ fn ensure_overlay(
         if !profile.builtin && shared == 0 {
             let mut input = profile.input.clone();
             let mut sections = input.sections();
-            patch.apply(&mut sections);
+            change(&mut sections);
             input.set_sections(sections);
             update_row(conn, id, &input, now)?;
             refresh(conn, cache)?;
@@ -1400,7 +1412,7 @@ fn ensure_overlay(
         input.set_sections(source.input.sections());
     }
     let mut sections = input.sections();
-    patch.apply(&mut sections);
+    change(&mut sections);
     input.set_sections(sections);
     let id = ProfileId(Uuid::now_v7());
     insert_uniquely(conn, id, &mut input, now)?;
@@ -1427,7 +1439,7 @@ fn ensure_overlay(
     Ok(id)
 }
 
-fn table_exists(conn: &Connection, name: &str) -> rusqlite::Result<bool> {
+pub(crate) fn table_exists(conn: &Connection, name: &str) -> rusqlite::Result<bool> {
     conn.query_row(
         "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
         params![name],
@@ -1500,6 +1512,26 @@ fn complete_builtin(conn: &Connection) -> Result<bool, ProfileError> {
         Target::profile(ProfileId::DEFAULT, &input.name),
         json!({ "profile": input, "previous": builtin.input, "converted_from": "defaults" }),
     )?;
+    Ok(true)
+}
+
+/// Names content view `view` in the built-in profile's delivery when it names none yet
+pub(crate) fn route_builtin_to_view(
+    conn: &Connection,
+    cache: &ProfileCache,
+    view: &str,
+    from: serde_json::Value,
+) -> Result<bool, ProfileError> {
+    let Some(builtin) = get_in(conn, ProfileId::DEFAULT)? else {
+        return Ok(false);
+    };
+    if matches!(builtin.input.delivery.view, Some(View::Id(_))) {
+        return Ok(false);
+    }
+    let mut input = builtin.input.clone();
+    input.delivery.view = Some(View::Id(view.to_string()));
+    update_builtin(conn, &builtin, &input, from)?;
+    refresh(conn, cache)?;
     Ok(true)
 }
 
@@ -1669,7 +1701,7 @@ fn convert_settings_policies(
                 conn,
                 cache,
                 &scope,
-                &patch,
+                &|s| patch.apply(s),
                 &CONVERTED_BY,
                 Some(json!({ "setting": format!("discord.guilds.{guild_id}") })),
             )?;
@@ -1751,7 +1783,7 @@ fn convert_rule_intake(conn: &Connection, cache: &ProfileCache) -> Result<usize,
                 conn,
                 cache,
                 &scope,
-                &patch,
+                &|s| patch.apply(s),
                 &CONVERTED_BY,
                 Some(json!({
                     "rule_id": rule_id,
@@ -1811,7 +1843,7 @@ fn convert_frontend_links(conn: &Connection, cache: &ProfileCache) -> Result<boo
     input.delivery.view = Some(if rows.len() == 1 {
         View::Id(id.clone())
     } else {
-        View::Auto
+        View::None
     });
     input.delivery.under_floor = Some(UnderFloor::Link);
     input.delivery.over_limit = Some(OverLimit::Link);

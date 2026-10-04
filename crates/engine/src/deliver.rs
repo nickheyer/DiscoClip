@@ -155,7 +155,7 @@ mod tests {
     }
 
     fn no_page() -> LinkAvailability {
-        LinkAvailability::Unavailable("no view shows this job".into())
+        LinkAvailability::Unavailable("the profile names no content view".into())
     }
 
     fn under_floor() -> Moment {
@@ -181,7 +181,7 @@ mod tests {
             decide(&links, &no_page(), under_floor()),
             Outcome::Skip {
                 reason: "100 bytes hold only 500 kb/s of 20s, under the 1000 kb/s floor, and no \
-                         page is there to link to: no view shows this job"
+                         page is there to link to: the profile names no content view"
                     .into()
             }
         );
@@ -249,7 +249,7 @@ mod tests {
         assert_eq!(
             decide(&links, &no_page(), Moment::Start),
             Outcome::Skip {
-                reason: "delivery is set to link, but no view shows this job".into()
+                reason: "delivery is set to link, but the profile names no content view".into()
             }
         );
         assert!(matches!(

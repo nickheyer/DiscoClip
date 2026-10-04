@@ -313,8 +313,8 @@ export interface UploadOverlay {
 export type DeliveryMode = 'auto' | 'upload' | 'link';
 export type UnderFloor = 'link' | 'upload' | 'skip';
 export type OverLimit = 'link' | 'skip';
-/** `"auto"` picks the closest content view that shows the job. */
-export type View = 'auto' | Uuid;
+/** A content view's id, or `none` for media kept off the web */
+export type View = 'none' | Uuid;
 
 export interface FloorOverlay {
 	/** Pixels. */
@@ -399,19 +399,10 @@ export interface FrontendInput {
 	slug: string;
 	description?: string;
 	enabled?: boolean;
-	/** The platforms shown. */
-	profile_id?: Uuid;
-	scope?: ContentScope;
 	access?: Access;
 	downloads?: boolean;
 	/** How long the link the page hands Discord to play the media stays good, in days. */
 	signed_link_days?: number;
-}
-
-/** Both lists empty includes all jobs. */
-export interface ContentScope {
-	guilds?: Snowflake[];
-	channels?: Snowflake[];
 }
 
 export interface Access {
@@ -423,8 +414,8 @@ export interface Access {
 	accounts?: boolean;
 	/** Login provider ids. */
 	providers?: string[];
-	/** A Discord login must belong to every guild in the scope. */
-	discord_members?: boolean;
+	/** A Discord login must belong to one of these servers, when any are listed. */
+	discord_guilds?: Snowflake[];
 	/** A Discord login must be one of these. */
 	discord_users?: Snowflake[];
 }
@@ -945,8 +936,6 @@ export interface FrontInfo {
 	description: string;
 	downloads: boolean;
 	access: FrontAccess;
-	/** Resolver ids shown. */
-	platforms: string[];
 	viewer: FrontViewer | null;
 }
 

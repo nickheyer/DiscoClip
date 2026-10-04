@@ -210,7 +210,7 @@
 					{/each}
 					{#if info.access.discord_members}
 						<p class="text-center text-sm text-surface-600-400">
-							Discord logins must belong to every server this view covers.
+							Discord logins must belong to one of this view's servers.
 						</p>
 					{/if}
 				</div>

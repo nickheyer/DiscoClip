@@ -30,6 +30,7 @@ impl From<ProfileError> for ApiError {
             | ProfileError::InUse(_)
             | ProfileError::ViewDisabled(_)
             | ProfileError::NoPublicUrl
+            | ProfileError::NoView
             | ProfileError::GlobalRequired => ApiError::Conflict(error.to_string()),
             ProfileError::Store(_) => ApiError::Internal(error.to_string()),
         }

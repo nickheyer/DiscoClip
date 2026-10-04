@@ -67,10 +67,8 @@ pub struct JobFilter {
     pub parent: Option<JobId>,
     /// Leave out jobs expanded from playlists.
     pub top_level: bool,
-    /// Only jobs whose origin names one of these guilds. Empty means any.
-    pub guilds: Vec<String>,
-    /// Only jobs whose origin names one of these channels. Empty means any.
-    pub channels: Vec<String>,
+    /// Only jobs whose policy publishes them on this content view
+    pub view: Option<String>,
     pub media: Option<crate::media::MediaKind>,
     /// Only jobs with an output, done or being published or archived, or running with a live recording
     pub with_output: bool,

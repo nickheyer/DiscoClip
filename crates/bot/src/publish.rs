@@ -909,7 +909,7 @@ impl Publisher for DiscordPublisher {
 
     async fn link_target(&self, job: &Job) -> Result<LinkTarget, PublishError> {
         self.links
-            .link_for(job, &job.request.policy.delivery.view)
+            .link_for(job)
             .map(|link| LinkTarget {
                 page: link.page,
                 view: link.view,

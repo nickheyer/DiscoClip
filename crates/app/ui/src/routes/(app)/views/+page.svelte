@@ -64,21 +64,17 @@
 		return ways.length > 0 ? ways.join(' · ') : 'Closed';
 	}
 
-	function scope(view: Frontend): string {
-		const s = view.scope ?? {};
-		const guilds = s.guilds?.length ?? 0;
-		const channels = s.channels?.length ?? 0;
-		if (guilds === 0 && channels === 0) return 'Everything';
-		return [
-			guilds > 0 ? countText(guilds, 'server') : '',
-			channels > 0 ? countText(channels, 'channel') : ''
-		]
-			.filter(Boolean)
-			.join(' · ');
+	/** The profiles whose delivery publishes media on the view */
+	function senders(view: Frontend): Profile[] {
+		return profiles.filter((p) => p.delivery?.view === view.id);
 	}
 
-	const profileName = (id: string | undefined) =>
-		id ? (profiles.find((p) => p.id === id)?.name ?? id) : 'Default';
+	function sentBy(view: Frontend): string {
+		const names = senders(view).map((p) => p.name);
+		if (names.length === 0) return 'No profile yet';
+		if (names.length <= 2) return names.join(', ');
+		return `${names.slice(0, 2).join(', ')} and ${countText(names.length - 2, 'more profile')}`;
+	}
 
 	function options(view: Frontend): string {
 		return [view.downloads ? 'Downloads' : null, view.has_secret ? 'Secret set' : null]
@@ -88,9 +84,8 @@
 
 	const columns: Column<Frontend>[] = [
 		{ key: 'name', label: 'View', cell: nameCell, sortable: true, value: (v) => v.name },
-		{ key: 'scope', label: 'Shows', value: scope },
+		{ key: 'senders', label: 'Sent by', value: sentBy },
 		{ key: 'access', label: 'Access', value: access },
-		{ key: 'profile', label: 'Profile', value: (v) => profileName(v.profile_id) },
 		{ key: 'options', label: 'Options', value: options },
 		{
 			key: 'updated',
@@ -131,7 +126,7 @@
 
 <PageHeader
 	title="Content views"
-	description="Share finished media at /f/<slug> with the audience you choose."
+	description="Pages at /f/<slug> that show the media profiles send them, to the audience you choose."
 >
 	{#snippet actions()}
 		<a href={resolve('/(app)/views/[id]', { id: 'new' })} class="btn preset-filled-primary-500">
@@ -152,7 +147,7 @@
 		rowHref={(v) => resolve('/(app)/views/[id]', { id: v.id })}
 	>
 		{#snippet empty()}
-			No views yet. Create one to share media outside Discord.
+			No views yet. Create one, then choose it under Delivery in a profile to send media to it.
 		{/snippet}
 	</DataTable>
 {/if}

@@ -95,6 +95,16 @@ CREATE INDEX IF NOT EXISTS jobs_media_key ON jobs(media_key, status, created_at 
 CREATE INDEX IF NOT EXISTS jobs_media_hash ON jobs(media_hash, status, created_at DESC);
 ",
     },
+    Migration {
+        version: 5,
+        name: "jobs.view_column",
+        sql: "
+ALTER TABLE jobs ADD COLUMN view_id TEXT;
+UPDATE jobs SET view_id = json_extract(data, '$.request.policy.delivery.view')
+WHERE json_extract(data, '$.request.policy.delivery.view') NOT IN ('', 'auto', 'none');
+CREATE INDEX IF NOT EXISTS jobs_view ON jobs(view_id, status, created_at DESC);
+",
+    },
 ];
 
 impl From<rusqlite::Error> for StoreError {
@@ -254,7 +264,7 @@ fn decode(data: String) -> Result<Job, StoreError> {
     Ok(serde_json::from_str(&data)?)
 }
 
-fn columns(job: &Job) -> Result<[Value; 17], StoreError> {
+fn columns(job: &Job) -> Result<[Value; 18], StoreError> {
     let data = serde_json::to_string(job)?;
     Ok([
         Value::Text(job.id.to_string()),
@@ -296,6 +306,12 @@ fn columns(job: &Job) -> Result<[Value; 17], StoreError> {
             .media_hash
             .clone()
             .map_or(Value::Null, Value::Text),
+        job.request
+            .policy
+            .delivery
+            .view
+            .id()
+            .map_or(Value::Null, |id| Value::Text(id.to_string())),
     ])
 }
 
@@ -328,15 +344,9 @@ fn clauses(filter: &JobFilter) -> (String, Vec<Value>) {
         clauses.push(format!("resolver IN ({marks})"));
         values.extend(filter.resolvers.iter().map(|r| Value::Text(r.clone())));
     }
-    if !filter.guilds.is_empty() {
-        let marks = vec!["?"; filter.guilds.len()].join(", ");
-        clauses.push(format!("guild_id IN ({marks})"));
-        values.extend(filter.guilds.iter().map(|g| Value::Text(g.clone())));
-    }
-    if !filter.channels.is_empty() {
-        let marks = vec!["?"; filter.channels.len()].join(", ");
-        clauses.push(format!("channel_id IN ({marks})"));
-        values.extend(filter.channels.iter().map(|c| Value::Text(c.clone())));
+    if let Some(view) = &filter.view {
+        clauses.push("view_id = ?".into());
+        values.push(Value::Text(view.clone()));
     }
     if let Some(media) = filter.media {
         clauses.push("media = ?".into());
@@ -403,8 +413,8 @@ impl JobStore for SqliteStore {
         self.call(move |conn| {
             let values = columns(&job)?;
             conn.execute(
-                "INSERT INTO jobs (id, source, status, created_at, updated_at, data, url, title, resolver, parent_id, submitted_by, guild_id, channel_id, media, url_key, media_key, media_hash, finished_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+                "INSERT INTO jobs (id, source, status, created_at, updated_at, data, url, title, resolver, parent_id, submitted_by, guild_id, channel_id, media, url_key, media_key, media_hash, view_id, finished_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
                 rusqlite::params_from_iter(values.into_iter().chain(std::iter::once(
                     job.finished_at.map_or(Value::Null, |t| Value::Integer(nanos(t))),
                 ))),
@@ -421,7 +431,7 @@ impl JobStore for SqliteStore {
             let changed = conn.execute(
                 "UPDATE jobs SET source = ?2, status = ?3, created_at = ?4, updated_at = ?5, data = ?6, url = ?7,
                  title = ?8, resolver = ?9, parent_id = ?10, submitted_by = ?11, guild_id = ?12, channel_id = ?13,
-                 media = ?14, url_key = ?15, media_key = ?16, media_hash = ?17, finished_at = ?18 WHERE id = ?1",
+                 media = ?14, url_key = ?15, media_key = ?16, media_hash = ?17, view_id = ?18, finished_at = ?19 WHERE id = ?1",
                 rusqlite::params_from_iter(values.into_iter().chain(std::iter::once(
                     job.finished_at.map_or(Value::Null, |t| Value::Integer(nanos(t))),
                 ))),
@@ -672,6 +682,7 @@ mod tests {
         store.insert(&parent).await.unwrap();
         let mut child = Job::new(request("https://a.test/v1"));
         child.request.parent = Some(parent.id);
+        child.request.policy.delivery.view = crate::policy::View::Id("v1".into());
         let mut resolved = crate::resolve::Resolved::new("web");
         resolved.title = Some("First Clip".into());
         child.artifacts.resolved = Some(resolved);
@@ -708,6 +719,24 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(top.len(), 1);
+        let on_view = store
+            .list(&JobFilter {
+                view: Some("v1".into()),
+                ..JobFilter::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(on_view, vec![child.clone()]);
+        assert!(
+            store
+                .list(&JobFilter {
+                    view: Some("v2".into()),
+                    ..JobFilter::default()
+                })
+                .await
+                .unwrap()
+                .is_empty()
+        );
         assert_eq!(
             store
                 .count(&JobFilter {

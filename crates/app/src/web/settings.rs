@@ -97,10 +97,13 @@ async fn change(
     let next = state.settings.preview(change).await?;
     if next.web.public_url.is_none()
         && state.public_url.learned().is_none()
-        && state.frontends.cache().any_posting_links()
+        && state.profiles.cache().any_delivery_links()
+        && state.frontends.cache().any_enabled()
     {
         return Err(ApiError::Conflict(
-            "Disable Discord links on content views before clearing the public URL.".into(),
+            "Turn link delivery off in every profile, or disable the content views, before \
+             clearing the public URL."
+                .into(),
         ));
     }
 
@@ -377,9 +380,9 @@ mod tests {
                     "set": {
                         "engine.workers": 3,
                         "engine.cache_dir": cache.display().to_string(),
-                        "engine.limits.max_height": 720,
+                        "engine.retention.jobs_days": 45,
                         "local.dir": local.display().to_string(),
-                        "local.max_bytes": 4096,
+                        "discord.upload.grace_secs": 30,
                         "fixtures.interval_secs": 3600,
                         "http.user_agent": "Tester/1.0",
                         "http.connect_timeout_secs": 3,
@@ -405,7 +408,7 @@ mod tests {
         // login providers follow.
         let engine = app.state.engine.config();
         assert_eq!(engine.workers, 3);
-        assert_eq!(engine.limits.max_height, 720);
+        assert_eq!(engine.retention.jobs_days, 45);
         assert_eq!(engine.cache_dir, cache);
         assert!(cache.join("jobs").is_dir());
         assert_eq!(app.state.engine.utilisation().workers, 3);
@@ -414,7 +417,8 @@ mod tests {
         assert_eq!(http.user_agent, "Tester/1.0");
         assert_eq!(http.connect_timeout_secs, 3);
         assert_eq!(http.rate_limits.hosts["youtube.com"].burst, 2);
-        assert_eq!(app.state.live.local.read().unwrap().max_bytes, 4096);
+        assert_eq!(app.state.live.discord.read().unwrap().upload.grace_secs, 30);
+        assert_eq!(app.state.live.local.read().unwrap().dir, local);
         assert_eq!(app.state.live.fixtures.read().unwrap().interval_secs, 3600);
         assert_eq!(app.state.fixtures.config().interval_secs, 3600);
         assert_eq!(
@@ -502,6 +506,10 @@ mod tests {
         for (body, message) in [
             (json!({"set": {"engine.workers": 0}}), "at least 1"),
             (json!({"set": {"engine.bogus": 1}}), "unknown field"),
+            (
+                json!({"set": {"engine.limits.max_height": 720}}),
+                "moved into profiles",
+            ),
             (json!({"set": {"engine.workers": "many"}}), "invalid type"),
             (
                 json!({"set": {"log.level": "not a [filter"}}),

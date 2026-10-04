@@ -10,7 +10,7 @@ use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 
 use crate::job::Job;
-use crate::media::safe_stem;
+use crate::media::{LocalFile, safe_stem};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -61,6 +61,35 @@ pub trait Archiver: Send + Sync {
     }
     /// Takes new settings while running.
     fn reconfigure(&self, _config: ArchiveConfig) {}
+    /// The archived files of `entry` still on disk, sized as they stand
+    async fn locate(&self, entry: &ArchiveEntry) -> ArchivedFiles {
+        async fn present(path: Option<&PathBuf>) -> Option<LocalFile> {
+            let path = path?;
+            let size = tokio::fs::metadata(path)
+                .await
+                .ok()
+                .filter(|m| m.is_file())?
+                .len();
+            Some(LocalFile {
+                path: path.clone(),
+                size,
+                info: None,
+            })
+        }
+        ArchivedFiles {
+            output: present(entry.output.as_ref()).await,
+            thumbnail: present(entry.thumbnail.as_ref()).await.map(|f| f.path),
+            source: present(entry.source.as_ref()).await,
+        }
+    }
+}
+
+/// What of an archive entry is still there to read back
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ArchivedFiles {
+    pub output: Option<LocalFile>,
+    pub thumbnail: Option<PathBuf>,
+    pub source: Option<LocalFile>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

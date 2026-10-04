@@ -18,6 +18,7 @@ pub mod live;
 pub mod local;
 pub mod migrations;
 pub mod oauth;
+pub mod policy;
 pub mod profiles;
 pub mod public_url;
 pub mod ratelimit;

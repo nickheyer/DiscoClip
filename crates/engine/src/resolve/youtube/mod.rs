@@ -823,7 +823,7 @@ mod tests {
         }));
         let chosen = crate::plan::select_variant(
             &resolved.variants,
-            &crate::config::Limits::default(),
+            &crate::policy::Limits::default(),
             PLATFORM,
             resolved.media,
             "en",
@@ -899,7 +899,7 @@ mod tests {
             .unwrap()
             .media()
             .unwrap();
-        let limits = crate::config::Limits {
+        let limits = crate::policy::Limits {
             max_height: 1080,
             ..Default::default()
         };

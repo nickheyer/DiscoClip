@@ -4,16 +4,19 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { platforms as platformsApi, profiles as profilesApi } from '$lib/api/endpoints';
+	import {
+		frontends as frontendsApi,
+		platforms as platformsApi,
+		profiles as profilesApi
+	} from '$lib/api/endpoints';
 	import type {
+		EffectivePolicy,
+		Frontend,
 		PlatformCoverage,
 		Preset,
-		Profile,
-		ProfileInput,
-		ServerLimits
+		Profile
 	} from '$lib/api/types';
 	import Card from '$lib/components/Card.svelte';
-	import DurationInput from '$lib/components/DurationInput.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
 	import Field from '$lib/components/Field.svelte';
 	import LanguageSelect from '$lib/components/LanguageSelect.svelte';
@@ -21,74 +24,48 @@
 	import SearchInput from '$lib/components/SearchInput.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import Status, { type Tone } from '$lib/components/Status.svelte';
-	import { bytes, durationText, number, parseClock } from '$lib/format';
+	import DedupeFields from '$lib/components/profile/DedupeFields.svelte';
+	import DeliveryFields from '$lib/components/profile/DeliveryFields.svelte';
+	import IntakeFields from '$lib/components/profile/IntakeFields.svelte';
+	import LimitsFields from '$lib/components/profile/LimitsFields.svelte';
+	import MessageFields from '$lib/components/profile/MessageFields.svelte';
+	import OutputFields from '$lib/components/profile/OutputFields.svelte';
+	import { number } from '$lib/format';
+	import { languageName } from '$lib/languages';
+	import { inherit } from '$lib/policy';
+	import { draftOf, inputOf, type Draft, type PlatformAccess, type Problems } from '$lib/profile';
 	import { session } from '$lib/session.svelte';
 	import { notify, reportError } from '$lib/toast.svelte';
 
 	const id = $derived(page.params.id ?? 'new');
 	const isNew = $derived(id === 'new');
 
-	/** What the profile does with the platforms it holds no exception for. */
-	type Access = 'inherit' | 'enabled' | 'disabled' | 'presets';
-	const ACCESS_OPTIONS: [Access, string][] = [
+	const ACCESS_OPTIONS: [PlatformAccess, string][] = [
 		['inherit', 'Inherit'],
 		['enabled', 'All platforms on'],
 		['disabled', 'All platforms off'],
 		['presets', 'Chosen presets']
 	];
-	const ACCESS_VALUES: Access[] = ACCESS_OPTIONS.map(([value]) => value);
-
-	/** Where anything left unset here comes from instead. */
-	const ONE_LEVEL_UP = 'the profile assigned one level up';
-	const CHAIN =
-		"a member's profile falls back to the channel's, a channel's to the Discord server's, and a Discord server's to the global default";
-	const LIMITS_HELP = `A blank limit takes its value from ${ONE_LEVEL_UP}: ${CHAIN}. Each placeholder shows this DiscoClip server's own limit, which caps every profile.`;
-	const ACCESS_HELP = `Inherit keeps each platform as ${ONE_LEVEL_UP} has it: ${CHAIN}. All platforms on leaves a platform marked Off until turned on as it is: an exception set to Always on, or a chosen preset that holds it, turns it on.`;
-	/** Said of a platform the engine leaves off until a profile names it */
-	const OFF_UNTIL_NAMED =
-		'Off until turned on: its links flood a chat, so profiles leave it off until an exception or a chosen preset names it.';
+	const ACCESS_VALUES: PlatformAccess[] = ACCESS_OPTIONS.map(([value]) => value);
 
 	type Result = 'on' | 'off' | 'inherit';
-	const RESULT: Record<Result, { label: string; tone: Tone; title: string }> = {
-		on: {
-			label: 'On',
-			tone: 'success',
-			title: 'This profile takes links from the platform.'
-		},
-		off: {
-			label: 'Off',
-			tone: 'surface',
-			title: 'This profile refuses links from the platform.'
-		},
-		inherit: {
-			label: 'Inherit',
-			tone: 'secondary',
-			title: `The platform stays as ${ONE_LEVEL_UP} has it. Under the global default it stays as the server has it out of the box: on, unless it is off until turned on.`
-		}
+	const RESULT: Record<Result, { label: string; tone: Tone }> = {
+		on: { label: 'On', tone: 'success' },
+		off: { label: 'Off', tone: 'surface' },
+		inherit: { label: 'Inherit', tone: 'secondary' }
 	};
 
 	let profile = $state<Profile | null>(null);
 	let presets = $state<Preset[]>([]);
 	let coverage = $state<PlatformCoverage[]>([]);
-	let serverLimits = $state<ServerLimits | null>(null);
+	let views = $state<Frontend[]>([]);
+	let effective = $state<EffectivePolicy | null>(null);
 	let loading = $state(true);
 	let error = $state<unknown>(null);
 	let saving = $state(false);
-	let errors = $state<Record<string, string>>({});
+	let problems = $state<Problems>({});
 
-	let name = $state('');
-	let description = $state('');
-	let maxSourceMb = $state('');
-	let maxDuration = $state('');
-	let refuseLive = $state(false);
-	let maxHeight = $state('');
-	/** How long a live stream is captured, in seconds. Empty takes the parent's. */
-	let maxCapture = $state<number | null>(null);
-	/** The language of the sound taken when a source offers several. Empty takes the parent's. */
-	let audioLanguage = $state<string | null>(null);
-	let access = $state<Access>('inherit');
-	let chosenPresets = $state<string[]>([]);
-	let overrides = $state<Record<string, boolean>>({});
+	let draft = $state<Draft>(draftOf(null));
 	let filter = $state('');
 	let tag = $state('');
 	let exceptionsOnly = $state(false);
@@ -96,41 +73,14 @@
 	let loadedForm = $state('');
 
 	const canEdit = $derived(session.can('manage_settings'));
+	const builtin = $derived(profile?.builtin ?? false);
 
 	/** Every value of the form as one comparable string. */
-	function snapshot(): string {
-		return JSON.stringify({
-			name: name.trim(),
-			description: description.trim(),
-			maxSourceMb: maxSourceMb.trim(),
-			maxDuration: refuseLive ? '' : maxDuration.trim(),
-			refuseLive,
-			maxHeight: maxHeight.trim(),
-			maxCapture,
-			audioLanguage,
-			access,
-			presets: access === 'presets' ? [...chosenPresets].sort() : [],
-			overrides: Object.fromEntries(
-				Object.entries(overrides).sort(([a], [b]) => a.localeCompare(b))
-			)
-		});
-	}
+	const snapshot = () => JSON.stringify($state.snapshot(draft));
 
 	function fill(source: Profile | null) {
-		name = source?.name ?? '';
-		description = source?.description ?? '';
-		const l = source?.limits;
-		maxSourceMb = l?.max_source_bytes
-			? String(Math.round((l.max_source_bytes / 1024 / 1024) * 100) / 100)
-			: '';
-		refuseLive = l?.max_duration_secs === 0;
-		maxDuration = l?.max_duration_secs ? String(l.max_duration_secs) : '';
-		maxHeight = l?.max_height ? String(l.max_height) : '';
-		maxCapture = l?.max_capture_secs ?? null;
-		audioLanguage = source?.audio_language ?? null;
-		chosenPresets = [...(source?.platforms?.presets ?? [])];
-		access = chosenPresets.length > 0 ? 'presets' : (source?.platforms?.default ?? 'inherit');
-		overrides = { ...(source?.platforms?.overrides ?? {}) };
+		draft = draftOf(source);
+		problems = {};
 		loadedForm = snapshot();
 	}
 
@@ -140,21 +90,19 @@
 		loading = true;
 		error = null;
 		try {
-			const [presetList, platformList, loaded, all] = await Promise.all([
+			const [presetList, platformList, loaded, settled, viewList] = await Promise.all([
 				profilesApi.presets(),
 				platformsApi.list(),
 				isNew ? Promise.resolve(null) : profilesApi.get(id),
-				isNew ? profilesApi.list() : Promise.resolve(null)
+				profilesApi.effective(),
+				canEdit ? frontendsApi.list() : Promise.resolve([])
 			]);
 			if (current !== requestId) return;
-			// Every profile carries the server's own limits. A new profile reads them from
-			// the profiles that already exist; the server always keeps its built-in one.
-			const caps = (loaded ?? all?.[0])?.server_limits;
-			if (!caps) throw new Error('The server sent no profile to read its limits from.');
 			presets = presetList;
 			coverage = platformList;
 			profile = loaded;
-			serverLimits = caps;
+			effective = settled;
+			views = viewList;
 			fill(loaded);
 		} catch (err) {
 			if (current !== requestId) return;
@@ -169,23 +117,14 @@
 		void load();
 	});
 
-	/** The engine's caps, read once the page has loaded. */
-	const caps = $derived.by(() => {
-		if (!serverLimits) throw new Error('The server limits are read only once the page has loaded.');
-		return serverLimits;
+	/** What the whole server runs under, read once the page has loaded */
+	const settled = $derived.by(() => {
+		if (!effective) throw new Error('The effective policy is read only once the page has loaded.');
+		return effective;
 	});
-	const sizeHint = $derived(`Server limit ${bytes(caps.max_source_bytes)}`);
-	const durationHint = $derived(
-		refuseLive
-			? 'Zero, from the switch below'
-			: caps.max_duration_secs === null
-				? 'No server limit'
-				: `Server limit ${durationText(caps.max_duration_secs)}`
-	);
-	const heightHint = $derived(`Server limit ${number(caps.max_height)} px`);
 
 	const presetPlatforms = $derived(
-		new Set(presets.filter((p) => chosenPresets.includes(p.id)).flatMap((p) => p.platforms))
+		new Set(presets.filter((p) => draft.presets.includes(p.id)).flatMap((p) => p.platforms))
 	);
 
 	/** The platforms the engine leaves off until a profile names them */
@@ -194,31 +133,31 @@
 	);
 
 	function resultFor(platformId: string): Result {
-		const override = overrides[platformId];
+		const override = draft.overrides[platformId];
 		if (override !== undefined) return override ? 'on' : 'off';
-		if (access === 'presets') return presetPlatforms.has(platformId) ? 'on' : 'off';
-		if (access === 'disabled') return 'off';
-		if (access === 'enabled') return offUntilNamed.has(platformId) ? 'inherit' : 'on';
+		if (draft.access === 'presets') return presetPlatforms.has(platformId) ? 'on' : 'off';
+		if (draft.access === 'disabled') return 'off';
+		if (draft.access === 'enabled') return offUntilNamed.has(platformId) ? 'inherit' : 'on';
 		return 'inherit';
 	}
 
 	function setOverride(platformId: string, value: 'inherit' | 'on' | 'off') {
-		const next = { ...overrides };
+		const next = { ...draft.overrides };
 		if (value === 'inherit') delete next[platformId];
 		else next[platformId] = value === 'on';
-		overrides = next;
+		draft.overrides = next;
 	}
 
 	function chooseAccess(next: string | null) {
-		if (!next || !ACCESS_VALUES.includes(next as Access)) return;
-		access = next as Access;
-		if (access !== 'presets') chosenPresets = [];
+		if (!next || !ACCESS_VALUES.includes(next as PlatformAccess)) return;
+		draft.access = next as PlatformAccess;
+		if (draft.access !== 'presets') draft.presets = [];
 	}
 
 	function togglePreset(presetId: string) {
-		chosenPresets = chosenPresets.includes(presetId)
-			? chosenPresets.filter((p) => p !== presetId)
-			: [...chosenPresets, presetId];
+		draft.presets = draft.presets.includes(presetId)
+			? draft.presets.filter((p) => p !== presetId)
+			: [...draft.presets, presetId];
 	}
 
 	/** `1 platform`, `112 platforms`. */
@@ -239,66 +178,23 @@
 			)
 				return false;
 			if (tag && !p.tags.includes(tag)) return false;
-			if (exceptionsOnly && overrides[p.id] === undefined) return false;
+			if (exceptionsOnly && draft.overrides[p.id] === undefined) return false;
 			return true;
 		})
 	);
-	const overrideCount = $derived(Object.keys(overrides).length);
-	const emptyRow = $derived(
-		exceptionsOnly && overrideCount === 0
-			? 'No exceptions yet. Set a platform to Always on or Always off to add one.'
-			: 'No platform matches.'
-	);
+	const overrideCount = $derived(Object.keys(draft.overrides).length);
 
-	const presetsMissing = $derived(access === 'presets' && chosenPresets.length === 0);
 	const dirty = $derived(snapshot() !== loadedForm);
-	const canSave = $derived(!saving && !presetsMissing && (isNew ? name.trim().length > 0 : dirty));
-
-	function build(): ProfileInput | null {
-		const found: Record<string, string> = {};
-		if (!name.trim()) found.name = 'Give the profile a name.';
-		const limits: NonNullable<ProfileInput['limits']> = {};
-		if (maxSourceMb.trim()) {
-			const mb = Number(maxSourceMb);
-			if (!Number.isFinite(mb) || mb <= 0) found.maxSourceMb = 'Enter a size above zero.';
-			else limits.max_source_bytes = Math.round(mb * 1024 * 1024);
-		}
-		if (refuseLive) {
-			limits.max_duration_secs = 0;
-		} else if (maxDuration.trim()) {
-			const secs = parseClock(maxDuration);
-			if (secs === null || secs <= 0) found.maxDuration = 'Enter seconds or h:mm:ss above zero.';
-			else limits.max_duration_secs = Math.round(secs);
-		}
-		if (maxHeight.trim()) {
-			const px = Number(maxHeight);
-			if (!Number.isInteger(px) || px <= 0) found.maxHeight = 'Enter whole pixels above zero.';
-			else limits.max_height = px;
-		}
-		if (maxCapture !== null) {
-			if (maxCapture <= 0) found.maxCapture = 'Enter a capture length above zero.';
-			else limits.max_capture_secs = maxCapture;
-		}
-		errors = found;
-		if (Object.keys(found).length > 0) return null;
-		return {
-			name: name.trim(),
-			description: description.trim(),
-			limits,
-			audio_language: audioLanguage,
-			platforms: {
-				default: access === 'presets' ? 'inherit' : access,
-				presets: access === 'presets' ? chosenPresets : [],
-				overrides
-			}
-		};
-	}
+	const canSave = $derived(!saving && (isNew ? draft.name.trim().length > 0 : dirty));
+	const audioBlank = $derived(
+		builtin ? 'Any' : inherit(settled.audio_language ? languageName(settled.audio_language) : 'Any')
+	);
 
 	async function save(event: SubmitEvent) {
 		event.preventDefault();
-		if (presetsMissing) return;
-		const input = build();
-		if (!input) return;
+		const { input, problems: found } = inputOf(draft, builtin);
+		problems = found;
+		if (Object.keys(found).length > 0) return;
 		saving = true;
 		try {
 			const saved = isNew ? await profilesApi.create(input) : await profilesApi.update(id, input);
@@ -325,109 +221,93 @@
 	</div>
 {:else}
 	<PageHeader title={isNew ? 'New profile' : (profile?.name ?? 'Profile')} {back}>
-		{#if profile?.builtin}
+		{#if builtin}
 			<div class="flex flex-wrap items-center gap-2 text-sm text-surface-600-400">
 				<Status label="Built in" tone="surface" />
-				<span>Ships with the server and cannot be deleted.</span>
 			</div>
 		{/if}
 	</PageHeader>
 
 	<form class="flex flex-col gap-6" onsubmit={save}>
 		<Card title="Details">
-			<fieldset disabled={!canEdit} class="grid gap-4 md:grid-cols-2">
-				<Field label="Name" for="profile-name" required error={errors.name}>
-					<input id="profile-name" class="input" type="text" bind:value={name} required />
+			<fieldset disabled={!canEdit} class="grid gap-4 md:grid-cols-3">
+				<Field label="Name" for="profile-name" required error={problems.name}>
+					<input id="profile-name" class="input" type="text" bind:value={draft.name} required />
 				</Field>
 				<Field label="Description" for="profile-description">
-					<input id="profile-description" class="input" type="text" bind:value={description} />
+					<input
+						id="profile-description"
+						class="input"
+						type="text"
+						bind:value={draft.description}
+					/>
+				</Field>
+				<Field label="Audio language" for="profile-audio-language">
+					<LanguageSelect
+						id="profile-audio-language"
+						bind:value={draft.audioLanguage}
+						blank={audioBlank}
+						disabled={!canEdit}
+					/>
 				</Field>
 			</fieldset>
 		</Card>
 
-		<Card title="Limits" description={LIMITS_HELP}>
-			<fieldset disabled={!canEdit} class="space-y-4">
-				<div class="grid gap-4 md:grid-cols-3">
-					<Field label="Max source size" for="profile-size" error={errors.maxSourceMb}>
-						<div class="field-group grid-cols-[1fr_auto]">
-							<input
-								id="profile-size"
-								class="input"
-								type="text"
-								inputmode="decimal"
-								placeholder={sizeHint}
-								bind:value={maxSourceMb}
-							/>
-							<div class="label label-text preset-tonal">MB</div>
-						</div>
-					</Field>
-					<Field label="Max duration" for="profile-duration" error={errors.maxDuration}>
-						<div class="field-group grid-cols-[1fr_auto]">
-							<input
-								id="profile-duration"
-								class="input"
-								type="text"
-								placeholder={durationHint}
-								bind:value={maxDuration}
-								disabled={refuseLive}
-							/>
-							<div class="label label-text preset-tonal">h:mm:ss</div>
-						</div>
-					</Field>
-					<Field label="Max height" for="profile-height" error={errors.maxHeight}>
-						<div class="field-group grid-cols-[1fr_auto]">
-							<input
-								id="profile-height"
-								class="input"
-								type="text"
-								inputmode="numeric"
-								placeholder={heightHint}
-								bind:value={maxHeight}
-							/>
-							<div class="label label-text preset-tonal">px</div>
-						</div>
-					</Field>
-					<Field label="Max capture length" for="profile-capture" error={errors.maxCapture}>
-						<DurationInput
-							id="profile-capture"
-							bind:value={maxCapture}
-							placeholder={caps.max_capture_secs}
-							label="Max capture length"
-						/>
-					</Field>
-					<Field label="Audio language" for="profile-audio-language">
-						<LanguageSelect
-							id="profile-audio-language"
-							bind:value={audioLanguage}
-							blank="Inherit"
-							disabled={!canEdit}
-						/>
-					</Field>
-				</div>
-				<div class="space-y-1">
-					<Switch
-						checked={refuseLive}
-						onCheckedChange={(details) => (refuseLive = details.checked)}
-						disabled={!canEdit}
-					>
-						<Switch.Control><Switch.Thumb /></Switch.Control>
-						<Switch.Label>Refuse live streams and anything with a running time</Switch.Label>
-						<Switch.HiddenInput />
-					</Switch>
-					<p class="text-sm text-surface-600-400">
-						This sets the maximum duration to zero, so only media with no running time, such as
-						images and other files, gets through.
-					</p>
-				</div>
+		<Card title="Limits">
+			<fieldset disabled={!canEdit}>
+				<LimitsFields bind:value={draft.limits} effective={settled} {builtin} {problems} />
 			</fieldset>
 		</Card>
 
-		<Card title="Platforms" description={ACCESS_HELP}>
+		<Card title="Intake">
+			<fieldset disabled={!canEdit}>
+				<IntakeFields bind:value={draft.intake} effective={settled} {builtin} {problems} />
+			</fieldset>
+		</Card>
+
+		<Card title="Output">
+			<fieldset disabled={!canEdit}>
+				<OutputFields bind:value={draft.output} effective={settled} {builtin} {problems} />
+			</fieldset>
+		</Card>
+
+		<Card title="Delivery">
+			<fieldset disabled={!canEdit}>
+				<DeliveryFields
+					bind:upload={draft.upload}
+					bind:value={draft.delivery}
+					{views}
+					effective={settled}
+					{builtin}
+					{problems}
+				/>
+			</fieldset>
+		</Card>
+
+		<Card title="Message">
+			<fieldset disabled={!canEdit}>
+				<MessageFields
+					bind:value={draft.message}
+					bind:errors={draft.errors}
+					effective={settled}
+					{builtin}
+					{problems}
+				/>
+			</fieldset>
+		</Card>
+
+		<Card title="Dedupe">
+			<fieldset disabled={!canEdit}>
+				<DedupeFields bind:value={draft.dedupe} effective={settled} {builtin} {problems} />
+			</fieldset>
+		</Card>
+
+		<Card title="Platforms">
 			<div class="space-y-5">
 				<fieldset disabled={!canEdit} class="space-y-3">
 					<!-- Skeleton's SegmentedControl: one of four ways to treat every platform. -->
 					<SegmentedControl
-						value={access}
+						value={draft.access}
 						onValueChange={(details) => chooseAccess(details.value)}
 						disabled={!canEdit}
 						class="w-full"
@@ -444,15 +324,12 @@
 						</SegmentedControl.Control>
 					</SegmentedControl>
 
-					{#if access === 'presets'}
+					{#if draft.access === 'presets'}
 						<div class="space-y-2">
-							<p class="text-sm text-surface-600-400">
-								Platforms in a chosen preset are on. Every other platform is off.
-							</p>
 							<!-- Skeleton filter chips: each preset toggles on and off. -->
 							<div class="flex flex-wrap gap-2">
 								{#each presets as preset (preset.id)}
-									{@const chosen = chosenPresets.includes(preset.id)}
+									{@const chosen = draft.presets.includes(preset.id)}
 									<button
 										type="button"
 										class="chip {chosen ? 'preset-filled' : 'preset-outlined-surface-400-600'}"
@@ -466,8 +343,10 @@
 									</button>
 								{/each}
 							</div>
-							{#if presetsMissing}
-								<p class="text-sm text-error-600-400" role="alert">Choose at least one preset</p>
+							{#if problems['platforms.presets']}
+								<p class="text-xs text-error-600-400" role="alert">
+									{problems['platforms.presets']}
+								</p>
 							{/if}
 						</div>
 					{/if}
@@ -500,12 +379,7 @@
 									<option value={t}>{t}</option>
 								{/each}
 							</select>
-							<SearchInput
-								bind:value={filter}
-								placeholder="Find a platform"
-								debounce={0}
-								class="w-64"
-							/>
+							<SearchInput bind:value={filter} debounce={0} class="w-64" />
 						</div>
 					</div>
 
@@ -515,26 +389,20 @@
 							<thead class="sticky top-0 z-10 bg-surface-100-900">
 								<tr>
 									<th>Platform</th>
-									<th
-										title="What this profile decides for the platform after presets and exceptions"
-									>
-										Result
-									</th>
+									<th>Result</th>
 									<th class="w-40">Exception</th>
 								</tr>
 							</thead>
 							<tbody class="[&>tr]:hover:preset-tonal">
 								{#each shown as platform (platform.id)}
 									{@const result = resultFor(platform.id)}
-									{@const override = overrides[platform.id]}
+									{@const override = draft.overrides[platform.id]}
 									<tr>
 										<td class="align-top">
 											<p class="flex flex-wrap items-center gap-2 font-medium">
 												{platform.name}
 												{#if !platform.on_by_default}
-													<span title={OFF_UNTIL_NAMED}>
-														<Status label="Off until turned on" tone="warning" />
-													</span>
+													<Status label="Off until turned on" tone="warning" />
 												{/if}
 											</p>
 											<p class="flex flex-wrap items-baseline gap-x-2 text-sm text-surface-600-400">
@@ -551,9 +419,7 @@
 											</p>
 										</td>
 										<td class="align-top">
-											<span title={RESULT[result].title}>
-												<Status label={RESULT[result].label} tone={RESULT[result].tone} />
-											</span>
+											<Status label={RESULT[result].label} tone={RESULT[result].tone} />
 										</td>
 										<td class="align-top">
 											<select
@@ -575,7 +441,11 @@
 									</tr>
 								{:else}
 									<tr>
-										<td colspan="3" class="py-6 text-center text-surface-600-400">{emptyRow}</td>
+										<td colspan="3" class="py-6 text-center text-surface-600-400">
+											{exceptionsOnly && overrideCount === 0
+												? 'No exceptions'
+												: 'No platform matches'}
+										</td>
 									</tr>
 								{/each}
 							</tbody>

@@ -320,6 +320,11 @@ async fn serve(startup: Startup) -> Result<ExitCode, Error> {
         Arc::new(std::sync::RwLock::new(settings.discord.clone()));
     // The stores the publishers read are built before the engine, from the resolvers
     // it will carry.
+    let platform_names: std::collections::HashMap<String, String> = builder
+        .platforms()
+        .into_iter()
+        .map(|p| (p.id.to_string(), p.name.to_string()))
+        .collect();
     let profiles = ProfileStore::new(
         store.clone(),
         builder
@@ -363,6 +368,7 @@ async fn serve(startup: Startup) -> Result<ExitCode, Error> {
             directories.clone(),
             Arc::new(frontends.cache()),
             discord_settings.clone(),
+            platform_names,
         ));
     let engine = builder.build()?;
     let handle = engine.handle();

@@ -482,10 +482,10 @@ fn stub_engine(
             directories,
             Arc::new(links),
             Arc::new(std::sync::RwLock::new(settings.discord.clone())),
+            std::collections::HashMap::new(),
         ))
-        .publisher(crate::local::LocalPublisher::with_config(
+        .publisher(crate::local::LocalPublisher::with_dir(
             settings.local.dir.clone(),
-            settings.local.max_bytes,
         ))
         .build()
         .unwrap()

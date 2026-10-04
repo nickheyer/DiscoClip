@@ -93,48 +93,55 @@ action, the active navigation entry's tonal tint and icon, and the brand mark. L
 
 Skeleton parts, and what each is for:
 
-| Skeleton part                       | For                                                                                                             |
-| ----------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `card` + presets                    | Every panel, stat tile, filter form, banner and dialog surface. Anchors that are cards get hover styling        |
-| `badge` + `preset-tonal-*`          | Every state and count. `Status` renders one; the size is `--badge-size: var(--text-xs)`                         |
-| `chip`                              | Removable picks (members, channels) and filter picks (presets)                                                  |
-| `btn`, `btn-icon`, `btn-sm`         | Every button. See the presets below                                                                             |
-| `table`, `table-wrap`               | Every list, through `DataTable`, with `[&>tr]:hover:preset-tonal` on the body                                   |
-| `input`, `select`, `textarea`       | Every text control, through `Field` for the label, help and error                                               |
-| `checkbox`, `radio`                 | Multiple picks in a short list, and the rows of a table that pick: a view's scope, command servers              |
-| `fieldset`, `legend`, `field-group` | Grouped controls, and an input with a unit or a button beside it                                                |
-| `placeholder`                       | Loading blocks, with `animate-pulse`                                                                            |
-| `hr`                                | Dividers, including the "or" between login methods                                                              |
-| `pre`                               | Logs and JSON, through `CodeBlock`                                                                              |
-| `disclosure`                        | A log line that opens to show its fields                                                                        |
-| `meter`                             | Disk use on the metrics page                                                                                    |
-| AppBar                              | The operator app bar and the public view header                                                                 |
-| Navigation                          | The sidebar, the bottom bar and the drawer's contents                                                           |
-| Dialog                              | `Modal`, `Confirm` and the navigation drawer, styled as cards                                                   |
-| Menu                                | The account menu, the job download menu and the settings export menu                                            |
-| Tabs                                | Applications and watch rules, the users page, the account page                                                  |
-| Accordion                           | Settings sections, audit entries, role descriptions, a job's description and variants                           |
-| Collapsible                         | The submit dialog's options                                                                                     |
-| Switch                              | Every on/off value: watching a channel, enabled flags, downloads, links, booleans in settings, the light switch |
-| SegmentedControl                    | One of a few short choices: cookie format, platform access, who gets into a view                                |
-| Listbox                             | Picking several from a list with search: the roles a rule allows                                                |
-| Combobox                            | Searching a server's members                                                                                    |
-| TagsInput                           | Discord user ids on a view                                                                                      |
-| Steps                               | A job's five stages, and the three phases of a restore                                                          |
-| Progress                            | Job progress bars, and `Spinner` as the circular indeterminate form                                             |
-| Avatar                              | `GuildIcon` and `DiscordAvatar`, with initials as the fallback                                                  |
-| Pagination                          | `Pager` under the jobs table                                                                                    |
-| FileUpload                          | Choosing a cookies file or a settings file to import                                                            |
-| Toast                               | The one `Toast.Group` in the root layout; pages speak through `notify` and `reportError`                        |
+| Skeleton part                       | For                                                                                                      |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `card` + presets                    | Every panel, stat tile, filter form, banner and dialog surface. Anchors that are cards get hover styling |
+| `badge` + `preset-tonal-*`          | Every state and count. `Status` renders one; the size is `--badge-size: var(--text-xs)`                  |
+| `chip`                              | Removable picks (members, channels) and filter picks (presets)                                           |
+| `btn`, `btn-icon`, `btn-sm`         | Every button. See the presets below                                                                      |
+| `table`, `table-wrap`               | Every list, through `DataTable`, with `[&>tr]:hover:preset-tonal` on the body                            |
+| `input`, `select`, `textarea`       | Every text control, through `Field` for the label, help and error                                        |
+| `checkbox`, `radio`                 | Multiple picks in a short list, and the rows of a table that pick: a view's scope, command servers       |
+| `fieldset`, `legend`, `field-group` | Grouped controls, and an input with a unit or a button beside it                                         |
+| `placeholder`                       | Loading blocks, with `animate-pulse`                                                                     |
+| `hr`                                | Dividers, including the "or" between login methods                                                       |
+| `pre`                               | Logs and JSON, through `CodeBlock`                                                                       |
+| `disclosure`                        | A log line that opens to show its fields                                                                 |
+| `meter`                             | Disk use on the metrics page                                                                             |
+| AppBar                              | The operator app bar and the public view header                                                          |
+| Navigation                          | The sidebar, the bottom bar and the drawer's contents                                                    |
+| Dialog                              | `Modal`, `Confirm` and the navigation drawer, styled as cards                                            |
+| Menu                                | The account menu, the job download menu and the settings export menu                                     |
+| Tabs                                | Applications and watch rules, the users page, the account page                                           |
+| Accordion                           | Settings sections, audit entries, role descriptions, a job's description and variants                    |
+| Collapsible                         | The submit dialog's options                                                                              |
+| Switch                              | Every on/off value: watching a channel, enabled flags, downloads, booleans in settings, the light switch |
+| SegmentedControl                    | One of a few short choices: cookie format, platform access, who gets into a view                         |
+| Listbox                             | Picking several from a list with search: the roles a place lets post                                     |
+| Combobox                            | Searching a server's members                                                                             |
+| TagsInput                           | Discord user ids on a view                                                                               |
+| Steps                               | A job's five stages, and the three phases of a restore                                                   |
+| Progress                            | Job progress bars, and `Spinner` as the circular indeterminate form                                      |
+| Avatar                              | `GuildIcon` and `DiscordAvatar`, with initials as the fallback                                           |
+| Pagination                          | `Pager` under the jobs table                                                                             |
+| FileUpload                          | Choosing a cookies file or a settings file to import                                                     |
+| Toast                               | The one `Toast.Group` in the root layout; pages speak through `notify` and `reportError`                 |
 
 The app's own components in `src/lib/components` compose those parts: `Card`, `PageHeader`,
 `Status`, `StatTile`, `DataTable`, `Pager`, `SearchInput`, `Field`, `Modal`, `Confirm`,
 `EmptyState`, `ErrorState`, `KeyValue` and `KeyValueRow`, `Identifier`, `CopyButton`,
 `CodeBlock`, `Spinner`, `RelativeTime`, `Bytes`, `Clock`, `Duration`, `DurationInput`,
-`BytesInput`, `MediaKindIcon`, `JobTitle`, `PlaceLine`, `PlatformSummary`, `GuildIcon`,
-`DiscordAvatar`, `ModeToggle`, `SubmitDialog`, `CookiesDialog`, `SettingField`, and the guild set (`ChannelTable`, `RuleDialog`,
-`MemberProfiles`, `MemberPicker`, `ChannelKindIcon`, `ScopePicker`, with `watching.ts` for
-what the switches do).
+`BytesInput`, `NumberInput`, `Choice`, `IdTags`, `MediaKindIcon`, `JobTitle`, `PlaceLine`,
+`PlatformSummary`, `GuildIcon`, `DiscordAvatar`, `ModeToggle`, `SubmitDialog`, `CookiesDialog`,
+`SettingField`, the profile set (`LimitsFields`, `IntakeFields`, `OutputFields`,
+`DeliveryFields`, `MessageFields`, `DedupeFields`, one card body each over the draft in
+`src/lib/profile.ts`), and the guild set (`ChannelTable`, `OptionsDialog`, `MemberProfiles`,
+`MemberPicker`, `ChannelKindIcon`, `ScopePicker`, with `watching.ts` for what the switches do
+and `options.ts` for what a place's own profile says about posting).
+`Choice` is the select for a policy leaf: its first entry, "Inherit (value)", leaves the leaf to
+the wider scope and names what that gives; the built-in profile's forms leave that entry out.
+`OptionsDialog` writes a channel's or a server's posting options as that scope's own profile
+through the overlay endpoint, so the watch rules only say which channels are read.
 `ChannelTable` is one table of a server's channels under their category headings, each row
 carrying a switch that watches the channel, an Options button on a watched one, and a select
 for its profile. With the server watched whole, every row is on unless switched off.

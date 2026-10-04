@@ -8,9 +8,14 @@ use twilight_model::id::marker::{ChannelMarker, GuildMarker};
 use uuid::Uuid;
 
 use crate::config::WatchRule;
+use crate::directory::Directory;
 use crate::link::OwnLinks;
 use crate::origin::DiscordOrigin;
-use crate::profile::{PlatformLookup, ProfileSource, turned_off};
+use crate::policy::{BotMessages, OriginalText, Placement};
+use crate::profile::{InForce, PlatformLookup, ProfileSource, turned_off};
+
+/// The most characters a Discord message holds, which bounds the text a replacement repeats
+const MESSAGE_MAX: usize = 2000;
 
 /// Where a running bot finds the rule for a channel, as rules are edited while it runs.
 pub trait RuleSource: Send + Sync {
@@ -25,16 +30,17 @@ pub trait RuleSource: Send + Sync {
 }
 
 /// Turns messages in watched channels into engine requests. A channel is watched by a
-/// rule of its own, or by the rule watching its guild whole. The profile assigned for the
-/// channel and the author says which platforms count and how big a video may be, and a
-/// link that only turned-off platforms would take is left alone, as is a link to one of
-/// the app's own pages.
+/// rule of its own, or by the rule watching its guild whole. The profile in force for the
+/// channel and the author says who is heard, which platforms count and how the result is
+/// posted. A link that only turned-off platforms would take is left alone, as is a link
+/// to one of the app's own pages and anything the bot itself posted.
 pub struct Watcher {
     application: Uuid,
     rules: Arc<dyn RuleSource>,
     profiles: Arc<dyn ProfileSource>,
     platforms: Arc<dyn PlatformLookup>,
     own: Arc<dyn OwnLinks>,
+    directory: Arc<Directory>,
 }
 
 impl Watcher {
@@ -44,6 +50,7 @@ impl Watcher {
         profiles: Arc<dyn ProfileSource>,
         platforms: Arc<dyn PlatformLookup>,
         own: Arc<dyn OwnLinks>,
+        directory: Arc<Directory>,
     ) -> Self {
         Self {
             application,
@@ -51,20 +58,19 @@ impl Watcher {
             profiles,
             platforms,
             own,
+            directory,
         }
     }
 
     pub fn requests(&self, message: &Message) -> Vec<Request> {
-        if message.author.bot {
+        if self.directory.is_own_poster(message.author.id) {
             return Vec::new();
         }
-        let Some(rule) = self
+        if self
             .rules
             .rule(self.application, message.guild_id, message.channel_id)
-        else {
-            return Vec::new();
-        };
-        if !author_allowed(&rule, message) {
+            .is_none()
+        {
             return Vec::new();
         }
         let in_force = self.profiles.in_force(
@@ -72,9 +78,12 @@ impl Watcher {
             Some(message.channel_id),
             Some(message.author.id),
         );
-        let disabled = in_force.disabled;
-        let limits = in_force.limits;
-        let audio_language = in_force.audio_language;
+        if message.author.bot && in_force.bot_messages == BotMessages::Ignore {
+            return Vec::new();
+        }
+        if !author_allowed(&in_force, message) {
+            return Vec::new();
+        }
         let origin = DiscordOrigin {
             application: self.application,
             guild: message.guild_id,
@@ -83,8 +92,18 @@ impl Watcher {
             author: Some(message.author.id),
         }
         .to_origin();
-        let destination = rule.post_to.map(|channel| channel.to_string());
         let submitted_by = Some(format!("discord:{}", message.author.id));
+        let posting = &in_force.discord.message;
+        let kept_text = (posting.placement == Placement::Replace
+            && posting.original_text == OriginalText::Keep)
+            .then(|| {
+                message
+                    .content
+                    .chars()
+                    .take(MESSAGE_MAX)
+                    .collect::<String>()
+            })
+            .filter(|text| !text.trim().is_empty());
         find_urls(&message.content)
             .into_iter()
             .filter(|url| {
@@ -92,7 +111,7 @@ impl Watcher {
                     tracing::debug!(%url, channel = %message.channel_id, "link left alone: one of the app's own pages");
                     return false;
                 }
-                match turned_off(&self.platforms.resolvers_for(url), &disabled) {
+                match turned_off(&self.platforms.resolvers_for(url), &in_force.disabled) {
                     Some(platform) => {
                         tracing::debug!(%url, platform, channel = %message.channel_id, "link left alone: platform turned off here");
                         false
@@ -101,34 +120,31 @@ impl Watcher {
                 }
             })
             .map(|url| {
-                let mut request = Request::new(origin.clone(), url);
-                request.destination = destination.clone();
-                request.limits = limits;
-                if let Some(language) = &audio_language {
-                    request.options.audio_language = language.clone();
+                let mut request = in_force.request_for(origin.clone(), url, submitted_by.clone());
+                if let Some(text) = &kept_text {
+                    let mut discord = in_force.discord.clone();
+                    discord.original_text_value = Some(text.clone());
+                    discord.stamp(&mut request);
                 }
-                request.submitted_by = submitted_by.clone();
-                request.disabled_platforms = disabled.clone();
                 request
             })
             .collect()
     }
 }
 
-/// Whether the message's author is one of the rule's users or holds one of its roles. A
-/// rule naming neither takes messages from everyone.
-pub fn author_allowed(rule: &WatchRule, message: &Message) -> bool {
-    if rule.allow_users.is_empty() && rule.allow_roles.is_empty() {
+/// Whether the author is among the users or holds a role the profile names, everyone when it names none
+pub fn author_allowed(in_force: &InForce, message: &Message) -> bool {
+    if in_force.allow_users.is_empty() && in_force.allow_roles.is_empty() {
         return true;
     }
-    if rule.allow_users.contains(&message.author.id) {
+    if in_force.allow_users.contains(&message.author.id) {
         return true;
     }
     message.member.as_ref().is_some_and(|member| {
         member
             .roles
             .iter()
-            .any(|role| rule.allow_roles.contains(role))
+            .any(|role| in_force.allow_roles.contains(role))
     })
 }
 
@@ -141,10 +157,8 @@ mod tests {
     use twilight_model::user::User;
     use twilight_model::util::Timestamp;
 
-    use discoclip_engine::job::RequestLimits;
-
     use super::*;
-    use crate::profile::InForce;
+    use crate::policy::DiscordPolicy;
 
     struct Rules(HashMap<u64, WatchRule>);
 
@@ -159,21 +173,17 @@ mod tests {
         }
     }
 
-    /// Platforms turned off and limits assigned everywhere, whatever the scope.
-    struct Off(Vec<String>, RequestLimits);
+    /// The same profile everywhere, whatever the scope
+    struct Everywhere(InForce);
 
-    impl ProfileSource for Off {
+    impl ProfileSource for Everywhere {
         fn in_force(
             &self,
-            _: Option<Id<twilight_model::id::marker::GuildMarker>>,
+            _: Option<Id<GuildMarker>>,
             _: Option<Id<ChannelMarker>>,
             _: Option<Id<twilight_model::id::marker::UserMarker>>,
         ) -> InForce {
-            InForce {
-                disabled: self.0.clone(),
-                limits: self.1,
-                audio_language: None,
-            }
+            self.0.clone()
         }
     }
 
@@ -251,18 +261,23 @@ mod tests {
     }
 
     fn watcher(rules: Vec<WatchRule>) -> Watcher {
-        watcher_with(rules, Vec::new(), RequestLimits::default())
+        watcher_with(rules, InForce::default(), Arc::new(Directory::new()))
     }
 
-    fn watcher_with(rules: Vec<WatchRule>, off: Vec<&str>, limits: RequestLimits) -> Watcher {
+    fn watcher_with(
+        rules: Vec<WatchRule>,
+        in_force: InForce,
+        directory: Arc<Directory>,
+    ) -> Watcher {
         Watcher::new(
             Uuid::from_u128(1),
             Arc::new(Rules(
                 rules.into_iter().map(|r| (r.channel.get(), r)).collect(),
             )),
-            Arc::new(Off(off.into_iter().map(String::from).collect(), limits)),
+            Arc::new(Everywhere(in_force)),
             Arc::new(ByHost),
             Arc::new(OwnHost("clips.example")),
+            directory,
         )
     }
 
@@ -281,11 +296,11 @@ mod tests {
 
     #[test]
     fn links_only_turned_off_platforms_take_are_left_alone() {
-        let watcher = watcher_with(
-            vec![rule(1)],
-            vec!["youtube", "web"],
-            RequestLimits::default(),
-        );
+        let in_force = InForce {
+            disabled: vec!["youtube".into(), "web".into()],
+            ..InForce::default()
+        };
+        let watcher = watcher_with(vec![rule(1)], in_force, Arc::new(Directory::new()));
         let picked = watcher.requests(&message(
             1,
             9,
@@ -317,7 +332,13 @@ mod tests {
         assert_eq!(picked.len(), 2);
         assert_eq!(picked[0].url.as_str(), "https://old.reddit.com/r/v");
         assert!(picked[0].destination.is_none());
-        assert_eq!(picked[0].limits, RequestLimits::default());
+        let default = discoclip_engine::policy::Policy::default();
+        assert_eq!(picked[0].policy.limits, default.limits);
+        assert_eq!(picked[0].policy.delivery, default.delivery);
+        assert_eq!(
+            DiscordPolicy::of(&picked[0]).unwrap(),
+            DiscordPolicy::default()
+        );
         assert!(picked[0].disabled_platforms.is_empty());
         assert!(
             picked[0]
@@ -334,28 +355,29 @@ mod tests {
     }
 
     #[test]
-    fn rules_carry_the_destination_and_profiles_the_limits() {
-        let mut with_destination = rule(1);
-        with_destination.post_to = Some(Id::new(50));
-        let limits = RequestLimits {
-            max_source_bytes: Some(1000),
-            max_duration_secs: Some(30),
-            max_height: Some(720),
-            max_capture_secs: None,
+    fn the_profile_carries_the_destination_and_the_policy() {
+        let mut in_force = InForce {
+            message_destination: Some(Id::new(50)),
+            ..InForce::default()
         };
-        let watcher = watcher_with(vec![with_destination], Vec::new(), limits);
+        in_force.policy.limits.max_height = 720;
+        in_force.discord.errors.debug = true;
+        let watcher = watcher_with(vec![rule(1)], in_force.clone(), Arc::new(Directory::new()));
         let picked = watcher.requests(&message(1, 9, &[], "https://a.example/v"));
         assert_eq!(picked[0].destination.as_deref(), Some("50"));
-        assert_eq!(picked[0].limits, limits);
+        assert_eq!(picked[0].policy.limits.max_height, 720);
         assert_eq!(picked[0].submitted_by.as_deref(), Some("discord:9"));
+        assert_eq!(DiscordPolicy::of(&picked[0]).unwrap(), in_force.discord);
     }
 
     #[test]
     fn users_and_roles_limit_who_is_heard() {
-        let mut restricted = rule(1);
-        restricted.allow_users = vec![Id::new(9)];
-        restricted.allow_roles = vec![Id::new(500)];
-        let watcher = watcher(vec![restricted]);
+        let in_force = InForce {
+            allow_users: vec![Id::new(9)],
+            allow_roles: vec![Id::new(500)],
+            ..InForce::default()
+        };
+        let watcher = watcher_with(vec![rule(1)], in_force, Arc::new(Directory::new()));
         let link = "https://a.example/v";
         assert_eq!(watcher.requests(&message(1, 9, &[], link)).len(), 1);
         assert_eq!(watcher.requests(&message(1, 10, &[500, 1], link)).len(), 1);
@@ -364,10 +386,69 @@ mod tests {
     }
 
     #[test]
-    fn bots_are_ignored() {
-        let watcher = watcher(vec![rule(1)]);
+    fn bots_are_ignored_unless_the_profile_takes_them() {
         let mut from_bot = message(1, 9, &[], "https://a.example/v");
         from_bot.author.bot = true;
-        assert!(watcher.requests(&from_bot).is_empty());
+        assert!(watcher(vec![rule(1)]).requests(&from_bot).is_empty());
+        let in_force = InForce {
+            bot_messages: BotMessages::Accept,
+            ..InForce::default()
+        };
+        let accepting = watcher_with(vec![rule(1)], in_force, Arc::new(Directory::new()));
+        assert_eq!(accepting.requests(&from_bot).len(), 1);
+    }
+
+    #[test]
+    fn own_posts_are_never_picked_up() {
+        let directory = Arc::new(Directory::new());
+        directory.add_own_poster(Id::new(9));
+        let in_force = InForce {
+            bot_messages: BotMessages::Accept,
+            ..InForce::default()
+        };
+        let watcher = watcher_with(vec![rule(1)], in_force, directory);
+        assert!(
+            watcher
+                .requests(&message(1, 9, &[], "https://a.example/v"))
+                .is_empty()
+        );
+        assert_eq!(
+            watcher
+                .requests(&message(1, 10, &[], "https://a.example/v"))
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn a_replacement_carries_the_text_it_replaces() {
+        let mut in_force = InForce::default();
+        in_force.discord.message.placement = Placement::Replace;
+        let watcher = watcher_with(vec![rule(1)], in_force.clone(), Arc::new(Directory::new()));
+        let picked = watcher.requests(&message(1, 9, &[], "look at this https://a.example/v"));
+        let policy = DiscordPolicy::of(&picked[0]).unwrap();
+        assert_eq!(
+            policy.original_text_value.as_deref(),
+            Some("look at this https://a.example/v")
+        );
+        in_force.discord.message.original_text = OriginalText::Drop;
+        let dropping = watcher_with(vec![rule(1)], in_force.clone(), Arc::new(Directory::new()));
+        let picked = dropping.requests(&message(1, 9, &[], "look https://a.example/v"));
+        assert!(
+            DiscordPolicy::of(&picked[0])
+                .unwrap()
+                .original_text_value
+                .is_none()
+        );
+        in_force.discord.message.original_text = OriginalText::Keep;
+        in_force.discord.message.placement = Placement::Reply;
+        let replying = watcher_with(vec![rule(1)], in_force, Arc::new(Directory::new()));
+        let picked = replying.requests(&message(1, 9, &[], "look https://a.example/v"));
+        assert!(
+            DiscordPolicy::of(&picked[0])
+                .unwrap()
+                .original_text_value
+                .is_none()
+        );
     }
 }

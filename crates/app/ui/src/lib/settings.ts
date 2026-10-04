@@ -47,10 +47,6 @@ export function unitOf(key: string): Unit | null {
 	return null;
 }
 
-const VIDEO_CONTAINERS = ['mp4', 'mov', 'mkv', 'webm'];
-const VIDEO_CODECS = ['h264', 'h265', 'vp9', 'vp8', 'av1'];
-const AUDIO_CODECS = ['aac', 'mp3', 'opus', 'vorbis', 'flac'];
-
 /** What a key does, where its name does not say. */
 export const DESCRIPTIONS: Record<string, string> = {
 	'engine.archive.enabled':
@@ -78,7 +74,12 @@ export const DESCRIPTIONS: Record<string, string> = {
 	'web.trusted_proxies':
 		'Reverse proxies in front of the app, whose forwarding headers are believed for the browser’s address, scheme and host.',
 	'local.dir': 'Where media from links submitted in the web app is kept.',
-	'local.max_bytes': 'The largest file kept for a link submitted in the web app.',
+	'discord.upload.grace_secs':
+		'Seconds every upload gets before its size is counted: for Discord to take the request and answer it.',
+	'discord.upload.min_rate_bytes_per_sec':
+		'The slowest upload rate a job is given credit for. A file gets its size at this rate on top of the grace.',
+	'discord.upload.attempts':
+		'How many times an upload is sent when the connection fails or Discord answers with a server error.',
 	'backup.dir': 'Where database backups are written.',
 	'backup.keep': 'How many backups are kept before the oldest is removed.'
 };
@@ -95,13 +96,7 @@ const CHOICES: Record<string, string[]> = {
 		'videotoolbox',
 		'amf',
 		'v4l2m2m'
-	],
-	'local.target.container': VIDEO_CONTAINERS,
-	'local.target.video_codec': VIDEO_CODECS,
-	'local.target.audio_codec': AUDIO_CODECS,
-	'discord.target.container': VIDEO_CONTAINERS,
-	'discord.target.video_codec': VIDEO_CODECS,
-	'discord.target.audio_codec': AUDIO_CODECS
+	]
 };
 
 /** What is stored for a key: the row at it, or the rows beneath it when it holds a section. */

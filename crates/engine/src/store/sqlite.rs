@@ -81,6 +81,20 @@ CREATE INDEX IF NOT EXISTS jobs_guild ON jobs(guild_id, status, created_at DESC)
 CREATE INDEX IF NOT EXISTS jobs_channel ON jobs(channel_id, status, created_at DESC);
 ",
     },
+    Migration {
+        version: 4,
+        name: "jobs.dedupe_columns",
+        sql: "
+ALTER TABLE jobs ADD COLUMN url_key TEXT;
+ALTER TABLE jobs ADD COLUMN media_key TEXT;
+ALTER TABLE jobs ADD COLUMN media_hash TEXT;
+UPDATE jobs SET media_key = json_extract(data, '$.artifacts.resolved.resolver') || ':' || json_extract(data, '$.artifacts.resolved.id')
+ WHERE json_extract(data, '$.artifacts.resolved.id') IS NOT NULL AND json_extract(data, '$.artifacts.resolved.id') <> '';
+CREATE INDEX IF NOT EXISTS jobs_url_key ON jobs(url_key, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS jobs_media_key ON jobs(media_key, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS jobs_media_hash ON jobs(media_hash, status, created_at DESC);
+",
+    },
 ];
 
 impl From<rusqlite::Error> for StoreError {
@@ -136,6 +150,7 @@ impl SqliteStore {
             })
             .await?;
         store.migrate(SCOPE, MIGRATIONS).await?;
+        store.call(backfill_url_keys).await?;
         Ok(store)
     }
 
@@ -209,6 +224,28 @@ impl SqliteStore {
     }
 }
 
+/// Fills `url_key` for rows written before the column existed
+fn backfill_url_keys(conn: &mut Connection) -> Result<(), StoreError> {
+    let tx = conn.transaction()?;
+    let rows: Vec<(String, String)> = {
+        let mut stmt = tx.prepare("SELECT id, url FROM jobs WHERE url_key IS NULL")?;
+        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        rows.collect::<Result<_, _>>()?
+    };
+    for (id, url) in rows {
+        let key = match url::Url::parse(&url) {
+            Ok(parsed) => crate::dedupe::url_key(&parsed),
+            Err(_) => url,
+        };
+        tx.execute(
+            "UPDATE jobs SET url_key = ?2 WHERE id = ?1",
+            params![id, key],
+        )?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
 fn nanos(ts: jiff::Timestamp) -> i64 {
     ts.as_nanosecond().clamp(i64::MIN as i128, i64::MAX as i128) as i64
 }
@@ -217,7 +254,7 @@ fn decode(data: String) -> Result<Job, StoreError> {
     Ok(serde_json::from_str(&data)?)
 }
 
-fn columns(job: &Job) -> Result<[Value; 14], StoreError> {
+fn columns(job: &Job) -> Result<[Value; 17], StoreError> {
     let data = serde_json::to_string(job)?;
     Ok([
         Value::Text(job.id.to_string()),
@@ -249,6 +286,16 @@ fn columns(job: &Job) -> Result<[Value; 14], StoreError> {
             .clone()
             .map_or(Value::Null, Value::Text),
         Value::Text(job.media().as_str().to_string()),
+        Value::Text(crate::dedupe::url_key(&job.request.url)),
+        job.artifacts
+            .resolved
+            .as_ref()
+            .and_then(crate::dedupe::media_key)
+            .map_or(Value::Null, Value::Text),
+        job.artifacts
+            .media_hash
+            .clone()
+            .map_or(Value::Null, Value::Text),
     ])
 }
 
@@ -356,8 +403,8 @@ impl JobStore for SqliteStore {
         self.call(move |conn| {
             let values = columns(&job)?;
             conn.execute(
-                "INSERT INTO jobs (id, source, status, created_at, updated_at, data, url, title, resolver, parent_id, submitted_by, guild_id, channel_id, media, finished_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                "INSERT INTO jobs (id, source, status, created_at, updated_at, data, url, title, resolver, parent_id, submitted_by, guild_id, channel_id, media, url_key, media_key, media_hash, finished_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
                 rusqlite::params_from_iter(values.into_iter().chain(std::iter::once(
                     job.finished_at.map_or(Value::Null, |t| Value::Integer(nanos(t))),
                 ))),
@@ -374,7 +421,7 @@ impl JobStore for SqliteStore {
             let changed = conn.execute(
                 "UPDATE jobs SET source = ?2, status = ?3, created_at = ?4, updated_at = ?5, data = ?6, url = ?7,
                  title = ?8, resolver = ?9, parent_id = ?10, submitted_by = ?11, guild_id = ?12, channel_id = ?13,
-                 media = ?14, finished_at = ?15 WHERE id = ?1",
+                 media = ?14, url_key = ?15, media_key = ?16, media_hash = ?17, finished_at = ?18 WHERE id = ?1",
                 rusqlite::params_from_iter(values.into_iter().chain(std::iter::once(
                     job.finished_at.map_or(Value::Null, |t| Value::Integer(nanos(t))),
                 ))),
@@ -517,6 +564,41 @@ impl JobStore for SqliteStore {
                 "SELECT status, COUNT(*) FROM jobs WHERE created_at >= ? GROUP BY status",
                 vec![Value::Integer(nanos(since))],
             )
+        })
+        .await
+    }
+
+    async fn find_finished_by_url(
+        &self,
+        url_key: &str,
+        media_key: Option<&str>,
+    ) -> Result<Vec<Job>, StoreError> {
+        let url_key = url_key.to_string();
+        let media_key = media_key.map(str::to_string);
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT data FROM jobs WHERE status = 'done' \
+                 AND (url_key = ?1 OR (?2 IS NOT NULL AND media_key = ?2)) \
+                 AND json_extract(data, '$.artifacts.archived') IS NOT NULL \
+                 ORDER BY created_at DESC, id DESC LIMIT 20",
+            )?;
+            let rows =
+                stmt.query_map(params![url_key, media_key], |row| row.get::<_, String>(0))?;
+            rows.map(|row| decode(row?)).collect()
+        })
+        .await
+    }
+
+    async fn find_finished_by_hash(&self, media_hash: &str) -> Result<Vec<Job>, StoreError> {
+        let media_hash = media_hash.to_string();
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT data FROM jobs WHERE status = 'done' AND media_hash = ?1 \
+                 AND json_extract(data, '$.artifacts.archived') IS NOT NULL \
+                 ORDER BY created_at DESC, id DESC LIMIT 20",
+            )?;
+            let rows = stmt.query_map(params![media_hash], |row| row.get::<_, String>(0))?;
+            rows.map(|row| decode(row?)).collect()
         })
         .await
     }

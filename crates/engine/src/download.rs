@@ -104,7 +104,7 @@ impl DownloadContext {
     pub fn new(max_bytes: u64) -> Self {
         Self {
             max_bytes,
-            max_height: crate::config::Limits::default().max_height,
+            max_height: crate::policy::Limits::default().max_height,
             max_live: Duration::from_secs(3 * 60 * 60),
             stop: CancellationToken::new(),
             capture: CaptureNotice::unheard(),

@@ -10,11 +10,13 @@
 	import ErrorState from '$lib/components/ErrorState.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Bytes from '$lib/components/Bytes.svelte';
+	import ChipList from '$lib/components/ChipList.svelte';
 	import Duration from '$lib/components/Duration.svelte';
 	import Timestamp from '$lib/components/Timestamp.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import Status from '$lib/components/Status.svelte';
 	import { number } from '$lib/format';
+	import { namedSections } from '$lib/profile';
 	import { session } from '$lib/session.svelte';
 	import { notify, reportError } from '$lib/toast.svelte';
 
@@ -94,6 +96,7 @@
 	const columns: Column<Profile>[] = [
 		{ key: 'name', label: 'Profile', cell: nameCell, sortable: true, value: (p) => p.name },
 		{ key: 'limits', label: 'Limits', cell: limitsCell },
+		{ key: 'sections', label: 'Sections', cell: sectionsCell },
 		{ key: 'platforms', label: 'Platforms', value: platforms, class: 'max-w-64 truncate' },
 		{
 			key: 'updated',
@@ -119,9 +122,10 @@
 			{#if l?.max_height}<span>{l.max_height} px</span>{/if}
 			{#if l?.max_capture_secs}<span>capture <Duration value={l.max_capture_secs} /></span>{/if}
 		</span>
-	{:else}
-		{profile.id === defaultId ? 'Server limits' : 'Inherited'}
 	{/if}
+{/snippet}
+{#snippet sectionsCell(profile: Profile)}
+	<ChipList items={namedSections(profile)} />
 {/snippet}
 {#snippet nameCell(profile: Profile)}
 	<div class="min-w-0">

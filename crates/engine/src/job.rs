@@ -3,14 +3,14 @@ use std::fmt;
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 
-use crate::config::Limits;
 use url::Url;
 use uuid::Uuid;
 
 use crate::archive::ArchiveEntry;
 use crate::download::LocalSubtitle;
 use crate::media::{LocalFile, MediaKind};
-use crate::publish::Published;
+use crate::policy::{Limits, Policy};
+use crate::publish::{LinkTarget, Published};
 use crate::resolve::{ClipRange, Resolved};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -101,7 +101,7 @@ impl RequestLimits {
         }
     }
 
-    /// The engine's `limits` tightened by these.
+    /// The policy's `limits` tightened by these
     pub fn applied_to(&self, limits: &Limits) -> Limits {
         Limits {
             max_source_bytes: self
@@ -116,16 +116,19 @@ impl RequestLimits {
             max_height: self
                 .max_height
                 .map_or(limits.max_height, |mine| mine.min(limits.max_height)),
+            max_capture_secs: self
+                .max_capture_secs
+                .map_or(limits.max_capture_secs, |mine| {
+                    mine.min(limits.max_capture_secs)
+                }),
         }
     }
 
-    /// How long a live stream is captured under these limits: the request's own cap
-    /// tightened by the engine's `max_capture_secs`, and by the duration limit, since a
-    /// recording longer than that would be refused once made.
-    pub fn capture_secs(&self, limits: &Limits, max_capture_secs: u64) -> u64 {
+    /// Capture length under these limits, bounded by the duration limit a recording must meet
+    pub fn capture_secs(&self, limits: &Limits) -> u64 {
         let applied = self.applied_to(limits);
-        self.max_capture_secs
-            .map_or(max_capture_secs, |mine| mine.min(max_capture_secs))
+        applied
+            .max_capture_secs
             .min(applied.max_duration_secs.unwrap_or(u64::MAX))
     }
 }
@@ -196,6 +199,9 @@ pub struct Request {
     /// their resolvers are never offered the link.
     #[serde(default)]
     pub disabled_platforms: Vec<String>,
+    /// The policy in force where the link was seen, which the job runs under
+    #[serde(default)]
+    pub policy: Policy,
 }
 
 impl Request {
@@ -210,6 +216,7 @@ impl Request {
             retry_of: None,
             submitted_by: None,
             disabled_platforms: Vec::new(),
+            policy: Policy::default(),
         }
     }
 }
@@ -376,6 +383,14 @@ pub struct Artifacts {
 
     /// Why a link was posted rather than the file, when one was.
     pub link_reason: Option<String>,
+    /// The page a link delivery points at
+    pub link: Option<LinkTarget>,
+    /// SHA-256 of the source bytes, hex
+    pub media_hash: Option<String>,
+    /// The finished job whose archived media this one published again
+    pub reused_from: Option<JobId>,
+    /// Where the earlier job's post went, for the destination to point at
+    pub earlier_post: Option<Url>,
     pub published: Option<Published>,
     pub archived: Option<ArchiveEntry>,
     pub subtitles: Vec<LocalSubtitle>,
@@ -474,6 +489,23 @@ impl Job {
             }
         }
     }
+
+    /// The log as one text, headed by what the job is, for attaching to a report
+    pub fn render_log(&self) -> String {
+        let mut text = format!(
+            "job {}\nurl {}\norigin {} {}\nstatus {:?}\n\n",
+            self.id,
+            self.request.url,
+            self.request.origin.source,
+            self.request.origin.reference,
+            self.status
+        );
+        for entry in &self.log {
+            let stage = entry.stage.map_or("-", |s| s.as_str());
+            text.push_str(&format!("{} [{stage}] {}\n", entry.at, entry.message));
+        }
+        text
+    }
 }
 
 #[cfg(test)]
@@ -486,6 +518,7 @@ mod limit_tests {
             max_source_bytes: 100,
             max_duration_secs: Some(60),
             max_height: 720,
+            max_capture_secs: 3600,
         };
         assert_eq!(RequestLimits::default().applied_to(&engine), engine);
         let tighter = RequestLimits {
@@ -524,32 +557,59 @@ mod limit_tests {
     }
 
     #[test]
-    fn capture_length_is_the_tightest_of_request_engine_and_duration_limits() {
+    fn capture_length_is_the_tightest_of_request_policy_and_duration_limits() {
         let engine = Limits {
             max_source_bytes: 100,
             max_duration_secs: Some(600),
             max_height: 720,
+            max_capture_secs: 3600,
         };
-        assert_eq!(RequestLimits::default().capture_secs(&engine, 3600), 600);
+        assert_eq!(RequestLimits::default().capture_secs(&engine), 600);
         let unlimited = Limits {
             max_duration_secs: None,
             ..engine.clone()
         };
-        assert_eq!(
-            RequestLimits::default().capture_secs(&unlimited, 3600),
-            3600
-        );
+        assert_eq!(RequestLimits::default().capture_secs(&unlimited), 3600);
         let capped = RequestLimits {
             max_capture_secs: Some(120),
             ..RequestLimits::default()
         };
-        assert_eq!(capped.capture_secs(&unlimited, 3600), 120);
+        assert_eq!(capped.capture_secs(&unlimited), 120);
         let loose = RequestLimits {
             max_capture_secs: Some(9000),
             max_duration_secs: Some(60),
             ..RequestLimits::default()
         };
-        assert_eq!(loose.capture_secs(&unlimited, 3600), 60);
+        assert_eq!(loose.capture_secs(&unlimited), 60);
+    }
+
+    #[test]
+    fn the_log_renders_as_text() {
+        let origin = Origin {
+            source: SourceId::new("local"),
+            reference: "x".into(),
+            url: None,
+            guild: None,
+            channel: None,
+        };
+        let mut job = Job::new(Request::new(
+            origin,
+            Url::parse("https://a.test/v").unwrap(),
+        ));
+        job.log.push(LogEntry {
+            at: Timestamp::UNIX_EPOCH,
+            stage: Some(Stage::Resolve),
+            message: "looked".into(),
+        });
+        job.log.push(LogEntry {
+            at: Timestamp::UNIX_EPOCH,
+            stage: None,
+            message: "done".into(),
+        });
+        let text = job.render_log();
+        assert!(text.starts_with(&format!("job {}\nurl https://a.test/v\n", job.id)));
+        assert!(text.contains("[resolve] looked\n"));
+        assert!(text.ends_with("[-] done\n"));
     }
 
     #[test]

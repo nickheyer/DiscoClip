@@ -1,4 +1,5 @@
-//! Publishes finished media to the local file system for jobs submitted from the web app.
+//! Publishes finished media to the local file system for jobs submitted from the web app,
+//! made as the policy on the request says.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
@@ -6,7 +7,7 @@ use std::sync::{Arc, RwLock};
 use async_trait::async_trait;
 use discoclip_engine::job::{Job, SourceId};
 use discoclip_engine::media::{LocalFile, safe_stem};
-use discoclip_engine::publish::{Constraints, PublishError, Published, Publisher};
+use discoclip_engine::publish::{PublishError, Published, Publisher};
 use jiff::Timestamp;
 
 use crate::settings::LocalConfig;
@@ -29,13 +30,9 @@ impl LocalPublisher {
         }
     }
 
-    /// A publisher with settings of its own, for tests and for one-off use.
-    pub fn with_config(dir: PathBuf, max_bytes: u64) -> Self {
-        Self::new(Arc::new(RwLock::new(LocalConfig {
-            dir,
-            max_bytes,
-            target: Default::default(),
-        })))
+    /// A publisher writing to `dir`, for tests and for one-off use
+    pub fn with_dir(dir: PathBuf) -> Self {
+        Self::new(Arc::new(RwLock::new(LocalConfig { dir })))
     }
 
     fn config(&self) -> LocalConfig {
@@ -65,19 +62,8 @@ impl Publisher for LocalPublisher {
         &self.source
     }
 
-    async fn constraints(&self, _job: &Job) -> Result<Constraints, PublishError> {
-        let config = self.config();
-        Ok(config.target.constraints(config.max_bytes))
-    }
-
     async fn publish(&self, job: &Job, file: &LocalFile) -> Result<Published, PublishError> {
         let config = self.config();
-        if file.size > config.max_bytes {
-            return Err(PublishError::TooLarge {
-                size: file.size,
-                max: config.max_bytes,
-            });
-        }
         let dest = Self::destination(&config.dir, job, &file.path);
         tokio::fs::create_dir_all(&config.dir).await?;
         tokio::fs::copy(&file.path, &dest).await?;
@@ -86,6 +72,7 @@ impl Publisher for LocalPublisher {
             reference: absolute.to_string_lossy().into_owned(),
             url: None,
             at: Timestamp::now(),
+            notes: Vec::new(),
         })
     }
 }

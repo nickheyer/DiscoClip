@@ -449,7 +449,7 @@ mod tests {
                 .unwrap();
             let variant = crate::plan::select_variant(
                 &resolved.variants,
-                &crate::config::Limits::default(),
+                &crate::policy::Limits::default(),
                 PLATFORM,
                 resolved.media,
                 "en",

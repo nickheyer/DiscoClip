@@ -1,5 +1,5 @@
-use crate::config::Limits;
 use crate::media::{LocalFile, MediaInfo, MediaKind, VideoCodec};
+use crate::policy::Limits;
 use crate::publish::Constraints;
 use crate::resolve::{Variant, VariantKind};
 use crate::transcode::{Target, TranscodeError};
@@ -353,6 +353,7 @@ mod tests {
             max_source_bytes: 1000,
             max_duration_secs: None,
             max_height: 1080,
+            max_capture_secs: 3600,
         }
     }
 

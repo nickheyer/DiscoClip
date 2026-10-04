@@ -72,7 +72,7 @@ tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.7", features = ["trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-twilight-cache-inmemory = "0.17"
+twilight-cache-inmemory = { version = "0.17", features = ["permission-calculator"] }
 twilight-gateway = { version = "0.17", default-features = false, features = ["rustls-platform-verifier", "twilight-http"] }
 twilight-http = "0.17"
 twilight-http-ratelimiting = "0.17"

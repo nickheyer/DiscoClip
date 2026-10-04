@@ -696,6 +696,10 @@ fn api(state: AppState) -> Router {
             "/profiles/assignments/{scope}",
             put(profiles::assign).delete(profiles::unassign),
         )
+        .route(
+            "/profiles/assignments/{scope}/overlay",
+            put(profiles::patch_overlay),
+        )
         .route("/profiles/effective", get(profiles::effective))
         .route(
             "/profiles/{id}",

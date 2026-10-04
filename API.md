@@ -823,6 +823,8 @@ Create a profile.
 | Body | `ProfileInput` |
 | Response | `201` `Profile` |
 | Errors | `400` `401` `403` `409` |
+| Bad request | `400` for an unknown platform, preset or `delivery.view`, or an `output` the server cannot make |
+| Conflict | `409` for a name in use, a `delivery.view` turned off, or a link choice while no public address is known |
 
 ### GET /api/profiles/{id}
 
@@ -846,6 +848,8 @@ Update a profile.
 | Body | `ProfileInput` |
 | Response | `200` `Profile` |
 | Errors | `400` `401` `403` `404` `409` |
+| Bad request | as `POST` · also `400` for the built-in profile leaving a leaf out |
+| Conflict | as `POST` |
 
 ### DELETE /api/profiles/{id}
 
@@ -905,6 +909,21 @@ Remove an assignment to restore inheritance.
 | Errors | `400` `401` `403` `409` |
 | Conflict | `409` for `global` |
 
+### PUT /api/profiles/assignments/{scope}/overlay
+
+Replace the sections named, in the profile that is the scope's own.
+
+| Field | Value |
+|---|---|
+| Auth | as `PUT /api/profiles/assignments/{scope}` · `output` and `upload` also need `manage_settings` |
+| Path | `scope` `ScopeKey` · not `global` |
+| Body | `SectionsPatch` · at least one section |
+| Response | `200` `Profile` |
+| Errors | `400` `401` `403` `409` |
+| Own profile | The one assigned at the scope alone, edited in place |
+| Shared or none | A profile made for the scope and assigned there: a copy of the shared one, or empty, with the patch laid over |
+| Bad request | `400` for `global`, an empty patch, or a value a profile would refuse |
+
 ### GET /api/profiles/effective
 
 Get effective profile settings.
@@ -937,7 +956,6 @@ Create a content view.
 | Body | `FrontendInput` |
 | Response | `201` `Frontend` |
 | Errors | `400` `401` `403` `409` |
-| Discord links | Requires `web.public_url` |
 
 ### GET /api/frontends/{id}
 
@@ -1828,29 +1846,145 @@ Reject an unknown command.
 | Field | Type | Required |
 |---|---|---|
 | `channel_id` | `snowflake \| null` | yes · `null`: entire server |
-| `post_to` | `snowflake \| null` | no · default: source channel |
-| `allow_users` | `snowflake[]` | no · default `[]` |
-| `allow_roles` | `snowflake[]` | no · default `[]` |
 | `enabled` | `bool` | no · default `true` |
 
 ### ProfileInput
+
+Every section leaf left out, or `null`, inherits the wider scope's. The built-in profile names every leaf.
 
 | Field | Type | Required |
 |---|---|---|
 | `name` | `string` | yes |
 | `description` | `string` | no |
 | `platforms` | `PlatformToggles` | no |
-| `limits` | `ProfileLimits` | no |
 | `audio_language` | `string \| null` · language tag · `null`: inherit | no |
+| `limits` | `ProfileLimits` | no |
+| `intake` | `IntakeOverlay` | no |
+| `output` | `TargetOverride` | no |
+| `upload` | `UploadOverlay` | no |
+| `delivery` | `DeliveryOverlay` | no |
+| `message` | `MessageOverlay` | no |
+| `errors` | `ErrorsOverlay` | no |
+| `dedupe` | `DedupeOverlay` | no |
 
 ### ProfileLimits
 
 | Field | Type | Required |
 |---|---|---|
-| `max_source_bytes` | `integer \| null` · > 0 | no |
-| `max_duration_secs` | `integer \| null` · `0`: reject all media | no |
-| `max_height` | `integer \| null` · > 0 | no |
-| `max_capture_secs` | `integer \| null` · capture seconds > 0 | no |
+| `max_source_bytes` | `integer` · > 0 | no |
+| `max_duration_secs` | `integer \| null` · left out: inherit · `null`: no bound · `0`: nothing with a running time | no |
+| `max_height` | `integer` · > 0 | no |
+| `max_capture_secs` | `integer` · capture seconds > 0 | no |
+
+### IntakeOverlay
+
+| Field | Type | Required |
+|---|---|---|
+| `allow_users` | `snowflake[]` · empty, with empty roles: everyone | no |
+| `allow_roles` | `snowflake[]` | no |
+| `bot_messages` | `"ignore" \| "accept"` · messages other bots and webhooks post | no |
+| `playlists` | `PlaylistsOverlay` | no |
+| `live` | `bool` · whether live streams are captured | no |
+
+### PlaylistsOverlay
+
+| Field | Type | Required |
+|---|---|---|
+| `enabled` | `bool` · each entry becomes a job of its own | no |
+| `max_entries` | `integer` · > 0 | no |
+
+### TargetOverride
+
+What media is made into. Checked as a whole against what the server can make: `400` `output: …`.
+
+| Field | Type | Required |
+|---|---|---|
+| `container` | `"mp4" \| "mov" \| "mkv" \| "webm"` | no |
+| `video_codec` | `"h264" \| "h265" \| "vp9" \| "vp8" \| "av1"` | no |
+| `audio_codec` | `"aac" \| "mp3" \| "opus" \| "vorbis" \| "flac"` | no |
+| `max_height` | `integer` · pixels | no |
+| `max_fps` | `integer` | no |
+| `audio_over_still` | `bool` · sound alone becomes a video over its cover art | no |
+| `audio_containers` | `("m4a" \| "mp3" \| "ogg" \| "opus" \| "flac" \| "wav")[]` · sound published as it is · empty: always as video | no |
+| `image_containers` | `("jpeg" \| "png" \| "webp" \| "gif")[]` · images published as they are · empty: refused | no |
+| `files` | `bool` · files that are neither video, audio nor images | no |
+
+### UploadOverlay
+
+| Field | Type | Required |
+|---|---|---|
+| `max_bytes` | `"auto" \| integer` · `"auto"`: what the destination takes · integer > 0 | no |
+
+### DeliveryOverlay
+
+Whether the destination gets the file or a link to the page that plays it. A link choice needs a public address: `web.public_url`, or the address the app is opened at.
+
+| Field | Type | Required |
+|---|---|---|
+| `mode` | `"auto" \| "upload" \| "link"` · `"auto"`: the file, unless too large or too reduced | no |
+| `view` | `"auto" \| uuid` · the content view a link points at · `"auto"`: the closest one that shows the job | no |
+| `floor` | `FloorOverlay` | no |
+| `under_floor` | `"link" \| "upload" \| "skip"` · a video the upload budget would reduce under the floor | no |
+| `over_limit` | `"link" \| "skip"` · media the destination cannot take at any size | no |
+| `link_max_bytes` | `integer` · > 0 · bound of the output made for the page | no |
+
+### FloorOverlay
+
+| Field | Type | Required |
+|---|---|---|
+| `min_height` | `integer` · pixels > 0 | no |
+| `min_bitrate` | `integer` · bits/s > 0 | no |
+
+### MessageOverlay
+
+| Field | Type | Required |
+|---|---|---|
+| `destination` | `snowflake \| null` · left out: inherit · `null`: where the link was seen | no |
+| `placement` | `"reply" \| "post" \| "replace"` · `"replace"` removes the message that carried the link | no |
+| `replace_as` | `"bot" \| "author"` · `"author"`: a webhook post under the author's name | no |
+| `original_text` | `"keep" \| "drop"` · the replaced message's text | no |
+| `original_embeds` | `"keep" \| "suppress"` · the embeds Discord gave the link | no |
+| `permissions` | `"check" \| "assume"` · whether the bot checks its permissions first | no |
+| `include` | `IncludeOverlay` | no |
+
+### IncludeOverlay
+
+The lines a post carries beside the media.
+
+| Field | Type | Required |
+|---|---|---|
+| `source_link` | `bool` | no |
+| `title` | `bool` | no |
+| `platform` | `bool` | no |
+| `uploader` | `bool` | no |
+| `requester` | `"none" \| "name" \| "mention"` | no |
+| `duration` | `bool` | no |
+| `brand` | `bool` | no |
+| `earlier_post` | `bool` · a link to the post the media was first published in | no |
+
+### ErrorsOverlay
+
+| Field | Type | Required |
+|---|---|---|
+| `debug` | `bool` · posts the failure, the job log and where to report it in the channel | no |
+
+### DedupeOverlay
+
+| Field | Type | Required |
+|---|---|---|
+| `enabled` | `bool` · media already fetched for an earlier job is published again from the archive | no |
+| `match` | `"url" \| "content" \| "either"` | no |
+
+### SectionsPatch
+
+Each section present replaces the scope's own whole.
+
+| Field | Type | Required |
+|---|---|---|
+| `intake` | `IntakeOverlay` | no |
+| `message` | `MessageOverlay` | no |
+| `output` | `TargetOverride` | no · `manage_settings` |
+| `upload` | `UploadOverlay` | no · `manage_settings` |
 
 ### PlatformToggles
 
@@ -1872,7 +2006,7 @@ Reject an unknown command.
 | `scope` | `ContentScope` | no · default: all jobs |
 | `access` | `Access` | no · default: no access |
 | `downloads` | `bool` | no · default `true` |
-| `links` | `LinkPolicy` | no · default: off |
+| `signed_link_days` | `integer` · > 0 · how long the link a page hands Discord to play the media stays good | no · default `30` |
 
 ### ContentScope
 
@@ -1896,16 +2030,6 @@ Reject an unknown command.
 | `providers` | `string[]` · provider IDs | no |
 | `discord_members` | `bool` · membership required in all scoped servers including channel servers | no |
 | `discord_users` | `snowflake[]` · allowed Discord users | no |
-
-### LinkPolicy
-
-| Field | Type | Required |
-|---|---|---|
-| `enabled` | `bool` | no · default `false` |
-| `min_height` | `integer` · pixels | no · default `720` |
-| `min_bitrate` | `integer` · bits/s | no · default `1500000` |
-| `max_bytes` | `integer` · output size limit | no · default `2147483648` (2 GiB) |
-| `signed_link_days` | `integer` | no · default `30` |
 
 ### SubmitRequest
 
@@ -2257,27 +2381,16 @@ Reject an unknown command.
 | `guild_name` | `string \| null` · as the bot recorded it on joining |
 | `guild_icon` | `string \| null` · icon hash on Discord's CDN |
 | `channel_name` | `string \| null` · while the bot sees the channel |
-| `post_to_name` | `string \| null` · while the bot sees the channel |
 
 ### Profile
 
 | Field | Type |
 |---|---|
 | `id` | `uuid` |
-| `...ProfileInput` | `ProfileInput` |
-| `builtin` | `bool` · built-in and nondeletable |
-| `server_limits` | `ServerLimits` · profile caps |
+| `...ProfileInput` | `ProfileInput` · every section present, a leaf not named read back as `null`, except `limits.max_duration_secs` and `message.destination`, which are left out when not named |
+| `builtin` | `bool` · built-in and nondeletable · names every leaf |
 | `created_at` | `timestamp` |
 | `updated_at` | `timestamp` |
-
-### ServerLimits
-
-| Field | Type |
-|---|---|
-| `max_source_bytes` | `integer` |
-| `max_duration_secs` | `integer \| null` · `null`: unlimited |
-| `max_height` | `integer` |
-| `max_capture_secs` | `integer` · maximum capture seconds |
 
 ### Preset
 
@@ -2314,21 +2427,146 @@ Reject an unknown command.
 | `profile_id` | `uuid` |
 | `updated_at` | `timestamp` |
 
-### EffectiveProfile
+### EffectivePolicy
+
+What the profiles assigned at a place add up to, every value settled. The built-in profile lays first, then each assignment of the chain global → server → channel → member.
 
 | Field | Type |
 |---|---|
 | `platforms` | `object` of platform ID → `bool` |
-| `limits` | `RequestLimits` · `null`: engine limit |
-| `audio_language` | `string \| null` · language from the most specific assignment |
-| `applied` | `Assignment[]` · global → server → channel → member |
+| `limits` | `Limits` |
+| `audio_language` | `string \| null` · from the narrowest profile that names one |
+| `intake` | `EffectiveIntake` |
+| `output` | `DestinationTarget` |
+| `upload` | `UploadPolicy` |
+| `delivery` | `DeliveryPolicy` |
+| `message` | `EffectiveMessage` |
+| `errors` | `ErrorsPolicy` |
+| `dedupe` | `DedupePolicy` |
+| `applied` | `Assignment[]` · widest first |
 
 ### EffectiveView
 
 | Field | Type |
 |---|---|
-| `...EffectiveProfile` | `EffectiveProfile` |
+| `...EffectivePolicy` | `EffectivePolicy` |
 | `disabled` | `string[]` · disabled platform IDs |
+
+### Limits
+
+| Field | Type |
+|---|---|
+| `max_source_bytes` | `integer` |
+| `max_duration_secs` | `integer \| null` · `null`: no bound |
+| `max_height` | `integer` |
+| `max_capture_secs` | `integer` · capture seconds |
+
+### EffectiveIntake
+
+| Field | Type |
+|---|---|
+| `allow_users` | `snowflake[]` · empty, with empty roles: everyone |
+| `allow_roles` | `snowflake[]` |
+| `bot_messages` | `"ignore" \| "accept"` |
+| `playlists` | `Playlists` |
+| `live` | `bool` |
+
+### Playlists
+
+| Field | Type |
+|---|---|
+| `enabled` | `bool` |
+| `max_entries` | `integer` |
+
+### DestinationTarget
+
+| Field | Type |
+|---|---|
+| `container` | `"mp4" \| "mov" \| "mkv" \| "webm"` |
+| `video_codec` | `"h264" \| "h265" \| "vp9" \| "vp8" \| "av1"` |
+| `audio_codec` | `"aac" \| "mp3" \| "opus" \| "vorbis" \| "flac"` |
+| `max_height` | `integer \| null` · `null`: no cap |
+| `max_fps` | `integer \| null` |
+| `audio_over_still` | `bool` |
+| `audio_containers` | `("m4a" \| "mp3" \| "ogg" \| "opus" \| "flac" \| "wav")[]` |
+| `image_containers` | `("jpeg" \| "png" \| "webp" \| "gif")[]` |
+| `files` | `bool` |
+
+### UploadPolicy
+
+| Field | Type |
+|---|---|
+| `max_bytes` | `"auto" \| integer` |
+
+### DeliveryPolicy
+
+| Field | Type |
+|---|---|
+| `mode` | `"auto" \| "upload" \| "link"` |
+| `view` | `"auto" \| uuid` |
+| `floor` | `QualityFloor` |
+| `under_floor` | `"link" \| "upload" \| "skip"` |
+| `over_limit` | `"link" \| "skip"` |
+| `link_max_bytes` | `integer` |
+
+### QualityFloor
+
+| Field | Type |
+|---|---|
+| `min_height` | `integer` · pixels |
+| `min_bitrate` | `integer` · bits/s |
+
+### EffectiveMessage
+
+| Field | Type |
+|---|---|
+| `destination` | `snowflake \| null` · `null`: where the link was seen |
+| `placement` | `"reply" \| "post" \| "replace"` |
+| `replace_as` | `"bot" \| "author"` |
+| `original_text` | `"keep" \| "drop"` |
+| `original_embeds` | `"keep" \| "suppress"` |
+| `permissions` | `"check" \| "assume"` |
+| `include` | `Include` |
+
+### Include
+
+| Field | Type |
+|---|---|
+| `source_link` | `bool` |
+| `title` | `bool` |
+| `platform` | `bool` |
+| `uploader` | `bool` |
+| `requester` | `"none" \| "name" \| "mention"` |
+| `duration` | `bool` |
+| `brand` | `bool` |
+| `earlier_post` | `bool` |
+
+### ErrorsPolicy
+
+| Field | Type |
+|---|---|
+| `debug` | `bool` |
+
+### DedupePolicy
+
+| Field | Type |
+|---|---|
+| `enabled` | `bool` |
+| `match` | `"url" \| "content" \| "either"` |
+
+### Policy
+
+What the engine runs a job under, stamped on its request when it is submitted.
+
+| Field | Type |
+|---|---|
+| `limits` | `Limits` |
+| `intake` | `{ "playlists": Playlists, "live": bool }` |
+| `output` | `DestinationTarget` |
+| `upload` | `UploadPolicy` |
+| `delivery` | `DeliveryPolicy` |
+| `dedupe` | `DedupePolicy` |
+| `publisher` | `object` · what the origin's publisher reads · Discord: `message` as `EffectiveMessage` without `destination`, `errors`, and `original_text_value` while a replacement keeps the text · left out for a web submission |
 
 ### Frontend
 
@@ -2633,6 +2871,8 @@ Reject an unknown command.
 | `parent` | `uuid \| null` |
 | `retry_of` | `uuid \| null` |
 | `submitted_by` | `string \| null` |
+| `disabled_platforms` | `string[]` · resolver IDs turned off where the link was seen |
+| `policy` | `Policy` |
 
 ### RequestLimits
 

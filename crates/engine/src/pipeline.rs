@@ -12,6 +12,8 @@ use url::Url;
 
 use crate::archive::Archiver;
 use crate::config::EngineConfig;
+use crate::dedupe;
+use crate::deliver::{self, LinkAvailability, Moment, Outcome};
 use crate::download::{
     CaptureNotice, DownloadContext, Downloaded, Downloader, LocalSubtitle, SubtitleChoice,
     subtitles,
@@ -24,13 +26,14 @@ use crate::job::{
 };
 use crate::media::{LocalFile, MediaInfo, MediaKind};
 use crate::plan::{self, Plan};
-use crate::publish::{self, Constraints, Publisher, QualityFloor};
+use crate::policy::{DeliveryPolicy, Limits, Policy};
+use crate::publish::{self, Constraints, LinkTarget, PublishError, Publisher, QualityFloor};
 use crate::resolve::SubtitleFormat;
 use crate::resolve::{ClipRange, Resolution, Resolved, ResolverRegistry, Variant};
 use crate::store::{JobStore, StoreError};
 use crate::transcode::{
     AudioTarget, BurnSource, ImageTarget, StillSource, Target, TranscodeError, Transcoder,
-    VideoTarget, clipped_duration,
+    VideoTarget, byte_budget_bps, clipped_duration,
 };
 
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
@@ -183,6 +186,17 @@ pub(crate) async fn run_job(
     if let Err(error) = ctx.transition(&mut job, status).await {
         tracing::error!(job = %job.id, "could not persist final status: {error}");
     }
+    if let JobStatus::Failed { stage, message } = &job.status
+        && let Some(publisher) = ctx.publishers.get(&job.request.origin.source)
+    {
+        let report = publisher.report_failure(&job, *stage, message);
+        if tokio::time::timeout(Duration::from_secs(60), report)
+            .await
+            .is_err()
+        {
+            tracing::warn!(job = %job.id, "failure report to the destination timed out");
+        }
+    }
     if job.status == JobStatus::Done {
         tidy_job_dir(&job, &job_dir).await;
     } else if job.status == JobStatus::Queued && job.artifacts.recording.is_some() {
@@ -252,7 +266,7 @@ async fn expand_playlist(
     playlist: crate::resolve::Playlist,
 ) -> Result<(), Interrupt> {
     let stage = Stage::Resolve;
-    let settings = ctx.config().playlists;
+    let settings = job.request.policy.intake.playlists.clone();
     if !settings.enabled {
         return Err(failed(stage)(StageError::Rejected(
             "playlist links are turned off".into(),
@@ -284,6 +298,7 @@ async fn expand_playlist(
         request.parent = Some(job.id);
         request.submitted_by = job.request.submitted_by.clone();
         request.disabled_platforms = job.request.disabled_platforms.clone();
+        request.policy = job.request.policy.clone();
         let child = Job::new(request);
         ctx.store
             .insert(&child)
@@ -356,13 +371,46 @@ async fn unless_interrupted<T>(
     }
 }
 
-/// What the resolve and download stages hand the rest of the job.
-struct Fetched {
+/// How many times a destination may lower its limit before the job gives up
+const LIMIT_LOWERINGS: usize = 3;
+
+/// What the resolve stage hands on
+struct Located {
     resolved: Resolved,
     variant: Variant,
     clip: Option<ClipRange>,
+}
+
+/// The source the rest of the job works from
+struct Fetched {
     source: LocalFile,
     subtitles: Vec<LocalSubtitle>,
+}
+
+/// What the destination takes, and whether a page is there to link to
+struct Destination {
+    constraints: Constraints,
+    link: LinkAvailability,
+    target: Option<LinkTarget>,
+}
+
+/// Asks the publisher what its destination takes and which page it would link
+async fn destination(publisher: &dyn Publisher, job: &Job) -> Result<Destination, Interrupt> {
+    let stage = Stage::Resolve;
+    let constraints = publisher
+        .constraints(job)
+        .await
+        .map_err(|e| failed(stage)(e.into()))?;
+    let (link, target) = match publisher.link_target(job).await {
+        Ok(target) => (LinkAvailability::Available, Some(target)),
+        Err(PublishError::NoLink(why)) => (LinkAvailability::Unavailable(why), None),
+        Err(error) => return Err(failed(stage)(error.into())),
+    };
+    Ok(Destination {
+        constraints,
+        link,
+        target,
+    })
 }
 
 /// The recording a job interrupted mid-capture can carry on from: on disk, with bytes in
@@ -442,22 +490,15 @@ async fn capture_began(
     Ok(())
 }
 
-/// Resolves the link and fetches its media. A live capture is followed as it goes, with
-/// what it writes put on the job the moment it begins, and ends at its limit, at a
-/// person's `stop`, or when the stream ends.
-async fn resolve_and_download(
+/// Resolves the link under the limits and the intake policy, expanding a playlist into jobs
+async fn resolve_link(
     ctx: &Context,
     job: &mut Job,
-    job_dir: &Path,
-    stop: &CancellationToken,
     interrupt: &CancellationToken,
-    config: &EngineConfig,
-    limits: &crate::config::Limits,
-) -> Result<Fetched, Interrupt> {
+    limits: &Limits,
+    policy: &Policy,
+) -> Result<Located, Interrupt> {
     let url = job.request.url.clone();
-    let origin = job.request.origin.clone();
-
-    // Resolve
     let stage = Stage::Resolve;
     ctx.transition(job, JobStatus::Running { stage })
         .await
@@ -488,7 +529,7 @@ async fn resolve_and_download(
             duration.as_secs()
         ))));
     }
-    if resolved.live && limits.max_duration_secs.is_some_and(|l| l == 0) {
+    if resolved.live && !policy.intake.live {
         return Err(failed(stage)(StageError::Rejected(
             "live streams are not accepted here".into(),
         )));
@@ -515,8 +556,31 @@ async fn resolve_and_download(
     .await
     .map_err(|e| failed(stage)(e.into()))?;
     job.artifacts.resolved = Some(resolved.clone());
+    Ok(Located {
+        resolved,
+        variant,
+        clip,
+    })
+}
 
-    // Download
+/// Fetches the located media, following a live capture as it goes
+#[allow(clippy::too_many_arguments)]
+async fn download(
+    ctx: &Context,
+    job: &mut Job,
+    job_dir: &Path,
+    stop: &CancellationToken,
+    interrupt: &CancellationToken,
+    config: &EngineConfig,
+    limits: &Limits,
+    located: &Located,
+) -> Result<Fetched, Interrupt> {
+    let Located {
+        resolved,
+        variant,
+        clip,
+    } = located;
+    let origin = job.request.origin.clone();
     let stage = Stage::Download;
     ctx.transition(job, JobStatus::Running { stage })
         .await
@@ -539,14 +603,10 @@ async fn resolve_and_download(
     let context = DownloadContext {
         max_bytes: limits.max_source_bytes,
         max_height: limits.max_height,
-        max_live: Duration::from_secs(
-            job.request
-                .limits
-                .capture_secs(&config.limits, config.live.max_capture_secs),
-        ),
+        max_live: Duration::from_secs(job.request.limits.capture_secs(&job.request.policy.limits)),
         stop: stop.clone(),
         capture,
-        clip,
+        clip: *clip,
         audio_language: job.request.options.audio_language.clone(),
         platform: resolved.resolver.clone(),
         download: config.download.clone(),
@@ -562,7 +622,7 @@ async fn resolve_and_download(
     let publisher = ctx.publishers.get(&origin.source);
     let (progress, forwarder) = ctx.progress(job.id, stage);
     let downloaded = {
-        let download = downloader.download(&variant, job_dir, &context, progress);
+        let download = downloader.download(variant, job_dir, &context, progress);
         tokio::pin!(download);
         let mut listening = true;
         loop {
@@ -654,12 +714,259 @@ async fn resolve_and_download(
     .await
     .map_err(|e| failed(stage)(e.into()))?;
     Ok(Fetched {
-        resolved,
-        variant,
-        clip,
         source,
         subtitles: local_subtitles,
     })
+}
+
+/// The source to work from, an earlier job's archived media when the policy allows and it matches
+#[allow(clippy::too_many_arguments)]
+async fn fetch(
+    ctx: &Context,
+    job: &mut Job,
+    job_dir: &Path,
+    stop: &CancellationToken,
+    interrupt: &CancellationToken,
+    config: &EngineConfig,
+    limits: &Limits,
+    policy: &Policy,
+    dest: &Destination,
+    located: &Located,
+) -> Result<Fetched, Interrupt> {
+    let matching = policy.dedupe.matching;
+    if policy.dedupe.enabled && matching.by_url() && !located.resolved.live {
+        let stage = Stage::Resolve;
+        let candidates = ctx
+            .store
+            .find_finished_by_url(
+                &dedupe::url_key(&job.request.url),
+                dedupe::media_key(&located.resolved).as_deref(),
+            )
+            .await
+            .map_err(|e| failed(stage)(e.into()))?;
+        if let Some(source) = reuse(
+            ctx,
+            job,
+            job_dir,
+            candidates,
+            dest,
+            limits,
+            policy,
+            located.clip,
+            stage,
+            true,
+        )
+        .await?
+        {
+            return Ok(Fetched {
+                source,
+                subtitles: Vec::new(),
+            });
+        }
+    }
+    let fetched = download(ctx, job, job_dir, stop, interrupt, config, limits, located).await?;
+    if !policy.dedupe.enabled || job.artifacts.recording.is_some() {
+        return Ok(fetched);
+    }
+    let stage = Stage::Download;
+    let hash = unless_interrupted(interrupt, dedupe::sha256_file(&fetched.source.path))
+        .await?
+        .map_err(|e| failed(stage)(StageError::Download(e.into())))?;
+    job.artifacts.media_hash = Some(hash.clone());
+    if matching.by_content() {
+        let candidates = ctx
+            .store
+            .find_finished_by_hash(&hash)
+            .await
+            .map_err(|e| failed(stage)(e.into()))?;
+        if let Some(source) = reuse(
+            ctx,
+            job,
+            job_dir,
+            candidates,
+            dest,
+            limits,
+            policy,
+            located.clip,
+            stage,
+            false,
+        )
+        .await?
+        {
+            return Ok(Fetched {
+                source,
+                subtitles: fetched.subtitles,
+            });
+        }
+    }
+    Ok(fetched)
+}
+
+/// Whether an archived output goes to this destination as it is, at or above the floor
+fn fits(
+    output: &LocalFile,
+    reference: &LocalFile,
+    constraints: &Constraints,
+    limits: &Limits,
+    delivery: &DeliveryPolicy,
+) -> bool {
+    let Some(info) = output.info.as_ref() else {
+        return false;
+    };
+    let max_height = limits
+        .max_height
+        .min(constraints.max_height.unwrap_or(u32::MAX));
+    let still = (info.kind == MediaKind::Audio && constraints.renders_audio_as_video())
+        .then_some(StillSource::Waveform);
+    let target = build_target(
+        info.kind,
+        constraints,
+        Some(info),
+        max_height,
+        None,
+        None,
+        still,
+    );
+    let capped = Limits {
+        max_height,
+        ..limits.clone()
+    };
+    if !matches!(
+        plan::plan(output, Some(info), constraints, &capped, target),
+        Ok(Plan::Passthrough)
+    ) {
+        return false;
+    }
+    if info.kind != MediaKind::Video {
+        return true;
+    }
+    let reference_info = reference.info.as_ref().unwrap_or(info);
+    below_floor(
+        output,
+        &floor_for(&delivery.floor, reference, reference_info),
+    )
+    .is_none()
+}
+
+/// The archived media of the first candidate with the same options that fits, brought in as this job's source
+#[allow(clippy::too_many_arguments)]
+async fn reuse(
+    ctx: &Context,
+    job: &mut Job,
+    job_dir: &Path,
+    candidates: Vec<Job>,
+    dest: &Destination,
+    limits: &Limits,
+    policy: &Policy,
+    clip: Option<ClipRange>,
+    stage: Stage,
+    from_source: bool,
+) -> Result<Option<LocalFile>, Interrupt> {
+    let Some(archiver) = ctx.archiver.as_ref() else {
+        return Ok(None);
+    };
+    let io = |e: std::io::Error| failed(stage)(StageError::Download(e.into()));
+    for candidate in candidates {
+        let candidate_clip = candidate.request.options.clip.or(candidate
+            .artifacts
+            .resolved
+            .as_ref()
+            .and_then(|r| r.clip));
+        if candidate.id == job.id
+            || candidate.request.options != job.request.options
+            || candidate_clip != clip
+        {
+            continue;
+        }
+        let Some(entry) = candidate.artifacts.archived.clone() else {
+            continue;
+        };
+        let files = archiver.locate(&entry).await;
+        let title = candidate.title().unwrap_or("untitled").to_string();
+        let earlier_post = candidate
+            .artifacts
+            .published
+            .as_ref()
+            .and_then(|p| p.url.clone());
+        if let (Some(archived), Some(output)) = (files.output, candidate.artifacts.output.as_ref())
+            && let Some(info) = output.info.clone()
+        {
+            let archived = LocalFile {
+                info: Some(info),
+                ..archived
+            };
+            let reference = candidate.artifacts.source.as_ref().unwrap_or(output);
+            if fits(
+                &archived,
+                reference,
+                &dest.constraints,
+                limits,
+                &policy.delivery,
+            ) {
+                tokio::fs::create_dir_all(job_dir).await.map_err(io)?;
+                let ext = archived
+                    .path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("bin");
+                let copy = job_dir.join(format!("reused.{ext}"));
+                tokio::fs::copy(&archived.path, &copy).await.map_err(io)?;
+                job.artifacts.reused_from = Some(candidate.id);
+                job.artifacts.earlier_post = earlier_post;
+                if let Some(hash) = candidate.artifacts.media_hash.clone() {
+                    job.artifacts.media_hash = Some(hash);
+                }
+                job.artifacts.archived = Some(entry);
+                let skipped = if stage == Stage::Resolve {
+                    "Download and conversion skipped."
+                } else {
+                    "Conversion skipped."
+                };
+                ctx.note(
+                    job,
+                    Some(stage),
+                    format!(
+                        "Same media as job {} ({title}), finished {}: reusing its archived \
+                         output ({} bytes). {skipped}",
+                        candidate.id,
+                        candidate.finished_at.unwrap_or(candidate.updated_at),
+                        archived.size
+                    ),
+                )
+                .await
+                .map_err(|e| failed(stage)(e.into()))?;
+                return Ok(Some(LocalFile {
+                    path: copy,
+                    ..archived
+                }));
+            }
+        }
+        if from_source && let Some(source) = files.source {
+            let info = candidate
+                .artifacts
+                .source
+                .as_ref()
+                .and_then(|s| s.info.clone());
+            job.artifacts.reused_from = Some(candidate.id);
+            job.artifacts.earlier_post = earlier_post;
+            if let Some(hash) = candidate.artifacts.media_hash.clone() {
+                job.artifacts.media_hash = Some(hash);
+            }
+            ctx.note(
+                job,
+                Some(stage),
+                format!(
+                    "Same media as job {} ({title}): its archived output does not fit here. \
+                     Converting from its archived source instead. Download skipped.",
+                    candidate.id
+                ),
+            )
+            .await
+            .map_err(|e| failed(stage)(e.into()))?;
+            return Ok(Some(LocalFile { info, ..source }));
+        }
+    }
+    Ok(None)
 }
 
 async fn execute(
@@ -670,12 +977,19 @@ async fn execute(
     interrupt: &CancellationToken,
 ) -> Result<(), Interrupt> {
     let config = ctx.config();
-    let limits = job.request.limits.applied_to(&config.limits);
+    let policy = job.request.policy.clone();
+    let limits = job.request.limits.applied_to(&policy.limits);
     let origin = job.request.origin.clone();
+    let publisher = ctx.publishers.get(&origin.source).cloned().ok_or_else(|| {
+        failed(Stage::Resolve)(StageError::Rejected(format!(
+            "no publisher registered for source {}",
+            origin.source
+        )))
+    })?;
 
     // A capture the engine's stop interrupted carries on from its recording: what was
     // recorded is the source, and the job resumes at the transcode.
-    let fetched = match resumable(job).await {
+    let (located, recording) = match resumable(job).await {
         Some(recording) => {
             let resolved = job
                 .artifacts
@@ -700,46 +1014,190 @@ async fn execute(
             )
             .await
             .map_err(|e| failed(Stage::Download)(e.into()))?;
-            Fetched {
-                clip: job.request.options.clip.or(resolved.clip),
-                resolved,
-                variant,
-                source: recording,
-                subtitles: job.artifacts.subtitles.clone(),
-            }
+            (
+                Located {
+                    clip: job.request.options.clip.or(resolved.clip),
+                    resolved,
+                    variant,
+                },
+                Some(recording),
+            )
         }
+        None => match resolve_link(ctx, job, interrupt, &limits, &policy).await {
+            Ok(located) => (located, None),
+            Err(Interrupt::Expanded) => return Ok(()),
+            Err(other) => return Err(other),
+        },
+    };
+    let dest = destination(publisher.as_ref(), job).await?;
+    let fetched = match recording {
+        Some(source) => Fetched {
+            source,
+            subtitles: job.artifacts.subtitles.clone(),
+        },
         None => {
-            match resolve_and_download(ctx, job, job_dir, stop, interrupt, &config, &limits).await {
-                Ok(fetched) => fetched,
-                Err(Interrupt::Expanded) => return Ok(()),
-                Err(other) => return Err(other),
-            }
+            fetch(
+                ctx, job, job_dir, stop, interrupt, &config, &limits, &policy, &dest, &located,
+            )
+            .await?
         }
     };
-    let Fetched {
-        resolved,
-        variant,
-        clip,
-        mut source,
-        subtitles: local_subtitles,
-    } = fetched;
-    let media = resolved.media;
 
     // Transcode
     let stage = Stage::Transcode;
     ctx.transition(job, JobStatus::Running { stage })
         .await
         .map_err(|e| failed(stage)(e.into()))?;
-    let publisher = ctx.publishers.get(&origin.source).cloned().ok_or_else(|| {
-        failed(stage)(StageError::Rejected(format!(
-            "no publisher registered for source {}",
-            origin.source
-        )))
-    })?;
-    let constraints = publisher
-        .constraints(job)
+    let prepared = prepare(
+        ctx,
+        job,
+        job_dir,
+        &located,
+        fetched,
+        &dest.constraints,
+        &limits,
+    )
+    .await?;
+    let mut constraints = dest.constraints.clone();
+    let mut lowered = 0;
+    let published = loop {
+        let output = make_output(
+            ctx,
+            job,
+            job_dir,
+            &prepared,
+            &constraints,
+            &limits,
+            &policy,
+            &dest,
+            interrupt,
+        )
+        .await?;
+        job.artifacts.output = Some(output.clone());
+        job.artifacts.thumbnail = make_thumbnail(ctx, job, job_dir, &output).await;
+        ctx.note(
+            job,
+            Some(Stage::Transcode),
+            format!("output ready: {} bytes", output.size),
+        )
+        .await
+        .map_err(|e| failed(Stage::Transcode)(e.into()))?;
+
+        // Publish
+        let stage = Stage::Publish;
+        ctx.transition(job, JobStatus::Running { stage })
+            .await
+            .map_err(|e| failed(stage)(e.into()))?;
+        match publisher.publish(job, &output).await {
+            Ok(published) => break published,
+            Err(PublishError::LimitLowered { size, max })
+                if lowered < LIMIT_LOWERINGS && job.artifacts.delivery == Delivery::Upload =>
+            {
+                lowered += 1;
+                ctx.note(
+                    job,
+                    Some(stage),
+                    format!(
+                        "The destination refused {size} bytes. Its limit is {max} bytes. \
+                         Making the output again under it."
+                    ),
+                )
+                .await
+                .map_err(|e| failed(stage)(e.into()))?;
+                constraints.max_bytes = max;
+                job.artifacts.archived = None;
+                ctx.transition(
+                    job,
+                    JobStatus::Running {
+                        stage: Stage::Transcode,
+                    },
+                )
+                .await
+                .map_err(|e| failed(Stage::Transcode)(e.into()))?;
+            }
+            Err(error) => return Err(failed(stage)(error.into())),
+        }
+    };
+    let stage = Stage::Publish;
+    for note in &published.notes {
+        ctx.note(job, Some(stage), note.clone())
+            .await
+            .map_err(|e| failed(stage)(e.into()))?;
+    }
+    ctx.note(
+        job,
+        Some(stage),
+        format!("published as {}", published.reference),
+    )
+    .await
+    .map_err(|e| failed(stage)(e.into()))?;
+    job.artifacts.published = Some(published);
+
+    // Archive
+    if let (Some(earlier), true) = (job.artifacts.reused_from, job.artifacts.archived.is_some()) {
+        ctx.note(
+            job,
+            Some(Stage::Archive),
+            format!("Archived with job {earlier}."),
+        )
+        .await
+        .map_err(|e| failed(Stage::Archive)(e.into()))?;
+    } else if let Some(archiver) = ctx.archiver.as_ref().filter(|a| a.enabled()) {
+        let stage = Stage::Archive;
+        ctx.transition(job, JobStatus::Running { stage })
+            .await
+            .map_err(|e| failed(stage)(e.into()))?;
+        let entry = unless_interrupted(interrupt, archiver.archive(job))
+            .await?
+            .map_err(|e| failed(stage)(e.into()))?;
+        ctx.note(
+            job,
+            Some(stage),
+            format!(
+                "archived {} file(s), {} bytes",
+                entry.files.len(),
+                entry.bytes
+            ),
+        )
         .await
         .map_err(|e| failed(stage)(e.into()))?;
+        job.artifacts.archived = Some(entry);
+    }
+    Ok(())
+}
+
+/// The source as probed, with everything the output is made with
+struct Prepared {
+    source: LocalFile,
+    info: Option<MediaInfo>,
+    kind: MediaKind,
+    clip: Option<ClipRange>,
+    burn: Option<BurnSource>,
+    still: Option<StillSource>,
+}
+
+/// Probes the source and readies what the output is made with
+async fn prepare(
+    ctx: &Context,
+    job: &mut Job,
+    job_dir: &Path,
+    located: &Located,
+    fetched: Fetched,
+    constraints: &Constraints,
+    limits: &Limits,
+) -> Result<Prepared, Interrupt> {
+    let stage = Stage::Transcode;
+    let Fetched {
+        mut source,
+        subtitles: local_subtitles,
+    } = fetched;
+    let Located {
+        resolved,
+        variant,
+        clip,
+    } = located;
+    let clip = *clip;
+    let media = resolved.media;
     // A file that is not media is never probed. Anything else is, and what the probe
     // finds the file to be outranks what the resolver said it was.
     let info: Option<MediaInfo> = match media {
@@ -830,121 +1288,84 @@ async fn execute(
         }
         _ => None,
     };
+    Ok(Prepared {
+        source,
+        info,
+        kind,
+        clip,
+        burn,
+        still,
+    })
+}
+
+/// The output for the destination, made for the page instead when the delivery decision says so
+#[allow(clippy::too_many_arguments)]
+async fn make_output(
+    ctx: &Context,
+    job: &mut Job,
+    job_dir: &Path,
+    prepared: &Prepared,
+    constraints: &Constraints,
+    limits: &Limits,
+    policy: &Policy,
+    dest: &Destination,
+    interrupt: &CancellationToken,
+) -> Result<LocalFile, Interrupt> {
+    let stage = Stage::Transcode;
+    let purpose = Purpose::Upload {
+        delivery: &policy.delivery,
+        link: &dest.link,
+    };
     let produced = unless_interrupted(
         interrupt,
-        produce(
-            ctx,
-            job,
-            job_dir,
-            &source,
-            info.as_ref(),
-            kind,
-            &constraints,
-            &limits,
-            clip,
-            burn.clone(),
-            still.clone(),
-        ),
+        produce(ctx, job, job_dir, prepared, constraints, limits, purpose),
     )
-    .await?;
-    // A destination with a link to fall back on gets one when the upload cannot be
-    // made, or would be too reduced. The output is then made for the page instead.
-    let output = match produced {
-        Ok(Produced::Upload(output)) => output,
-        Ok(Produced::Link { output, reason }) => {
-            let link = constraints
-                .for_link()
-                .expect("a link is produced only with a fallback");
+    .await?
+    .map_err(failed(stage))?;
+    match produced {
+        Produced::Upload(output) => Ok(output),
+        Produced::Skip(reason) => Err(failed(stage)(StageError::Rejected(reason))),
+        Produced::Link { output, reason } => {
             job.artifacts.delivery = Delivery::Link;
             job.artifacts.link_reason = Some(reason.clone());
+            job.artifacts.link = dest.target.clone();
             ctx.note(job, Some(stage), format!("{reason}. Posting a media link."))
                 .await
                 .map_err(|e| failed(stage)(e.into()))?;
-            match output {
-                Some(output) => output,
-                None => match unless_interrupted(
-                    interrupt,
-                    produce(
-                        ctx,
-                        job,
-                        job_dir,
-                        &source,
-                        info.as_ref(),
-                        kind,
-                        &link,
-                        &limits,
-                        clip,
-                        burn,
-                        still,
-                    ),
-                )
-                .await?
-                .map_err(|e| failed(stage)(e))?
-                {
-                    Produced::Upload(output)
-                    | Produced::Link {
-                        output: Some(output),
-                        ..
-                    } => output,
-                    Produced::Link { output: None, .. } => {
-                        unreachable!("a destination without a fallback never asks for a link")
-                    }
-                },
+            if let Some(output) = output {
+                return Ok(output);
+            }
+            let page = constraints.for_link(policy.delivery.link_max_bytes);
+            match unless_interrupted(
+                interrupt,
+                produce(ctx, job, job_dir, prepared, &page, limits, Purpose::Page),
+            )
+            .await?
+            .map_err(failed(stage))?
+            {
+                Produced::Upload(output)
+                | Produced::Link {
+                    output: Some(output),
+                    ..
+                } => Ok(output),
+                Produced::Link {
+                    output: None,
+                    reason,
+                }
+                | Produced::Skip(reason) => Err(failed(stage)(StageError::Rejected(reason))),
             }
         }
-        Err(error) => return Err(failed(stage)(error)),
-    };
-    job.artifacts.output = Some(output.clone());
-    job.artifacts.thumbnail = make_thumbnail(ctx, job, job_dir, &output).await;
-    ctx.note(
-        job,
-        Some(stage),
-        format!("output ready: {} bytes", output.size),
-    )
-    .await
-    .map_err(|e| failed(stage)(e.into()))?;
-
-    // Publish
-    let stage = Stage::Publish;
-    ctx.transition(job, JobStatus::Running { stage })
-        .await
-        .map_err(|e| failed(stage)(e.into()))?;
-    let published = publisher
-        .publish(job, &output)
-        .await
-        .map_err(|e| failed(stage)(e.into()))?;
-    ctx.note(
-        job,
-        Some(stage),
-        format!("published as {}", published.reference),
-    )
-    .await
-    .map_err(|e| failed(stage)(e.into()))?;
-    job.artifacts.published = Some(published);
-
-    // Archive
-    if let Some(archiver) = ctx.archiver.as_ref().filter(|a| a.enabled()) {
-        let stage = Stage::Archive;
-        ctx.transition(job, JobStatus::Running { stage })
-            .await
-            .map_err(|e| failed(stage)(e.into()))?;
-        let entry = unless_interrupted(interrupt, archiver.archive(job))
-            .await?
-            .map_err(|e| failed(stage)(e.into()))?;
-        ctx.note(
-            job,
-            Some(stage),
-            format!(
-                "archived {} file(s), {} bytes",
-                entry.files.len(),
-                entry.bytes
-            ),
-        )
-        .await
-        .map_err(|e| failed(stage)(e.into()))?;
-        job.artifacts.archived = Some(entry);
     }
-    Ok(())
+}
+
+/// Who the output is for, which decides whether delivery choices apply
+enum Purpose<'a> {
+    Upload {
+        delivery: &'a DeliveryPolicy,
+        link: &'a LinkAvailability,
+    },
+    /// The page that plays the media, bounded by its own size and nothing else
+    Page,
 }
 
 /// What the transcode stage made of the source for one destination.
@@ -958,6 +1379,8 @@ enum Produced {
         output: Option<LocalFile>,
         reason: String,
     },
+    /// Nothing is posted, for this reason
+    Skip(String),
 }
 
 /// Bits per second of a whole file over its playing time.
@@ -999,28 +1422,17 @@ fn below_floor(output: &LocalFile, floor: &QualityFloor) -> Option<String> {
     None
 }
 
-/// Makes the output for `constraints`: the source as it is when it fits, else a
-/// transcode. With a fallback in the constraints, a video that cannot fit or would come
-/// out under the quality floor, and a file too large to upload, become a link instead.
-#[allow(clippy::too_many_arguments)]
-async fn produce(
-    ctx: &Context,
-    job: &mut Job,
-    job_dir: &Path,
-    source: &LocalFile,
-    info: Option<&MediaInfo>,
+/// What the output is made into for `kind` under the destination
+fn build_target(
     kind: MediaKind,
     constraints: &Constraints,
-    limits: &crate::config::Limits,
-    clip: Option<crate::resolve::ClipRange>,
+    info: Option<&MediaInfo>,
+    max_height: u32,
+    clip: Option<ClipRange>,
     burn: Option<BurnSource>,
     still: Option<StillSource>,
-) -> Result<Produced, StageError> {
-    let stage = Stage::Transcode;
-    let max_height = limits
-        .max_height
-        .min(constraints.max_height.unwrap_or(u32::MAX));
-    let target = match kind {
+) -> Target {
+    match kind {
         MediaKind::Video => {
             let mut target = VideoTarget::new(
                 constraints.preferred_container(),
@@ -1075,7 +1487,58 @@ async fn produce(
         MediaKind::File => Target::File {
             max_bytes: constraints.max_bytes,
         },
+    }
+}
+
+/// Makes the output for `constraints`: the source as it is when it fits, else a
+/// transcode. For an upload, the delivery policy decides at each point where the file
+/// cannot be uploaded well whether a link is posted or nothing is.
+async fn produce(
+    ctx: &Context,
+    job: &mut Job,
+    job_dir: &Path,
+    prepared: &Prepared,
+    constraints: &Constraints,
+    limits: &Limits,
+    purpose: Purpose<'_>,
+) -> Result<Produced, StageError> {
+    let stage = Stage::Transcode;
+    let Prepared {
+        source,
+        info,
+        kind,
+        clip,
+        burn,
+        still,
+    } = prepared;
+    let (kind, clip) = (*kind, *clip);
+    let info = info.as_ref();
+    let decide = |moment: Moment| match &purpose {
+        Purpose::Upload { delivery, link } => Some(deliver::decide(delivery, link, moment)),
+        Purpose::Page => None,
     };
+    match decide(Moment::Start) {
+        Some(Outcome::Link { reason }) => {
+            return Ok(Produced::Link {
+                output: None,
+                reason,
+            });
+        }
+        Some(Outcome::Skip { reason }) => return Ok(Produced::Skip(reason)),
+        Some(Outcome::Upload) | None => {}
+    }
+    let max_height = limits
+        .max_height
+        .min(constraints.max_height.unwrap_or(u32::MAX));
+    let target = build_target(
+        kind,
+        constraints,
+        info,
+        max_height,
+        clip,
+        burn.clone(),
+        still.clone(),
+    );
     // A recording is fragmented, for playing while it grew. What the destination gets is
     // written whole, its index first, even when the streams go in as they are.
     let recording = job
@@ -1083,51 +1546,62 @@ async fn produce(
         .recording
         .as_ref()
         .is_some_and(|r| r.path == source.path);
-    let plan = match plan::plan(
-        source,
-        info,
-        constraints,
-        &crate::config::Limits {
-            max_height,
-            ..limits.clone()
-        },
-        target.clone(),
-    ) {
+    let capped = Limits {
+        max_height,
+        ..limits.clone()
+    };
+    let plan = match plan::plan(source, info, constraints, &capped, target.clone()) {
         Ok(Plan::Passthrough) if recording => Plan::Transcode(Box::new(target)),
         Ok(plan) => plan,
-        Err(TranscodeError::CannotShrink { size, max_bytes })
-            if constraints
-                .fallback
-                .as_ref()
-                .is_some_and(|f| size <= f.max_bytes) =>
-        {
-            return Ok(Produced::Link {
-                output: Some(source.clone()),
-                reason: format!(
-                    "the file is {size} bytes, over the {max_bytes} the destination takes"
-                ),
+        Err(TranscodeError::CannotShrink { size, max_bytes }) => {
+            return Ok(match decide(Moment::CannotShrink { size, max_bytes }) {
+                Some(Outcome::Link { reason }) => Produced::Link {
+                    output: Some(source.clone()),
+                    reason,
+                },
+                Some(Outcome::Skip { reason }) => Produced::Skip(reason),
+                Some(Outcome::Upload) => {
+                    return Err(TranscodeError::CannotShrink { size, max_bytes }.into());
+                }
+                None => Produced::Skip(format!(
+                    "the file is {size} bytes, over the {max_bytes} a page takes"
+                )),
             });
         }
         Err(error) => return Err(error.into()),
     };
-    // A video whose byte budget cannot hold the floor is not worth encoding for upload.
-    let floor = match (&constraints.fallback, info) {
-        (Some(fallback), Some(info)) if kind == MediaKind::Video => {
-            let floor = floor_for(&fallback.floor, source, info);
+    // The floor as it applies to this source, when a video is made for an upload.
+    let floor = match (&purpose, info) {
+        (Purpose::Upload { delivery, .. }, Some(info)) if kind == MediaKind::Video => {
+            let floor = floor_for(&delivery.floor, source, info);
             let secs = clipped_duration(clip, info.duration.unwrap_or_default()).as_secs_f64();
             if matches!(plan, Plan::Transcode(_)) && secs > 0.0 {
-                let budget = (constraints.max_bytes as f64 * 8.0 * 0.95 / secs) as u64;
+                let budget = byte_budget_bps(constraints.max_bytes, secs) as u64;
                 if budget < floor.min_bitrate {
-                    return Ok(Produced::Link {
-                        output: None,
-                        reason: format!(
-                            "{} bytes hold only {} kb/s of {:.0}s, under the {} kb/s floor",
-                            constraints.max_bytes,
-                            budget / 1000,
-                            secs,
-                            floor.min_bitrate / 1000
-                        ),
-                    });
+                    let moment = Moment::BudgetUnderFloor {
+                        max_bytes: constraints.max_bytes,
+                        budget_bps: budget,
+                        secs,
+                        floor_bps: floor.min_bitrate,
+                    };
+                    let reason = moment.reason();
+                    match decide(moment) {
+                        Some(Outcome::Link { reason }) => {
+                            return Ok(Produced::Link {
+                                output: None,
+                                reason,
+                            });
+                        }
+                        Some(Outcome::Skip { reason }) => return Ok(Produced::Skip(reason)),
+                        Some(Outcome::Upload) | None => {
+                            ctx.note(
+                                job,
+                                Some(stage),
+                                format!("{reason}. Uploading regardless, as delivery says."),
+                            )
+                            .await?;
+                        }
+                    }
                 }
             }
             Some(floor)
@@ -1187,31 +1661,68 @@ async fn produce(
                 Err(TranscodeError::BudgetUnreachable {
                     max_bytes,
                     duration_secs,
-                }) if constraints.fallback.is_some() => {
-                    return Ok(Produced::Link {
-                        output: None,
-                        reason: format!(
-                            "{duration_secs}s of video cannot be fit under {max_bytes} bytes"
-                        ),
-                    });
+                }) => {
+                    return Ok(
+                        match decide(Moment::BudgetUnreachable {
+                            max_bytes,
+                            duration_secs,
+                        }) {
+                            Some(Outcome::Link { reason }) => Produced::Link {
+                                output: None,
+                                reason,
+                            },
+                            Some(Outcome::Skip { reason }) => Produced::Skip(reason),
+                            Some(Outcome::Upload) => {
+                                return Err(TranscodeError::BudgetUnreachable {
+                                    max_bytes,
+                                    duration_secs,
+                                }
+                                .into());
+                            }
+                            None => Produced::Skip(format!(
+                                "{duration_secs}s of video cannot be fit under the {max_bytes} \
+                             bytes a page takes"
+                            )),
+                        },
+                    );
                 }
                 Err(error) => return Err(error.into()),
             }
         }
     };
     if output.size > constraints.max_bytes {
-        return Err(StageError::Rejected(format!(
-            "output is {} bytes, destination allows {}",
-            output.size, constraints.max_bytes
-        )));
+        return match decide(Moment::OverLimit {
+            size: output.size,
+            max_bytes: constraints.max_bytes,
+        }) {
+            Some(Outcome::Link { reason }) => Ok(Produced::Link {
+                output: None,
+                reason,
+            }),
+            Some(Outcome::Skip { reason }) => Ok(Produced::Skip(reason)),
+            Some(Outcome::Upload) => Err(StageError::Rejected(format!(
+                "output is {} bytes, destination allows {}",
+                output.size, constraints.max_bytes
+            ))),
+            None => Err(StageError::Rejected(format!(
+                "output is {} bytes, the page takes {}",
+                output.size, constraints.max_bytes
+            ))),
+        };
     }
     if let Some(floor) = floor
         && let Some(reason) = below_floor(&output, &floor)
     {
-        return Ok(Produced::Link {
-            output: None,
-            reason,
-        });
+        match decide(Moment::BelowFloor { reason }) {
+            Some(Outcome::Link { reason }) => {
+                return Ok(Produced::Link {
+                    output: None,
+                    reason,
+                });
+            }
+            Some(Outcome::Skip { reason }) => return Ok(Produced::Skip(reason)),
+            Some(Outcome::Upload) | None => {}
+        }
     }
     Ok(Produced::Upload(output))
 }

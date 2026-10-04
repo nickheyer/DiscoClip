@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use discoclip_engine::job::{JobId, JobStatus, Request, Stage};
+use discoclip_engine::job::{JobId, JobStatus, Stage};
 use discoclip_engine::{EngineHandle, EventKind};
 use futures::StreamExt;
 use secrecy::ExposeSecret;
@@ -30,6 +30,7 @@ use crate::config::{DiscordConfig, DiscordEndpoints};
 use crate::directory::{Directories, Directory};
 use crate::link::OwnLinks;
 use crate::origin::DiscordOrigin;
+use crate::policy::{OriginalEmbeds, Placement};
 use crate::profile::{ProfileSource, turned_off};
 use crate::publish::DiscordClients;
 use crate::supervisor::BotRuntime;
@@ -209,6 +210,7 @@ impl Bot {
                 self.profiles.clone(),
                 Arc::new(self.engine.clone()),
                 self.own_links.clone(),
+                directory.clone(),
             ),
             profiles: self.profiles.clone(),
             directory,
@@ -518,13 +520,17 @@ async fn clip(shared: &Shared, interaction: &Interaction, url: url::Url) -> Resu
         author: interaction.author().map(|u| u.id),
     }
     .to_origin();
-    let mut request = Request::new(origin, url.clone());
-    request.submitted_by = interaction.author().map(|u| format!("discord:{}", u.id));
-    request.disabled_platforms = in_force.disabled;
-    request.limits = in_force.limits;
-    if let Some(language) = in_force.audio_language {
-        request.options.audio_language = language;
-    }
+    // The message to answer is the bot's own acknowledgement, which gets the result
+    // edited in by `follow_jobs`, so the result itself is a plain post.
+    let mut request = in_force.request_for(
+        origin,
+        url.clone(),
+        interaction.author().map(|u| format!("discord:{}", u.id)),
+    );
+    let mut discord = in_force.discord.clone();
+    discord.message.placement = Placement::Post;
+    discord.message.original_embeds = OriginalEmbeds::Keep;
+    discord.stamp(&mut request);
     match shared.engine.submit(request).await {
         Ok(id) => {
             tracing::info!(job = %id, %url, "queued from /clip");

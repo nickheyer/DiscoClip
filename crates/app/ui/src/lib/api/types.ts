@@ -228,30 +228,160 @@ export interface CommandScope {
 export interface RuleInput {
 	/** The channel watched, or `null` for every channel of the server. */
 	channel_id: Snowflake | null;
-	post_to?: Snowflake | null;
-	allow_users?: Snowflake[];
-	allow_roles?: Snowflake[];
 	enabled?: boolean;
 }
 
+/**
+ * What a profile says. Every section leaf left out inherits the wider scope's. The
+ * built-in profile names every leaf.
+ */
 export interface ProfileInput {
 	name: string;
 	description?: string;
 	platforms?: PlatformToggles;
-	limits?: ProfileLimits;
 	/** The language of the sound taken when a source offers several. Unset leaves the parent scope's. */
 	audio_language?: string | null;
+	limits?: ProfileLimits;
+	intake?: IntakeOverlay;
+	output?: TargetOverride;
+	upload?: UploadOverlay;
+	delivery?: DeliveryOverlay;
+	message?: MessageOverlay;
+	errors?: ErrorsOverlay;
+	dedupe?: DedupeOverlay;
 }
 
 export interface ProfileLimits {
 	/** Above zero. */
 	max_source_bytes?: number | null;
-	/** Zero refuses live streams and accepts nothing else. */
+	/** Left out inherits, `null` lifts the bound, a number sets it. */
 	max_duration_secs?: number | null;
 	/** Above zero. */
 	max_height?: number | null;
 	/** How long a live stream is captured, in seconds. Above zero. */
 	max_capture_secs?: number | null;
+}
+
+export type BotMessages = 'ignore' | 'accept';
+
+export interface PlaylistsOverlay {
+	enabled?: boolean | null;
+	max_entries?: number | null;
+}
+
+/** Which links are taken in at all. */
+export interface IntakeOverlay {
+	/** Users whose links count. Everyone when this and the roles are both empty. */
+	allow_users?: Snowflake[] | null;
+	allow_roles?: Snowflake[] | null;
+	bot_messages?: BotMessages | null;
+	playlists?: PlaylistsOverlay;
+	live?: boolean | null;
+}
+
+export type VideoContainer = 'mp4' | 'mov' | 'mkv' | 'webm';
+export type VideoCodec = 'h264' | 'h265' | 'vp9' | 'vp8' | 'av1';
+export type AudioCodec = 'aac' | 'mp3' | 'opus' | 'vorbis' | 'flac';
+export type AudioContainer = 'm4a' | 'mp3' | 'ogg' | 'opus' | 'flac' | 'wav';
+export type ImageContainer = 'jpeg' | 'png' | 'webp' | 'gif';
+
+/** What media is made into. Every leaf left out keeps the wider scope's. */
+export interface TargetOverride {
+	container?: VideoContainer | null;
+	video_codec?: VideoCodec | null;
+	audio_codec?: AudioCodec | null;
+	/** A picture height the destination caps at. */
+	max_height?: number | null;
+	max_fps?: number | null;
+	/** Sound alone becomes a video over its cover art. */
+	audio_over_still?: boolean | null;
+	/** Sound published as it is in these. Empty means always as video. */
+	audio_containers?: AudioContainer[] | null;
+	/** Images published as they are in these. Empty means images are refused. */
+	image_containers?: ImageContainer[] | null;
+	/** Whether files that are neither video, audio nor images are taken. */
+	files?: boolean | null;
+}
+
+/** `"auto"` discovers what the destination takes. A number is a fixed cap. */
+export type UploadLimit = 'auto' | number;
+
+export interface UploadOverlay {
+	max_bytes?: UploadLimit | null;
+}
+
+export type DeliveryMode = 'auto' | 'upload' | 'link';
+export type UnderFloor = 'link' | 'upload' | 'skip';
+export type OverLimit = 'link' | 'skip';
+/** `"auto"` picks the closest content view that shows the job. */
+export type View = 'auto' | Uuid;
+
+export interface FloorOverlay {
+	/** Pixels. */
+	min_height?: number | null;
+	/** Bits per second. */
+	min_bitrate?: number | null;
+}
+
+/** Whether the destination gets the file or a link to the page that plays it. */
+export interface DeliveryOverlay {
+	mode?: DeliveryMode | null;
+	view?: View | null;
+	floor?: FloorOverlay;
+	under_floor?: UnderFloor | null;
+	over_limit?: OverLimit | null;
+	/** Bound of the output made for the page. */
+	link_max_bytes?: number | null;
+}
+
+export type Placement = 'reply' | 'post' | 'replace';
+export type ReplaceAs = 'bot' | 'author';
+export type OriginalText = 'keep' | 'drop';
+export type OriginalEmbeds = 'keep' | 'suppress';
+export type PermissionMode = 'check' | 'assume';
+export type Requester = 'none' | 'name' | 'mention';
+
+export interface IncludeOverlay {
+	source_link?: boolean | null;
+	title?: boolean | null;
+	platform?: boolean | null;
+	uploader?: boolean | null;
+	requester?: Requester | null;
+	duration?: boolean | null;
+	brand?: boolean | null;
+	earlier_post?: boolean | null;
+}
+
+/** How the result is posted and what goes with it. */
+export interface MessageOverlay {
+	/** Left out inherits, `null` posts where the link was seen, an id names a channel. */
+	destination?: Snowflake | null;
+	placement?: Placement | null;
+	replace_as?: ReplaceAs | null;
+	original_text?: OriginalText | null;
+	original_embeds?: OriginalEmbeds | null;
+	permissions?: PermissionMode | null;
+	include?: IncludeOverlay;
+}
+
+export interface ErrorsOverlay {
+	/** Posts the failure, the job log and where to report it in the channel. */
+	debug?: boolean | null;
+}
+
+export type DedupeMatch = 'url' | 'content' | 'either';
+
+export interface DedupeOverlay {
+	enabled?: boolean | null;
+	match?: DedupeMatch | null;
+}
+
+/** A few sections replaced whole at a scope. */
+export interface SectionsPatch {
+	intake?: IntakeOverlay;
+	message?: MessageOverlay;
+	output?: TargetOverride;
+	upload?: UploadOverlay;
 }
 
 export interface PlatformToggles {
@@ -274,7 +404,8 @@ export interface FrontendInput {
 	scope?: ContentScope;
 	access?: Access;
 	downloads?: boolean;
-	links?: LinkPolicy;
+	/** How long the link the page hands Discord to play the media stays good, in days. */
+	signed_link_days?: number;
 }
 
 /** Both lists empty includes all jobs. */
@@ -298,21 +429,18 @@ export interface Access {
 	discord_users?: Snowflake[];
 }
 
-export interface LinkPolicy {
-	enabled?: boolean;
-	/** Pixels. */
-	min_height?: number;
-	/** Bits per second. */
-	min_bitrate?: number;
-	/** Bound of the output made for the page. */
-	max_bytes?: number;
-	signed_link_days?: number;
-}
-
 export interface SubmitRequest {
 	url: Url;
 	limits?: RequestLimits;
-	options?: RequestOptions;
+	options?: SubmitOptions;
+}
+
+/** What a submitter chooses beyond the link. The sound's language falls back to the profile's. */
+export interface SubmitOptions {
+	clip?: ClipRange | null;
+	subtitles?: SubtitleMode;
+	subtitle_language?: string | null;
+	audio_language?: string | null;
 }
 
 export interface BulkRequest {
@@ -619,27 +747,14 @@ export interface RuleView extends Rule {
 	guild_name: string | null;
 	guild_icon: string | null;
 	channel_name: string | null;
-	post_to_name: string | null;
 }
 
 export interface Profile extends Required<ProfileInput> {
 	id: Uuid;
-	/** Ships with the server, cannot be removed. */
+	/** Ships with the server, cannot be removed, and names every value. */
 	builtin: boolean;
-	/** The engine's limits, which cap this profile. */
-	server_limits: ServerLimits;
 	created_at: Timestamp;
 	updated_at: Timestamp;
-}
-
-/** The engine's own limits. They cap every profile, whatever a profile names. */
-export interface ServerLimits {
-	max_source_bytes: number;
-	/** `null` puts no bound on how long media may be. */
-	max_duration_secs: number | null;
-	max_height: number;
-	/** How long a live stream is captured at most, in seconds. */
-	max_capture_secs: number;
 }
 
 export interface Preset {
@@ -665,20 +780,122 @@ export interface Assignment {
 	updated_at: Timestamp;
 }
 
-export interface EffectiveProfile {
+/** The limits a place runs under, every value settled. */
+export interface Limits {
+	max_source_bytes: number;
+	/** `null` puts no bound on how long media may be. */
+	max_duration_secs: number | null;
+	max_height: number;
+	max_capture_secs: number;
+}
+
+export interface Playlists {
+	enabled: boolean;
+	max_entries: number;
+}
+
+export interface EffectiveIntake {
+	allow_users: Snowflake[];
+	allow_roles: Snowflake[];
+	bot_messages: BotMessages;
+	playlists: Playlists;
+	live: boolean;
+}
+
+export interface DestinationTarget {
+	container: VideoContainer;
+	video_codec: VideoCodec;
+	audio_codec: AudioCodec;
+	max_height: number | null;
+	max_fps: number | null;
+	audio_over_still: boolean;
+	audio_containers: AudioContainer[];
+	image_containers: ImageContainer[];
+	files: boolean;
+}
+
+export interface UploadPolicy {
+	max_bytes: UploadLimit;
+}
+
+export interface QualityFloor {
+	min_height: number;
+	min_bitrate: number;
+}
+
+export interface DeliveryPolicy {
+	mode: DeliveryMode;
+	view: View;
+	floor: QualityFloor;
+	under_floor: UnderFloor;
+	over_limit: OverLimit;
+	link_max_bytes: number;
+}
+
+export interface Include {
+	source_link: boolean;
+	title: boolean;
+	platform: boolean;
+	uploader: boolean;
+	requester: Requester;
+	duration: boolean;
+	brand: boolean;
+	earlier_post: boolean;
+}
+
+export interface EffectiveMessage {
+	/** The channel results go to, the one the link was seen in when `null`. */
+	destination: Snowflake | null;
+	placement: Placement;
+	replace_as: ReplaceAs;
+	original_text: OriginalText;
+	original_embeds: OriginalEmbeds;
+	permissions: PermissionMode;
+	include: Include;
+}
+
+export interface ErrorsPolicy {
+	debug: boolean;
+}
+
+export interface DedupePolicy {
+	enabled: boolean;
+	match: DedupeMatch;
+}
+
+/** What the profiles assigned at a place add up to, every value settled. */
+export interface EffectivePolicy {
 	/** Every platform, on or off. */
 	platforms: Record<string, boolean>;
-	/** Effective profile limits. `null` uses the engine limit. */
-	limits: RequestLimits;
+	limits: Limits;
 	/** The language of the sound wanted, from the narrowest profile that names one. */
 	audio_language: string | null;
+	intake: EffectiveIntake;
+	output: DestinationTarget;
+	upload: UploadPolicy;
+	delivery: DeliveryPolicy;
+	message: EffectiveMessage;
+	errors: ErrorsPolicy;
+	dedupe: DedupePolicy;
 	/** The assignments applied, widest first. */
 	applied: Assignment[];
 }
 
-export interface EffectiveView extends EffectiveProfile {
+export interface EffectiveView extends EffectivePolicy {
 	/** The platform ids turned off. */
 	disabled: string[];
+}
+
+/** What the engine runs a job under, stamped on its request. */
+export interface Policy {
+	limits: Limits;
+	intake: { playlists: Playlists; live: boolean };
+	output: DestinationTarget;
+	upload: UploadPolicy;
+	delivery: DeliveryPolicy;
+	dedupe: DedupePolicy;
+	/** What the origin's publisher reads: the Discord message and errors policy. */
+	publisher?: Json;
 }
 
 export interface Frontend extends Required<FrontendInput> {
@@ -933,6 +1150,8 @@ export interface JobRequest {
 	parent: Uuid | null;
 	retry_of: Uuid | null;
 	submitted_by: string | null;
+	disabled_platforms: string[];
+	policy: Policy;
 }
 
 export interface RequestLimits {
@@ -943,10 +1162,10 @@ export interface RequestLimits {
 	max_capture_secs: number | null;
 }
 
-/** The limits a job runs under, each the tighter of its request's and the engine's cap. */
+/** The limits a job runs under, each the tighter of its request's and its policy's. */
 export interface LimitsInForce {
 	max_source_bytes: number;
-	/** `null` puts no bound on how long media may be; `0` refuses live streams. */
+	/** `null` puts no bound on how long media may be. */
 	max_duration_secs: number | null;
 	max_height: number;
 	/** How long a live stream is captured at most, in seconds. */

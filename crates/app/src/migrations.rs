@@ -456,6 +456,104 @@ WHERE id = '00000000-0000-0000-0000-000000000001'
   AND description = 'Every platform on. In force wherever nothing else is assigned.';
 ",
     },
+    // Every policy section of a profile as one JSON column, the four typed limit columns
+    // folded into the first
+    Migration {
+        version: 27,
+        name: "profile_sections",
+        sql: "
+ALTER TABLE profiles ADD COLUMN limits TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE profiles ADD COLUMN intake TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE profiles ADD COLUMN output TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE profiles ADD COLUMN upload TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE profiles ADD COLUMN delivery TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE profiles ADD COLUMN message TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE profiles ADD COLUMN errors TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE profiles ADD COLUMN dedupe TEXT NOT NULL DEFAULT '{}';
+UPDATE profiles SET limits = json_patch('{}', json_object(
+    'max_source_bytes', max_source_bytes,
+    'max_duration_secs', max_duration_secs,
+    'max_height', max_height,
+    'max_capture_secs', max_capture_secs));
+UPDATE profiles SET limits = json_set(limits, '$.max_duration_secs', max_duration_secs)
+WHERE max_duration_secs IS NOT NULL;
+ALTER TABLE profiles DROP COLUMN max_source_bytes;
+ALTER TABLE profiles DROP COLUMN max_duration_secs;
+ALTER TABLE profiles DROP COLUMN max_height;
+ALTER TABLE profiles DROP COLUMN max_capture_secs;
+",
+    },
+    // The settings that became profile values, staged for the profile store to move
+    Migration {
+        version: 28,
+        name: "policy_settings_staging",
+        sql: "
+CREATE TABLE policy_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    source TEXT NOT NULL
+);
+INSERT INTO policy_settings (key, value, source)
+SELECT key, value, source FROM settings
+WHERE key IN ('engine.limits', 'engine.live', 'engine.playlists', 'local.max_bytes',
+              'local.target', 'discord.limits', 'discord.target', 'discord.guilds')
+   OR key LIKE 'engine.limits.%' OR key LIKE 'engine.live.%' OR key LIKE 'engine.playlists.%'
+   OR key LIKE 'local.target.%' OR key LIKE 'discord.limits.%' OR key LIKE 'discord.target.%';
+DELETE FROM settings
+WHERE key IN ('engine.limits', 'engine.live', 'engine.playlists', 'local.max_bytes',
+              'local.target', 'discord.limits', 'discord.target', 'discord.guilds')
+   OR key LIKE 'engine.limits.%' OR key LIKE 'engine.live.%' OR key LIKE 'engine.playlists.%'
+   OR key LIKE 'local.target.%' OR key LIKE 'discord.limits.%' OR key LIKE 'discord.target.%';
+",
+    },
+    // Who may post and where results go leave the watch rules for profiles
+    Migration {
+        version: 29,
+        name: "watch_rule_intake",
+        sql: "
+CREATE TABLE watch_rule_intake (
+    rule_id TEXT PRIMARY KEY,
+    application_id TEXT NOT NULL,
+    guild_id TEXT NOT NULL,
+    channel_id TEXT,
+    post_to TEXT,
+    allow_users TEXT NOT NULL,
+    allow_roles TEXT NOT NULL
+);
+INSERT INTO watch_rule_intake (rule_id, application_id, guild_id, channel_id, post_to,
+    allow_users, allow_roles)
+SELECT id, application_id, guild_id, channel_id, post_to, allow_users, allow_roles
+FROM watch_rules
+WHERE post_to IS NOT NULL OR allow_users <> '[]' OR allow_roles <> '[]';
+ALTER TABLE watch_rules DROP COLUMN post_to;
+ALTER TABLE watch_rules DROP COLUMN allow_users;
+ALTER TABLE watch_rules DROP COLUMN allow_roles;
+",
+    },
+    // The link settings leave the content views for the profiles, the signed link
+    // lifetime staying with the view
+    Migration {
+        version: 30,
+        name: "frontend_links",
+        sql: "
+CREATE TABLE frontend_links (
+    frontend_id TEXT PRIMARY KEY,
+    slug TEXT NOT NULL,
+    enabled INTEGER NOT NULL,
+    scope_everything INTEGER NOT NULL,
+    links TEXT NOT NULL
+);
+INSERT INTO frontend_links (frontend_id, slug, enabled, scope_everything, links)
+SELECT id, slug, enabled,
+    (json_array_length(config, '$.scope.guilds') = 0 AND json_array_length(config, '$.scope.channels') = 0),
+    json_extract(config, '$.links')
+FROM frontends
+WHERE json_extract(config, '$.links.enabled') = 1;
+UPDATE frontends SET config = json_remove(
+    json_set(config, '$.signed_link_days', COALESCE(json_extract(config, '$.links.signed_link_days'), 30)),
+    '$.links');
+",
+    },
 ];
 
 /// Brings the application's tables up to date. Returns how many migrations ran.

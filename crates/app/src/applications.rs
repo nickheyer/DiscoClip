@@ -23,7 +23,8 @@ pub const NAME_MAX: usize = 100;
 /// What the bot asks for when it is added to a guild.
 pub const INSTALL_SCOPES: [&str; 2] = ["bot", "applications.commands"];
 
-/// The permissions the bot needs: to read the channels it watches and to post there.
+/// The permissions the bot needs: to read the channels it watches, to post there, and to
+/// replace the message that carried a link or hide its embeds when a profile says so
 pub fn install_permissions() -> Permissions {
     Permissions::VIEW_CHANNEL
         | Permissions::SEND_MESSAGES
@@ -31,6 +32,8 @@ pub fn install_permissions() -> Permissions {
         | Permissions::EMBED_LINKS
         | Permissions::ATTACH_FILES
         | Permissions::READ_MESSAGE_HISTORY
+        | Permissions::MANAGE_MESSAGES
+        | Permissions::MANAGE_WEBHOOKS
 }
 
 /// A link that adds an application's bot to a guild.
@@ -650,12 +653,14 @@ mod tests {
             link.url.query_pairs().into_owned().collect();
         assert_eq!(query["client_id"], "1001");
         assert_eq!(query["scope"], "bot applications.commands");
-        assert_eq!(query["permissions"], "274878024704");
+        assert_eq!(query["permissions"], "275414903808");
         assert!(!query.contains_key("guild_id"));
         assert_eq!(link.scopes, vec!["bot", "applications.commands"]);
         assert!(link.permissions.contains(&"VIEW_CHANNEL".to_string()));
         assert!(link.permissions.contains(&"ATTACH_FILES".to_string()));
-        assert_eq!(link.permissions.len(), 6);
+        assert!(link.permissions.contains(&"MANAGE_MESSAGES".to_string()));
+        assert!(link.permissions.contains(&"MANAGE_WEBHOOKS".to_string()));
+        assert_eq!(link.permissions.len(), 8);
 
         let picked = install_link(&DiscordEndpoints::default(), "1001", Some("42"));
         let query: std::collections::HashMap<String, String> =

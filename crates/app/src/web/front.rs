@@ -1002,7 +1002,7 @@ mod tests {
         assert_eq!(status, StatusCode::CREATED, "{body}");
         let id = body["id"].as_str().unwrap().to_string();
         assert_eq!(body["has_secret"], false);
-        assert_eq!(body["links"]["enabled"], false);
+        assert_eq!(body["signed_link_days"], 30);
 
         let mut guest = visitor(&app);
         let (status, info) = guest.get("/api/f/five").await;
@@ -1231,7 +1231,7 @@ mod tests {
                 Some(json!({
                     "name": "Guild Five", "slug": "five", "profile_id": profile["id"],
                     "scope": {"guilds": ["5"]}, "access": {"open": true},
-                    "links": {"enabled": true}
+                    "signed_link_days": 7
                 })),
             )
             .await;

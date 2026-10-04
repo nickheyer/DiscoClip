@@ -16,8 +16,9 @@ use discoclip_engine::http::transport::{
 };
 use discoclip_engine::job::{Delivery, Job, JobStatus, Origin, Request, SourceId};
 use discoclip_engine::media::{Container, LocalFile, MediaKind};
+use discoclip_engine::policy::{DeliveryPolicy, OverLimit, UnderFloor};
 use discoclip_engine::publish::{
-    Constraints, Fallback, PublishError, Published, Publisher, QualityFloor,
+    Constraints, LinkTarget, PublishError, Published, Publisher, QualityFloor,
 };
 use discoclip_engine::resolve::{
     Platform, Resolution, ResolveError, Resolved, Resolver, SessionSupport, Tag, Variant,
@@ -81,21 +82,10 @@ impl Resolver for Files {
 }
 
 /// A destination that remembers what was published. `small` origins take little, and
-/// `linked` origins take little but have a page to fall back on.
+/// `linked` origins take little but have a page to link to.
 struct Memory {
     source: SourceId,
     published: Arc<Mutex<Vec<(String, PathBuf, Delivery)>>>,
-}
-
-/// What a fallback page takes: much more, at no less than 480p and 1 Mb/s.
-fn fallback() -> Fallback {
-    Fallback {
-        max_bytes: LARGE,
-        floor: QualityFloor {
-            min_height: 480,
-            min_bitrate: 1_000_000,
-        },
-    }
 }
 
 #[async_trait]
@@ -107,11 +97,18 @@ impl Publisher for Memory {
     async fn constraints(&self, job: &Job) -> Result<Constraints, PublishError> {
         let reference = job.request.origin.reference.as_str();
         let limit = if reference == "large" { LARGE } else { SMALL };
-        let mut constraints = Constraints::universal(limit);
-        if reference == "linked" {
-            constraints.fallback = Some(fallback());
+        Ok(Constraints::universal(limit))
+    }
+
+    async fn link_target(&self, job: &Job) -> Result<LinkTarget, PublishError> {
+        if job.request.origin.reference == "linked" {
+            Ok(LinkTarget {
+                page: Url::parse(&format!("https://page.test/j/{}", job.id)).unwrap(),
+                view: "test".into(),
+            })
+        } else {
+            Err(PublishError::NoLink("no view shows this job".into()))
         }
-        Ok(constraints)
     }
 
     async fn publish(&self, job: &Job, file: &LocalFile) -> Result<Published, PublishError> {
@@ -124,6 +121,7 @@ impl Publisher for Memory {
             reference: file.path.display().to_string(),
             url: None,
             at: jiff::Timestamp::now(),
+            notes: Vec::new(),
         })
     }
 }
@@ -178,8 +176,10 @@ async fn finished(engine: &discoclip_engine::EngineHandle, id: discoclip_engine:
     }
 }
 
+/// A request whose policy links what cannot be uploaded well: a page takes much more, at
+/// no less than 480p and 1 Mb/s.
 fn request(name: &str, reference: &str) -> Request {
-    Request::new(
+    let mut request = Request::new(
         Origin {
             source: SourceId::new("memory"),
             reference: reference.into(),
@@ -188,7 +188,18 @@ fn request(name: &str, reference: &str) -> Request {
             channel: None,
         },
         Url::parse(&format!("https://{HOST}/{name}")).unwrap(),
-    )
+    );
+    request.policy.delivery = DeliveryPolicy {
+        floor: QualityFloor {
+            min_height: 480,
+            min_bitrate: 1_000_000,
+        },
+        link_max_bytes: LARGE,
+        under_floor: UnderFloor::Link,
+        over_limit: OverLimit::Link,
+        ..DeliveryPolicy::default()
+    };
+    request
 }
 
 #[tokio::test]
@@ -425,7 +436,8 @@ async fn a_file_too_large_for_its_destination_is_refused_not_converted() {
         JobStatus::Failed { stage, message } => {
             assert_eq!(stage.as_str(), "transcode");
             assert!(
-                message.contains("cannot be reduced"),
+                message.contains("over the 60000 the destination takes")
+                    && message.contains("no page is there to link to"),
                 "unexpected message: {message}"
             );
         }
@@ -464,6 +476,9 @@ async fn a_destination_with_a_page_gets_a_link_when_the_upload_would_be_too_redu
     assert!(mp4.len() > SMALL as usize);
     let big: Vec<u8> = (0..(SMALL as usize + 1)).map(|i| (i % 251) as u8).collect();
     let mut fixture = Fixture::new("linked", None);
+    fixture
+        .exchanges
+        .push(serve(&format!("https://{HOST}/big.mp4"), "video/mp4", &mp4));
     fixture
         .exchanges
         .push(serve(&format!("https://{HOST}/big.mp4"), "video/mp4", &mp4));
@@ -537,6 +552,22 @@ async fn a_destination_with_a_page_gets_a_link_when_the_upload_would_be_too_redu
             .iter()
             .all(|(_, _, delivery)| *delivery == Delivery::Link)
     );
+
+    // The same video for a destination with no page is not crushed to fit: the job
+    // fails and says why.
+    let id = handle.submit(request("big.mp4", "small")).await.unwrap();
+    let job = finished(&handle, id).await;
+    match &job.status {
+        JobStatus::Failed { stage, message } => {
+            assert_eq!(stage.as_str(), "transcode");
+            assert!(
+                message.contains("under the 1000 kb/s floor, and no page is there to link to"),
+                "unexpected message: {message}"
+            );
+        }
+        other => panic!("expected a failure, got {other:?}"),
+    }
+    assert_eq!(published.lock().unwrap().len(), 2);
 
     shutdown.cancel();
     running.await.unwrap().unwrap();

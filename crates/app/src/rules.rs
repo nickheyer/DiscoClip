@@ -1,10 +1,10 @@
-//! Watch rules: which channels each application's bot listens in, where results go and
-//! whose links count. A rule names one channel, or none to watch every channel of its
-//! guild; a channel's own rule takes the guild's place there, and turned off it keeps the
-//! channel out. Which platforms are taken and how big a video may be are the
-//! profiles assigned, not the rule's. Edited in the app, read by the bots as they run
-//! through a cache the store keeps up. Every change is written to the audit log in the
-//! same transaction.
+//! Watch rules: which channels each application's bot listens in. A rule names one
+//! channel, or none to watch every channel of its guild; a channel's own rule takes the
+//! guild's place there, and turned off it keeps the channel out. Everything else about
+//! what happens to a link, whose count, where results go, which platforms are taken,
+//! is the profiles assigned. Edited in the app, read by the bots as they run through a
+//! cache the store keeps up. Every change is written to the audit log in the same
+//! transaction.
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -50,14 +50,6 @@ pub struct RuleInput {
     /// rule, enabled or not, takes the place of the guild's in that channel.
     #[serde(deserialize_with = "explicit")]
     pub channel_id: Option<String>,
-    /// Where results go. The channel the link was posted in when absent.
-    #[serde(default)]
-    pub post_to: Option<String>,
-    /// Users whose links count. Everyone when this and `allow_roles` are empty.
-    #[serde(default)]
-    pub allow_users: Vec<String>,
-    #[serde(default)]
-    pub allow_roles: Vec<String>,
     #[serde(default = "yes")]
     pub enabled: bool,
 }
@@ -86,29 +78,7 @@ impl Rule {
     /// The rule as the bot applies it in `channel`: the rule's own channel, or for a rule
     /// watching every channel, the one a message arrived in.
     pub fn watch_rule(&self, channel: Id<ChannelMarker>) -> WatchRule {
-        WatchRule {
-            channel,
-            post_to: self
-                .input
-                .post_to
-                .as_deref()
-                .and_then(|id| id.parse().ok())
-                .and_then(Id::new_checked),
-            allow_users: self
-                .input
-                .allow_users
-                .iter()
-                .filter_map(|id| id.parse().ok())
-                .filter_map(Id::new_checked)
-                .collect(),
-            allow_roles: self
-                .input
-                .allow_roles
-                .iter()
-                .filter_map(|id| id.parse().ok())
-                .filter_map(Id::new_checked)
-                .collect(),
-        }
+        WatchRule { channel }
     }
 }
 
@@ -149,15 +119,6 @@ fn check(input: &RuleInput) -> Result<(), RuleError> {
     if let Some(channel) = &input.channel_id {
         snowflake("channel", channel)?;
     }
-    if let Some(post_to) = &input.post_to {
-        snowflake("destination channel", post_to)?;
-    }
-    for user in &input.allow_users {
-        snowflake("user", user)?;
-    }
-    for role in &input.allow_roles {
-        snowflake("role", role)?;
-    }
     Ok(())
 }
 
@@ -193,10 +154,7 @@ impl RuleSource for RuleCache {
         cached
             .guilds
             .get(&(application, guild.get()))
-            .map(|whole| WatchRule {
-                channel,
-                ..whole.clone()
-            })
+            .map(|_| WatchRule { channel })
     }
 }
 
@@ -206,8 +164,8 @@ pub struct RuleStore {
     cache: RuleCache,
 }
 
-const SELECT: &str = "SELECT id, application_id, guild_id, channel_id, post_to, allow_users, \
-     allow_roles, enabled, created_at, updated_at";
+const SELECT: &str =
+    "SELECT id, application_id, guild_id, channel_id, enabled, created_at, updated_at";
 
 impl RuleStore {
     /// Over a database the application's migrations have been applied to. `load` fills the
@@ -248,17 +206,14 @@ impl RuleStore {
             let id = RuleId(Uuid::now_v7());
             let now = Timestamp::now();
             let inserted = tx.execute(
-                "INSERT INTO watch_rules (id, application_id, guild_id, channel_id, post_to, \
-                 allow_users, allow_roles, enabled, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
+                "INSERT INTO watch_rules (id, application_id, guild_id, channel_id, enabled, \
+                 created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
                 params![
                     id.to_string(),
                     application.to_string(),
                     guild_id,
                     input.channel_id,
-                    input.post_to,
-                    encode(&input.allow_users)?,
-                    encode(&input.allow_roles)?,
                     input.enabled,
                     nanos(now),
                 ],
@@ -304,18 +259,9 @@ impl RuleStore {
             let previous = get_in(tx, id)?.ok_or(RuleError::NotFound(id))?;
             let now = Timestamp::now();
             let updated = tx.execute(
-                "UPDATE watch_rules SET channel_id = ?2, post_to = ?3, allow_users = ?4, \
-                 allow_roles = ?5, enabled = ?6, updated_at = ?7 \
+                "UPDATE watch_rules SET channel_id = ?2, enabled = ?3, updated_at = ?4 \
                  WHERE id = ?1",
-                params![
-                    id.to_string(),
-                    input.channel_id,
-                    input.post_to,
-                    encode(&input.allow_users)?,
-                    encode(&input.allow_roles)?,
-                    input.enabled,
-                    nanos(now),
-                ],
+                params![id.to_string(), input.channel_id, input.enabled, nanos(now)],
             );
             match updated {
                 Ok(0) => return Err(RuleError::NotFound(id)),
@@ -412,10 +358,6 @@ impl RuleStore {
     }
 }
 
-fn encode(list: &[String]) -> Result<String, RuleError> {
-    serde_json::to_string(list).map_err(|e| RuleError::Store(StoreError::Corrupt(e.to_string())))
-}
-
 /// Reloads the cache from every rule: channel rules whether on or off, since an off one
 /// keeps its channel out of a guild watched whole, and the guild rules that are on.
 fn refresh(conn: &Connection, cache: &RuleCache) -> Result<usize, RuleError> {
@@ -477,10 +419,6 @@ fn row_to_rule(row: &rusqlite::Row<'_>) -> rusqlite::Result<Rule> {
     };
     let id: String = row.get(0)?;
     let application_id: String = row.get(1)?;
-    let list = |index: usize| -> rusqlite::Result<Vec<String>> {
-        let text: String = row.get(index)?;
-        serde_json::from_str(&text).map_err(|e| corrupt(format!("rule {id} list: {e}")))
-    };
     Ok(Rule {
         id: id
             .parse()
@@ -491,14 +429,11 @@ fn row_to_rule(row: &rusqlite::Row<'_>) -> rusqlite::Result<Rule> {
         guild_id: row.get(2)?,
         input: RuleInput {
             channel_id: row.get(3)?,
-            post_to: row.get(4)?,
-            allow_users: list(5)?,
-            allow_roles: list(6)?,
-            enabled: row.get(7)?,
+            enabled: row.get(4)?,
         },
-        created_at: timestamp("watch_rules.created_at", row.get(8)?)
+        created_at: timestamp("watch_rules.created_at", row.get(5)?)
             .map_err(|e| corrupt(e.to_string()))?,
-        updated_at: timestamp("watch_rules.updated_at", row.get(9)?)
+        updated_at: timestamp("watch_rules.updated_at", row.get(6)?)
             .map_err(|e| corrupt(e.to_string()))?,
     })
 }
@@ -539,9 +474,6 @@ mod tests {
     fn input(channel: &str) -> RuleInput {
         RuleInput {
             channel_id: Some(channel.into()),
-            post_to: None,
-            allow_users: Vec::new(),
-            allow_roles: Vec::new(),
             enabled: true,
         }
     }
@@ -553,10 +485,7 @@ mod tests {
         let guild = Some(Id::new(100));
         assert!(cache.rule(a.0, guild, Id::new(10)).is_none());
 
-        let mut full = input("10");
-        full.post_to = Some("11".into());
-        full.allow_users = vec!["9".into()];
-        full.allow_roles = vec!["500".into()];
+        let full = input("10");
         let rule = store
             .create(&actor(), a, "100", full.clone())
             .await
@@ -565,9 +494,6 @@ mod tests {
         assert_eq!(rule.guild_id, "100");
         let cached = cache.rule(a.0, guild, Id::new(10)).unwrap();
         assert_eq!(cached.channel, Id::new(10));
-        assert_eq!(cached.post_to, Some(Id::new(11)));
-        assert_eq!(cached.allow_users, vec![Id::new(9)]);
-        assert_eq!(cached.allow_roles, vec![Id::new(500)]);
         assert!(cache.rule(b.0, guild, Id::new(10)).is_none());
 
         assert!(matches!(
@@ -576,22 +502,7 @@ mod tests {
         ));
         store.create(&actor(), b, "100", input("10")).await.unwrap();
         assert!(cache.rule(b.0, guild, Id::new(10)).is_some());
-        for bad in [
-            input("abc"),
-            input("0"),
-            RuleInput {
-                post_to: Some("x".into()),
-                ..input("12")
-            },
-            RuleInput {
-                allow_users: vec!["".into()],
-                ..input("12")
-            },
-            RuleInput {
-                allow_roles: vec!["x".into()],
-                ..input("12")
-            },
-        ] {
+        for bad in [input("abc"), input("0")] {
             assert!(matches!(
                 store.create(&actor(), a, "100", bad).await,
                 Err(RuleError::Invalid(_))
@@ -663,9 +574,6 @@ mod tests {
         let guild = Some(Id::new(100));
         let whole = RuleInput {
             channel_id: None,
-            post_to: Some("11".into()),
-            allow_users: Vec::new(),
-            allow_roles: vec!["500".into()],
             enabled: true,
         };
         let rule = store
@@ -681,18 +589,19 @@ mod tests {
         // Any channel of the guild gets the guild's rule, with itself as the channel.
         let picked = cache.rule(a.0, guild, Id::new(55)).unwrap();
         assert_eq!(picked.channel, Id::new(55));
-        assert_eq!(picked.post_to, Some(Id::new(11)));
-        assert_eq!(picked.allow_roles, vec![Id::new(500)]);
         // Not another guild's channel, not a channel outside any guild, not another
         // application's bot.
         assert!(cache.rule(a.0, Some(Id::new(200)), Id::new(55)).is_none());
         assert!(cache.rule(a.0, None, Id::new(55)).is_none());
         assert!(cache.rule(b.0, guild, Id::new(55)).is_none());
 
-        // A channel's own rule takes the guild's place: on, with its own settings; off,
-        // leaving the channel alone.
+        // A channel's own rule takes the guild's place: on, watching; off, leaving the
+        // channel alone.
         let own = store.create(&actor(), a, "100", input("56")).await.unwrap();
-        assert_eq!(cache.rule(a.0, guild, Id::new(56)).unwrap().post_to, None);
+        assert_eq!(
+            cache.rule(a.0, guild, Id::new(56)).unwrap().channel,
+            Id::new(56)
+        );
         store
             .update(
                 &actor(),

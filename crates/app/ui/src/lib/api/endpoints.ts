@@ -143,6 +143,9 @@ export const profiles = {
 			profile_id
 		} satisfies T.AssignRequest),
 	unassign: (scope: T.ScopeKey) => del<void>(`/profiles/assignments/${enc(scope)}`),
+	/** Replaces the sections named at a scope, in a profile that is the scope's own. */
+	patchOverlay: (scope: T.ScopeKey, body: T.SectionsPatch) =>
+		put<T.Profile>(`/profiles/assignments/${enc(scope)}/overlay`, body),
 	effective: (query: { guild?: T.Snowflake; channel?: T.Snowflake; user?: T.Snowflake } = {}) =>
 		get<T.EffectiveView>('/profiles/effective', query)
 };

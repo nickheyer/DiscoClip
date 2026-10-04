@@ -2,8 +2,8 @@
 //! be public or require a shared secret, an account of the front end's own or a login
 //! provider.
 //!
-//! Discord membership restrictions are optional. Bots can post front end links when uploads
-//! exceed size or quality limits.
+//! Discord membership restrictions are optional. A profile's delivery names the view the
+//! bot links to, or leaves the choice to the closest one that shows the job.
 //!
 //! Bots and viewer routes read a shared cache. Changes are audited transactionally.
 
@@ -11,10 +11,10 @@ use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::{Arc, RwLock};
 
-use discoclip_bot::{LinkTargets, MediaLink};
+use discoclip_bot::{LinkError, LinkTargets, MediaLink};
 use discoclip_engine::StoreError;
 use discoclip_engine::job::Job;
-use discoclip_engine::publish::{Fallback, QualityFloor};
+use discoclip_engine::policy::View;
 use discoclip_engine::rusqlite::{self, Connection, OptionalExtension, params};
 use discoclip_engine::store::sqlite::SqliteStore;
 use jiff::{SignedDuration, Timestamp};
@@ -124,44 +124,6 @@ impl Access {
     }
 }
 
-/// When the bot posts the front end's page instead of uploading: never, or whenever an
-/// upload would be too large or, for a video, reduced under the floor. The page's
-/// output is bounded by `max_bytes`, and the link the page hands Discord to play the
-/// media stays good for `signed_link_days`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-pub struct LinkPolicy {
-    pub enabled: bool,
-    pub min_height: u32,
-    pub min_bitrate: u64,
-    pub max_bytes: u64,
-    pub signed_link_days: u32,
-}
-
-impl Default for LinkPolicy {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            min_height: 720,
-            min_bitrate: 1_500_000,
-            max_bytes: 2 * 1024 * 1024 * 1024,
-            signed_link_days: 30,
-        }
-    }
-}
-
-impl LinkPolicy {
-    pub fn fallback(&self) -> Fallback {
-        Fallback {
-            max_bytes: self.max_bytes,
-            floor: QualityFloor {
-                min_height: self.min_height,
-                min_bitrate: self.min_bitrate,
-            },
-        }
-    }
-}
-
 /// What a front end says, as edited. The shared secret is set apart, never read back.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -183,12 +145,17 @@ pub struct FrontendInput {
     /// Whether viewers may download the media rather than only play it.
     #[serde(default = "yes")]
     pub downloads: bool,
-    #[serde(default)]
-    pub links: LinkPolicy,
+    /// How long the link the page hands Discord to play the media stays good
+    #[serde(default = "default_signed_days")]
+    pub signed_link_days: u32,
 }
 
 fn yes() -> bool {
     true
+}
+
+fn default_signed_days() -> u32 {
+    30
 }
 
 fn default_profile() -> ProfileId {
@@ -267,10 +234,8 @@ pub enum FrontendError {
     UnknownProfile(ProfileId),
     #[error("no login provider is called {0}")]
     UnknownProvider(String),
-    #[error(
-        "posting links needs the app's public address: open the app at the address people reach it by, or set web.public_url"
-    )]
-    NoPublicUrl,
+    #[error("{0} profile(s) post links through this view: point them elsewhere first")]
+    InUse(usize),
     #[error("{0}")]
     Password(String),
 }
@@ -316,13 +281,11 @@ pub fn check_slug(slug: &str) -> Result<(), FrontendError> {
     Ok(())
 }
 
-/// What a front end is checked against: the profiles and providers that exist, and
-/// whether the server has a public address to build links from.
+/// What a front end is checked against: the profiles and providers that exist
 #[derive(Clone)]
 pub struct Known {
     pub profiles: ProfileCache,
     pub providers: Vec<String>,
-    pub public_url: bool,
 }
 
 fn check(input: &FrontendInput, known: &Known) -> Result<FrontendInput, FrontendError> {
@@ -372,25 +335,10 @@ fn check(input: &FrontendInput, known: &Known) -> Result<FrontendInput, Frontend
             "requiring Discord membership needs a server or channel in the view's scope".into(),
         ));
     }
-    if input.links.enabled {
-        if !known.public_url {
-            return Err(FrontendError::NoPublicUrl);
-        }
-        if input.links.min_height == 0 || input.links.min_bitrate == 0 {
-            return Err(FrontendError::Invalid(
-                "the quality floor's height and bitrate must be above zero".into(),
-            ));
-        }
-        if input.links.max_bytes == 0 {
-            return Err(FrontendError::Invalid(
-                "the page's byte bound must be above zero".into(),
-            ));
-        }
-        if input.links.signed_link_days == 0 {
-            return Err(FrontendError::Invalid(
-                "signed links must last at least a day".into(),
-            ));
-        }
+    if input.signed_link_days == 0 {
+        return Err(FrontendError::Invalid(
+            "signed links must last at least a day".into(),
+        ));
     }
     Ok(FrontendInput {
         name,
@@ -501,51 +449,75 @@ impl FrontendCache {
             .ok()
     }
 
-    /// Whether any front end posts links, so a public address must stay known.
-    pub fn any_posting_links(&self) -> bool {
+    /// Every front end by id, and whether it is on
+    pub fn views(&self) -> std::collections::BTreeMap<String, bool> {
         self.inner
             .read()
             .unwrap_or_else(|e| e.into_inner())
             .by_slug
             .values()
-            .any(|c| c.frontend.input.enabled && c.frontend.input.links.enabled)
+            .map(|c| (c.frontend.id.to_string(), c.frontend.input.enabled))
+            .collect()
+    }
+
+    /// Whether any front end is on, so a profile that posts links has somewhere to point
+    pub fn any_enabled(&self) -> bool {
+        self.inner
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .by_slug
+            .values()
+            .any(|c| c.frontend.input.enabled)
     }
 }
 
 impl LinkTargets for FrontendCache {
-    /// The closest enabled front end that posts links and shows the job: a listed
-    /// channel over a listed guild over everything, then by slug.
-    fn link_for(&self, job: &Job) -> Option<MediaLink> {
+    /// The front end the policy names when it is on and shows the job, else the closest
+    /// enabled one that shows it: a listed channel over a listed guild over everything,
+    /// then by slug.
+    fn link_for(&self, job: &Job, view: &View) -> Result<MediaLink, LinkError> {
         let guild = job.request.origin.guild.as_deref();
         let channel = job.request.origin.channel.as_deref();
         let resolver = job.resolver();
         let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
-        let mut candidates: Vec<&Frontend> = inner
-            .by_slug
-            .values()
-            .map(|c| &c.frontend)
-            .filter(|f| f.input.enabled && f.input.links.enabled)
-            .filter(|f| self.shows(f, resolver, guild, channel))
-            .collect();
-        candidates.sort_by(|a, b| {
-            b.input
-                .scope
-                .closeness(guild, channel)
-                .cmp(&a.input.scope.closeness(guild, channel))
-                .then_with(|| a.input.slug.cmp(&b.input.slug))
-        });
-        let frontend = candidates.first()?;
-        let Some(page) = self.page_url(frontend, job) else {
-            tracing::warn!(
-                frontend = frontend.input.slug,
-                job = %job.id,
-                "No public address is known yet. Uploading the media file."
-            );
-            return None;
+        let frontend = match view {
+            View::Id(id) => {
+                let found = inner
+                    .by_slug
+                    .values()
+                    .map(|c| &c.frontend)
+                    .find(|f| f.id.to_string() == *id)
+                    .ok_or_else(|| LinkError::Unknown(id.clone()))?;
+                if !found.input.enabled {
+                    return Err(LinkError::Disabled(found.input.slug.clone()));
+                }
+                if !self.shows(found, resolver, guild, channel) {
+                    return Err(LinkError::NotShown(found.input.slug.clone()));
+                }
+                found
+            }
+            View::Auto => {
+                let mut candidates: Vec<&Frontend> = inner
+                    .by_slug
+                    .values()
+                    .map(|c| &c.frontend)
+                    .filter(|f| f.input.enabled)
+                    .filter(|f| self.shows(f, resolver, guild, channel))
+                    .collect();
+                candidates.sort_by(|a, b| {
+                    b.input
+                        .scope
+                        .closeness(guild, channel)
+                        .cmp(&a.input.scope.closeness(guild, channel))
+                        .then_with(|| a.input.slug.cmp(&b.input.slug))
+                });
+                candidates.first().copied().ok_or(LinkError::NoView)?
+            }
         };
-        Some(MediaLink {
+        let page = self.page_url(frontend, job).ok_or(LinkError::NoPublicUrl)?;
+        Ok(MediaLink {
             page,
-            fallback: frontend.input.links.fallback(),
+            view: frontend.id.to_string(),
         })
     }
 }
@@ -718,6 +690,10 @@ impl FrontendStore {
 
     /// Removes a front end with its accounts and sessions.
     pub async fn delete(&self, actor: &Actor, id: FrontendId) -> Result<(), FrontendError> {
+        let naming = self.cache.profiles.profiles_naming_view(&id.to_string());
+        if !naming.is_empty() {
+            return Err(FrontendError::InUse(naming.len()));
+        }
         let cache = self.cache.clone();
         let actor = actor.clone();
         transact(&self.db, move |tx| {
@@ -1166,7 +1142,7 @@ impl FrontendStore {
     /// A token that opens `job`'s media on `frontend` without a session, until the
     /// front end's signed links run out. What the page hands Discord to play the media.
     pub fn sign_media(&self, frontend: &Frontend, job: Uuid) -> String {
-        let days = frontend.input.links.signed_link_days.max(1);
+        let days = frontend.input.signed_link_days.max(1);
         let expires = Timestamp::now() + SignedDuration::from_hours(24 * i64::from(days));
         let ticket = MediaTicket {
             f: frontend.id.0,
@@ -1195,7 +1171,8 @@ struct Config {
     scope: ContentScope,
     access: Access,
     downloads: bool,
-    links: LinkPolicy,
+    #[serde(default = "default_signed_days")]
+    signed_link_days: u32,
 }
 
 fn encode_config(input: &FrontendInput) -> Result<String, FrontendError> {
@@ -1203,7 +1180,7 @@ fn encode_config(input: &FrontendInput) -> Result<String, FrontendError> {
         scope: input.scope.clone(),
         access: input.access.clone(),
         downloads: input.downloads,
-        links: input.links.clone(),
+        signed_link_days: input.signed_link_days,
     })
     .map_err(|e| FrontendError::Store(StoreError::Corrupt(e.to_string())))
 }
@@ -1270,7 +1247,7 @@ fn row_to_frontend(row: &rusqlite::Row<'_>) -> rusqlite::Result<Frontend> {
             scope: config.scope,
             access: config.access,
             downloads: config.downloads,
-            links: config.links,
+            signed_link_days: config.signed_link_days,
         },
         has_secret: row.get(7)?,
         created_at: timestamp("created_at", row.get(8)?).map_err(|e| corrupt(e.to_string()))?,
@@ -1298,9 +1275,7 @@ mod tests {
     use discoclip_engine::job::{Origin, Request, SourceId};
 
     use super::*;
-    use crate::profiles::{
-        PlatformDefault, PlatformFacts, PlatformToggles, ProfileInput, ProfileLimits, ProfileStore,
-    };
+    use crate::profiles::{PlatformDefault, PlatformFacts, PlatformToggles, ProfileStore};
 
     async fn stores() -> (FrontendStore, ProfileStore) {
         let db = SqliteStore::open_in_memory().await.unwrap();
@@ -1338,7 +1313,6 @@ mod tests {
         Known {
             profiles: profiles.cache(),
             providers: vec!["discord".to_string(), "github".to_string()],
-            public_url: true,
         }
     }
 
@@ -1352,7 +1326,7 @@ mod tests {
             scope: ContentScope::default(),
             access: Access::default(),
             downloads: true,
-            links: LinkPolicy::default(),
+            signed_link_days: 30,
         }
     }
 
@@ -1424,24 +1398,39 @@ mod tests {
                 .unwrap_err(),
             FrontendError::DuplicateSlug(_)
         ));
-        let mut linking = input("links");
-        linking.links.enabled = true;
-        let without_url = Known {
-            public_url: false,
-            ..known.clone()
-        };
+        let mut short = input("links");
+        short.signed_link_days = 0;
         assert!(matches!(
-            store
-                .create(&actor(), linking.clone(), &without_url)
-                .await
-                .unwrap_err(),
-            FrontendError::NoPublicUrl
+            store.create(&actor(), short, &known).await.unwrap_err(),
+            FrontendError::Invalid(_)
         ));
-        let linking = store.create(&actor(), linking, &known).await.unwrap();
+        let linking = store
+            .create(&actor(), input("links"), &known)
+            .await
+            .unwrap();
+        assert_eq!(linking.input.signed_link_days, 30);
         let cache = store.cache();
         assert_eq!(cache.get("LINKS").unwrap().id, linking.id);
         assert!(cache.get("nothing").is_none());
-        assert!(cache.any_posting_links());
+        assert!(cache.any_enabled());
+        assert_eq!(cache.views().get(&linking.id.to_string()), Some(&true));
+
+        // A profile that names the view keeps it from being deleted.
+        let mut names_it = crate::profiles::ProfileInput::named("Links here");
+        names_it.delivery.view = Some(View::Id(linking.id.to_string()));
+        let names_it = profiles
+            .create(
+                &actor(),
+                names_it,
+                &profiles.cache().known(cache.views(), true),
+            )
+            .await
+            .unwrap();
+        assert!(matches!(
+            store.delete(&actor(), linking.id).await.unwrap_err(),
+            FrontendError::InUse(1)
+        ));
+        profiles.delete(&actor(), names_it.id).await.unwrap();
 
         let mut disabled = linking.input.clone();
         disabled.enabled = false;
@@ -1450,79 +1439,106 @@ mod tests {
             .await
             .unwrap();
         assert!(store.cache().get("links").is_none());
-        assert!(!store.cache().any_posting_links());
+        assert_eq!(
+            store.cache().views().get(&linking.id.to_string()),
+            Some(&false)
+        );
         store.delete(&actor(), linking.id).await.unwrap();
         assert!(store.get(linking.id).await.unwrap().is_none());
     }
 
     #[tokio::test]
-    async fn the_closest_front_end_that_posts_links_is_linked() {
+    async fn the_view_the_policy_names_or_the_closest_one_is_linked() {
         let (store, profiles) = stores().await;
         let known = known(&profiles);
+        let seen = job(Some("5"), Some("1"), "reddit");
+        assert!(matches!(
+            store.cache().link_for(&seen, &View::Auto),
+            Err(LinkError::NoView)
+        ));
         let no_youtube = profiles
             .create(
                 &actor(),
-                ProfileInput {
-                    name: "No YouTube".into(),
-                    description: String::new(),
+                crate::profiles::ProfileInput {
                     platforms: PlatformToggles {
                         default: PlatformDefault::Inherit,
                         presets: Vec::new(),
                         overrides: [("youtube".to_string(), false)].into_iter().collect(),
                     },
-                    limits: ProfileLimits::default(),
-                    audio_language: None,
+                    ..crate::profiles::ProfileInput::named("No YouTube")
                 },
+                &crate::profiles::Known::default(),
             )
             .await
             .unwrap();
-        let mut everything = input("all");
-        everything.links.enabled = true;
-        store.create(&actor(), everything, &known).await.unwrap();
+        let all = store.create(&actor(), input("all"), &known).await.unwrap();
         let mut guild = input("guild");
         guild.scope.guilds = vec!["5".into()];
-        guild.links.enabled = true;
         guild.profile_id = no_youtube.id;
-        store.create(&actor(), guild, &known).await.unwrap();
+        let guild = store.create(&actor(), guild, &known).await.unwrap();
         let mut channel = input("chan");
         channel.scope.channels = vec!["1".into()];
-        channel.links.enabled = true;
-        store.create(&actor(), channel, &known).await.unwrap();
-        let mut silent = input("silent");
-        silent.scope.channels = vec!["1".into()];
-        store.create(&actor(), silent, &known).await.unwrap();
+        let channel = store.create(&actor(), channel, &known).await.unwrap();
+        let mut off = input("off");
+        off.scope.channels = vec!["1".into()];
+        off.enabled = false;
+        let off = store.create(&actor(), off, &known).await.unwrap();
         let cache = store.cache();
 
-        let seen = job(Some("5"), Some("1"), "reddit");
-        let link = cache.link_for(&seen).unwrap();
+        let auto = View::Auto;
+        let link = cache.link_for(&seen, &auto).unwrap();
         assert_eq!(
             link.page.as_str(),
             format!("https://clips.example/f/chan/j/{}", seen.id)
         );
+        assert_eq!(link.view, channel.id.to_string());
         let link = cache
-            .link_for(&job(Some("5"), Some("2"), "reddit"))
+            .link_for(&job(Some("5"), Some("2"), "reddit"), &auto)
             .unwrap();
         assert!(
             link.page
                 .as_str()
                 .starts_with("https://clips.example/f/guild/j/")
         );
-        assert_eq!(link.fallback.floor.min_height, 720);
         // The guild's front end hides YouTube, so the one for everything takes it.
         let link = cache
-            .link_for(&job(Some("5"), Some("2"), "youtube"))
+            .link_for(&job(Some("5"), Some("2"), "youtube"), &auto)
             .unwrap();
         assert!(
             link.page
                 .as_str()
                 .starts_with("https://clips.example/f/all/j/")
         );
-        let link = cache.link_for(&job(None, None, "web")).unwrap();
+        let link = cache.link_for(&job(None, None, "web"), &auto).unwrap();
         assert!(
             link.page
                 .as_str()
                 .starts_with("https://clips.example/f/all/j/")
         );
+        // A named view is taken when it is on and shows the job.
+        let link = cache
+            .link_for(&seen, &View::Id(all.id.to_string()))
+            .unwrap();
+        assert!(
+            link.page
+                .as_str()
+                .starts_with("https://clips.example/f/all/j/")
+        );
+        assert!(matches!(
+            cache.link_for(
+                &job(Some("5"), Some("2"), "youtube"),
+                &View::Id(guild.id.to_string())
+            ),
+            Err(LinkError::NotShown(_))
+        ));
+        assert!(matches!(
+            cache.link_for(&seen, &View::Id(off.id.to_string())),
+            Err(LinkError::Disabled(_))
+        ));
+        assert!(matches!(
+            cache.link_for(&seen, &View::Id("nope".into())),
+            Err(LinkError::Unknown(_))
+        ));
 
         let all = cache.get("all").unwrap();
         assert!(cache.shows(&all, Some("youtube"), None, None));

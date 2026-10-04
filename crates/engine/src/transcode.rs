@@ -255,7 +255,7 @@ pub enum TranscodeError {
     Io(#[from] std::io::Error),
 }
 
-const SIZE_MARGIN: f64 = 0.95;
+pub const SIZE_MARGIN: f64 = 0.95;
 const MIN_BITS_PER_PIXEL: f64 = 0.03;
 const MAX_BITS_PER_PIXEL: f64 = 0.16;
 const MIN_VIDEO_BPS: f64 = 40_000.0;
@@ -270,6 +270,11 @@ const FLAT_H_FOV: f64 = 100.0;
 const STILL_FPS: u32 = 10;
 /// The bits a still picture is allowed beside the sound.
 const STILL_VIDEO_BPS: u64 = 80_000;
+
+/// Bits per second a file of `max_bytes` may spend over `secs` with the margin kept
+pub fn byte_budget_bps(max_bytes: u64, secs: f64) -> f64 {
+    max_bytes as f64 * 8.0 * SIZE_MARGIN / secs
+}
 
 impl From<FfmpegError> for TranscodeError {
     fn from(error: FfmpegError) -> Self {
@@ -1268,7 +1273,7 @@ impl FfmpegTranscoder {
             max_bytes: target.max_bytes,
             duration_secs: duration.as_secs(),
         };
-        let mut budget_bps = target.max_bytes as f64 * 8.0 * SIZE_MARGIN / secs;
+        let mut budget_bps = byte_budget_bps(target.max_bytes, secs);
         let total = duration.as_micros() as u64;
         for attempt in 1..=ATTEMPTS {
             let bps = AUDIO_ONLY_BPS
@@ -1471,7 +1476,7 @@ impl FfmpegTranscoder {
             target.max_fps,
             has_audio,
         );
-        let mut total_bps = target.max_bytes as f64 * 8.0 * SIZE_MARGIN / secs;
+        let mut total_bps = byte_budget_bps(target.max_bytes, secs);
         let log_prefix = dest_dir.join("passlog");
         let mut attempt = 0;
         let mut fell_back = false;
@@ -1664,7 +1669,7 @@ impl FfmpegTranscoder {
             duration_secs: duration.as_secs(),
         };
         let total = duration.as_micros() as u64;
-        let mut budget_bps = target.max_bytes as f64 * 8.0 * SIZE_MARGIN / secs;
+        let mut budget_bps = byte_budget_bps(target.max_bytes, secs);
         for attempt in 1..=ATTEMPTS {
             let audio_bps = AUDIO_ONLY_BPS
                 .iter()

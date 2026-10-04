@@ -1,10 +1,9 @@
-//! Profiles: which platforms are on where, edited by admins, and put assigned per guild,
-//! channel or user by operators and by whoever manages the guild on Discord.
+//! Profiles: the policy, edited by admins, and put assigned per guild, channel or user by
+//! operators and by whoever manages the guild on Discord.
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use discoclip_engine::EngineConfig;
 use serde::{Deserialize, Serialize};
 
 use super::AppState;
@@ -12,7 +11,8 @@ use super::auth::{Auth, Identity, parse_id};
 use super::error::ApiError;
 use super::rules::may_edit;
 use crate::profiles::{
-    Assignment, EffectiveProfile, Preset, Profile, ProfileError, ProfileId, ProfileInput, Scope,
+    Assignment, EffectivePolicy, Known, Preset, Profile, ProfileError, ProfileId, ProfileInput,
+    Scope, SectionsPatch,
 };
 use crate::users::Permission;
 
@@ -22,10 +22,14 @@ impl From<ProfileError> for ApiError {
             ProfileError::NotFound(_) => ApiError::NotFound,
             ProfileError::Invalid(_)
             | ProfileError::UnknownPlatform(_)
-            | ProfileError::UnknownPreset(_) => ApiError::BadRequest(error.to_string()),
+            | ProfileError::UnknownPreset(_)
+            | ProfileError::UnknownView(_)
+            | ProfileError::Incomplete(_) => ApiError::BadRequest(error.to_string()),
             ProfileError::Duplicate(_)
             | ProfileError::Builtin(_)
             | ProfileError::InUse(_)
+            | ProfileError::ViewDisabled(_)
+            | ProfileError::NoPublicUrl
             | ProfileError::GlobalRequired => ApiError::Conflict(error.to_string()),
             ProfileError::Store(_) => ApiError::Internal(error.to_string()),
         }
@@ -41,45 +45,12 @@ async fn may_assign(state: &AppState, identity: &Identity, scope: &Scope) -> Res
     }
 }
 
-/// The engine's own limits. They cap every profile, however high a profile sets its own,
-/// and they are what a blank profile limit ends up bounded by.
-#[derive(Debug, Clone, Copy, Serialize)]
-pub struct ServerLimits {
-    pub max_source_bytes: u64,
-    /// `null` when the server puts no bound of its own on how long media may be.
-    pub max_duration_secs: Option<u64>,
-    pub max_height: u32,
-    /// How long a live stream is captured at most.
-    pub max_capture_secs: u64,
-}
-
-impl ServerLimits {
-    fn of(config: &EngineConfig) -> Self {
-        Self {
-            max_source_bytes: config.limits.max_source_bytes,
-            max_duration_secs: config.limits.max_duration_secs,
-            max_height: config.limits.max_height,
-            max_capture_secs: config.live.max_capture_secs,
-        }
-    }
-}
-
-/// A profile as the API hands it over: the profile itself, and the server limits that cap
-/// it, so whoever edits profiles reads the ceiling without the settings permission.
-#[derive(Debug, Serialize)]
-pub struct ProfileView {
-    #[serde(flatten)]
-    pub profile: Profile,
-    pub server_limits: ServerLimits,
-}
-
-impl ProfileView {
-    fn of(profile: Profile, config: &EngineConfig) -> Self {
-        Self {
-            profile,
-            server_limits: ServerLimits::of(config),
-        }
-    }
+/// What profiles are checked against as the server stands
+fn known(state: &AppState) -> Known {
+    state.profiles.cache().known(
+        state.frontends.cache().views(),
+        state.public_url.get().is_some(),
+    )
 }
 
 /// The presets a profile can choose, each with the platforms in it.
@@ -91,41 +62,32 @@ pub async fn presets(State(state): State<AppState>, Auth(_): Auth) -> Json<Vec<P
 pub async fn list(
     State(state): State<AppState>,
     Auth(_): Auth,
-) -> Result<Json<Vec<ProfileView>>, ApiError> {
-    let config = state.engine.config();
-    Ok(Json(
-        state
-            .profiles
-            .list()
-            .await?
-            .into_iter()
-            .map(|profile| ProfileView::of(profile, &config))
-            .collect(),
-    ))
+) -> Result<Json<Vec<Profile>>, ApiError> {
+    Ok(Json(state.profiles.list().await?))
 }
 
 pub async fn get(
     State(state): State<AppState>,
     Auth(_): Auth,
     Path(id): Path<String>,
-) -> Result<Json<ProfileView>, ApiError> {
+) -> Result<Json<Profile>, ApiError> {
     let id: ProfileId = parse_id(&id)?;
     let profile = state.profiles.get(id).await?.ok_or(ApiError::NotFound)?;
-    Ok(Json(ProfileView::of(profile, &state.engine.config())))
+    Ok(Json(profile))
 }
 
 pub async fn create(
     State(state): State<AppState>,
     Auth(identity): Auth,
     Json(input): Json<ProfileInput>,
-) -> Result<(StatusCode, Json<ProfileView>), ApiError> {
+) -> Result<(StatusCode, Json<Profile>), ApiError> {
     identity.require(Permission::ManageSettings)?;
-    let profile = state.profiles.create(&identity.actor(), input).await?;
+    let profile = state
+        .profiles
+        .create(&identity.actor(), input, &known(&state))
+        .await?;
     tracing::info!(by = identity.user.username, profile = %profile.id, name = profile.input.name, "profile created");
-    Ok((
-        StatusCode::CREATED,
-        Json(ProfileView::of(profile, &state.engine.config())),
-    ))
+    Ok((StatusCode::CREATED, Json(profile)))
 }
 
 pub async fn update(
@@ -133,12 +95,15 @@ pub async fn update(
     Auth(identity): Auth,
     Path(id): Path<String>,
     Json(input): Json<ProfileInput>,
-) -> Result<Json<ProfileView>, ApiError> {
+) -> Result<Json<Profile>, ApiError> {
     identity.require(Permission::ManageSettings)?;
     let id: ProfileId = parse_id(&id)?;
-    let profile = state.profiles.update(&identity.actor(), id, input).await?;
+    let profile = state
+        .profiles
+        .update(&identity.actor(), id, input, &known(&state))
+        .await?;
     tracing::info!(by = identity.user.username, profile = %profile.id, name = profile.input.name, "profile updated");
-    Ok(Json(ProfileView::of(profile, &state.engine.config())))
+    Ok(Json(profile))
 }
 
 pub async fn delete(
@@ -223,6 +188,28 @@ pub async fn unassign(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Replaces the sections named at a scope in the profile that is the scope's own, making
+/// one when the scope shares its profile or has none. Who may post and where results go
+/// need what assigning at the scope needs. Output and upload need the settings permission.
+pub async fn patch_overlay(
+    State(state): State<AppState>,
+    Auth(identity): Auth,
+    Path(scope): Path<String>,
+    Json(patch): Json<SectionsPatch>,
+) -> Result<Json<Profile>, ApiError> {
+    let scope = parse_scope(&scope)?;
+    may_assign(&state, &identity, &scope).await?;
+    if patch.needs_settings_permission() {
+        identity.require(Permission::ManageSettings)?;
+    }
+    let profile = state
+        .profiles
+        .patch_overlay(&identity.actor(), scope.clone(), patch, &known(&state))
+        .await?;
+    tracing::info!(by = identity.user.username, scope = scope.key(), profile = %profile.id, "profile options set");
+    Ok(Json(profile))
+}
+
 #[derive(Debug, Deserialize)]
 pub struct EffectiveQuery {
     #[serde(default)]
@@ -234,11 +221,11 @@ pub struct EffectiveQuery {
 }
 
 /// What the profiles assigned add up to for a link seen in a channel of a guild from a
-/// user, or for the whole server alone.
+/// user, or for the whole server alone: every value settled.
 #[derive(Debug, Serialize)]
 pub struct EffectiveView {
     #[serde(flatten)]
-    pub effective: EffectiveProfile,
+    pub effective: EffectivePolicy,
     /// The resolver ids turned off, as the engine is told.
     pub disabled: Vec<String>,
 }
@@ -300,29 +287,25 @@ mod tests {
         assert_eq!(body["platforms"]["fixtured"], true);
         assert_eq!(body["platforms"]["nothing"], true);
         assert_eq!(body["disabled"], json!([]));
+        // Every value is settled: the built-in profile names them all.
         assert_eq!(
             body["limits"],
             json!({
-                "max_source_bytes": null,
-                "max_duration_secs": null,
-                "max_height": null,
-                "max_capture_secs": null
+                "max_source_bytes": 2_u64 * 1024 * 1024 * 1024,
+                "max_duration_secs": 3 * 60 * 60,
+                "max_height": 1080,
+                "max_capture_secs": 3 * 60 * 60
             })
         );
+        assert_eq!(body["delivery"]["under_floor"], "skip");
+        assert_eq!(body["upload"]["max_bytes"], "auto");
+        assert_eq!(body["message"]["placement"], "reply");
+        assert_eq!(body["dedupe"]["enabled"], true);
         assert_eq!(body["applied"][0]["scope"]["kind"], "global");
-
-        // Every profile carries the engine's own limits, so whoever edits a profile reads
-        // the ceiling its blank limits end up under without the settings permission.
-        let server_limits = json!({
-            "max_source_bytes": 2_u64 * 1024 * 1024 * 1024,
-            "max_duration_secs": 3 * 60 * 60,
-            "max_height": 1080,
-            "max_capture_secs": 3 * 60 * 60
-        });
-        assert_eq!(profiles[0]["server_limits"], server_limits);
+        assert_eq!(profiles[0]["limits"]["max_height"], 1080);
         let (status, body) = viewer.get(&format!("/api/profiles/{default_id}")).await;
         assert_eq!(status, StatusCode::OK, "{body}");
-        assert_eq!(body["server_limits"], server_limits);
+        assert_eq!(body["output"]["container"], "mp4");
 
         // Viewers may not edit.
         let input = json!({
@@ -339,7 +322,7 @@ mod tests {
         assert_eq!(status, StatusCode::CREATED, "{body}");
         let id = body["id"].as_str().unwrap().to_string();
         assert_eq!(body["builtin"], false);
-        assert_eq!(body["server_limits"], server_limits);
+        assert!(body["delivery"]["mode"].is_null());
         assert_eq!(body["platforms"]["overrides"]["fixtured"], false);
         assert_eq!(body["limits"]["max_duration_secs"], 120);
         assert_eq!(body["limits"]["max_height"], 720);
@@ -394,8 +377,8 @@ mod tests {
                 .contains("The assigned profile disables fixtured links."),
             "{body}"
         );
-        // A link the profile allows is queued under its limits, tightened by the
-        // submitter's own, and a retry takes the profile as it stands then.
+        // A link the profile allows is queued with the policy stamped on it, the
+        // submitter's own limits tightening the policy's where they are tighter.
         let (status, body) = admin
             .post(
                 "/api/jobs",
@@ -407,8 +390,20 @@ mod tests {
         let (status, body) = admin.get(&format!("/api/jobs/{job_id}")).await;
         assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(body["request"]["limits"]["max_height"], 480);
-        assert_eq!(body["request"]["limits"]["max_duration_secs"], 120);
+        assert_eq!(body["request"]["limits"]["max_duration_secs"], 600);
         assert!(body["request"]["limits"]["max_source_bytes"].is_null());
+        assert_eq!(
+            body["request"]["policy"]["limits"]["max_duration_secs"],
+            120
+        );
+        assert_eq!(body["request"]["policy"]["limits"]["max_height"], 720);
+        assert_eq!(body["request"]["policy"]["delivery"]["under_floor"], "skip");
+        assert_eq!(body["limits_in_force"]["max_height"], 480);
+        assert_eq!(body["limits_in_force"]["max_duration_secs"], 120);
+        assert_eq!(
+            body["limits_in_force"]["max_source_bytes"],
+            2_u64 * 1024 * 1024 * 1024
+        );
         // The profile assigned cannot be removed, and the server always has one.
         assert_eq!(
             admin.delete(&format!("/api/profiles/{id}")).await.0,
@@ -523,6 +518,7 @@ mod tests {
             .iter()
             .map(|e| e["action"].as_str().unwrap())
             .collect();
+        // The oldest entry is the built-in profile naming every value at the first start.
         assert_eq!(
             actions,
             vec![
@@ -533,6 +529,7 @@ mod tests {
                 "profile.assign",
                 "profile.assign",
                 "profile.create",
+                "profile.update",
             ]
         );
         let assign = body["entries"]
@@ -543,5 +540,146 @@ mod tests {
             .unwrap();
         assert_eq!(assign["details"]["scope"]["channel_id"], "1");
         assert_eq!(assign["target"]["kind"], "profile");
+    }
+
+    #[tokio::test]
+    async fn the_builtin_is_complete_and_scopes_get_options_of_their_own() {
+        let app = app_with_admin().await;
+        app.state
+            .users
+            .create("viewer", Some("battery staple"), Role::Viewer)
+            .await
+            .unwrap();
+        let mut admin = Client::new(&app);
+        admin.login("nick", "correct horse").await;
+        let mut viewer = Client::new(&app);
+        viewer.login("viewer", "battery staple").await;
+        let (_, body) = admin.get("/api/profiles").await;
+        let default = body.as_array().unwrap()[0].clone();
+        let default_id = default["id"].as_str().unwrap().to_string();
+
+        // The built-in profile has to name every value.
+        let (status, body) = admin
+            .send(
+                Method::PUT,
+                &format!("/api/profiles/{default_id}"),
+                Some(json!({"name": "Default", "platforms": {"default": "enabled"}})),
+            )
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert!(
+            body["error"].as_str().unwrap().contains("leaves out"),
+            "{body}"
+        );
+        let mut lifted = default.clone();
+        for key in ["id", "builtin", "created_at", "updated_at"] {
+            lifted.as_object_mut().unwrap().remove(key);
+        }
+        lifted["limits"]["max_duration_secs"] = json!(null);
+        let (status, body) = admin
+            .send(
+                Method::PUT,
+                &format!("/api/profiles/{default_id}"),
+                Some(lifted),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let (_, body) = admin.get("/api/profiles/effective").await;
+        assert!(body["limits"]["max_duration_secs"].is_null());
+
+        // Links need a view that exists and a public address.
+        let (status, body) = admin
+            .post(
+                "/api/profiles",
+                json!({"name": "Linked", "delivery": {"view": "nope"}}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        // The app learned its address from the admin's own requests, so links may be
+        // chosen without naming a view.
+        let (status, body) = admin
+            .post(
+                "/api/profiles",
+                json!({"name": "Linked", "delivery": {"under_floor": "link"}}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+        assert_eq!(body["delivery"]["under_floor"], "link");
+        assert!(body["delivery"]["view"].is_null());
+        let (status, body) = admin
+            .post(
+                "/api/profiles",
+                json!({"name": "Odd", "upload": {"max_bytes": 0}}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        let (status, body) = admin
+            .post(
+                "/api/profiles",
+                json!({"name": "Odd", "output": {"video_codec": "vp9"}}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert!(body["error"].as_str().unwrap().starts_with("output:"));
+
+        // A scope's options go into a profile of its own.
+        let (status, body) = admin
+            .send(
+                Method::PUT,
+                "/api/profiles/assignments/channel:5:1/overlay",
+                Some(json!({"intake": {"allow_users": ["9"]}, "message": {"destination": "50"}})),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["name"], "Channel 1 options");
+        assert_eq!(body["intake"]["allow_users"], json!(["9"]));
+        assert_eq!(body["message"]["destination"], "50");
+        assert!(body["limits"].get("max_duration_secs").is_none());
+        let overlay_id = body["id"].as_str().unwrap().to_string();
+        let (_, body) = viewer
+            .get("/api/profiles/effective?guild=5&channel=1")
+            .await;
+        assert_eq!(body["intake"]["allow_users"], json!(["9"]));
+        assert_eq!(body["message"]["destination"], "50");
+        assert_eq!(body["message"]["placement"], "reply");
+        assert_eq!(body["applied"][1]["profile_id"], overlay_id);
+        let (status, body) = admin
+            .send(
+                Method::PUT,
+                "/api/profiles/assignments/channel:5:1/overlay",
+                Some(json!({"message": {"destination": null}})),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["id"], overlay_id);
+        assert!(body["message"]["destination"].is_null());
+        assert_eq!(body["intake"]["allow_users"], json!(["9"]));
+        assert_eq!(
+            viewer
+                .send(
+                    Method::PUT,
+                    "/api/profiles/assignments/channel:5:1/overlay",
+                    Some(json!({"intake": {"allow_users": []}}))
+                )
+                .await
+                .0,
+            StatusCode::FORBIDDEN
+        );
+        let (status, body) = admin
+            .send(
+                Method::PUT,
+                "/api/profiles/assignments/channel:5:1/overlay",
+                Some(json!({"message": {"destination": "x"}})),
+            )
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        let (status, body) = admin
+            .send(
+                Method::PUT,
+                "/api/profiles/assignments/global/overlay",
+                Some(json!({"intake": {"live": false}})),
+            )
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     }
 }

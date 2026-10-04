@@ -98,18 +98,11 @@
 			value: (rule) => rule.guild_name ?? rule.guild_id
 		},
 		{ key: 'channel', label: 'Channel', cell: channelCell },
-		{ key: 'post_to', label: 'Posts to', cell: postToCell },
 		{
 			key: 'application',
 			label: 'Application',
 			sortable: true,
 			value: (rule) => appName(rule.application_id)
-		},
-		{
-			key: 'allow',
-			label: 'Allowed',
-			value: (rule) =>
-				`${number(rule.allow_users.length)} members · ${number(rule.allow_roles.length)} roles`
 		},
 		{ key: 'enabled', label: 'Enabled', cell: enabledCell },
 		{ key: 'updated', label: 'Updated', cell: updatedCell }
@@ -145,13 +138,6 @@
 		{@render channelName(rule.channel_id, rule.channel_name)}
 	{:else}
 		Every channel
-	{/if}
-{/snippet}
-{#snippet postToCell(rule: RuleView)}
-	{#if rule.post_to && rule.post_to !== rule.channel_id}
-		{@render channelName(rule.post_to, rule.post_to_name)}
-	{:else}
-		Same channel
 	{/if}
 {/snippet}
 {#snippet enabledCell(rule: RuleView)}

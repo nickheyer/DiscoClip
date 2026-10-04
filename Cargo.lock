@@ -1558,6 +1558,7 @@ name = "discoclip-bot"
 version = "0.1.9"
 dependencies = [
  "async-trait",
+ "axum",
  "discoclip-engine",
  "futures",
  "jiff",
@@ -5353,6 +5354,7 @@ dependencies = [
  "dashmap",
  "serde",
  "twilight-model",
+ "twilight-util",
 ]
 
 [[package]]

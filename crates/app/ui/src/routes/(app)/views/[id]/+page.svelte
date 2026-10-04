@@ -30,6 +30,7 @@
 	import ErrorState from '$lib/components/ErrorState.svelte';
 	import Field from '$lib/components/Field.svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import NumberInput from '$lib/components/NumberInput.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Timestamp from '$lib/components/Timestamp.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
@@ -74,12 +75,8 @@
 	let accessProviders = $state<string[]>([]);
 	let discordMembers = $state(false);
 	let discordUsers = $state<Snowflake[]>([]);
-	// Links
-	let linksEnabled = $state(false);
-	let minHeight = $state('720');
-	let minBitrateKbps = $state('1500');
-	let maxMb = $state(String(2048));
-	let signedDays = $state('30');
+	/** How long the link the page hands Discord to play the media stays good, in days. */
+	let signedDays = $state<number | null>(30);
 
 	// The secret, set apart from the form: at once on a saved view, and right after
 	// creating a new one.
@@ -117,12 +114,7 @@
 		accessProviders = [...(a?.providers ?? [])];
 		discordMembers = a?.discord_members ?? false;
 		discordUsers = [...(a?.discord_users ?? [])];
-		const l = source?.links;
-		linksEnabled = l?.enabled ?? false;
-		minHeight = String(l?.min_height ?? 720);
-		minBitrateKbps = String(Math.round((l?.min_bitrate ?? 1_500_000) / 1000));
-		maxMb = String(Math.round((l?.max_bytes ?? 2 * 1024 * 1024 * 1024) / 1024 / 1024));
-		signedDays = String(l?.signed_link_days ?? 30);
+		signedDays = source?.signed_link_days ?? 30;
 	}
 
 	let requestId = 0;
@@ -193,16 +185,7 @@
 		const found: Record<string, string> = {};
 		if (!name.trim()) found.name = 'Give the view a name.';
 		if (!/^[a-z0-9-]+$/.test(slug)) found.slug = 'Lower-case letters, digits and dashes only.';
-		const heightPx = Number(minHeight);
-		const kbps = Number(minBitrateKbps);
-		const mb = Number(maxMb);
-		const days = Number(signedDays);
-		if (linksEnabled) {
-			if (!Number.isInteger(heightPx) || heightPx <= 0)
-				found.minHeight = 'Whole pixels above zero.';
-			if (!Number.isFinite(kbps) || kbps <= 0) found.minBitrate = 'A rate above zero.';
-			if (!Number.isFinite(mb) || mb <= 0) found.maxMb = 'A size above zero.';
-		}
+		const days = signedDays ?? 0;
 		if (!Number.isInteger(days) || days <= 0) found.signedDays = 'Whole days above zero.';
 		for (const user of discordUsers) {
 			if (!/^\d{5,25}$/.test(user)) found.discordUsers = `${user} is not a Discord user id.`;
@@ -228,13 +211,7 @@
 				discord_users: discordUsers
 			},
 			downloads,
-			links: {
-				enabled: linksEnabled,
-				min_height: heightPx,
-				min_bitrate: Math.round(kbps * 1000),
-				max_bytes: Math.round(mb * 1024 * 1024),
-				signed_link_days: days
-			}
+			signed_link_days: days
 		};
 	}
 
@@ -474,6 +451,9 @@
 							{/each}
 						</select>
 					</Field>
+					<Field label="Signed links last" for="view-signed-days" error={errors.signedDays}>
+						<NumberInput id="view-signed-days" bind:value={signedDays} min={1} unit="days" />
+					</Field>
 					<div class="flex flex-col justify-center gap-3 md:pt-6">
 						{@render toggleSwitch('Enabled', enabled, (value) => (enabled = value))}
 						{@render toggleSwitch(
@@ -659,61 +639,6 @@
 							</div>
 						</div>
 					{/if}
-				</div>
-			</Card>
-
-			<Card
-				title="Discord links"
-				description="Post a page from this view instead of the file when an upload is too large or the output falls below these thresholds. Pages are built on the address this app is reached at, or web.public_url when set."
-			>
-				<div class="space-y-4">
-					{@render toggleSwitch('Post links', linksEnabled, (value) => (linksEnabled = value))}
-					<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-						<Field label="Min height" for="view-min-height" help="Pixels" error={errors.minHeight}>
-							<input
-								id="view-min-height"
-								class="input"
-								type="number"
-								min="1"
-								bind:value={minHeight}
-								disabled={!linksEnabled}
-							/>
-						</Field>
-						<Field label="Min bitrate" for="view-min-bitrate" help="kbps" error={errors.minBitrate}>
-							<input
-								id="view-min-bitrate"
-								class="input"
-								type="number"
-								min="1"
-								bind:value={minBitrateKbps}
-								disabled={!linksEnabled}
-							/>
-						</Field>
-						<Field label="Max page output" for="view-max-mb" help="MB" error={errors.maxMb}>
-							<input
-								id="view-max-mb"
-								class="input"
-								type="number"
-								min="1"
-								bind:value={maxMb}
-								disabled={!linksEnabled}
-							/>
-						</Field>
-						<Field
-							label="Signed links last"
-							for="view-signed-days"
-							help="Days"
-							error={errors.signedDays}
-						>
-							<input
-								id="view-signed-days"
-								class="input"
-								type="number"
-								min="1"
-								bind:value={signedDays}
-							/>
-						</Field>
-					</div>
 				</div>
 			</Card>
 

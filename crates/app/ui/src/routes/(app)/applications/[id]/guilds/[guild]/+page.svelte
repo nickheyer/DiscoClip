@@ -17,11 +17,11 @@
 		GuildRole,
 		Profile,
 		Rule,
+		Scope,
 		Snowflake,
 		Uuid
 	} from '$lib/api/types';
 	import Card from '$lib/components/Card.svelte';
-	import Confirm from '$lib/components/Confirm.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
 	import Identifier from '$lib/components/Identifier.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
@@ -29,15 +29,10 @@
 	import Status from '$lib/components/Status.svelte';
 	import ChannelTable from '$lib/components/guild/ChannelTable.svelte';
 	import MemberProfiles from '$lib/components/guild/MemberProfiles.svelte';
-	import RuleDialog from '$lib/components/guild/RuleDialog.svelte';
+	import OptionsDialog from '$lib/components/guild/OptionsDialog.svelte';
 	import { channelLabel } from '$lib/components/guild/channels';
-	import {
-		hasOptions,
-		inputOf,
-		ruleSummary,
-		stopWatching,
-		watchServer
-	} from '$lib/components/guild/watching';
+	import { optionsOf, optionsSummary, profileAt } from '$lib/components/guild/options';
+	import { inputOf, stopWatching, watchServer } from '$lib/components/guild/watching';
 	import { session } from '$lib/session.svelte';
 	import { notify, reportError } from '$lib/toast.svelte';
 
@@ -54,15 +49,8 @@
 	let error = $state<unknown>(null);
 
 	let dialogOpen = $state(false);
-	/** The rule the dialog edits, or nothing while it makes one. */
-	let editing = $state<Rule | null>(null);
-	/** The channel a rule is made for, or null for every channel. */
-	let editingChannel = $state<Snowflake | null>(null);
-	/** The rule a new rule's options start from: the server's, for a channel it covers. */
-	let template = $state<Rule | null>(null);
-	/** The rule with options of its own that was switched off, awaiting a yes. */
-	let unwatching = $state<Rule | null>(null);
-	let confirmOpen = $state(false);
+	/** The place whose options the dialog edits */
+	let editing = $state<Scope>({ kind: 'guild', guild_id: '' });
 	let serverBusy = $state(false);
 	let serverPending = $state(false);
 
@@ -71,7 +59,11 @@
 
 	const serverRule = $derived(rules.find((rule) => rule.channel_id === null) ?? null);
 	const serverOn = $derived(serverRule?.enabled ?? false);
-	const serverSummary = $derived(serverRule && serverOn ? ruleSummary(serverRule, channels) : []);
+	const serverScope = $derived<Scope>({ kind: 'guild', guild_id: guild });
+	const serverProfile = $derived(profileAt(serverScope, assignments, profiles));
+	const serverSummary = $derived(
+		serverOn ? optionsSummary(optionsOf(serverProfile), channels) : []
+	);
 
 	const profileName = (profileId: Uuid) =>
 		profiles.find((p) => p.id === profileId)?.name ?? profileId;
@@ -86,6 +78,8 @@
 	);
 	/** With one profile there is nothing to assign, so the profile controls stay out. */
 	const choosable = $derived(profiles.length > 1);
+	/** The profile at the place the dialog edits, whose options it starts from */
+	const editingProfile = $derived(profileAt(editing, assignments, profiles));
 
 	let requestId = 0;
 	async function load() {
@@ -127,6 +121,14 @@
 		assignments = await profilesApi.assignments(guild);
 	}
 
+	/** Options saved make or change a place's own profile, so both lists are read again */
+	async function reloadProfiles() {
+		[assignments, profiles] = await Promise.all([
+			profilesApi.assignments(guild),
+			profilesApi.list()
+		]);
+	}
+
 	/** Sets or clears one scope's profile. Throws so the control can undo its pick. */
 	async function assign(key: string, profileId: Uuid | null, done: string) {
 		try {
@@ -152,7 +154,7 @@
 		serverPending = true;
 		try {
 			await assign(
-				scopeKey({ kind: 'guild', guild_id: guild }),
+				scopeKey(serverScope),
 				next || null,
 				next ? 'Server profile set' : 'Server profile cleared'
 			);
@@ -189,7 +191,7 @@
 		const rule = rules.find((r) => r.channel_id === channel) ?? null;
 		try {
 			if (on) {
-				if (rule && (hasOptions(rule) || !serverOn)) {
+				if (rule && !serverOn) {
 					keep(await rulesApi.update(rule.id, { ...inputOf(rule), enabled: true }));
 				} else if (rule) {
 					// A rule that only left the channel out: without it the server's covers the
@@ -208,9 +210,6 @@
 						: await rulesApi.create(id, guild, { channel_id: channel, enabled: false })
 				);
 				notify.success('Left out', labelOf(channel));
-			} else if (rule && hasOptions(rule)) {
-				unwatching = rule;
-				confirmOpen = true;
 			} else if (rule) {
 				await remove(rule);
 			}
@@ -226,9 +225,6 @@
 			if (on) {
 				keep(await watchServer(id, guild, serverRule));
 				notify.success('Watching every channel');
-			} else if (serverRule && hasOptions(serverRule)) {
-				unwatching = serverRule;
-				confirmOpen = true;
 			} else if (serverRule) {
 				await remove(serverRule);
 			}
@@ -239,14 +235,10 @@
 		}
 	}
 
-	/**
-	 * Opens the options of a channel, or with null, of the server. A channel the server's
-	 * rule covers gets a rule of its own, starting from the server's options.
-	 */
-	function openOptions(channel: Snowflake | null, rule: Rule | null) {
-		editing = rule;
-		editingChannel = channel;
-		template = rule ? null : serverRule;
+	/** Opens the options of a channel, or with null, of the server */
+	function openOptions(channel: Snowflake | null) {
+		editing =
+			channel === null ? serverScope : { kind: 'channel', guild_id: guild, channel_id: channel };
 		dialogOpen = true;
 	}
 
@@ -299,11 +291,7 @@
 				{#if serverBusy}
 					<Spinner />
 				{:else if serverOn}
-					<button
-						type="button"
-						class="btn preset-tonal btn-sm"
-						onclick={() => openOptions(null, serverRule)}
-					>
+					<button type="button" class="btn preset-tonal btn-sm" onclick={() => openOptions(null)}>
 						<SlidersHorizontalIcon class="size-3.5" />
 						Options
 					</button>
@@ -354,25 +342,13 @@
 	</div>
 {/if}
 
-<RuleDialog
+<OptionsDialog
 	bind:open={dialogOpen}
 	applicationId={id}
 	{guild}
 	{channels}
 	{roles}
-	rule={editing}
-	channel={editingChannel}
-	{template}
-	onsaved={keep}
-/>
-
-<Confirm
-	bind:open={confirmOpen}
-	title={unwatching && unwatching.channel_id !== null
-		? `Stop watching ${labelOf(unwatching.channel_id)}?`
-		: 'Stop watching every channel?'}
-	message="Where the media goes and who may post are forgotten."
-	confirmLabel="Stop watching"
-	danger
-	onconfirm={() => (unwatching ? remove(unwatching) : undefined)}
+	scope={editing}
+	profile={editingProfile}
+	onsaved={reloadProfiles}
 />

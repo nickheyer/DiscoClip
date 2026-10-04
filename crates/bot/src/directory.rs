@@ -10,9 +10,11 @@ use twilight_cache_inmemory::{DefaultInMemoryCache, ResourceType};
 use twilight_model::channel::ChannelType;
 use twilight_model::gateway::event::Event;
 use twilight_model::gateway::payload::incoming::GuildCreate;
-use twilight_model::guild::PremiumTier;
+use twilight_model::guild::{Permissions, PremiumTier};
 use twilight_model::id::Id;
-use twilight_model::id::marker::{ChannelMarker, GuildMarker, RoleMarker, UserMarker};
+use twilight_model::id::marker::{
+    ApplicationMarker, ChannelMarker, GuildMarker, RoleMarker, UserMarker,
+};
 use uuid::Uuid;
 
 /// A guild the bot is in, as the gateway described it.
@@ -51,6 +53,8 @@ pub struct MemberInfo {
     pub display_name: Option<String>,
     pub nick: Option<String>,
     pub avatar: Option<String>,
+    /// The avatar set for this guild alone, when there is one
+    pub guild_avatar: Option<String>,
     pub bot: bool,
 }
 
@@ -59,6 +63,10 @@ pub struct Directory {
     cache: DefaultInMemoryCache,
     /// Guilds whose `GUILD_CREATE` has arrived, so their channels and roles are whole.
     loaded: RwLock<HashSet<Id<GuildMarker>>>,
+    /// Discord's id for the application, from the gateway's welcome
+    application: RwLock<Option<Id<ApplicationMarker>>>,
+    /// The bot itself and the webhooks it posts through, whose messages are never read
+    own_posters: RwLock<HashSet<Id<UserMarker>>>,
 }
 
 impl Default for Directory {
@@ -76,16 +84,24 @@ impl Directory {
                         | ResourceType::CHANNEL
                         | ResourceType::ROLE
                         | ResourceType::MEMBER
-                        | ResourceType::USER,
+                        | ResourceType::USER
+                        | ResourceType::USER_CURRENT,
                 )
                 .build(),
             loaded: RwLock::new(HashSet::new()),
+            application: RwLock::new(None),
+            own_posters: RwLock::new(HashSet::new()),
         }
     }
 
     /// Takes a gateway event in.
     pub fn update(&self, event: &Event) {
         match event {
+            Event::Ready(ready) => {
+                *self.application.write().unwrap_or_else(|e| e.into_inner()) =
+                    Some(ready.application.id);
+                self.add_own_poster(ready.user.id);
+            }
             Event::GuildCreate(created) => {
                 if let GuildCreate::Available(guild) = &**created {
                     self.loaded
@@ -103,6 +119,42 @@ impl Directory {
             _ => {}
         }
         self.cache.update(event);
+    }
+
+    pub fn application_id(&self) -> Option<Id<ApplicationMarker>> {
+        *self.application.read().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// The bot's own user, once the gateway has said who it is
+    pub fn current_user(&self) -> Option<Id<UserMarker>> {
+        self.cache.current_user().map(|user| user.id)
+    }
+
+    pub fn add_own_poster(&self, user: Id<UserMarker>) {
+        self.own_posters
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(user);
+    }
+
+    /// Whether messages from `user` are the bot's own or its webhooks'
+    pub fn is_own_poster(&self, user: Id<UserMarker>) -> bool {
+        self.own_posters
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains(&user)
+    }
+
+    /// What `user` may do in `channel`, from the roles and overwrites the gateway sent
+    pub fn permissions_in(
+        &self,
+        user: Id<UserMarker>,
+        channel: Id<ChannelMarker>,
+    ) -> Result<Permissions, String> {
+        self.cache
+            .permissions()
+            .in_channel(user, channel)
+            .map_err(|e| e.to_string())
     }
 
     /// Whether the guild's channels and roles have arrived.
@@ -185,6 +237,7 @@ impl Directory {
             display_name: account.global_name.clone(),
             nick: member.nick().map(str::to_string),
             avatar: account.avatar.map(|hash| hash.to_string()),
+            guild_avatar: member.avatar().map(|hash| hash.to_string()),
             bot: account.bot,
         })
     }

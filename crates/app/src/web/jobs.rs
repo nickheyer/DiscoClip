@@ -17,8 +17,8 @@ use discoclip_engine::job::{
 };
 use discoclip_engine::media::{Container, MediaKind, safe_stem};
 use discoclip_engine::{
-    EngineConfig, EngineEvent, EventKind, JobFilter, Order, ResolverStats, Stats, StatusKind,
-    ThumbnailError, Utilisation,
+    EngineEvent, EventKind, JobFilter, Order, ResolverStats, Stats, StatusKind, ThumbnailError,
+    Utilisation,
 };
 
 use futures::{Stream, StreamExt};
@@ -38,8 +38,9 @@ use super::error::ApiError;
 use crate::applications::ApplicationId;
 use crate::bots::BotManager;
 use crate::local::SOURCE_ID as LOCAL_SOURCE;
+use crate::profiles::EffectivePolicy;
 use crate::users::Permission;
-use discoclip_bot::{DiscordOrigin, InForce, turned_off};
+use discoclip_bot::{DiscordOrigin, turned_off};
 
 /// The most jobs one bulk request acts on.
 const BULK_MAX: usize = 500;
@@ -381,13 +382,14 @@ pub struct LimitsInForce {
 }
 
 impl LimitsInForce {
-    fn of(request: &RequestLimits, config: &EngineConfig) -> Self {
-        let applied = request.applied_to(&config.limits);
+    /// The request's own limits tightened by the policy it runs under
+    fn of(request: &Request) -> Self {
+        let applied = request.limits.applied_to(&request.policy.limits);
         Self {
             max_source_bytes: applied.max_source_bytes,
             max_duration_secs: applied.max_duration_secs,
             max_height: applied.max_height,
-            max_capture_secs: request.capture_secs(&config.limits, config.live.max_capture_secs),
+            max_capture_secs: request.limits.capture_secs(&request.policy.limits),
         }
     }
 }
@@ -405,7 +407,7 @@ pub async fn get(
         &job.request.origin,
         job.request.destination.as_deref(),
     );
-    let limits_in_force = LimitsInForce::of(&job.request.limits, &state.engine.config());
+    let limits_in_force = LimitsInForce::of(&job.request);
     Ok(Json(JobView {
         job,
         place,
@@ -571,7 +573,17 @@ pub struct SubmitRequest {
     #[serde(default)]
     pub limits: RequestLimits,
     #[serde(default)]
-    pub options: RequestOptions,
+    pub options: SubmitOptions,
+}
+
+/// What a submitter chooses beyond the link, the sound's language falling back to the profile's
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct SubmitOptions {
+    pub clip: Option<discoclip_engine::resolve::ClipRange>,
+    pub subtitles: discoclip_engine::job::SubtitleMode,
+    pub subtitle_language: Option<String>,
+    pub audio_language: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -589,10 +601,9 @@ fn local_origin(identity: &Identity) -> Origin {
     }
 }
 
-/// What the profiles say where a request's link was seen, the platforms turned off and
-/// the limits assigned: the profiles of the guild, channel and author for a Discord
-/// origin, the whole server's for anything else.
-fn in_force_for(state: &AppState, origin: &Origin) -> InForce {
+/// The policy where a request's link was seen: the profiles of the guild, channel and
+/// author for a Discord origin, the whole server's for anything else.
+fn policy_for(state: &AppState, origin: &Origin) -> EffectivePolicy {
     match DiscordOrigin::parse(origin) {
         Some(discord) => {
             let guild = discord.guild.map(|id| id.to_string());
@@ -601,9 +612,8 @@ fn in_force_for(state: &AppState, origin: &Origin) -> InForce {
             state
                 .profiles
                 .effective(guild.as_deref(), Some(&channel), author.as_deref())
-                .in_force()
         }
-        None => state.profiles.effective(None, None, None).in_force(),
+        None => state.profiles.effective(None, None, None),
     }
 }
 
@@ -621,37 +631,43 @@ pub async fn submit(
         )));
     }
     let mut job = Request::new(local_origin(&identity), request.url.clone());
-    let in_force = in_force_for(&state, &job.origin);
-    if let Some(platform) = turned_off(
-        &state.engine.resolvers_for(&request.url),
-        &in_force.disabled,
-    ) {
+    let effective = policy_for(&state, &job.origin);
+    let disabled = effective.disabled();
+    if let Some(platform) = turned_off(&state.engine.resolvers_for(&request.url), &disabled) {
         return Err(ApiError::BadRequest(format!(
             "The assigned profile disables {platform} links."
         )));
     }
-    // The submitter's own limits tighten the profile's. Neither loosens the other.
-    job.limits = request.limits.tightened(in_force.limits);
-    job.options = request.options;
+    // The submitter's own limits tighten the policy's at run time. Neither loosens the other.
+    job.limits = request.limits;
+    job.options = RequestOptions {
+        clip: request.options.clip,
+        subtitles: request.options.subtitles,
+        subtitle_language: request.options.subtitle_language,
+        audio_language: request
+            .options
+            .audio_language
+            .or_else(|| effective.audio_language.clone())
+            .unwrap_or_else(|| discoclip_engine::job::DEFAULT_AUDIO_LANGUAGE.to_string()),
+    };
     job.submitted_by = Some(identity.user.username.clone());
-    job.disabled_platforms = in_force.disabled;
+    job.disabled_platforms = disabled;
+    job.policy = effective.engine_policy();
     let id = state.engine.submit(job).await?;
     tracing::info!(by = identity.user.username, job = %id, url = %request.url, "link submitted");
     Ok((StatusCode::ACCEPTED, Json(Submitted { id })))
 }
 
-/// Queues a fresh job with the same request as a finished one, under the profiles in
-/// force where its link was seen as they stand now. A job submitted from the web app
-/// keeps the limits its submitter chose, tightening the profile's as they did at first.
+/// Queues a fresh job with the same request as a finished one, under the policy in force
+/// where its link was seen as it stands now. The request keeps the limits its submitter
+/// chose, which tighten the policy's as they did at first.
 async fn retry_job(state: &AppState, id: JobId) -> Result<JobId, ApiError> {
     let job = state.engine.get(id).await?.ok_or(ApiError::NotFound)?;
-    let in_force = in_force_for(state, &job.request.origin);
-    let limits = if DiscordOrigin::parse(&job.request.origin).is_some() {
-        in_force.limits
-    } else {
-        job.request.limits.tightened(in_force.limits)
-    };
-    Ok(state.engine.retry(id, in_force.disabled, limits).await?)
+    let effective = policy_for(state, &job.request.origin);
+    Ok(state
+        .engine
+        .retry(id, effective.disabled(), effective.engine_policy())
+        .await?)
 }
 
 /// Queues a fresh job with the same request as a finished one.

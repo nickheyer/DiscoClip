@@ -81,11 +81,7 @@
 		id ? (profiles.find((p) => p.id === id)?.name ?? id) : 'Default';
 
 	function options(view: Frontend): string {
-		return [
-			view.downloads ? 'Downloads' : null,
-			view.links?.enabled ? 'Discord links' : null,
-			view.has_secret ? 'Secret set' : null
-		]
+		return [view.downloads ? 'Downloads' : null, view.has_secret ? 'Secret set' : null]
 			.filter((option) => option !== null)
 			.join(' · ');
 	}

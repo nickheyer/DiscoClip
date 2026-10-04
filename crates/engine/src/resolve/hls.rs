@@ -332,7 +332,7 @@ mod tests {
         assert_eq!(rendition.label.as_deref(), Some("English"));
         let paired = crate::plan::select_variant(
             &expanded.variants,
-            &crate::config::Limits::default(),
+            &crate::policy::Limits::default(),
             "web",
             crate::media::MediaKind::Video,
             "en",

@@ -16,9 +16,10 @@ use crate::config::EngineConfig;
 use crate::download::Downloader;
 use crate::event::{EngineEvent, EventKind};
 use crate::http::Http;
-use crate::job::{Job, JobId, JobStatus, Request, RequestLimits, SourceId, Stage, StatusKind};
+use crate::job::{Job, JobId, JobStatus, Request, SourceId, Stage, StatusKind};
 use crate::media::LocalFile;
 use crate::pipeline::{self, Context};
+use crate::policy::Policy;
 use crate::publish::Publisher;
 use crate::resolve::{
     Platform, Resolution, ResolveError, Resolver, ResolverRegistry, SessionCheck,
@@ -606,15 +607,12 @@ impl EngineHandle {
         Ok(job.id)
     }
 
-    /// Queues a fresh job with the same request as a finished one, under the platforms
-    /// turned off where the link was seen as they stand now.
-    /// Queues the request of a finished job again, under the platforms turned off and the
-    /// limits assigned where its link was seen as they stand now.
+    /// Queues the request of a finished job again under the policy in force where its link was seen
     pub async fn retry(
         &self,
         id: JobId,
         disabled_platforms: Vec<String>,
-        limits: RequestLimits,
+        policy: Policy,
     ) -> Result<JobId, RetryError> {
         let job = self
             .shared
@@ -628,7 +626,7 @@ impl EngineHandle {
         let mut request = job.request.clone();
         request.retry_of = Some(id);
         request.disabled_platforms = disabled_platforms;
-        request.limits = limits;
+        request.policy = policy;
         Ok(self.submit(request).await?)
     }
 
@@ -1108,6 +1106,7 @@ mod shutdown_tests {
                 reference: "posted".into(),
                 url: None,
                 at: jiff::Timestamp::now(),
+                notes: Vec::new(),
             })
         }
     }

@@ -30,6 +30,14 @@ pub trait JobStore: Send + Sync {
     async fn stats_since(&self, since: Timestamp) -> Result<Stats, StoreError>;
     /// Done and failed counts per resolver, over every job.
     async fn resolver_stats(&self) -> Result<Vec<ResolverStats>, StoreError>;
+    /// Archived done jobs whose link key or platform media key matches, newest first
+    async fn find_finished_by_url(
+        &self,
+        url_key: &str,
+        media_key: Option<&str>,
+    ) -> Result<Vec<Job>, StoreError>;
+    /// Archived done jobs whose source bytes hashed the same, newest first
+    async fn find_finished_by_hash(&self, media_hash: &str) -> Result<Vec<Job>, StoreError>;
 }
 
 /// How jobs are ordered in a listing.

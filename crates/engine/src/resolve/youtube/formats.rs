@@ -414,7 +414,7 @@ mod tests {
         assert!(original.audio_default);
         assert!(!original.audio_dubbed);
         assert!(by_id("en-US.10").audio_dubbed);
-        let limits = crate::config::Limits::default();
+        let limits = crate::policy::Limits::default();
         let chosen = crate::plan::select_variant(
             &variants,
             &limits,

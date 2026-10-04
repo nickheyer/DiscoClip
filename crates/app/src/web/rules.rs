@@ -25,8 +25,6 @@ pub struct RuleView {
     pub guild_icon: Option<String>,
     /// The watched channel's name, for a rule of one channel whose bot sees it.
     pub channel_name: Option<String>,
-    /// The name of the channel results go to, when the rule sends them elsewhere.
-    pub post_to_name: Option<String>,
 }
 
 /// Names `rules`' servers and channels as far as the bots know them.
@@ -46,13 +44,10 @@ async fn named(state: &AppState, rules: Vec<Rule>) -> Result<Vec<RuleView>, ApiE
                 .iter()
                 .find(|g| g.application_id == rule.application_id && g.guild_id == rule.guild_id);
             let channel_name = name_of(rule.application_id, rule.input.channel_id.as_deref());
-            let post_to_name = name_of(rule.application_id, rule.input.post_to.as_deref());
-
             RuleView {
                 guild_name: guild.map(|g| g.name.clone()),
                 guild_icon: guild.and_then(|g| g.icon.clone()),
                 channel_name,
-                post_to_name,
                 rule,
             }
         })
@@ -129,11 +124,6 @@ async fn check_channels(
 ) -> Result<(), ApiError> {
     if let Some(channel) = &input.channel_id {
         check_channel(state, application, guild, channel).await?;
-    }
-    if let Some(post_to) = &input.post_to
-        && input.channel_id.as_ref() != Some(post_to)
-    {
-        check_channel(state, application, guild, post_to).await?;
     }
     Ok(())
 }
@@ -299,18 +289,14 @@ mod tests {
         wait_connected(&mut admin, &id).await;
         let guild_rules = format!("/api/discord/applications/{id}/guilds/100/rules");
 
-        let rule = json!({
-            "channel_id": "10", "post_to": "11",
-            "allow_users": ["9"], "allow_roles": ["500"]
-        });
+        let rule = json!({"channel_id": "10"});
         let (status, body) = admin.post(&guild_rules, rule.clone()).await;
         assert_eq!(status, StatusCode::CREATED, "{body}");
         assert_eq!(body["guild_id"], "100");
         assert_eq!(body["channel_id"], "10");
-        assert_eq!(body["post_to"], "11");
         assert_eq!(body["enabled"], true);
-        assert_eq!(body["allow_users"], json!(["9"]));
-        assert!(body.get("allow_hosts").is_none());
+        assert!(body.get("post_to").is_none());
+        assert!(body.get("allow_users").is_none());
         assert!(body.get("max_height").is_none());
         let rule_id = body["id"].as_str().unwrap().to_string();
 
@@ -321,18 +307,14 @@ mod tests {
         assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
         let (status, body) = admin.post(&guild_rules, json!({"channel_id": "10"})).await;
         assert_eq!(status, StatusCode::CONFLICT, "{body}");
-        let (status, _) = admin
-            .post(
-                &guild_rules,
-                json!({"channel_id": "11", "allow_users": ["x"]}),
-            )
-            .await;
-        assert_eq!(status, StatusCode::BAD_REQUEST);
         // What profiles carry now is not a rule's to say.
         for gone in [
             json!({"channel_id": "11", "allow_hosts": ["reddit.com"]}),
             json!({"channel_id": "11", "max_source_bytes": 1000}),
             json!({"channel_id": "11", "max_height": 720}),
+            json!({"channel_id": "11", "post_to": "10"}),
+            json!({"channel_id": "11", "allow_users": ["9"]}),
+            json!({"channel_id": "11", "allow_roles": ["500"]}),
             json!({"channel_id": "11", "bogus": 1}),
         ] {
             let (status, _) = admin.post(&guild_rules, gone).await;
@@ -396,15 +378,36 @@ mod tests {
             .send(
                 Method::PUT,
                 &format!("/api/discord/rules/{rule_id}"),
-                Some(json!({"channel_id": "10", "allow_roles": ["501"]})),
+                Some(json!({"channel_id": "10", "enabled": false})),
             )
             .await;
         assert_eq!(status, StatusCode::OK, "{body}");
-        assert_eq!(body["allow_roles"], json!(["501"]));
-        assert!(body["post_to"].is_null());
+        assert_eq!(body["enabled"], false);
         let (status, body) = op.get(&format!("/api/discord/rules/{rule_id}")).await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(body["allow_roles"], json!(["501"]));
+        assert_eq!(body["enabled"], false);
+        // Who may post and where results go are the channel's profile options, which a
+        // guild manager sets too.
+        let (status, body) = manager
+            .send(
+                Method::PUT,
+                "/api/profiles/assignments/channel:100:10/overlay",
+                Some(json!({"intake": {"allow_roles": ["501"]}, "message": {"destination": "11"}})),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["intake"]["allow_roles"], json!(["501"]));
+        assert_eq!(
+            manager
+                .send(
+                    Method::PUT,
+                    "/api/profiles/assignments/channel:100:10/overlay",
+                    Some(json!({"upload": {"max_bytes": 1000}}))
+                )
+                .await
+                .0,
+            StatusCode::FORBIDDEN
+        );
 
         // A token needs the scope. A manager's token does not inherit the guild path.
         let (_, body) = manager.post("/api/tokens", json!({"name": "t"})).await;
@@ -439,12 +442,7 @@ mod tests {
         let (discord, _app, db, mut admin, id) = setup().await;
         wait_connected(&mut admin, &id).await;
         let guild_rules = format!("/api/discord/applications/{id}/guilds/100/rules");
-        let (status, body) = admin
-            .post(
-                &guild_rules,
-                json!({"channel_id": "10", "post_to": "11", "allow_users": ["9"]}),
-            )
-            .await;
+        let (status, body) = admin.post(&guild_rules, json!({"channel_id": "10"})).await;
         assert_eq!(status, StatusCode::CREATED, "{body}");
         let rule_id = body["id"].as_str().unwrap().to_string();
         // The channel's profile: only the supported platform, and tight limits.
@@ -468,6 +466,16 @@ mod tests {
             )
             .await;
         assert_eq!(status, StatusCode::OK, "{body}");
+        // Who may post and where results go join the channel's profile.
+        let (status, body) = admin
+            .send(
+                Method::PUT,
+                "/api/profiles/assignments/channel:100:10/overlay",
+                Some(json!({"intake": {"allow_users": ["9"]}, "message": {"destination": "11"}})),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["id"], profile_id);
 
         let link = format!("https://{SUPPORTED_HOST}/clip");
         discord.emit(message_create("10", "100", "9", &[], &link));
@@ -483,9 +491,10 @@ mod tests {
         let request = &jobs[0].request;
         assert_eq!(request.url.as_str(), link);
         assert_eq!(request.destination.as_deref(), Some("11"));
-        assert_eq!(request.limits.max_source_bytes, Some(5000));
-        assert_eq!(request.limits.max_duration_secs, Some(20));
-        assert_eq!(request.limits.max_height, Some(480));
+        assert_eq!(request.policy.limits.max_source_bytes, 5000);
+        assert_eq!(request.policy.limits.max_duration_secs, Some(20));
+        assert_eq!(request.policy.limits.max_height, 480);
+        assert_eq!(request.policy.publisher["message"]["placement"], "reply");
         assert!(request.origin.reference.starts_with(&id));
         assert!(request.origin.reference.contains(":100:10:900:9"));
 
@@ -523,19 +532,25 @@ mod tests {
         // The channel has to be named, even as null.
         let (status, _) = admin.post(&guild_rules, json!({"post_to": "11"})).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-        let (status, body) = admin
-            .post(&guild_rules, json!({"channel_id": null, "post_to": "11"}))
-            .await;
+        let (status, body) = admin.post(&guild_rules, json!({"channel_id": null})).await;
         assert_eq!(status, StatusCode::CREATED, "{body}");
         assert!(body["channel_id"].is_null());
-        assert_eq!(body["post_to"], "11");
         let whole = body["id"].as_str().unwrap().to_string();
+        let (status, body) = admin
+            .send(
+                Method::PUT,
+                "/api/profiles/assignments/guild:100/overlay",
+                Some(json!({"message": {"destination": "11"}})),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["name"], "Server 100 options");
         let (status, body) = admin.post(&guild_rules, json!({"channel_id": null})).await;
         assert_eq!(status, StatusCode::CONFLICT, "{body}");
         assert!(body["error"].as_str().unwrap().contains("every channel"));
 
         // A channel with no rule of its own is watched, and results go where the guild's
-        // rule says.
+        // profile says.
         let link = format!("https://{SUPPORTED_HOST}/clip");
         discord.emit(message_create("10", "100", "9", &[], &link));
         let jobs = wait_for("the link to become a job", || {

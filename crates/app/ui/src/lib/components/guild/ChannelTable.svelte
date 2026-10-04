@@ -8,7 +8,7 @@
 	import { number } from '$lib/format';
 	import ChannelKindIcon from './ChannelKindIcon.svelte';
 	import { channelTree, type ChannelNode } from './channels';
-	import { ruleSummary } from './watching';
+	import { optionsOf, optionsSummary } from './options';
 
 	interface Props {
 		channels: GuildChannel[];
@@ -21,8 +21,8 @@
 		inherited: string;
 		/** Starts or stops watching a channel. Rejects when the server refuses. */
 		onwatch: (channel: Snowflake, on: boolean) => Promise<void>;
-		/** Opens the options of a watched channel: its own rule, or none while the server's covers it. */
-		onoptions: (channel: Snowflake, rule: Rule | null) => void;
+		/** Opens the posting options of a watched channel */
+		onoptions: (channel: Snowflake) => void;
 		/** Sets or clears the profile of a channel. Rejects when the server refuses. */
 		onassign: (channel: Snowflake, profile: Uuid | null) => Promise<void>;
 	}
@@ -58,7 +58,14 @@
 				.map((a) => [a.scope.kind === 'channel' ? a.scope.channel_id : '', a.profile_id])
 		)
 	);
+	const profileById = $derived(new Map(profiles.map((profile) => [profile.id, profile])));
 	const needle = $derived(filter.trim().toLowerCase());
+
+	/** The posting options a channel's own profile names, in a few words */
+	function summaryOf(channel: Snowflake): string[] {
+		const profile = profileById.get(profileOf.get(channel) ?? '') ?? null;
+		return optionsSummary(optionsOf(profile), channels);
+	}
 
 	/** Whether a channel is watched: by its own rule, or by the server's when it has none. */
 	const isOn = (rule: Rule | null) => (rule ? rule.enabled : serverOn);
@@ -145,8 +152,7 @@
 {#snippet channelRow(row: Row)}
 	{@const rule = row.rule}
 	{@const on = isOn(rule)}
-	{@const own = rule && rule.enabled ? rule : null}
-	{@const summary = own ? ruleSummary(own, channels) : []}
+	{@const summary = on ? summaryOf(row.id) : []}
 	{@const busy = pending.has(row.id)}
 	<tr class="hover:preset-tonal">
 		<td class={row.kind === 'thread' ? 'pl-10' : 'pl-4'}>
@@ -172,7 +178,7 @@
 					<button
 						type="button"
 						class="btn-icon btn-icon-sm hover:preset-tonal"
-						onclick={() => onoptions(row.id, own)}
+						onclick={() => onoptions(row.id)}
 						aria-label="Options for {row.name}"
 						title="Options"
 					>

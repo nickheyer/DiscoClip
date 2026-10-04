@@ -26,7 +26,7 @@
 	import Timestamp from '$lib/components/Timestamp.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import Status from '$lib/components/Status.svelte';
-	import { hasOptions, stopWatching, watchServer } from '$lib/components/guild/watching';
+	import { stopWatching, watchServer } from '$lib/components/guild/watching';
 	import { feed } from '$lib/events.svelte';
 	import { number } from '$lib/format';
 	import { session } from '$lib/session.svelte';
@@ -49,9 +49,6 @@
 		new Map(rules.filter((rule) => rule.channel_id === null).map((rule) => [rule.guild_id, rule]))
 	);
 	const watchPending = new SvelteSet<Snowflake>();
-	/** A server's rule with options of its own that was switched off, awaiting a yes. */
-	let unwatching = $state<Rule | null>(null);
-	let confirmUnwatch = $state(false);
 	/** The bot is up or on its way up, so it can be stopped or restarted. */
 	const running = $derived(
 		bot !== null &&
@@ -207,9 +204,6 @@
 				const saved = await watchServer(id, guild.guild_id, rule);
 				rules = rule ? rules.map((r) => (r.id === saved.id ? saved : r)) : [...rules, saved];
 				notify.success('Watching every channel', guild.name);
-			} else if (rule && hasOptions(rule)) {
-				unwatching = rule;
-				confirmUnwatch = true;
 			} else if (rule) {
 				await unwatch(rule);
 			}
@@ -506,15 +500,4 @@
 	confirmLabel="Delete"
 	danger
 	onconfirm={remove}
-/>
-
-<Confirm
-	bind:open={confirmUnwatch}
-	title="Stop watching every channel in {unwatching
-		? guildName(unwatching.guild_id)
-		: 'this server'}?"
-	message="Where the media goes and who may post are forgotten."
-	confirmLabel="Stop watching"
-	danger
-	onconfirm={() => (unwatching ? unwatch(unwatching) : undefined)}
 />

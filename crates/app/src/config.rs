@@ -260,10 +260,19 @@ impl Provisioning {
         if !merged.is_object() {
             merged = Json::Object(serde_json::Map::new());
         }
-        deep_merge(&mut merged, &self.tree);
+        let mut own = self.tree.clone();
+        let roots: BTreeSet<&'static str> = self
+            .removed()
+            .iter()
+            .filter_map(|path| crate::settings::removed_key(path))
+            .collect();
+        for root in roots {
+            remove_at_path(&mut own, root);
+        }
+        deep_merge(&mut merged, &own);
         let exemplar = serde_json::to_value(Settings::exemplar())?;
         for (path, raw) in &self.env {
-            if path == DATA_DIR_KEY {
+            if path == DATA_DIR_KEY || crate::settings::removed_key(path).is_some() {
                 continue;
             }
             let template = at_path(&merged, path)
@@ -284,12 +293,43 @@ impl Provisioning {
         json_leaves(&serde_json::to_value(&settings)?, "", &mut canonical);
 
         let mut values = BTreeMap::new();
-        for path in self.paths() {
+        for path in self
+            .paths()
+            .into_iter()
+            .filter(|path| crate::settings::removed_key(path).is_none())
+        {
             let (key, value) =
                 holder(&canonical, &path).ok_or_else(|| ConfigError::Unplaced(path.clone()))?;
             values.insert(key.to_string(), value.clone());
         }
         Ok(values)
+    }
+
+    /// The provisioned keys that used to be settings and are profile values now
+    pub fn removed(&self) -> Vec<String> {
+        self.paths()
+            .into_iter()
+            .filter(|path| crate::settings::removed_key(path).is_some())
+            .collect()
+    }
+}
+
+/// Takes the value at the dotted `path` out of `tree`
+fn remove_at_path(tree: &mut Json, path: &str) {
+    let mut segments = path.split('.').peekable();
+    let mut node = tree;
+    while let Some(segment) = segments.next() {
+        let Some(table) = node.as_object_mut() else {
+            return;
+        };
+        if segments.peek().is_none() {
+            table.remove(segment);
+            return;
+        }
+        match table.get_mut(segment) {
+            Some(next) => node = next,
+            None => return,
+        }
     }
 }
 
@@ -550,14 +590,14 @@ mod tests {
         let values = resolve(
             None,
             vars(&[
-                ("DISCOCLIP_ENGINE__PLAYLISTS__ENABLED", "no"),
+                ("DISCOCLIP_ENGINE__ARCHIVE__ENABLED", "no"),
                 ("DISCOCLIP_HTTP__RATE_LIMITS__DEFAULT__PER_SECOND", "2.5"),
                 ("DISCOCLIP_WEB__TRUSTED_PROXIES", "10.0.0.1, 10.0.0.0/8"),
                 ("DISCOCLIP_AUTH__OIDC__SCOPES", "[\"openid\"]"),
                 ("DISCOCLIP_AUTH__OIDC__ISSUER", "https://issuer.example/"),
                 ("DISCOCLIP_AUTH__OIDC__CLIENT_ID", "c"),
                 ("DISCOCLIP_AUTH__OIDC__CLIENT_SECRET", "s"),
-                ("DISCOCLIP_ENGINE__LIMITS__MAX_DURATION_SECS", "null"),
+                ("DISCOCLIP_ENGINE__FFMPEG", "null"),
                 (
                     "DISCOCLIP_HTTP__PROXIES__HOSTS",
                     "{\"a.test\": \"socks5://p:1\"}",
@@ -565,14 +605,14 @@ mod tests {
             ]),
         )
         .unwrap();
-        assert_eq!(values["engine.playlists.enabled"], json!(false));
+        assert_eq!(values["engine.archive.enabled"], json!(false));
         assert_eq!(values["http.rate_limits.default.per_second"], json!(2.5));
         assert_eq!(
             values["web.trusted_proxies"],
             json!(["10.0.0.1", "10.0.0.0/8"])
         );
         assert_eq!(values["auth.oidc.scopes"], json!(["openid"]));
-        assert_eq!(values["engine.limits.max_duration_secs"], Json::Null);
+        assert_eq!(values["engine.ffmpeg"], Json::Null);
         assert_eq!(
             values["http.proxies.hosts"],
             json!({"a.test": "socks5://p:1"})
@@ -583,16 +623,16 @@ mod tests {
     fn yaml_files_and_nested_keys() {
         let file = temp_file(
             "nested.yaml",
-            "local:\n  max_bytes: 3\nlog:\n  level: debug\nengine:\n  limits:\n    max_height: 480\n",
+            "backup:\n  keep: 3\nlog:\n  level: debug\nengine:\n  retention:\n    jobs_days: 45\n",
         );
         let values = resolve(
             Some(&file),
-            vars(&[("DISCOCLIP_ENGINE__LIMITS__MAX_HEIGHT", "720")]),
+            vars(&[("DISCOCLIP_ENGINE__RETENTION__JOBS_DAYS", "30")]),
         )
         .unwrap();
         assert_eq!(values["log.level"], json!("debug"));
-        assert_eq!(values["engine.limits.max_height"], json!(720));
-        assert_eq!(values["local.max_bytes"], json!(3));
+        assert_eq!(values["engine.retention.jobs_days"], json!(30));
+        assert_eq!(values["backup.keep"], json!(3));
         assert!(!values.contains_key("engine.workers"));
         assert!(!values.contains_key("auth.oidc.scopes"));
     }
@@ -611,18 +651,36 @@ mod tests {
 
     #[test]
     fn explicit_null_is_provisioned() {
-        let file = temp_file(
-            "null.yaml",
-            "engine:\n  limits:\n    max_duration_secs: null\n",
-        );
+        let file = temp_file("null.yaml", "engine:\n  ffmpeg: null\n");
         let values = resolve(Some(&file), vars(&[])).unwrap();
-        assert_eq!(values["engine.limits.max_duration_secs"], Json::Null);
+        assert_eq!(values["engine.ffmpeg"], Json::Null);
     }
 
     #[test]
     fn a_section_from_the_environment_alone() {
-        let values = resolve(None, vars(&[("DISCOCLIP_LOCAL__MAX_BYTES", "3")])).unwrap();
-        assert_eq!(values["local.max_bytes"], json!(3));
+        let values = resolve(None, vars(&[("DISCOCLIP_BACKUP__KEEP", "3")])).unwrap();
+        assert_eq!(values["backup.keep"], json!(3));
+    }
+
+    #[test]
+    fn keys_that_moved_into_profiles_are_stripped() {
+        let file = temp_file(
+            "old.toml",
+            "[engine]\nworkers = 2\n[engine.limits]\nmax_height = 480\n[discord.guilds.5]\nmax_bytes = 1\n",
+        );
+        let provisioning =
+            build(Some(&file), vars(&[("DISCOCLIP_LOCAL__MAX_BYTES", "9")])).unwrap();
+        assert_eq!(
+            provisioning.removed(),
+            vec![
+                "discord.guilds.5.max_bytes",
+                "engine.limits.max_height",
+                "local.max_bytes"
+            ]
+        );
+        let values = provisioning.resolve(&json!({})).unwrap();
+        assert_eq!(values.len(), 1);
+        assert_eq!(values["engine.workers"], json!(2));
     }
 
     #[test]
@@ -770,7 +828,7 @@ mod tests {
     fn every_format_round_trips() {
         let tree = json!({
             "log": {"level": "debug"},
-            "engine": {"workers": 3, "limits": {"max_source_bytes": 2147483648_u64}},
+            "engine": {"workers": 3, "retention": {"cache_max_bytes": 2147483648_u64}},
             "auth": {"oidc": {"issuer": "https://issuer.example/", "client_id": "c", "client_secret": "s", "scopes": ["openid"]}},
             "web": {"bind": "0.0.0.0:9000"}
         });
@@ -783,7 +841,7 @@ mod tests {
             assert_eq!(values["log.level"], json!("debug"), "{format}");
             assert_eq!(values["engine.workers"], json!(3), "{format}");
             assert_eq!(
-                values["engine.limits.max_source_bytes"],
+                values["engine.retention.cache_max_bytes"],
                 json!(2147483648_u64),
                 "{format}"
             );
@@ -799,10 +857,10 @@ mod tests {
 
     #[test]
     fn toml_cannot_hold_null_but_yaml_and_json_can() {
-        let tree = json!({"engine": {"limits": {"max_duration_secs": null}}});
+        let tree = json!({"engine": {"ffmpeg": null}});
         match Format::Toml.render(&tree).unwrap_err() {
             ConfigError::Unrepresentable { key, .. } => {
-                assert_eq!(key, "engine.limits.max_duration_secs")
+                assert_eq!(key, "engine.ffmpeg")
             }
             other => panic!("unexpected {other}"),
         }
@@ -812,7 +870,7 @@ mod tests {
                 .unwrap()
                 .resolve(&json!({}))
                 .unwrap();
-            assert_eq!(values["engine.limits.max_duration_secs"], Json::Null);
+            assert_eq!(values["engine.ffmpeg"], Json::Null);
         }
     }
 

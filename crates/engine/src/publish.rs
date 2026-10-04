@@ -3,15 +3,24 @@ use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::job::{Job, SourceId};
+use crate::job::{Job, SourceId, Stage};
 use crate::media::{AudioCodec, Container, LocalFile, MediaKind, VideoCodec};
 
 #[async_trait]
 pub trait Publisher: Send + Sync {
     fn source(&self) -> &SourceId;
-    /// What the destination of `job` takes. The job is resolved by then, so the platform
-    /// and the media are known.
-    async fn constraints(&self, job: &Job) -> Result<Constraints, PublishError>;
+    /// What the destination takes, the policy's output under the upload limit the publisher knows
+    async fn constraints(&self, job: &Job) -> Result<Constraints, PublishError> {
+        let policy = &job.request.policy;
+        Ok(policy.output.constraints(policy.upload.max_bytes.cap()))
+    }
+    /// The page that would play the job's media under the policy's view choice
+    async fn link_target(&self, job: &Job) -> Result<LinkTarget, PublishError> {
+        let _ = job;
+        Err(PublishError::NoLink(
+            "this destination has no page to link to".into(),
+        ))
+    }
     /// Delivers `file`, or a link to it when the job's delivery is a link. A job whose
     /// capture was announced carries the message in `job.artifacts.announced`: the
     /// result goes into that message.
@@ -27,6 +36,10 @@ pub trait Publisher: Send + Sync {
         let _ = (job, recording);
         Ok(None)
     }
+    /// Tells the destination the job failed at `stage`, where it has somewhere to say so
+    async fn report_failure(&self, job: &Job, stage: Stage, message: &str) {
+        let _ = (job, stage, message);
+    }
 }
 
 /// The least a video may be reduced to before a link to the full one is posted instead
@@ -40,18 +53,17 @@ pub struct QualityFloor {
     pub min_bitrate: u64,
 }
 
-/// Where the media goes when it cannot be uploaded well: a page that plays it, linked
-/// from the destination instead. The output made for the page is bounded by `max_bytes`
-/// rather than the destination's limit.
+/// The page a link posts instead of a file
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Fallback {
-    pub max_bytes: u64,
-    pub floor: QualityFloor,
+pub struct LinkTarget {
+    pub page: Url,
+    /// The front end that serves the page, as the app names it
+    pub view: String,
 }
 
 /// What a destination's media is made into: the container and codecs video is encoded
 /// to, how big and fast the picture may be, and the forms audio, images and other files
-/// arrive in. One per destination, and a server can override it per Discord guild.
+/// arrive in. Set by the profile in force where the link was seen.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct DestinationTarget {
@@ -220,7 +232,6 @@ impl DestinationTarget {
             audio_containers: self.audio_containers.clone(),
             image_containers: self.image_containers.clone(),
             files: self.files,
-            fallback: None,
         }
     }
 }
@@ -270,9 +281,6 @@ pub struct Constraints {
     /// Whether files that are neither video, audio nor images are taken.
     #[serde(default)]
     pub files: bool,
-    /// A link to post instead of an upload that would be too large or too reduced.
-    #[serde(default)]
-    pub fallback: Option<Fallback>,
 }
 
 impl Constraints {
@@ -288,15 +296,12 @@ impl Constraints {
         self.audio_over_still || self.audio_containers.is_empty()
     }
 
-    /// The same destination as it stands for a link: the fallback's byte bound in place
-    /// of the upload limit, and no further fallback.
-    pub fn for_link(&self) -> Option<Constraints> {
-        let fallback = self.fallback.as_ref()?;
-        Some(Constraints {
-            max_bytes: fallback.max_bytes,
-            fallback: None,
+    /// The same destination as it stands for the page, under the page's byte bound
+    pub fn for_link(&self, max_bytes: u64) -> Constraints {
+        Constraints {
+            max_bytes,
             ..self.clone()
-        })
+        }
     }
 
     /// Whether media of `kind` is taken at all.
@@ -399,6 +404,9 @@ pub struct Published {
     pub reference: String,
     pub url: Option<Url>,
     pub at: Timestamp,
+    /// What the publisher did on the way, for the job log
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -407,6 +415,12 @@ pub enum PublishError {
     TooLarge { size: u64, max: u64 },
     #[error("destination rejected upload: {0}")]
     Rejected(String),
+    #[error("no page to link to: {0}")]
+    NoLink(String),
+    #[error("destination refused {size} bytes, its limit is {max}")]
+    LimitLowered { size: u64, max: u64 },
+    #[error("the bot lacks {missing} in {channel}")]
+    Forbidden { channel: String, missing: String },
     #[error("cannot address origin {0}")]
     InvalidOrigin(String),
     #[error(transparent)]

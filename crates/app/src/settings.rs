@@ -10,7 +10,6 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 
 use discoclip_bot::DiscordSettings;
-use discoclip_engine::publish::DestinationTarget;
 use discoclip_engine::rusqlite::{self, Connection, params};
 use discoclip_engine::store::sqlite::SqliteStore;
 use discoclip_engine::{EngineConfig, HttpConfig, StoreError};
@@ -37,8 +36,7 @@ pub struct Settings {
     /// per-host rate limits and proxies.
     pub http: HttpConfig,
     pub local: LocalConfig,
-    /// What Discord takes: upload limits by boost level, the target media posted there
-    /// is made to, and the servers with limits or targets of their own.
+    /// How long an upload to Discord gets and how often it is sent again
     pub discord: DiscordSettings,
     /// How often every platform's fixture links are resolved, and how long one may take.
     pub fixtures: FixtureConfig,
@@ -58,7 +56,6 @@ impl Settings {
         };
         let mut settings = Settings::default();
         settings.engine.ffmpeg = Some(PathBuf::from("/usr/bin/ffmpeg"));
-        settings.engine.limits.max_duration_secs = Some(0);
         settings.http.proxies.default =
             Some(Url::parse("http://proxy.invalid:3128").expect("valid"));
         settings.web.public_url = Some(Url::parse("https://example.invalid/").expect("valid"));
@@ -88,30 +85,6 @@ impl Settings {
             .map_err(|e| invalid("log.level", format!("not a tracing filter: {e}")))?;
         if self.engine.workers == 0 {
             return Err(invalid("engine.workers", "must be at least 1".into()));
-        }
-        if self.engine.limits.max_height == 0 {
-            return Err(invalid(
-                "engine.limits.max_height",
-                "must be at least 1".into(),
-            ));
-        }
-        if self.engine.limits.max_source_bytes == 0 {
-            return Err(invalid(
-                "engine.limits.max_source_bytes",
-                "must be at least 1".into(),
-            ));
-        }
-        if self.engine.live.max_capture_secs == 0 {
-            return Err(invalid(
-                "engine.live.max_capture_secs",
-                "must be at least 1".into(),
-            ));
-        }
-        if self.engine.playlists.max_entries == 0 {
-            return Err(invalid(
-                "engine.playlists.max_entries",
-                "must be at least 1".into(),
-            ));
         }
         if self.engine.download.connections == 0 {
             return Err(invalid(
@@ -148,10 +121,6 @@ impl Settings {
                 "cannot be empty".into(),
             ));
         }
-        self.local
-            .target
-            .check()
-            .map_err(|message| invalid("local.target", message))?;
         self.discord
             .check()
             .map_err(|(path, message)| invalid(&path, message))?;
@@ -208,9 +177,6 @@ impl Settings {
                     format!("{} is not an http or socks proxy URL", proxy.scheme()),
                 ));
             }
-        }
-        if self.local.max_bytes == 0 {
-            return Err(invalid("local.max_bytes", "must be at least 1".into()));
         }
         if self.backup.dir.as_os_str().is_empty() {
             return Err(invalid("backup.dir", "cannot be empty".into()));
@@ -313,22 +279,18 @@ impl Default for LogConfig {
     }
 }
 
-/// Where jobs submitted from the web app are published.
+/// Where jobs submitted from the web app are published. What they are made to is the
+/// built-in profile's.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct LocalConfig {
     pub dir: PathBuf,
-    pub max_bytes: u64,
-    /// What the media published there is made to.
-    pub target: DestinationTarget,
 }
 
 impl Default for LocalConfig {
     fn default() -> Self {
         Self {
             dir: PathBuf::from("data/local"),
-            max_bytes: 100 * 1024 * 1024,
-            target: DestinationTarget::default(),
         }
     }
 }
@@ -408,14 +370,38 @@ pub struct Entry {
 }
 
 /// Keys whose values are stored whole rather than split into the paths beneath them:
-/// maps keyed by host names, whose keys carry dots of their own, and by Discord server
-/// ids, which are edited as one piece.
-pub const ATOMIC_KEYS: [&str; 4] = [
+/// maps keyed by host names, whose keys carry dots of their own.
+pub const ATOMIC_KEYS: [&str; 3] = [
     "http.rate_limits.hosts",
     "http.proxies.platforms",
     "http.proxies.hosts",
+];
+
+/// Keys that used to be settings and are profile values now
+pub const REMOVED_KEYS: [&str; 8] = [
+    "engine.limits",
+    "engine.live",
+    "engine.playlists",
+    "local.max_bytes",
+    "local.target",
+    "discord.limits",
+    "discord.target",
     "discord.guilds",
 ];
+
+/// The removed key `path` is, or lies beneath
+pub fn removed_key(path: &str) -> Option<&'static str> {
+    REMOVED_KEYS.iter().copied().find(|removed| {
+        path == *removed
+            || path
+                .strip_prefix(removed)
+                .is_some_and(|rest| rest.starts_with('.'))
+    })
+}
+
+/// What a change to a removed key is answered with
+pub const MOVED_INTO_PROFILES: &str =
+    "moved into profiles: set it on the Default profile or on a profile assigned where it applies";
 
 /// The atomic key `path` is, or lies beneath.
 pub fn atomic_key(path: &str) -> Option<&'static str> {
@@ -514,6 +500,12 @@ impl Change {
                     message: format!("is part of {atomic}, which is set as a whole"),
                 });
             }
+            if removed_key(&key).is_some() {
+                return Err(SettingsError::Invalid {
+                    path: key.clone(),
+                    message: MOVED_INTO_PROFILES.into(),
+                });
+            }
         }
         Ok(())
     }
@@ -593,7 +585,13 @@ impl SettingsStore {
             let existing = read_entries(tx)?;
             let values = provisioning.resolve(&assemble(&existing)?)?;
             let now = Timestamp::now();
-            let mut kept = Vec::new();
+            let mut kept = provisioning.removed();
+            for key in &kept {
+                tracing::warn!(
+                    key,
+                    "provisioned setting ignored: it is a profile value now"
+                );
+            }
             let mut written = Vec::new();
             for (key, value) in values {
                 let changed_in_app = existing
@@ -639,6 +637,9 @@ impl SettingsStore {
         let provisioning = provisioning.clone();
         transact(&self.db, move |tx| {
             let existing = read_entries(tx)?;
+            for key in provisioning.removed() {
+                tracing::warn!(key, "imported setting ignored: it is a profile value now");
+            }
             let set = provisioning.resolve(&assemble(&existing)?)?;
             Ok(Change {
                 set,
@@ -1133,7 +1134,7 @@ mod tests {
         let settings = store.load().await.unwrap();
         assert_eq!(settings.engine.workers, 2);
         assert_eq!(settings.log.level, "info");
-        assert_eq!(settings.local.max_bytes, 100 * 1024 * 1024);
+        assert_eq!(settings.backup.keep, 7);
         assert_eq!(settings.web.bind.port(), 8080);
         assert!(store.entries().await.unwrap().is_empty());
     }
@@ -1143,20 +1144,20 @@ mod tests {
         let store = store().await;
         let boot = store
             .bootstrap(&provisioning(
-                json!({"engine": {"workers": 4}, "local": {"max_bytes": 5}}),
+                json!({"engine": {"workers": 4}, "backup": {"keep": 5}}),
             ))
             .await
             .unwrap();
         assert!(boot.kept.is_empty());
         assert_eq!(boot.settings.engine.workers, 4);
-        assert_eq!(boot.settings.engine.limits.max_height, 1080);
-        assert_eq!(boot.settings.local.max_bytes, 5);
+        assert_eq!(boot.settings.engine.retention.jobs_days, 90);
+        assert_eq!(boot.settings.backup.keep, 5);
         let entries = store.entries().await.unwrap();
         assert_eq!(
             keys(&entries),
             vec![
-                ("engine.workers", Source::Provisioning),
-                ("local.max_bytes", Source::Provisioning)
+                ("backup.keep", Source::Provisioning),
+                ("engine.workers", Source::Provisioning)
             ]
         );
     }
@@ -1260,32 +1261,29 @@ mod tests {
     async fn app_change_beneath_a_key_blocks_provisioning_of_the_section() {
         let store = store().await;
         store
-            .set(&actor(), "engine.limits.max_height", json!(720))
+            .set(&actor(), "engine.retention.jobs_days", json!(45))
             .await
             .unwrap();
         // A section set whole is stored as the paths beneath it.
         store
-            .set(&actor(), "local", json!({"max_bytes": 7}))
+            .set(&actor(), "backup", json!({"keep": 7}))
             .await
             .unwrap();
         let boot = store
             .bootstrap(&provisioning(
-                json!({"engine": {"limits": {"max_height": 480}}, "local": {"max_bytes": 9}}),
+                json!({"engine": {"retention": {"jobs_days": 30}}, "backup": {"keep": 9}}),
             ))
             .await
             .unwrap();
-        assert_eq!(boot.settings.engine.limits.max_height, 720);
-        assert_eq!(boot.settings.local.max_bytes, 7);
-        assert_eq!(
-            boot.kept,
-            vec!["engine.limits.max_height", "local.max_bytes"]
-        );
+        assert_eq!(boot.settings.engine.retention.jobs_days, 45);
+        assert_eq!(boot.settings.backup.keep, 7);
+        assert_eq!(boot.kept, vec!["backup.keep", "engine.retention.jobs_days"]);
         let entries = store.entries().await.unwrap();
         assert_eq!(
             keys(&entries),
             vec![
-                ("engine.limits.max_height", Source::App),
-                ("local.max_bytes", Source::App)
+                ("backup.keep", Source::App),
+                ("engine.retention.jobs_days", Source::App)
             ]
         );
     }
@@ -1335,37 +1333,34 @@ mod tests {
     async fn set_replaces_values_around_and_beneath_the_key() {
         let store = store().await;
         store
-            .set(&actor(), "engine.limits.max_height", json!(720))
+            .set(&actor(), "engine.retention.jobs_days", json!(45))
             .await
             .unwrap();
         store
-            .set(&actor(), "engine.limits.max_source_bytes", json!(10))
+            .set(&actor(), "engine.retention.failed_jobs_days", json!(10))
             .await
             .unwrap();
         let settings = store
-            .set(&actor(), "engine.limits", json!({"max_height": 480}))
+            .set(&actor(), "engine.retention", json!({"jobs_days": 30}))
             .await
             .unwrap();
-        assert_eq!(settings.engine.limits.max_height, 480);
-        assert_eq!(
-            settings.engine.limits.max_source_bytes,
-            2 * 1024 * 1024 * 1024
-        );
+        assert_eq!(settings.engine.retention.jobs_days, 30);
+        assert_eq!(settings.engine.retention.failed_jobs_days, 30);
         let entries = store.entries().await.unwrap();
         assert_eq!(
             keys(&entries),
-            vec![("engine.limits.max_height", Source::App)]
+            vec![("engine.retention.jobs_days", Source::App)]
         );
 
         let settings = store
-            .set(&actor(), "engine.limits.max_height", json!(360))
+            .set(&actor(), "engine.retention.jobs_days", json!(15))
             .await
             .unwrap();
-        assert_eq!(settings.engine.limits.max_height, 360);
+        assert_eq!(settings.engine.retention.jobs_days, 15);
         let entries = store.entries().await.unwrap();
         assert_eq!(
             keys(&entries),
-            vec![("engine.limits.max_height", Source::App)]
+            vec![("engine.retention.jobs_days", Source::App)]
         );
     }
 
@@ -1394,10 +1389,10 @@ mod tests {
     async fn stored_values_round_trip_through_the_types() {
         let store = store().await;
         let settings = store
-            .set(&actor(), "local", json!({"max_bytes": 3}))
+            .set(&actor(), "backup", json!({"keep": 3}))
             .await
             .unwrap();
-        assert_eq!(settings.local.max_bytes, 3);
+        assert_eq!(settings.backup.keep, 3);
         let settings = store
             .set(&actor(),
                 "auth.oidc",
@@ -1424,7 +1419,7 @@ mod tests {
         store
             .bootstrap(&provisioning(json!({
                 "auth": {"oidc": {"issuer": "https://issuer.example/", "client_id": "c", "client_secret": "s", "scopes": ["openid", "email"]}},
-                "engine": {"workers": 5, "limits": {"max_height": 480}},
+                "engine": {"workers": 5, "retention": {"jobs_days": 45}},
                 "web": {"bind": "0.0.0.0:9000"}
             })))
             .await
@@ -1457,7 +1452,7 @@ mod tests {
     async fn export_to_toml_refuses_null_values() {
         let store = store().await;
         store
-            .set(&actor(), "engine.limits.max_duration_secs", Json::Null)
+            .set(&actor(), "engine.ffmpeg", Json::Null)
             .await
             .unwrap();
         let error = store.export(Format::Toml).await.unwrap_err();
@@ -1465,13 +1460,7 @@ mod tests {
             error,
             SettingsError::Provisioning(ConfigError::Unrepresentable { .. })
         ));
-        assert!(
-            store
-                .export(Format::Yaml)
-                .await
-                .unwrap()
-                .contains("max_duration_secs")
-        );
+        assert!(store.export(Format::Yaml).await.unwrap().contains("ffmpeg"));
     }
 
     #[tokio::test]
@@ -1545,11 +1534,11 @@ mod tests {
         for (key, value) in [
             ("log.level", json!("not a [filter")),
             ("engine.workers", json!(0)),
-            ("engine.limits.max_height", json!(0)),
+            ("engine.download.connections", json!(0)),
             ("engine.retention.sweep_interval_secs", json!(0)),
             ("http.retry.attempts", json!(0)),
             ("http.proxies.default", json!("ftp://proxy:1")),
-            ("local.max_bytes", json!(0)),
+            ("backup.keep", json!(0)),
             ("fixtures.timeout_secs", json!(0)),
             ("web.public_url", json!("ftp://clips.example.com")),
             ("web.tls", json!({"cert": "", "key": "k"})),
@@ -1575,6 +1564,61 @@ mod tests {
             .unwrap();
         let settings = store.load().await.unwrap();
         assert_eq!(settings.http.proxies.default.unwrap().scheme(), "socks5h");
+    }
+
+    #[tokio::test]
+    async fn removed_keys_are_refused_and_ignored_by_provisioning() {
+        let store = store().await;
+        let error = store
+            .set(&actor(), "engine.limits.max_height", json!(720))
+            .await
+            .unwrap_err();
+        match error {
+            SettingsError::Invalid { path, message } => {
+                assert_eq!(path, "engine.limits.max_height");
+                assert!(message.contains("moved into profiles"), "{message}");
+            }
+            other => panic!("unexpected {other}"),
+        }
+        for key in [
+            "discord.guilds",
+            "local.target.container",
+            "engine.playlists",
+        ] {
+            assert!(
+                store.set(&actor(), key, json!(1)).await.is_err(),
+                "{key} still accepted"
+            );
+        }
+        let boot = store
+            .bootstrap(&provisioning(json!({
+                "engine": {"workers": 4, "limits": {"max_height": 480}},
+                "discord": {"limits": {"base_bytes": 1}}
+            })))
+            .await
+            .unwrap();
+        assert_eq!(boot.settings.engine.workers, 4);
+        assert_eq!(
+            boot.kept,
+            vec!["discord.limits.base_bytes", "engine.limits.max_height"]
+        );
+        assert_eq!(
+            keys(&store.entries().await.unwrap()),
+            vec![("engine.workers", Source::Provisioning)]
+        );
+        let imported = store
+            .import(
+                &actor(),
+                &Provisioning::from_text(
+                    "[engine]\nworkers = 9\n[local]\nmax_bytes = 5\n",
+                    Format::Toml,
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(imported.written, vec!["engine.workers"]);
+        assert_eq!(imported.settings.engine.workers, 9);
     }
 
     #[tokio::test]

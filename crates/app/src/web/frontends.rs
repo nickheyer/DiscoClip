@@ -25,7 +25,7 @@ impl From<FrontendError> for ApiError {
             | FrontendError::Password(_) => ApiError::BadRequest(error.to_string()),
             FrontendError::DuplicateSlug(_)
             | FrontendError::DuplicateUser(..)
-            | FrontendError::NoPublicUrl => ApiError::Conflict(error.to_string()),
+            | FrontendError::InUse(_) => ApiError::Conflict(error.to_string()),
             FrontendError::Store(_) => ApiError::Internal(error.to_string()),
         }
     }
@@ -36,7 +36,6 @@ pub(super) fn known(state: &AppState) -> Known {
     Known {
         profiles: state.profiles.cache(),
         providers: state.oauth.providers().into_iter().map(|p| p.id).collect(),
-        public_url: state.public_url.get().is_some(),
     }
 }
 

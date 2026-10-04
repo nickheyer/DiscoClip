@@ -57,7 +57,7 @@ jobs:
 
       # The same build stage the images use, so the archive's binary is the image's.
       - name: Build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           target: binary
@@ -265,7 +265,7 @@ jobs:
 
       # Pushed by digest alone; the merge job below names the manifest lists.
       - id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           target: ${{ matrix.variant }}

@@ -1,0 +1,34 @@
+[package]
+name = "discoclip-bot"
+description = "Discord adapter: watches channels, submits requests, publishes results"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+discoclip-engine.workspace = true
+futures.workspace = true
+jiff.workspace = true
+secrecy.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+twilight-cache-inmemory.workspace = true
+twilight-gateway.workspace = true
+twilight-http.workspace = true
+twilight-http-ratelimiting.workspace = true
+twilight-model.workspace = true
+twilight-util.workspace = true
+url.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+
+[lints]
+workspace = true

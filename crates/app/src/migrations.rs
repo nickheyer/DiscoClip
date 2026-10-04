@@ -1,0 +1,562 @@
+//! The application's tables, as a versioned list. The engine keeps its own.
+
+use discoclip_engine::StoreError;
+use discoclip_engine::store::migrate::Migration;
+use discoclip_engine::store::sqlite::SqliteStore;
+
+pub const SCOPE: &str = "app";
+
+pub const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "settings",
+        sql: "
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    source TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+",
+    },
+    Migration {
+        version: 2,
+        name: "users",
+        sql: "
+CREATE TABLE users (
+    id TEXT PRIMARY KEY,
+    username TEXT NOT NULL,
+    password_hash TEXT,
+    role TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX users_username ON users(username COLLATE NOCASE);
+",
+    },
+    Migration {
+        version: 3,
+        name: "sessions",
+        sql: "
+CREATE TABLE sessions (
+    id TEXT PRIMARY KEY,
+    token_hash TEXT NOT NULL UNIQUE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    csrf_token TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_seen_at INTEGER NOT NULL,
+    user_agent TEXT,
+    ip TEXT
+);
+CREATE INDEX sessions_user ON sessions(user_id, created_at DESC);
+",
+    },
+    Migration {
+        version: 4,
+        name: "oauth_identities",
+        sql: "
+CREATE TABLE oauth_identities (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    username TEXT,
+    display_name TEXT,
+    email TEXT,
+    scope TEXT,
+    access_token TEXT NOT NULL,
+    refresh_token TEXT,
+    expires_at INTEGER,
+    linked_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    UNIQUE (provider, subject),
+    UNIQUE (user_id, provider)
+);
+",
+    },
+    Migration {
+        version: 5,
+        name: "api_tokens",
+        sql: "
+CREATE TABLE api_tokens (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    prefix TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    scopes TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_used_at INTEGER,
+    expires_at INTEGER
+);
+CREATE INDEX api_tokens_user ON api_tokens(user_id, created_at DESC);
+",
+    },
+    Migration {
+        version: 6,
+        name: "discord_guilds",
+        sql: "
+CREATE TABLE discord_guilds (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    guild_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    icon TEXT,
+    owner INTEGER NOT NULL,
+    permissions TEXT NOT NULL,
+    manageable INTEGER NOT NULL,
+    fetched_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, guild_id)
+);
+",
+    },
+    Migration {
+        version: 7,
+        name: "discord_applications",
+        sql: "
+CREATE TABLE discord_applications (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    client_id TEXT NOT NULL UNIQUE,
+    client_secret TEXT,
+    bot_token TEXT NOT NULL,
+    login INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+",
+    },
+    Migration {
+        version: 8,
+        name: "bot_guilds",
+        sql: "
+CREATE TABLE bot_guilds (
+    application_id TEXT NOT NULL REFERENCES discord_applications(id) ON DELETE CASCADE,
+    guild_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    icon TEXT,
+    member_count INTEGER,
+    joined_at INTEGER NOT NULL,
+    left_at INTEGER,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (application_id, guild_id)
+);
+",
+    },
+    Migration {
+        version: 9,
+        name: "watch_rules",
+        sql: "
+CREATE TABLE watch_rules (
+    id TEXT PRIMARY KEY,
+    application_id TEXT NOT NULL REFERENCES discord_applications(id) ON DELETE CASCADE,
+    guild_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    post_to TEXT,
+    allow_hosts TEXT NOT NULL,
+    allow_users TEXT NOT NULL,
+    allow_roles TEXT NOT NULL,
+    max_source_bytes INTEGER,
+    max_duration_secs INTEGER,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    UNIQUE (application_id, channel_id)
+);
+CREATE INDEX watch_rules_guild ON watch_rules(application_id, guild_id);
+",
+    },
+    Migration {
+        version: 10,
+        name: "application_commands",
+        sql: "
+ALTER TABLE discord_applications ADD COLUMN commands_mode TEXT NOT NULL DEFAULT 'global';
+ALTER TABLE discord_applications ADD COLUMN commands_guilds TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE discord_applications ADD COLUMN commands_registered_at INTEGER;
+ALTER TABLE discord_applications ADD COLUMN commands_error TEXT;
+",
+    },
+    Migration {
+        version: 11,
+        name: "application_enabled",
+        sql: "
+ALTER TABLE discord_applications ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1;
+",
+    },
+    Migration {
+        version: 12,
+        name: "watch_rule_max_height",
+        sql: "
+ALTER TABLE watch_rules ADD COLUMN max_height INTEGER;
+",
+    },
+    Migration {
+        version: 13,
+        name: "audit_log",
+        sql: "
+CREATE TABLE audit_log (
+    id TEXT PRIMARY KEY,
+    at INTEGER NOT NULL,
+    actor_kind TEXT NOT NULL,
+    actor_id TEXT,
+    actor_name TEXT,
+    actor_via TEXT,
+    actor_ip TEXT,
+    action TEXT NOT NULL,
+    target_kind TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    target_name TEXT,
+    details TEXT NOT NULL
+);
+CREATE INDEX audit_log_at ON audit_log(at);
+CREATE INDEX audit_log_actor ON audit_log(actor_id, id);
+CREATE INDEX audit_log_action ON audit_log(action, id);
+CREATE INDEX audit_log_target ON audit_log(target_kind, target_id, id);
+",
+    },
+    Migration {
+        version: 14,
+        name: "platform_fixtures",
+        sql: "
+CREATE TABLE fixture_platforms (
+    platform TEXT PRIMARY KEY,
+    last_run_at INTEGER NOT NULL,
+    last_pass_at INTEGER,
+    last_fail_at INTEGER,
+    passed INTEGER NOT NULL,
+    failed INTEGER NOT NULL
+);
+CREATE TABLE fixture_results (
+    platform TEXT NOT NULL,
+    url TEXT NOT NULL,
+    run_at INTEGER NOT NULL,
+    ok INTEGER NOT NULL,
+    error TEXT,
+    title TEXT,
+    duration_ms INTEGER NOT NULL,
+    last_pass_at INTEGER,
+    PRIMARY KEY (platform, url)
+);
+",
+    },
+    Migration {
+        version: 15,
+        name: "platform_cookies",
+        sql: "
+CREATE TABLE platform_cookies (
+    platform TEXT PRIMARY KEY,
+    jar TEXT,
+    cookies INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER,
+    check_json TEXT,
+    checked_at INTEGER
+);
+",
+    },
+    Migration {
+        version: 16,
+        name: "fixture_login_required",
+        sql: "
+ALTER TABLE fixture_results ADD COLUMN login_required INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE fixture_platforms ADD COLUMN login_required INTEGER NOT NULL DEFAULT 0;
+",
+    },
+    Migration {
+        version: 17,
+        name: "fixture_found",
+        sql: "
+ALTER TABLE fixture_results ADD COLUMN found_kind TEXT;
+ALTER TABLE fixture_results ADD COLUMN found_count INTEGER;
+",
+    },
+    Migration {
+        version: 18,
+        name: "profiles",
+        sql: "
+CREATE TABLE profiles (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    platforms TEXT NOT NULL,
+    builtin INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX profiles_name ON profiles(name COLLATE NOCASE);
+CREATE TABLE profile_assignments (
+    scope TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    guild_id TEXT,
+    profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    updated_at INTEGER NOT NULL
+);
+CREATE INDEX profile_assignments_guild ON profile_assignments(guild_id, kind);
+CREATE INDEX profile_assignments_profile ON profile_assignments(profile_id);
+INSERT INTO profiles (id, name, description, platforms, builtin, created_at, updated_at)
+VALUES ('00000000-0000-0000-0000-000000000001', 'Default',
+        'Every platform on. In force wherever nothing else is assigned.',
+        '{\"default\":\"enabled\",\"overrides\":{}}', 1,
+        CAST(strftime('%s', 'now') AS INTEGER) * 1000000000,
+        CAST(strftime('%s', 'now') AS INTEGER) * 1000000000);
+INSERT INTO profile_assignments (scope, kind, guild_id, profile_id, updated_at)
+VALUES ('global', 'global', NULL, '00000000-0000-0000-0000-000000000001',
+        CAST(strftime('%s', 'now') AS INTEGER) * 1000000000);
+",
+    },
+    Migration {
+        version: 19,
+        name: "frontends",
+        sql: "
+CREATE TABLE frontends (
+    id TEXT PRIMARY KEY,
+    slug TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    profile_id TEXT NOT NULL REFERENCES profiles(id),
+    config TEXT NOT NULL,
+    secret_hash TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX frontends_slug ON frontends(slug COLLATE NOCASE);
+CREATE TABLE frontend_users (
+    id TEXT PRIMARY KEY,
+    frontend_id TEXT NOT NULL REFERENCES frontends(id) ON DELETE CASCADE,
+    username TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX frontend_users_name ON frontend_users(frontend_id, username COLLATE NOCASE);
+CREATE TABLE frontend_sessions (
+    id TEXT PRIMARY KEY,
+    frontend_id TEXT NOT NULL REFERENCES frontends(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL UNIQUE,
+    subject TEXT NOT NULL,
+    display TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_seen_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    ip TEXT,
+    user_agent TEXT
+);
+CREATE INDEX frontend_sessions_frontend ON frontend_sessions(frontend_id, last_seen_at DESC);
+",
+    },
+    Migration {
+        version: 20,
+        name: "profile_limits",
+        sql: "
+ALTER TABLE profiles ADD COLUMN max_source_bytes INTEGER;
+ALTER TABLE profiles ADD COLUMN max_duration_secs INTEGER;
+ALTER TABLE profiles ADD COLUMN max_height INTEGER;
+CREATE TABLE watch_rule_policies (
+    rule_id TEXT PRIMARY KEY,
+    application_id TEXT NOT NULL,
+    guild_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    allow_hosts TEXT NOT NULL,
+    max_source_bytes INTEGER,
+    max_duration_secs INTEGER,
+    max_height INTEGER
+);
+INSERT INTO watch_rule_policies (rule_id, application_id, guild_id, channel_id, allow_hosts,
+    max_source_bytes, max_duration_secs, max_height)
+SELECT id, application_id, guild_id, channel_id, allow_hosts, max_source_bytes,
+    max_duration_secs, max_height
+FROM watch_rules
+WHERE allow_hosts <> '[]' OR max_source_bytes IS NOT NULL OR max_duration_secs IS NOT NULL
+    OR max_height IS NOT NULL;
+ALTER TABLE watch_rules DROP COLUMN allow_hosts;
+ALTER TABLE watch_rules DROP COLUMN max_source_bytes;
+ALTER TABLE watch_rules DROP COLUMN max_duration_secs;
+ALTER TABLE watch_rules DROP COLUMN max_height;
+",
+    },
+    Migration {
+        version: 21,
+        name: "watch_rules_whole_guild",
+        sql: "
+CREATE TABLE watch_rules_whole (
+    id TEXT PRIMARY KEY,
+    application_id TEXT NOT NULL REFERENCES discord_applications(id) ON DELETE CASCADE,
+    guild_id TEXT NOT NULL,
+    channel_id TEXT,
+    post_to TEXT,
+    allow_users TEXT NOT NULL,
+    allow_roles TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    UNIQUE (application_id, channel_id)
+);
+INSERT INTO watch_rules_whole (id, application_id, guild_id, channel_id, post_to, allow_users,
+    allow_roles, enabled, created_at, updated_at)
+SELECT id, application_id, guild_id, channel_id, post_to, allow_users, allow_roles, enabled,
+    created_at, updated_at
+FROM watch_rules;
+DROP TABLE watch_rules;
+ALTER TABLE watch_rules_whole RENAME TO watch_rules;
+CREATE INDEX watch_rules_guild ON watch_rules(application_id, guild_id);
+CREATE UNIQUE INDEX watch_rules_whole_guild ON watch_rules(application_id, guild_id)
+    WHERE channel_id IS NULL;
+",
+    },
+    Migration {
+        version: 22,
+        name: "profile_capture_limit",
+        sql: "
+ALTER TABLE profiles ADD COLUMN max_capture_secs INTEGER;
+",
+    },
+    Migration {
+        version: 23,
+        name: "profile_audio_language",
+        sql: "
+ALTER TABLE profiles ADD COLUMN audio_language TEXT;
+",
+    },
+    Migration {
+        version: 24,
+        name: "remembered",
+        sql: "
+CREATE TABLE remembered (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+",
+    },
+    Migration {
+        version: 25,
+        name: "fixture_links",
+        sql: "
+CREATE TABLE fixture_links (
+    id TEXT PRIMARY KEY,
+    platform TEXT NOT NULL,
+    url TEXT NOT NULL,
+    origin TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    disabled_reason TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    removed_at INTEGER,
+    UNIQUE (platform, url)
+);
+CREATE INDEX fixture_links_platform ON fixture_links(platform, removed_at, enabled);
+DROP TABLE fixture_platforms;
+",
+    },
+    // Rewords the built-in profile's description unless an operator already changed it
+    Migration {
+        version: 26,
+        name: "default_profile_description",
+        sql: "
+UPDATE profiles SET description = 'Every platform that is on by default. In force wherever nothing else is assigned.'
+WHERE id = '00000000-0000-0000-0000-000000000001'
+  AND description = 'Every platform on. In force wherever nothing else is assigned.';
+",
+    },
+    // Every policy section of a profile as one JSON column, the four typed limit columns
+    // folded into the first
+    Migration {
+        version: 27,
+        name: "profile_sections",
+        sql: "
+ALTER TABLE profiles ADD COLUMN limits TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE profiles ADD COLUMN intake TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE profiles ADD COLUMN output TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE profiles ADD COLUMN upload TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE profiles ADD COLUMN delivery TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE profiles ADD COLUMN message TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE profiles ADD COLUMN errors TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE profiles ADD COLUMN dedupe TEXT NOT NULL DEFAULT '{}';
+UPDATE profiles SET limits = json_patch('{}', json_object(
+    'max_source_bytes', max_source_bytes,
+    'max_duration_secs', max_duration_secs,
+    'max_height', max_height,
+    'max_capture_secs', max_capture_secs));
+UPDATE profiles SET limits = json_set(limits, '$.max_duration_secs', max_duration_secs)
+WHERE max_duration_secs IS NOT NULL;
+ALTER TABLE profiles DROP COLUMN max_source_bytes;
+ALTER TABLE profiles DROP COLUMN max_duration_secs;
+ALTER TABLE profiles DROP COLUMN max_height;
+ALTER TABLE profiles DROP COLUMN max_capture_secs;
+",
+    },
+    // The settings that became profile values, staged for the profile store to move
+    Migration {
+        version: 28,
+        name: "policy_settings_staging",
+        sql: "
+CREATE TABLE policy_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    source TEXT NOT NULL
+);
+INSERT INTO policy_settings (key, value, source)
+SELECT key, value, source FROM settings
+WHERE key IN ('engine.limits', 'engine.live', 'engine.playlists', 'local.max_bytes',
+              'local.target', 'discord.limits', 'discord.target', 'discord.guilds')
+   OR key LIKE 'engine.limits.%' OR key LIKE 'engine.live.%' OR key LIKE 'engine.playlists.%'
+   OR key LIKE 'local.target.%' OR key LIKE 'discord.limits.%' OR key LIKE 'discord.target.%';
+DELETE FROM settings
+WHERE key IN ('engine.limits', 'engine.live', 'engine.playlists', 'local.max_bytes',
+              'local.target', 'discord.limits', 'discord.target', 'discord.guilds')
+   OR key LIKE 'engine.limits.%' OR key LIKE 'engine.live.%' OR key LIKE 'engine.playlists.%'
+   OR key LIKE 'local.target.%' OR key LIKE 'discord.limits.%' OR key LIKE 'discord.target.%';
+",
+    },
+    // Who may post and where results go leave the watch rules for profiles
+    Migration {
+        version: 29,
+        name: "watch_rule_intake",
+        sql: "
+CREATE TABLE watch_rule_intake (
+    rule_id TEXT PRIMARY KEY,
+    application_id TEXT NOT NULL,
+    guild_id TEXT NOT NULL,
+    channel_id TEXT,
+    post_to TEXT,
+    allow_users TEXT NOT NULL,
+    allow_roles TEXT NOT NULL
+);
+INSERT INTO watch_rule_intake (rule_id, application_id, guild_id, channel_id, post_to,
+    allow_users, allow_roles)
+SELECT id, application_id, guild_id, channel_id, post_to, allow_users, allow_roles
+FROM watch_rules
+WHERE post_to IS NOT NULL OR allow_users <> '[]' OR allow_roles <> '[]';
+ALTER TABLE watch_rules DROP COLUMN post_to;
+ALTER TABLE watch_rules DROP COLUMN allow_users;
+ALTER TABLE watch_rules DROP COLUMN allow_roles;
+",
+    },
+    // The link settings leave the content views for the profiles, the signed link
+    // lifetime staying with the view
+    Migration {
+        version: 30,
+        name: "frontend_links",
+        sql: "
+CREATE TABLE frontend_links (
+    frontend_id TEXT PRIMARY KEY,
+    slug TEXT NOT NULL,
+    enabled INTEGER NOT NULL,
+    scope_everything INTEGER NOT NULL,
+    links TEXT NOT NULL
+);
+INSERT INTO frontend_links (frontend_id, slug, enabled, scope_everything, links)
+SELECT id, slug, enabled,
+    (json_array_length(config, '$.scope.guilds') = 0 AND json_array_length(config, '$.scope.channels') = 0),
+    json_extract(config, '$.links')
+FROM frontends
+WHERE json_extract(config, '$.links.enabled') = 1;
+UPDATE frontends SET config = json_remove(
+    json_set(config, '$.signed_link_days', COALESCE(json_extract(config, '$.links.signed_link_days'), 30)),
+    '$.links');
+",
+    },
+];
+
+/// Brings the application's tables up to date. Returns how many migrations ran.
+pub async fn apply(db: &SqliteStore) -> Result<usize, StoreError> {
+    db.migrate(SCOPE, MIGRATIONS).await
+}

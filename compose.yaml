@@ -1,0 +1,44 @@
+services:
+  discoclip:
+    image: ghcr.io/nickheyer/discoclip:latest
+    build:
+      context: .
+      target: cpu
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      DISCOCLIP_LOG__LEVEL: info
+    volumes:
+      - discoclip-data:/var/lib/discoclip
+      - discoclip-cache:/var/cache/discoclip
+    stop_grace_period: 75s
+
+  discoclip-nvidia:
+    extends: discoclip
+    profiles: [gpu]
+    image: ghcr.io/nickheyer/discoclip:gpu
+    build:
+      target: gpu
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  discoclip-intel-amd:
+    extends: discoclip
+    profiles: [gpu]
+    image: ghcr.io/nickheyer/discoclip:gpu
+    build:
+      target: gpu
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - "${RENDER_GID:-render}"
+
+volumes:
+  discoclip-data:
+  discoclip-cache:

@@ -1,0 +1,78 @@
+# systemd unit for DiscoClip.
+#
+# The .deb and .rpm packages install this unit, the service account and a config file at
+# /etc/discoclip/discoclip.toml, and start the service. So does the installer from a
+# release archive:
+#
+#   sudo packaging/install.sh --system
+#
+# By hand, from a release archive or `cargo build --release`:
+#
+#   install -m 755 discoclip /usr/bin/discoclip
+#   install -m 644 packaging/discoclip.sysusers /etc/sysusers.d/discoclip.conf
+#   systemd-sysusers discoclip.conf
+#   install -d -m 750 -o root -g discoclip /etc/discoclip
+#   install -m 640 -o root -g discoclip discoclip.example.toml /etc/discoclip/discoclip.toml
+#   install -m 644 packaging/discoclip.service /etc/systemd/system/discoclip.service
+#   systemctl daemon-reload && systemctl enable --now discoclip
+#
+# The data directory, the cache directory and the published files are set below and take
+# precedence over the config file. Everything else comes from the config file and the
+# web app.
+
+[Unit]
+Description=DiscoClip media bot and web app
+Documentation=https://github.com/nickheyer/DiscoClip
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=discoclip
+Group=discoclip
+ExecStart=/usr/bin/discoclip --config /etc/discoclip/discoclip.toml
+Environment=DISCOCLIP_DATA_DIR=/var/lib/discoclip
+Environment=DISCOCLIP_ENGINE__CACHE_DIR=/var/cache/discoclip
+Environment=DISCOCLIP_LOCAL__DIR=/var/lib/discoclip/local
+Environment=DISCOCLIP_ENGINE__ARCHIVE__DIR=/var/lib/discoclip/archive
+Environment=DISCOCLIP_BACKUP__DIR=/var/lib/discoclip/backups
+
+StateDirectory=discoclip
+CacheDirectory=discoclip
+ConfigurationDirectory=discoclip
+WorkingDirectory=/var/lib/discoclip
+Restart=on-failure
+RestartSec=5s
+
+# SIGTERM starts the graceful shutdown: running jobs get engine.shutdown.grace_secs
+# (30 s by default) to finish, the web listener drains for 10 s, and the bots close
+# their gateway connections. The stop timeout leaves room for all of that before
+# anything is killed. Only the server gets the signal; ffmpeg children it started are
+# stopped by it, and anything left is killed at the timeout.
+KillSignal=SIGTERM
+KillMode=mixed
+TimeoutStopSec=75s
+
+# Hardening. The cache holds the unpacked ffmpeg, which has to run from there, so it is
+# writable and executable. A browser, when the settings name one, runs from its own path.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+ReadWritePaths=/var/lib/discoclip /var/cache/discoclip
+# For NVENC, VA-API or Quick Sync, let the service reach the GPU. NVIDIA needs the
+# device nodes; Intel and AMD need the render node and its group.
+# SupplementaryGroups=render video
+# DeviceAllow=/dev/dri rw
+# DeviceAllow=/dev/nvidiactl rw
+# DeviceAllow=/dev/nvidia-uvm rw
+# DeviceAllow=/dev/nvidia0 rw
+
+[Install]
+WantedBy=multi-user.target

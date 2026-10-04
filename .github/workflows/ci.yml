@@ -1,0 +1,107 @@
+# Every push and pull request: formatting, lints, tests, the web app's checks, and both
+# container images with a smoke test of each.
+#
+# The resolver tests marked #[ignore] fetch from the sites they cover; they run on a
+# schedule in live-tests.yml, not here.
+
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  rust:
+    name: Rust
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake clang libclang-dev pkg-config
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: crates/app/ui/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Build the tests
+        run: cargo test --workspace --locked --no-run
+
+      - name: Take the runner's snapshot Chromium off PATH so the tests find Google Chrome
+        run: |
+          sudo rm -f /usr/bin/chromium /usr/bin/chromium-browser
+          google-chrome --version
+
+      - name: Test
+        run: cargo test --workspace --locked
+
+  ui:
+    name: Web app
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: crates/app/ui
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: crates/app/ui/package-lock.json
+
+      - run: npm ci --no-audit --no-fund
+      - run: npm run check
+      - run: npm run lint
+      - run: npm run build
+
+  docker:
+    name: Image (${{ matrix.target }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [cpu, gpu]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          load: true
+          tags: discoclip:${{ matrix.target }}
+          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-to: type=gha,scope=${{ matrix.target }},mode=max
+
+      - name: Smoke test
+        run: packaging/smoke-test.sh discoclip:${{ matrix.target }} ${{ matrix.target }}

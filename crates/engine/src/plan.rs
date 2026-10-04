@@ -1,0 +1,560 @@
+use crate::media::{LocalFile, MediaInfo, MediaKind, VideoCodec};
+use crate::policy::Limits;
+use crate::publish::Constraints;
+use crate::resolve::{Variant, VariantKind};
+use crate::transcode::{Target, TranscodeError};
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Plan {
+    Passthrough,
+    Transcode(Box<Target>),
+}
+
+/// Check whether media can be published without conversion. Validate video and audio
+/// containers, codecs and size, plus video dimensions.
+///
+/// Validate image format and size. Other files require file support and must fit the size
+/// limit. Ffprobe metadata is required except for generic files.
+pub fn plan(
+    file: &LocalFile,
+    info: Option<&MediaInfo>,
+    constraints: &Constraints,
+    limits: &Limits,
+    target: Target,
+) -> Result<Plan, TranscodeError> {
+    match &target {
+        Target::Video(video_target) if video_target.still.is_some() => {
+            // Sound made into a picture is always encoded.
+            let info = info.ok_or(TranscodeError::NoAudio)?;
+            info.audio.as_ref().ok_or(TranscodeError::NoAudio)?;
+            Ok(Plan::Transcode(Box::new(target)))
+        }
+        Target::Video(video_target) => {
+            let info = info.ok_or(TranscodeError::NoVideo)?;
+            let video = info.video.as_ref().ok_or(TranscodeError::NoVideo)?;
+            if info.kind != MediaKind::Video {
+                return Err(TranscodeError::NoVideo);
+            }
+            let untouched = video_target.clip.is_none() && video_target.burn.is_none();
+            let (width, height) = video.display_size();
+            let slow_enough = match (video_target.max_fps, video.fps) {
+                (Some(max_fps), Some(fps)) => fps <= max_fps as f64 + 0.5,
+                _ => true,
+            };
+            let fits = untouched
+                && !video.needs_processing()
+                && slow_enough
+                && file.size <= constraints.max_bytes
+                && constraints.accepts_container(&info.container)
+                && constraints.accepts_video(&video.codec)
+                && info
+                    .audio
+                    .as_ref()
+                    .is_none_or(|a| constraints.accepts_audio(&a.codec))
+                && height <= limits.max_height
+                && width <= limits.max_height * 16 / 9 + 2;
+            if fits {
+                return Ok(Plan::Passthrough);
+            }
+            Ok(Plan::Transcode(Box::new(target)))
+        }
+        Target::Audio(audio_target) => {
+            let info = info.ok_or(TranscodeError::NoAudio)?;
+            let audio = info.audio.as_ref().ok_or(TranscodeError::NoAudio)?;
+            if !constraints.accepts(MediaKind::Audio) {
+                return Err(TranscodeError::NotAccepted(MediaKind::Audio));
+            }
+            let fits = audio_target.clip.is_none()
+                && info.kind == MediaKind::Audio
+                && file.size <= constraints.max_bytes
+                && constraints.accepts_audio_file(&info.container, Some(&audio.codec));
+            if fits {
+                return Ok(Plan::Passthrough);
+            }
+            Ok(Plan::Transcode(Box::new(target)))
+        }
+        Target::Image(_) => {
+            let info = info.ok_or(TranscodeError::NoPicture)?;
+            if info.kind != MediaKind::Image || info.video.is_none() {
+                return Err(TranscodeError::NoPicture);
+            }
+            if !constraints.accepts(MediaKind::Image) {
+                return Err(TranscodeError::NotAccepted(MediaKind::Image));
+            }
+            let fits =
+                file.size <= constraints.max_bytes && constraints.accepts_image(&info.container);
+            if fits {
+                return Ok(Plan::Passthrough);
+            }
+            Ok(Plan::Transcode(Box::new(target)))
+        }
+        Target::File { max_bytes } => {
+            if !constraints.accepts(MediaKind::File) {
+                return Err(TranscodeError::NotAccepted(MediaKind::File));
+            }
+            let max_bytes = (*max_bytes).min(constraints.max_bytes);
+            if file.size > max_bytes {
+                return Err(TranscodeError::CannotShrink {
+                    size: file.size,
+                    max_bytes,
+                });
+            }
+            Ok(Plan::Passthrough)
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum SelectError {
+    #[error("{0} returned no media variants")]
+    NoVariants(String),
+    #[error("every variant is protected by {0} DRM")]
+    Drm(String),
+    #[error("{0} returned only audio")]
+    AudioOnly(String),
+    #[error("{0} returned no variant with sound")]
+    NoAudio(String),
+    #[error("{0} returned no {1} variant")]
+    NoFile(String, MediaKind),
+}
+
+fn kind_rank(kind: VariantKind) -> u8 {
+    match kind {
+        VariantKind::File => 7,
+        VariantKind::Hls => 6,
+        VariantKind::Dash => 5,
+        VariantKind::Ism => 4,
+        VariantKind::Browser => 3,
+        VariantKind::Whep => 2,
+        VariantKind::Rtsp | VariantKind::Rtp => 1,
+        VariantKind::Rtmp => 0,
+    }
+}
+
+/// Codecs mainstream clients play as they are, so no transcode is needed, first.
+fn codec_rank(codec: Option<&VideoCodec>) -> u8 {
+    match codec {
+        Some(VideoCodec::H264) => 4,
+        Some(VideoCodec::Vp9) => 3,
+        Some(VideoCodec::Av1) => 2,
+        Some(VideoCodec::H265) => 1,
+        Some(VideoCodec::Vp8) | Some(VideoCodec::Other(_)) | None => 0,
+    }
+}
+
+/// The height counted for ranking: taller than the limit counts against, since it will be
+/// scaled down anyway.
+fn capped_height(height: Option<u32>, max_height: u32) -> u32 {
+    let height = height.unwrap_or(0);
+    if height > max_height {
+        max_height.saturating_sub(height - max_height)
+    } else {
+        height
+    }
+}
+
+/// Whether a track's language is the one asked for: the same tag, or the same language
+/// under a region, so `en-US` answers `en` and `en` answers `en-GB`.
+pub fn language_matches(have: Option<&str>, wanted: &str) -> bool {
+    let Some(have) = have else {
+        return false;
+    };
+    let base = |tag: &str| {
+        tag.split(['-', '_'])
+            .next()
+            .unwrap_or("")
+            .to_ascii_lowercase()
+    };
+    let (have, wanted) = (have.trim(), wanted.trim());
+    if have.is_empty() || wanted.is_empty() {
+        return false;
+    }
+    have.eq_ignore_ascii_case(wanted) || base(have) == base(wanted)
+}
+
+/// Select a downloadable variant. Video prefers resolution within the height limit,
+/// compatible codecs, bitrate and direct files. Pair video-only variants with audio in
+/// `audio_language`, else the original sound, else what is left that is no dub.
+///
+/// Audio prefers audio-only variants in that language, otherwise the smallest video with
+/// sound. Images and files prefer the largest variant under the byte limit.
+///
+/// Exclude locked variants. Exceed the byte limit only when no smaller variant exists.
+pub fn select_variant(
+    variants: &[Variant],
+    limits: &Limits,
+    resolver: &str,
+    media: MediaKind,
+    audio_language: &str,
+) -> Result<Variant, SelectError> {
+    if variants.is_empty() {
+        return Err(SelectError::NoVariants(resolver.to_string()));
+    }
+    let playable: Vec<&Variant> = variants.iter().filter(|v| v.is_playable()).collect();
+    if playable.is_empty() {
+        let system = variants
+            .iter()
+            .find_map(|v| v.drm.clone())
+            .unwrap_or_else(|| "unknown".into());
+        return Err(SelectError::Drm(system));
+    }
+    let allowed = |v: &Variant| v.size.is_none_or(|s| s <= limits.max_source_bytes);
+    match media {
+        MediaKind::Video => select_video(&playable, limits, resolver, allowed, audio_language),
+        MediaKind::Audio => {
+            let with_sound: Vec<&Variant> =
+                playable.iter().copied().filter(|v| !v.video_only).collect();
+            if with_sound.is_empty() {
+                return Err(SelectError::NoAudio(resolver.to_string()));
+            }
+            let score = |v: &Variant| {
+                (
+                    allowed(v),
+                    v.audio_only,
+                    language_matches(v.language.as_deref(), audio_language),
+                    v.audio_default,
+                    !v.audio_dubbed,
+                    audio_rank(v),
+                    v.bitrate.unwrap_or(0),
+                    u32::MAX - v.height.unwrap_or(0),
+                    kind_rank(v.kind),
+                )
+            };
+            Ok(with_sound
+                .iter()
+                .copied()
+                .max_by_key(|v| score(v))
+                .expect("at least one variant with sound")
+                .clone())
+        }
+        MediaKind::Image | MediaKind::File => {
+            let files: Vec<&Variant> = playable
+                .iter()
+                .copied()
+                .filter(|v| !v.audio_only && !v.video_only)
+                .collect();
+            if files.is_empty() {
+                return Err(SelectError::NoFile(resolver.to_string(), media));
+            }
+            let score = |v: &Variant| {
+                (
+                    allowed(v),
+                    v.height.unwrap_or(0),
+                    v.size.unwrap_or(0),
+                    kind_rank(v.kind),
+                )
+            };
+            Ok(files
+                .iter()
+                .copied()
+                .max_by_key(|v| score(v))
+                .expect("at least one file variant")
+                .clone())
+        }
+    }
+}
+
+fn select_video(
+    playable: &[&Variant],
+    limits: &Limits,
+    resolver: &str,
+    allowed: impl Fn(&Variant) -> bool,
+    audio_language: &str,
+) -> Result<Variant, SelectError> {
+    let score = |v: &Variant| {
+        (
+            capped_height(v.height, limits.max_height),
+            codec_rank(v.video.as_ref()),
+            v.bitrate.unwrap_or(0),
+            kind_rank(v.kind),
+        )
+    };
+    let with_video: Vec<&Variant> = playable.iter().copied().filter(|v| !v.audio_only).collect();
+    if with_video.is_empty() {
+        return Err(SelectError::AudioOnly(resolver.to_string()));
+    }
+    let chosen = with_video
+        .iter()
+        .copied()
+        .filter(|v| allowed(v))
+        .max_by_key(|v| score(v))
+        .or_else(|| with_video.iter().copied().max_by_key(|v| score(v)))
+        .expect("at least one video variant")
+        .clone();
+    if chosen.video_only && chosen.audio_url.is_none() {
+        // The sound in the language asked for, else the original the platform marks as
+        // its default, else a track that is no dub, then the codec clients play as it
+        // is and the highest bitrate.
+        let prefer = |v: &Variant| {
+            (
+                language_matches(v.language.as_deref(), audio_language),
+                v.audio_default,
+                !v.audio_dubbed,
+                audio_rank(v),
+                v.bitrate.unwrap_or(0),
+            )
+        };
+        let audio = playable
+            .iter()
+            .copied()
+            .filter(|v| v.audio_only && v.kind == chosen.kind)
+            .max_by_key(|v| prefer(v))
+            .or_else(|| {
+                playable
+                    .iter()
+                    .copied()
+                    .filter(|v| v.audio_only)
+                    .max_by_key(|v| prefer(v))
+            });
+        if let Some(audio) = audio {
+            let mut paired = chosen;
+            paired.audio_url = Some(audio.url.clone());
+            paired.audio = audio.audio.clone();
+            paired.language = audio.language.clone();
+            paired.audio_track = audio.audio_track.clone();
+            paired.audio_default = audio.audio_default;
+            paired.audio_dubbed = audio.audio_dubbed;
+            if paired.size.is_some() {
+                paired.size = Some(paired.size.unwrap_or(0) + audio.size.unwrap_or(0));
+            }
+            return Ok(paired);
+        }
+    }
+    Ok(chosen)
+}
+
+/// Codecs every client plays as they are first, so no transcode is needed.
+fn audio_rank(v: &Variant) -> u8 {
+    match v.audio {
+        Some(crate::media::AudioCodec::Aac) => 5,
+        Some(crate::media::AudioCodec::Mp3) => 4,
+        Some(crate::media::AudioCodec::Opus) => 3,
+        Some(crate::media::AudioCodec::Vorbis) => 2,
+        Some(crate::media::AudioCodec::Flac) => 1,
+        _ => 0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::media::AudioCodec;
+    use url::Url;
+
+    fn variant(url: &str, kind: VariantKind, height: u32, bitrate: u64) -> Variant {
+        let mut v = Variant::new(Url::parse(url).unwrap(), kind);
+        v.height = Some(height);
+        v.bitrate = Some(bitrate);
+        v
+    }
+
+    fn limits() -> Limits {
+        Limits {
+            max_source_bytes: 1000,
+            max_duration_secs: None,
+            max_height: 1080,
+            max_capture_secs: 3600,
+        }
+    }
+
+    #[test]
+    fn picks_the_largest_allowed_picture_then_codec_then_bitrate() {
+        let mut best = variant("https://h/1080.mp4", VariantKind::File, 1080, 4000);
+        best.video = Some(VideoCodec::H264);
+        let mut hevc = variant("https://h/1080h.mp4", VariantKind::File, 1080, 9000);
+        hevc.video = Some(VideoCodec::H265);
+        let tall = variant("https://h/2160.mp4", VariantKind::File, 2160, 9000);
+        let small = variant("https://h/720.mp4", VariantKind::File, 720, 9000);
+        let chosen = select_variant(
+            &[small.clone(), hevc, tall, best.clone()],
+            &limits(),
+            "x",
+            MediaKind::Video,
+            "en",
+        )
+        .unwrap();
+        assert_eq!(chosen.url, best.url);
+        let mut big = variant("https://h/big.mp4", VariantKind::File, 1080, 9000);
+        big.size = Some(5000);
+        let chosen = select_variant(
+            &[big, small.clone()],
+            &limits(),
+            "x",
+            MediaKind::Video,
+            "en",
+        )
+        .unwrap();
+        assert_eq!(chosen.url, small.url);
+        let hls = variant("https://h/v.m3u8", VariantKind::Hls, 720, 9000);
+        let chosen = select_variant(
+            &[hls, small.clone()],
+            &limits(),
+            "x",
+            MediaKind::Video,
+            "en",
+        )
+        .unwrap();
+        assert_eq!(chosen.kind, VariantKind::File);
+    }
+
+    #[test]
+    fn video_only_variants_are_paired_with_audio() {
+        let mut video = variant("https://h/v.webm", VariantKind::File, 1080, 3000);
+        video.video_only = true;
+        video.video = Some(VideoCodec::Vp9);
+        video.size = Some(300);
+        let mut opus = variant("https://h/a.webm", VariantKind::File, 0, 128);
+        opus.audio_only = true;
+        opus.audio = Some(AudioCodec::Opus);
+        opus.size = Some(50);
+        let mut aac = variant("https://h/a.m4a", VariantKind::File, 0, 128);
+        aac.audio_only = true;
+        aac.audio = Some(AudioCodec::Aac);
+        aac.size = Some(60);
+        let chosen = select_variant(
+            &[opus.clone(), video.clone(), aac.clone()],
+            &limits(),
+            "x",
+            MediaKind::Video,
+            "en",
+        )
+        .unwrap();
+        assert_eq!(chosen.url, video.url);
+        assert_eq!(chosen.audio_url.unwrap(), aac.url);
+        assert_eq!(chosen.audio, Some(AudioCodec::Aac));
+        assert_eq!(chosen.size, Some(360));
+        assert_eq!(
+            select_variant(&[opus.clone()], &limits(), "x", MediaKind::Video, "en").unwrap_err(),
+            SelectError::AudioOnly("x".into())
+        );
+        // For audio, the audio-only variant wins over the video with sound, and the best
+        // codec over the rest.
+        let mut full = variant("https://h/full.mp4", VariantKind::File, 720, 5000);
+        full.audio = Some(AudioCodec::Aac);
+        let chosen = select_variant(
+            &[full.clone(), opus.clone(), aac.clone()],
+            &limits(),
+            "x",
+            MediaKind::Audio,
+            "en",
+        )
+        .unwrap();
+        assert_eq!(chosen.url, aac.url);
+        let chosen = select_variant(
+            &[full.clone(), video.clone()],
+            &limits(),
+            "x",
+            MediaKind::Audio,
+            "en",
+        )
+        .unwrap();
+        assert_eq!(chosen.url, full.url);
+        assert_eq!(
+            select_variant(&[video], &limits(), "x", MediaKind::Audio, "en").unwrap_err(),
+            SelectError::NoAudio("x".into())
+        );
+    }
+
+    #[test]
+    fn images_and_files_take_the_largest_under_the_limit() {
+        let mut thumb = variant("https://h/t.jpg", VariantKind::File, 240, 0);
+        thumb.size = Some(20);
+        let mut large = variant("https://h/l.jpg", VariantKind::File, 2000, 0);
+        large.size = Some(900);
+        let mut huge = variant("https://h/h.jpg", VariantKind::File, 6000, 0);
+        huge.size = Some(5000);
+        let chosen = select_variant(
+            &[thumb.clone(), huge.clone(), large.clone()],
+            &limits(),
+            "x",
+            MediaKind::Image,
+            "en",
+        )
+        .unwrap();
+        assert_eq!(chosen.url, large.url);
+        let chosen =
+            select_variant(&[huge.clone()], &limits(), "x", MediaKind::Image, "en").unwrap();
+        assert_eq!(chosen.url, huge.url);
+        let mut sound = variant("https://h/a.mp3", VariantKind::File, 0, 128);
+        sound.audio_only = true;
+        assert_eq!(
+            select_variant(&[sound], &limits(), "x", MediaKind::File, "en").unwrap_err(),
+            SelectError::NoFile("x".into(), MediaKind::File)
+        );
+    }
+
+    #[test]
+    fn video_is_paired_with_the_sound_in_the_language_asked_for() {
+        let mut video = variant("https://h/v.mp4", VariantKind::File, 1080, 3000);
+        video.video_only = true;
+        video.video = Some(VideoCodec::H264);
+        let track = |url: &str, language: &str, id: &str, default: bool, dubbed: bool| {
+            let mut audio = variant(url, VariantKind::File, 0, 128);
+            audio.audio_only = true;
+            audio.audio = Some(AudioCodec::Aac);
+            audio.language = Some(language.into());
+            audio.audio_track = Some(id.into());
+            audio.audio_default = default;
+            audio.audio_dubbed = dubbed;
+            audio
+        };
+        let original = track("https://h/a-ja.m4a", "ja", "ja.4", true, false);
+        let english = track("https://h/a-en.m4a", "en-US", "en-US.3", false, true);
+        let spanish = track("https://h/a-es.m4a", "es-419", "es-419.3", false, true);
+        let listed = [
+            video.clone(),
+            english.clone(),
+            spanish.clone(),
+            original.clone(),
+        ];
+        // The language asked for wins, whatever the platform lists last.
+        let chosen = select_variant(&listed, &limits(), "x", MediaKind::Video, "en").unwrap();
+        assert_eq!(chosen.audio_track.as_deref(), Some("en-US.3"));
+        assert_eq!(chosen.language.as_deref(), Some("en-US"));
+        assert_eq!(chosen.audio_url.as_ref().unwrap(), &english.url);
+        let chosen = select_variant(&listed, &limits(), "x", MediaKind::Video, "es").unwrap();
+        assert_eq!(chosen.audio_track.as_deref(), Some("es-419.3"));
+        // Without a track in that language, the original the platform marks as default.
+        let chosen = select_variant(&listed, &limits(), "x", MediaKind::Video, "fr").unwrap();
+        assert_eq!(chosen.audio_track.as_deref(), Some("ja.4"));
+        assert!(chosen.audio_default);
+        // With nothing marked default, the track that is no dub.
+        let mut unmarked = listed.clone();
+        for v in &mut unmarked {
+            v.audio_default = false;
+        }
+        let chosen = select_variant(&unmarked, &limits(), "x", MediaKind::Video, "fr").unwrap();
+        assert_eq!(chosen.audio_track.as_deref(), Some("ja.4"));
+        // Sound alone is picked the same way.
+        let chosen = select_variant(&listed, &limits(), "x", MediaKind::Audio, "es").unwrap();
+        assert_eq!(chosen.audio_track.as_deref(), Some("es-419.3"));
+        assert!(language_matches(Some("en-GB"), "en"));
+        assert!(language_matches(Some("en"), "en-GB"));
+        assert!(!language_matches(Some("de"), "en"));
+        assert!(!language_matches(None, "en"));
+    }
+
+    #[test]
+    fn locked_and_empty_lists_are_refused() {
+        assert_eq!(
+            select_variant(&[], &limits(), "yt", MediaKind::Video, "en").unwrap_err(),
+            SelectError::NoVariants("yt".into())
+        );
+        let mut locked = variant("https://h/v.mpd", VariantKind::Dash, 1080, 1);
+        locked.drm = Some("widevine".into());
+        assert_eq!(
+            select_variant(&[locked.clone()], &limits(), "yt", MediaKind::Video, "en").unwrap_err(),
+            SelectError::Drm("widevine".into())
+        );
+        let open = variant("https://h/v.mp4", VariantKind::File, 360, 1);
+        let chosen = select_variant(
+            &[locked, open.clone()],
+            &limits(),
+            "yt",
+            MediaKind::Video,
+            "en",
+        )
+        .unwrap();
+        assert_eq!(chosen.url, open.url);
+    }
+}

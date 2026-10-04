@@ -1,0 +1,67 @@
+[package]
+name = "discoclip-engine"
+description = "Source-agnostic media pipeline: resolve, download, transcode, publish, archive"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+build = "build.rs"
+
+[dependencies]
+aes.workspace = true
+argon2.workspace = true
+async-trait.workspace = true
+base64.workspace = true
+boa_engine.workspace = true
+bytes.workspace = true
+cbc.workspace = true
+ctr.workspace = true
+dash-mpd.workspace = true
+futures.workspace = true
+hex.workspace = true
+http.workspace = true
+jiff.workspace = true
+linkify.workspace = true
+m3u8-rs.workspace = true
+md-5.workspace = true
+mime.workspace = true
+percent-encoding.workspace = true
+rand.workspace = true
+regex.workspace = true
+reqwest.workspace = true
+roxmltree.workspace = true
+rusqlite.workspace = true
+scraper.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sha1_smol.workspace = true
+slug.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-rusqlite.workspace = true
+tokio-stream.workspace = true
+tokio-util.workspace = true
+tokio-websockets = { workspace = true, features = ["client", "fastrand"] }
+tracing.workspace = true
+url.workspace = true
+uuid.workspace = true
+wreq.workspace = true
+wreq-util.workspace = true
+zstd.workspace = true
+str0m = { version = "0.23.1", default-features = false, features = ["rust-crypto"] }
+
+[dev-dependencies]
+tracing-subscriber.workspace = true
+
+[build-dependencies]
+hex.workspace = true
+liblzma.workspace = true
+sha2.workspace = true
+tar.workspace = true
+ureq.workspace = true
+zip.workspace = true
+zstd.workspace = true
+
+[lints]
+workspace = true

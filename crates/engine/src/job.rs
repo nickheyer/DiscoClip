@@ -1,0 +1,642 @@
+use std::fmt;
+
+use jiff::Timestamp;
+use serde::{Deserialize, Serialize};
+
+use url::Url;
+use uuid::Uuid;
+
+use crate::archive::ArchiveEntry;
+use crate::download::LocalSubtitle;
+use crate::media::{LocalFile, MediaKind};
+use crate::policy::{Limits, Policy};
+use crate::publish::{LinkTarget, Published};
+use crate::resolve::{ClipRange, Resolved};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct JobId(pub Uuid);
+
+impl JobId {
+    pub fn new() -> Self {
+        Self(Uuid::now_v7())
+    }
+}
+
+impl Default for JobId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl fmt::Display for JobId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl std::str::FromStr for JobId {
+    type Err = uuid::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Uuid::parse_str(s).map(Self)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct SourceId(pub String);
+
+impl SourceId {
+    pub fn new(id: impl Into<String>) -> Self {
+        Self(id.into())
+    }
+}
+
+impl fmt::Display for SourceId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Origin {
+    pub source: SourceId,
+    pub reference: String,
+    pub url: Option<Url>,
+    /// The community the link was seen in, as the source names it: a Discord guild.
+    #[serde(default)]
+    pub guild: Option<String>,
+    /// The room within it: a Discord channel.
+    #[serde(default)]
+    pub channel: Option<String>,
+}
+
+/// Limits tighter than the engine's own, for one request. `None` leaves the engine's.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RequestLimits {
+    pub max_source_bytes: Option<u64>,
+    pub max_duration_secs: Option<u64>,
+    pub max_height: Option<u32>,
+    /// How long a live stream is captured before the capture ends.
+    pub max_capture_secs: Option<u64>,
+}
+
+impl RequestLimits {
+    /// These limits and `other` together: each the tighter of the two, or whichever is
+    /// named.
+    pub fn tightened(self, other: RequestLimits) -> RequestLimits {
+        fn tighter<T: Ord>(a: Option<T>, b: Option<T>) -> Option<T> {
+            match (a, b) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
+            }
+        }
+        RequestLimits {
+            max_source_bytes: tighter(self.max_source_bytes, other.max_source_bytes),
+            max_duration_secs: tighter(self.max_duration_secs, other.max_duration_secs),
+            max_height: tighter(self.max_height, other.max_height),
+            max_capture_secs: tighter(self.max_capture_secs, other.max_capture_secs),
+        }
+    }
+
+    /// The policy's `limits` tightened by these
+    pub fn applied_to(&self, limits: &Limits) -> Limits {
+        Limits {
+            max_source_bytes: self
+                .max_source_bytes
+                .map_or(limits.max_source_bytes, |mine| {
+                    mine.min(limits.max_source_bytes)
+                }),
+            max_duration_secs: match (self.max_duration_secs, limits.max_duration_secs) {
+                (Some(mine), Some(theirs)) => Some(mine.min(theirs)),
+                (mine, theirs) => mine.or(theirs),
+            },
+            max_height: self
+                .max_height
+                .map_or(limits.max_height, |mine| mine.min(limits.max_height)),
+            max_capture_secs: self
+                .max_capture_secs
+                .map_or(limits.max_capture_secs, |mine| {
+                    mine.min(limits.max_capture_secs)
+                }),
+        }
+    }
+
+    /// Capture length under these limits, bounded by the duration limit a recording must meet
+    pub fn capture_secs(&self, limits: &Limits) -> u64 {
+        let applied = self.applied_to(limits);
+        applied
+            .max_capture_secs
+            .min(applied.max_duration_secs.unwrap_or(u64::MAX))
+    }
+}
+
+/// What to do with subtitles the source offers.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SubtitleMode {
+    /// Fetched and kept beside the output, never rendered.
+    #[default]
+    Keep,
+    /// Rendered into the picture.
+    Burn,
+    /// Ignored.
+    Skip,
+}
+
+/// The language of the sound a request takes unless it says otherwise.
+pub const DEFAULT_AUDIO_LANGUAGE: &str = "en";
+
+/// Choices made for one request beyond its limits.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RequestOptions {
+    /// The portion of the media wanted. Overrides what the link itself names.
+    pub clip: Option<ClipRange>,
+    pub subtitles: SubtitleMode,
+    /// The subtitle language preferred when several are offered.
+    pub subtitle_language: Option<String>,
+    /// The language of the sound wanted when a source offers several: its track is
+    /// taken when there is one, else the source's original.
+    pub audio_language: String,
+}
+
+impl Default for RequestOptions {
+    fn default() -> Self {
+        Self {
+            clip: None,
+            subtitles: SubtitleMode::default(),
+            subtitle_language: None,
+            audio_language: DEFAULT_AUDIO_LANGUAGE.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Request {
+    pub origin: Origin,
+    pub url: Url,
+    /// Where the publisher for the origin's source should post, in that source's terms,
+    /// when not back at the origin.
+    #[serde(default)]
+    pub destination: Option<String>,
+    #[serde(default)]
+    pub limits: RequestLimits,
+    #[serde(default)]
+    pub options: RequestOptions,
+    /// The playlist job this one was expanded from.
+    #[serde(default)]
+    pub parent: Option<JobId>,
+    /// The job this one repeats.
+    #[serde(default)]
+    pub retry_of: Option<JobId>,
+    /// Who submitted the link, as the source names them.
+    #[serde(default)]
+    pub submitted_by: Option<String>,
+    /// Platforms the profile assigned where the link was seen turns off, by resolver id:
+    /// their resolvers are never offered the link.
+    #[serde(default)]
+    pub disabled_platforms: Vec<String>,
+    /// The policy in force where the link was seen, which the job runs under
+    #[serde(default)]
+    pub policy: Policy,
+}
+
+impl Request {
+    pub fn new(origin: Origin, url: Url) -> Self {
+        Self {
+            origin,
+            url,
+            destination: None,
+            limits: RequestLimits::default(),
+            options: RequestOptions::default(),
+            parent: None,
+            retry_of: None,
+            submitted_by: None,
+            disabled_platforms: Vec::new(),
+            policy: Policy::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Stage {
+    Resolve,
+    Download,
+    Transcode,
+    Publish,
+    Archive,
+}
+
+impl Stage {
+    pub const ALL: [Stage; 5] = [
+        Stage::Resolve,
+        Stage::Download,
+        Stage::Transcode,
+        Stage::Publish,
+        Stage::Archive,
+    ];
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Stage::Resolve => "resolve",
+            Stage::Download => "download",
+            Stage::Transcode => "transcode",
+            Stage::Publish => "publish",
+            Stage::Archive => "archive",
+        }
+    }
+}
+
+impl fmt::Display for Stage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "status")]
+pub enum JobStatus {
+    Queued,
+    Running { stage: Stage },
+    Done,
+    Failed { stage: Stage, message: String },
+    Cancelled,
+}
+
+impl JobStatus {
+    pub fn kind(&self) -> StatusKind {
+        match self {
+            JobStatus::Queued => StatusKind::Queued,
+            JobStatus::Running { .. } => StatusKind::Running,
+            JobStatus::Done => StatusKind::Done,
+            JobStatus::Failed { .. } => StatusKind::Failed,
+            JobStatus::Cancelled => StatusKind::Cancelled,
+        }
+    }
+
+    pub fn is_terminal(&self) -> bool {
+        self.kind().is_terminal()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StatusKind {
+    Queued,
+    Running,
+    Done,
+    Failed,
+    Cancelled,
+}
+
+impl StatusKind {
+    pub const ALL: [StatusKind; 5] = [
+        StatusKind::Queued,
+        StatusKind::Running,
+        StatusKind::Done,
+        StatusKind::Failed,
+        StatusKind::Cancelled,
+    ];
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            StatusKind::Queued => "queued",
+            StatusKind::Running => "running",
+            StatusKind::Done => "done",
+            StatusKind::Failed => "failed",
+            StatusKind::Cancelled => "cancelled",
+        }
+    }
+
+    pub fn is_terminal(&self) -> bool {
+        matches!(
+            self,
+            StatusKind::Done | StatusKind::Failed | StatusKind::Cancelled
+        )
+    }
+}
+
+impl fmt::Display for StatusKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for StatusKind {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        StatusKind::ALL
+            .into_iter()
+            .find(|k| k.as_str() == s)
+            .ok_or_else(|| format!("unknown status {s}"))
+    }
+}
+
+/// When a stage ran.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StageTiming {
+    pub stage: Stage,
+    pub started_at: Timestamp,
+    pub ended_at: Option<Timestamp>,
+}
+
+impl StageTiming {
+    pub fn duration(&self) -> Option<jiff::SignedDuration> {
+        self.ended_at.map(|end| end.duration_since(self.started_at))
+    }
+}
+
+/// How the output reaches the destination.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Delivery {
+    /// The file itself is handed over.
+    #[default]
+    Upload,
+    /// A link to the page that plays the file is posted. The file stays here.
+    Link,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Artifacts {
+    pub resolved: Option<Resolved>,
+    /// The recording a live capture writes from its first byte: `recording.mp4` in the
+    /// job directory, playable while it grows. It becomes the source once the capture
+    /// ends.
+    pub recording: Option<LocalFile>,
+    /// The message the destination got when the capture began, for the publisher to
+    /// edit with the result rather than post again.
+    pub announced: Option<Published>,
+    pub source: Option<LocalFile>,
+    pub output: Option<LocalFile>,
+    /// A still that stands for the output: a frame of a video, the picture itself scaled
+    /// down, or the cover art sound was played over. `poster.jpg` in the job directory.
+    pub thumbnail: Option<LocalFile>,
+    /// Whether the output was handed over or linked to. Decided before publishing.
+    pub delivery: Delivery,
+
+    /// Why a link was posted rather than the file, when one was.
+    pub link_reason: Option<String>,
+    /// The page a link delivery points at
+    pub link: Option<LinkTarget>,
+    /// SHA-256 of the source bytes, hex
+    pub media_hash: Option<String>,
+    /// The finished job whose archived media this one published again
+    pub reused_from: Option<JobId>,
+    /// Where the earlier job's post went, for the destination to point at
+    pub earlier_post: Option<Url>,
+    pub published: Option<Published>,
+    pub archived: Option<ArchiveEntry>,
+    pub subtitles: Vec<LocalSubtitle>,
+    /// The jobs a playlist link expanded into.
+    pub children: Vec<JobId>,
+    pub timings: Vec<StageTiming>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LogEntry {
+    pub at: Timestamp,
+    pub stage: Option<Stage>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Job {
+    pub id: JobId,
+    pub request: Request,
+    pub status: JobStatus,
+    #[serde(default)]
+    pub artifacts: Artifacts,
+    pub log: Vec<LogEntry>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+    #[serde(default)]
+    pub started_at: Option<Timestamp>,
+    #[serde(default)]
+    pub finished_at: Option<Timestamp>,
+}
+
+impl Job {
+    pub fn new(request: Request) -> Self {
+        let now = Timestamp::now();
+        Self {
+            id: JobId::new(),
+            request,
+            status: JobStatus::Queued,
+            artifacts: Artifacts::default(),
+            log: Vec::new(),
+            created_at: now,
+            updated_at: now,
+            started_at: None,
+            finished_at: None,
+        }
+    }
+
+    /// The media title, when resolved.
+    pub fn title(&self) -> Option<&str> {
+        self.artifacts
+            .resolved
+            .as_ref()
+            .and_then(|r| r.title.as_deref())
+    }
+
+    pub fn resolver(&self) -> Option<&str> {
+        self.artifacts
+            .resolved
+            .as_ref()
+            .map(|r| r.resolver.as_str())
+    }
+
+    /// What the job's media is: what the probe found the source to be, else what the
+    /// resolver said, else a video until the link resolves.
+    pub fn media(&self) -> MediaKind {
+        self.artifacts
+            .source
+            .as_ref()
+            .and_then(|s| s.info.as_ref())
+            .map(|i| i.kind)
+            .or_else(|| self.artifacts.resolved.as_ref().map(|r| r.media))
+            .unwrap_or_default()
+    }
+
+    /// Marks `stage` as begun, closing the one before.
+    pub fn start_stage(&mut self, stage: Stage, now: Timestamp) {
+        for timing in &mut self.artifacts.timings {
+            if timing.ended_at.is_none() {
+                timing.ended_at = Some(now);
+            }
+        }
+        self.artifacts.timings.push(StageTiming {
+            stage,
+            started_at: now,
+            ended_at: None,
+        });
+        if self.started_at.is_none() {
+            self.started_at = Some(now);
+        }
+    }
+
+    pub fn end_stages(&mut self, now: Timestamp) {
+        for timing in &mut self.artifacts.timings {
+            if timing.ended_at.is_none() {
+                timing.ended_at = Some(now);
+            }
+        }
+    }
+
+    /// The log as one text, headed by what the job is, for attaching to a report
+    pub fn render_log(&self) -> String {
+        let mut text = format!(
+            "job {}\nurl {}\norigin {} {}\nstatus {:?}\n\n",
+            self.id,
+            self.request.url,
+            self.request.origin.source,
+            self.request.origin.reference,
+            self.status
+        );
+        for entry in &self.log {
+            let stage = entry.stage.map_or("-", |s| s.as_str());
+            text.push_str(&format!("{} [{stage}] {}\n", entry.at, entry.message));
+        }
+        text
+    }
+}
+
+#[cfg(test)]
+mod limit_tests {
+    use super::*;
+
+    #[test]
+    fn request_limits_only_tighten() {
+        let engine = Limits {
+            max_source_bytes: 100,
+            max_duration_secs: Some(60),
+            max_height: 720,
+            max_capture_secs: 3600,
+        };
+        assert_eq!(RequestLimits::default().applied_to(&engine), engine);
+        let tighter = RequestLimits {
+            max_source_bytes: Some(10),
+            max_duration_secs: Some(5),
+            max_height: Some(480),
+            max_capture_secs: None,
+        }
+        .applied_to(&engine);
+        assert_eq!(tighter.max_source_bytes, 10);
+        assert_eq!(tighter.max_duration_secs, Some(5));
+        assert_eq!(tighter.max_height, 480);
+        let looser = RequestLimits {
+            max_source_bytes: Some(1000),
+            max_duration_secs: Some(600),
+            max_height: Some(2160),
+            max_capture_secs: None,
+        }
+        .applied_to(&engine);
+        assert_eq!(looser, engine);
+        let unlimited_engine = Limits {
+            max_duration_secs: None,
+            ..engine
+        };
+        assert_eq!(
+            RequestLimits {
+                max_source_bytes: None,
+                max_duration_secs: Some(5),
+                max_height: None,
+                max_capture_secs: None,
+            }
+            .applied_to(&unlimited_engine)
+            .max_duration_secs,
+            Some(5)
+        );
+    }
+
+    #[test]
+    fn capture_length_is_the_tightest_of_request_policy_and_duration_limits() {
+        let engine = Limits {
+            max_source_bytes: 100,
+            max_duration_secs: Some(600),
+            max_height: 720,
+            max_capture_secs: 3600,
+        };
+        assert_eq!(RequestLimits::default().capture_secs(&engine), 600);
+        let unlimited = Limits {
+            max_duration_secs: None,
+            ..engine.clone()
+        };
+        assert_eq!(RequestLimits::default().capture_secs(&unlimited), 3600);
+        let capped = RequestLimits {
+            max_capture_secs: Some(120),
+            ..RequestLimits::default()
+        };
+        assert_eq!(capped.capture_secs(&unlimited), 120);
+        let loose = RequestLimits {
+            max_capture_secs: Some(9000),
+            max_duration_secs: Some(60),
+            ..RequestLimits::default()
+        };
+        assert_eq!(loose.capture_secs(&unlimited), 60);
+    }
+
+    #[test]
+    fn the_log_renders_as_text() {
+        let origin = Origin {
+            source: SourceId::new("local"),
+            reference: "x".into(),
+            url: None,
+            guild: None,
+            channel: None,
+        };
+        let mut job = Job::new(Request::new(
+            origin,
+            Url::parse("https://a.test/v").unwrap(),
+        ));
+        job.log.push(LogEntry {
+            at: Timestamp::UNIX_EPOCH,
+            stage: Some(Stage::Resolve),
+            message: "looked".into(),
+        });
+        job.log.push(LogEntry {
+            at: Timestamp::UNIX_EPOCH,
+            stage: None,
+            message: "done".into(),
+        });
+        let text = job.render_log();
+        assert!(text.starts_with(&format!("job {}\nurl https://a.test/v\n", job.id)));
+        assert!(text.contains("[resolve] looked\n"));
+        assert!(text.ends_with("[-] done\n"));
+    }
+
+    #[test]
+    fn stage_timings_open_and_close() {
+        let origin = Origin {
+            source: SourceId::new("local"),
+            reference: "x".into(),
+            url: None,
+            guild: None,
+            channel: None,
+        };
+        let mut job = Job::new(Request::new(
+            origin,
+            Url::parse("https://a.test/v").unwrap(),
+        ));
+        let t0 = Timestamp::UNIX_EPOCH;
+        job.start_stage(Stage::Resolve, t0);
+        assert_eq!(job.started_at, Some(t0));
+        let t1 = t0 + jiff::SignedDuration::from_secs(2);
+        job.start_stage(Stage::Download, t1);
+        assert_eq!(job.artifacts.timings[0].ended_at, Some(t1));
+        assert_eq!(
+            job.artifacts.timings[0].duration(),
+            Some(jiff::SignedDuration::from_secs(2))
+        );
+        assert!(job.artifacts.timings[1].ended_at.is_none());
+        job.end_stages(t1);
+        assert!(job.artifacts.timings.iter().all(|t| t.ended_at.is_some()));
+    }
+}

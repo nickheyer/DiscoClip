@@ -1,0 +1,76 @@
+# nfpm(1) definition for the .deb and .rpm packages. packaging/package.sh runs it, for
+# `make deb` and `make rpm` here and for every Linux architecture in the release
+# workflow, with the binary staged at target/package/discoclip and the environment:
+#
+#   VERSION  the package version: the tag's in the release workflow, Cargo.toml's locally
+#   ARCH     amd64 or arm64
+
+name: discoclip
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+release: "1"
+section: net
+priority: optional
+maintainer: Nicholas Heyer <nick@heyer.app>
+vendor: Nicholas Heyer
+homepage: https://github.com/nickheyer/DiscoClip
+license: MIT
+description: |
+  Discord media bot and web app.
+  Watches Discord channels for video links, then downloads, transcodes, posts, and
+  archives each one. Runs as a systemd service under the discoclip account with its
+  database under /var/lib/discoclip and its cache under /var/cache/discoclip.
+
+contents:
+  - src: target/package/discoclip
+    dst: /usr/bin/discoclip
+    file_info:
+      mode: 0755
+  - src: packaging/discoclip.service
+    dst: /usr/lib/systemd/system/discoclip.service
+    file_info:
+      mode: 0644
+  - src: packaging/discoclip.sysusers
+    dst: /usr/lib/sysusers.d/discoclip.conf
+    file_info:
+      mode: 0644
+  # The config file. The unit sets the data, cache, local and backup directories, so
+  # the example's relative paths are overridden. postinstall makes it readable by the
+  # service account and no one else.
+  - src: discoclip.example.toml
+    dst: /etc/discoclip/discoclip.toml
+    type: config|noreplace
+    file_info:
+      mode: 0640
+  - src: README.md
+    dst: /usr/share/doc/discoclip/README.md
+    type: doc
+  - src: API.md
+    dst: /usr/share/doc/discoclip/API.md
+    type: doc
+  - src: LICENSE
+    dst: /usr/share/doc/discoclip/LICENSE
+    type: doc
+  - src: packaging/prometheus.yml
+    dst: /usr/share/doc/discoclip/examples/prometheus.yml
+    type: doc
+
+scripts:
+  postinstall: packaging/scripts/postinstall.sh
+  preremove: packaging/scripts/preremove.sh
+  postremove: packaging/scripts/postremove.sh
+
+overrides:
+  deb:
+    # Chromium captures pages that only play through a media source extension; the
+    # fonts are what subtitles burnt into pictures are drawn with.
+    recommends:
+      - chromium
+      - fonts-dejavu-core
+      - fonts-noto-core
+  rpm:
+    recommends:
+      - chromium
+      - dejavu-sans-fonts
+      - google-noto-sans-fonts

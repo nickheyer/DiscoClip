@@ -1,0 +1,1526 @@
+//! Jobs as the web app sees them: listed and filtered, one in full with its stage log and
+//! artifacts, counted, and streamed live as the engine works through them.
+
+use std::convert::Infallible;
+use std::time::Duration;
+
+use std::path::{Path as FsPath, PathBuf};
+
+use axum::Json;
+use axum::body::Body;
+use axum::extract::{Path, Query, State};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+use axum::response::sse::{Event, KeepAlive, Sse};
+use axum::response::{IntoResponse, Response};
+use discoclip_engine::job::{
+    Job, JobId, JobStatus, Origin, Request, RequestLimits, RequestOptions, SourceId, Stage,
+};
+use discoclip_engine::media::{Container, MediaKind, safe_stem};
+use discoclip_engine::{
+    EngineEvent, EventKind, JobFilter, Order, ResolverStats, Stats, StatusKind, ThumbnailError,
+    Utilisation,
+};
+
+use futures::{Stream, StreamExt};
+use jiff::{SignedDuration, Timestamp};
+use serde::{Deserialize, Serialize};
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
+use tokio_stream::wrappers::{BroadcastStream, IntervalStream};
+use tokio_util::io::ReaderStream;
+use twilight_model::id::Id;
+use url::Url;
+
+use super::AppState;
+use super::auth::{Auth, Identity, parse_id};
+use super::channels::{ChannelKind, GuildMember};
+use super::error::ApiError;
+use crate::applications::ApplicationId;
+use crate::bots::BotManager;
+use crate::local::SOURCE_ID as LOCAL_SOURCE;
+use crate::profiles::EffectivePolicy;
+use crate::users::Permission;
+use discoclip_bot::{DiscordOrigin, turned_off};
+
+/// The most jobs one bulk request acts on.
+const BULK_MAX: usize = 500;
+
+/// How often the live feed restates the counts and the workers' load.
+const STATS_INTERVAL: Duration = Duration::from_secs(2);
+
+/// A Discord server as a job's place names it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PlaceGuild {
+    pub id: String,
+    pub name: String,
+    /// The icon hash on Discord's CDN, under `icons/<id>/`.
+    pub icon: Option<String>,
+}
+
+/// A Discord channel as a job's place names it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PlaceChannel {
+    pub id: String,
+    pub name: String,
+    pub kind: ChannelKind,
+}
+
+/// Where on Discord a job came from and where its result goes, in the names people know:
+/// the server, the channel the link was posted in, the channel the result is posted to
+/// when a rule sends it elsewhere, and the member who posted the link. Each part is
+/// there when the application's bot has learned it over its gateway since the server
+/// started. Absent for jobs from elsewhere.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Place {
+    pub guild: Option<PlaceGuild>,
+    pub channel: Option<PlaceChannel>,
+    pub destination: Option<PlaceChannel>,
+    pub author: Option<GuildMember>,
+}
+
+impl Place {
+    /// The place of a request from Discord, as far as the bot's directory names it.
+    /// `None` for other sources, and for a bot whose directory has not been made.
+    pub fn of(bots: &BotManager, origin: &Origin, destination: Option<&str>) -> Option<Self> {
+        let parsed = DiscordOrigin::parse(origin)?;
+        let directory = bots.directory(ApplicationId(parsed.application))?;
+        let channel_named = |id| {
+            directory.channel(id).map(|channel| PlaceChannel {
+                id: channel.id.to_string(),
+                name: channel.name,
+                kind: channel.kind.into(),
+            })
+        };
+        let guild = parsed.guild.and_then(|id| {
+            directory.guild(id).map(|guild| PlaceGuild {
+                id: guild.id.to_string(),
+                name: guild.name,
+                icon: guild.icon,
+            })
+        });
+        let channel = channel_named(parsed.channel);
+        let destination = destination
+            .and_then(|channel| channel.parse::<u64>().ok())
+            .and_then(Id::new_checked)
+            .filter(|id| *id != parsed.channel)
+            .and_then(channel_named);
+        let author = match (parsed.guild, parsed.author) {
+            (Some(guild), Some(user)) => directory.member(guild, user).map(GuildMember::from),
+            _ => None,
+        };
+        Some(Self {
+            guild,
+            channel,
+            destination,
+            author,
+        })
+    }
+}
+
+/// Whether a still stands for the job's output: one was made with the job, or the job
+/// finished with a video or picture one can be made from on request.
+pub(super) fn has_thumbnail(job: &Job) -> bool {
+    if job.artifacts.thumbnail.is_some() {
+        return true;
+    }
+    let Some(output) = job.artifacts.output.as_ref() else {
+        return false;
+    };
+    let kind = output
+        .info
+        .as_ref()
+        .map(|info| info.kind)
+        .unwrap_or_else(|| job.media());
+    job.status.is_terminal() && matches!(kind, MediaKind::Video | MediaKind::Image)
+}
+
+/// The job's still, served to be shown inline and kept by the browser for a day.
+pub async fn thumbnail(
+    State(state): State<AppState>,
+    Auth(_): Auth,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    let id: JobId = parse_id(&id)?;
+    let file = state
+        .engine
+        .thumbnail(id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    serve_thumbnail(&file.path, &headers).await
+}
+
+/// How long a browser keeps a still before asking again.
+const THUMBNAIL_CACHE: &str = "private, max-age=86400";
+
+/// Serves a still inline, kept by the browser for a day.
+pub(super) async fn serve_thumbnail(
+    path: &FsPath,
+    headers: &HeaderMap,
+) -> Result<Response, ApiError> {
+    let mut response = serve_file(path, "thumbnail.jpg", true, headers, false).await?;
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static(THUMBNAIL_CACHE),
+    );
+    Ok(response)
+}
+
+impl From<ThumbnailError> for ApiError {
+    fn from(error: ThumbnailError) -> Self {
+        match error {
+            ThumbnailError::NotFound(_) => ApiError::NotFound,
+            ThumbnailError::Store(_) | ThumbnailError::Transcode(_) | ThumbnailError::Io(_) => {
+                ApiError::Internal(error.to_string())
+            }
+        }
+    }
+}
+
+/// A job as a listing shows it: what was asked, where it stands, and what came of it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct JobSummary {
+    pub id: JobId,
+    pub url: Url,
+    pub status: JobStatus,
+    pub source: SourceId,
+    pub origin: Origin,
+    /// The origin in the names people know, for a request from Discord.
+    pub place: Option<Place>,
+    pub destination: Option<String>,
+    pub submitted_by: Option<String>,
+    pub parent: Option<JobId>,
+    pub retry_of: Option<JobId>,
+    pub title: Option<String>,
+    pub resolver: Option<String>,
+    /// What the media is: what the probe found the source to be, else what the resolver
+    /// said, else a video until the link resolves.
+    pub media: MediaKind,
+    pub uploader: Option<String>,
+    pub webpage_url: Option<Url>,
+    /// Where the still that stands for the output is served, for a job that has one or
+    /// has an output to take one from.
+    pub thumbnail: Option<String>,
+    /// Seconds of media, when the resolver said.
+    pub duration_secs: Option<f64>,
+    pub live: bool,
+    /// A live capture is being recorded, or was: the recording plays while it grows.
+    pub recording: bool,
+    pub output_bytes: Option<u64>,
+    pub published_url: Option<Url>,
+    pub published_reference: Option<String>,
+    pub children: usize,
+    pub archived_files: usize,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+    pub started_at: Option<Timestamp>,
+    pub finished_at: Option<Timestamp>,
+}
+
+impl JobSummary {
+    /// `bots` names the job's place when the request came from Discord.
+    pub fn of(job: &Job, bots: &BotManager) -> Self {
+        let resolved = job.artifacts.resolved.as_ref();
+        Self {
+            id: job.id,
+            url: job.request.url.clone(),
+            status: job.status.clone(),
+            source: job.request.origin.source.clone(),
+            origin: job.request.origin.clone(),
+            place: Place::of(
+                bots,
+                &job.request.origin,
+                job.request.destination.as_deref(),
+            ),
+            destination: job.request.destination.clone(),
+            submitted_by: job.request.submitted_by.clone(),
+            parent: job.request.parent,
+            retry_of: job.request.retry_of,
+            title: resolved.and_then(|r| r.title.clone()),
+            resolver: resolved.map(|r| r.resolver.clone()),
+            media: job.media(),
+            uploader: resolved.and_then(|r| r.uploader.clone()),
+            webpage_url: resolved.and_then(|r| r.webpage_url.clone()),
+            thumbnail: has_thumbnail(job).then(|| format!("/api/jobs/{}/thumbnail", job.id)),
+            duration_secs: resolved.and_then(|r| r.duration).map(|d| d.as_secs_f64()),
+            live: resolved.is_some_and(|r| r.live),
+            recording: job.artifacts.recording.is_some(),
+            output_bytes: job.artifacts.output.as_ref().map(|f| f.size),
+            published_url: job.artifacts.published.as_ref().and_then(|p| p.url.clone()),
+            published_reference: job
+                .artifacts
+                .published
+                .as_ref()
+                .map(|p| p.reference.clone()),
+            children: job.artifacts.children.len(),
+            archived_files: job.artifacts.archived.as_ref().map_or(0, |a| a.files.len()),
+            created_at: job.created_at,
+            updated_at: job.updated_at,
+            started_at: job.started_at,
+            finished_at: job.finished_at,
+        }
+    }
+}
+
+/// The listing filters, as the query names them.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct ListQuery {
+    pub source: Option<String>,
+    pub status: Option<String>,
+    pub resolver: Option<String>,
+    pub parent: Option<String>,
+    /// Leave out jobs expanded from playlists.
+    pub top_level: Option<bool>,
+    /// A substring of the link, the title, the submitter or the id.
+    pub q: Option<String>,
+    /// RFC 3339 timestamps.
+    pub before: Option<String>,
+    pub after: Option<String>,
+    pub limit: Option<usize>,
+    pub offset: Option<usize>,
+    /// `newest` or `oldest`.
+    pub order: Option<String>,
+}
+
+fn parse<T>(name: &str, value: Option<String>) -> Result<Option<T>, ApiError>
+where
+    T: std::str::FromStr,
+    T::Err: std::fmt::Display,
+{
+    value
+        .map(|text| {
+            text.parse()
+                .map_err(|e| ApiError::BadRequest(format!("{name}: {e}")))
+        })
+        .transpose()
+}
+
+impl ListQuery {
+    pub fn filter(self) -> Result<JobFilter, ApiError> {
+        let order = match self.order.as_deref() {
+            None | Some("newest") => Order::Newest,
+            Some("oldest") => Order::Oldest,
+            Some(other) => {
+                return Err(ApiError::BadRequest(format!(
+                    "order: {other:?} is neither newest nor oldest"
+                )));
+            }
+        };
+        Ok(JobFilter {
+            source: self.source.map(SourceId::new),
+            status: parse::<StatusKind>("status", self.status)?,
+            before: parse::<Timestamp>("before", self.before)?,
+            after: parse::<Timestamp>("after", self.after)?,
+            limit: self.limit,
+            offset: self.offset,
+            q: self.q,
+            resolver: self.resolver,
+            resolvers: Vec::new(),
+            parent: parse::<JobId>("parent", self.parent)?,
+            top_level: self.top_level.unwrap_or(false),
+            guilds: Vec::new(),
+            channels: Vec::new(),
+            media: None,
+            with_output: false,
+            order,
+        })
+    }
+}
+
+/// One page of jobs and how many match in all.
+#[derive(Debug, Serialize)]
+pub struct JobPage {
+    pub jobs: Vec<JobSummary>,
+    pub total: u64,
+    pub limit: usize,
+    pub offset: usize,
+}
+
+pub async fn list(
+    State(state): State<AppState>,
+    Auth(_): Auth,
+    Query(query): Query<ListQuery>,
+) -> Result<Json<JobPage>, ApiError> {
+    let filter = query.filter()?;
+    let limit = filter.effective_limit();
+    let offset = filter.offset.unwrap_or(0);
+    let jobs = state.engine.list(&filter).await?;
+    let total = state.engine.count(&filter).await?;
+    Ok(Json(JobPage {
+        jobs: jobs
+            .iter()
+            .map(|job| JobSummary::of(job, &state.bots))
+            .collect(),
+        total,
+        limit,
+        offset,
+    }))
+}
+
+/// A job in full, with its place named and the limits it runs under.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct JobView {
+    #[serde(flatten)]
+    pub job: Job,
+    /// The origin in the names people know, for a request from Discord.
+    pub place: Option<Place>,
+    /// The request's limits tightened by the engine's own: what the job is held to.
+    pub limits_in_force: LimitsInForce,
+}
+
+/// The limits a job runs under, each the tighter of what its request named and the
+/// engine's own cap.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct LimitsInForce {
+    pub max_source_bytes: u64,
+    /// `None` puts no bound on how long media may be.
+    pub max_duration_secs: Option<u64>,
+    pub max_height: u32,
+    /// How long a live stream is captured at most, in seconds.
+    pub max_capture_secs: u64,
+}
+
+impl LimitsInForce {
+    /// The request's own limits tightened by the policy it runs under
+    fn of(request: &Request) -> Self {
+        let applied = request.limits.applied_to(&request.policy.limits);
+        Self {
+            max_source_bytes: applied.max_source_bytes,
+            max_duration_secs: applied.max_duration_secs,
+            max_height: applied.max_height,
+            max_capture_secs: request.limits.capture_secs(&request.policy.limits),
+        }
+    }
+}
+
+/// One job in full: the request, every stage's timing, the log, and every artifact.
+pub async fn get(
+    State(state): State<AppState>,
+    Auth(_): Auth,
+    Path(id): Path<String>,
+) -> Result<Json<JobView>, ApiError> {
+    let id: JobId = parse_id(&id)?;
+    let job = state.engine.get(id).await?.ok_or(ApiError::NotFound)?;
+    let place = Place::of(
+        &state.bots,
+        &job.request.origin,
+        job.request.destination.as_deref(),
+    );
+    let limits_in_force = LimitsInForce::of(&job.request);
+    Ok(Json(JobView {
+        job,
+        place,
+        limits_in_force,
+    }))
+}
+
+/// The jobs a playlist job expanded into, oldest first.
+pub async fn children(
+    State(state): State<AppState>,
+    Auth(_): Auth,
+    Path(id): Path<String>,
+) -> Result<Json<Vec<JobSummary>>, ApiError> {
+    let id: JobId = parse_id(&id)?;
+    state.engine.get(id).await?.ok_or(ApiError::NotFound)?;
+    let children = state.engine.children(id).await?;
+    Ok(Json(
+        children
+            .iter()
+            .map(|job| JobSummary::of(job, &state.bots))
+            .collect(),
+    ))
+}
+
+/// How the engine is doing: counts over every job and over the last day, the workers'
+/// load, the jobs running now, and each resolver's record.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct JobStats {
+    pub counts: Stats,
+    pub last_24h: Stats,
+    pub utilisation: Utilisation,
+    /// The queue as a whole: jobs waiting for a worker and jobs on one.
+    pub queue_depth: u64,
+    pub active: Vec<JobId>,
+    pub resolvers: Vec<ResolverStats>,
+    pub at: Timestamp,
+}
+
+pub async fn read_stats(state: &AppState) -> Result<JobStats, ApiError> {
+    let now = Timestamp::now();
+    let counts = state.engine.stats().await?;
+    let last_24h = state
+        .engine
+        .stats_since(now - SignedDuration::from_hours(24))
+        .await?;
+    let utilisation = state.engine.utilisation();
+    Ok(JobStats {
+        queue_depth: counts.queued + counts.running,
+        counts,
+        last_24h,
+        utilisation,
+        active: state.engine.active(),
+        resolvers: state.engine.resolver_stats().await?,
+        at: now,
+    })
+}
+
+pub async fn stats(
+    State(state): State<AppState>,
+    Auth(_): Auth,
+) -> Result<Json<JobStats>, ApiError> {
+    Ok(Json(read_stats(&state).await?))
+}
+
+/// What the live feed carries about one job event, with the summary of the job as it
+/// stands after it, so a listing can show a job it has not seen before.
+#[derive(Debug, Serialize)]
+pub struct FeedEvent {
+    #[serde(flatten)]
+    pub event: EngineEvent,
+    pub job_summary: Option<JobSummary>,
+}
+
+fn stats_event(stats: &JobStats) -> Event {
+    Event::default()
+        .event("stats")
+        .json_data(stats)
+        .expect("job stats serialize")
+}
+
+/// Whether an event changes what a listing shows of the job, so its summary is sent along.
+fn carries_summary(kind: &EventKind) -> bool {
+    matches!(
+        kind,
+        EventKind::Submitted { .. }
+            | EventKind::Status { .. }
+            | EventKind::Children { .. }
+            | EventKind::Recording { .. }
+            | EventKind::Stop
+    )
+}
+
+/// The engine's counts and load now, then every job event as it happens, with the counts
+/// restated every couple of seconds, as `stats` and `job` events. A `job` event carries
+/// the job's summary whenever its status changed.
+pub(super) async fn job_events(
+    state: AppState,
+) -> Result<impl Stream<Item = Result<Event, Infallible>> + Send + 'static, ApiError> {
+    let first = stats_event(&read_stats(&state).await?);
+    let live = BroadcastStream::new(state.engine.subscribe());
+    let engine = state.engine.clone();
+    let bots = state.bots.clone();
+    let jobs = live.filter_map(move |item| {
+        let engine = engine.clone();
+        let bots = bots.clone();
+        async move {
+            match item {
+                Ok(event) => {
+                    let job_summary = if carries_summary(&event.kind) {
+                        engine
+                            .get(event.job)
+                            .await
+                            .ok()
+                            .flatten()
+                            .as_ref()
+                            .map(|job| JobSummary::of(job, &bots))
+                    } else {
+                        None
+                    };
+                    let feed = FeedEvent { event, job_summary };
+                    Some(Ok(Event::default()
+                        .event("job")
+                        .json_data(&feed)
+                        .expect("job events serialize")))
+                }
+                // A slow reader missed some events. The next stats event catches it up.
+                Err(BroadcastStreamRecvError::Lagged(_)) => None,
+            }
+        }
+    });
+    let ticker_state = state.clone();
+    let mut ticker = tokio::time::interval(STATS_INTERVAL);
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let ticks = IntervalStream::new(ticker).skip(1).filter_map(move |_| {
+        let state = ticker_state.clone();
+        async move {
+            match read_stats(&state).await {
+                Ok(stats) => Some(Ok(stats_event(&stats))),
+                Err(error) => {
+                    tracing::warn!("job stats not read for the live feed: {error:?}");
+                    None
+                }
+            }
+        }
+    });
+    Ok(futures::stream::once(async move { Ok(first) })
+        .chain(tokio_stream::StreamExt::merge(jobs, ticks))
+        .take_until(state.shutdown.cancelled_owned()))
+}
+
+/// [`job_events`] as server-sent events.
+pub async fn events(
+    State(state): State<AppState>,
+    Auth(_): Auth,
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, ApiError> {
+    Ok(Sse::new(job_events(state).await?).keep_alive(KeepAlive::default()))
+}
+
+/// A link submitted from the web app, published to the local directory.
+#[derive(Debug, Deserialize)]
+pub struct SubmitRequest {
+    pub url: Url,
+    #[serde(default)]
+    pub limits: RequestLimits,
+    #[serde(default)]
+    pub options: SubmitOptions,
+}
+
+/// What a submitter chooses beyond the link, the sound's language falling back to the profile's
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct SubmitOptions {
+    pub clip: Option<discoclip_engine::resolve::ClipRange>,
+    pub subtitles: discoclip_engine::job::SubtitleMode,
+    pub subtitle_language: Option<String>,
+    pub audio_language: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Submitted {
+    pub id: JobId,
+}
+
+fn local_origin(identity: &Identity) -> Origin {
+    Origin {
+        source: SourceId::new(LOCAL_SOURCE),
+        reference: identity.user.username.clone(),
+        url: None,
+        guild: None,
+        channel: None,
+    }
+}
+
+/// The policy where a request's link was seen: the profiles of the guild, channel and
+/// author for a Discord origin, the whole server's for anything else.
+fn policy_for(state: &AppState, origin: &Origin) -> EffectivePolicy {
+    match DiscordOrigin::parse(origin) {
+        Some(discord) => {
+            let guild = discord.guild.map(|id| id.to_string());
+            let channel = discord.channel.to_string();
+            let author = discord.author.map(|id| id.to_string());
+            state
+                .profiles
+                .effective(guild.as_deref(), Some(&channel), author.as_deref())
+        }
+        None => state.profiles.effective(None, None, None),
+    }
+}
+
+/// Queues a link on behalf of the account, as the local source.
+pub async fn submit(
+    State(state): State<AppState>,
+    Auth(identity): Auth,
+    Json(request): Json<SubmitRequest>,
+) -> Result<(StatusCode, Json<Submitted>), ApiError> {
+    identity.require(Permission::ManageJobs)?;
+    if !matches!(request.url.scheme(), "http" | "https") || request.url.host_str().is_none() {
+        return Err(ApiError::BadRequest(format!(
+            "{} is not an http(s) link",
+            request.url
+        )));
+    }
+    let mut job = Request::new(local_origin(&identity), request.url.clone());
+    let effective = policy_for(&state, &job.origin);
+    let disabled = effective.disabled();
+    if let Some(platform) = turned_off(&state.engine.resolvers_for(&request.url), &disabled) {
+        return Err(ApiError::BadRequest(format!(
+            "The assigned profile disables {platform} links."
+        )));
+    }
+    // The submitter's own limits tighten the policy's at run time. Neither loosens the other.
+    job.limits = request.limits;
+    job.options = RequestOptions {
+        clip: request.options.clip,
+        subtitles: request.options.subtitles,
+        subtitle_language: request.options.subtitle_language,
+        audio_language: request
+            .options
+            .audio_language
+            .or_else(|| effective.audio_language.clone())
+            .unwrap_or_else(|| discoclip_engine::job::DEFAULT_AUDIO_LANGUAGE.to_string()),
+    };
+    job.submitted_by = Some(identity.user.username.clone());
+    job.disabled_platforms = disabled;
+    job.policy = effective.engine_policy();
+    let id = state.engine.submit(job).await?;
+    tracing::info!(by = identity.user.username, job = %id, url = %request.url, "link submitted");
+    Ok((StatusCode::ACCEPTED, Json(Submitted { id })))
+}
+
+/// Queues a fresh job with the same request as a finished one, under the policy in force
+/// where its link was seen as it stands now. The request keeps the limits its submitter
+/// chose, which tighten the policy's as they did at first.
+async fn retry_job(state: &AppState, id: JobId) -> Result<JobId, ApiError> {
+    let job = state.engine.get(id).await?.ok_or(ApiError::NotFound)?;
+    let effective = policy_for(state, &job.request.origin);
+    Ok(state
+        .engine
+        .retry(id, effective.disabled(), effective.engine_policy())
+        .await?)
+}
+
+/// Queues a fresh job with the same request as a finished one.
+pub async fn retry(
+    State(state): State<AppState>,
+    Auth(identity): Auth,
+    Path(id): Path<String>,
+) -> Result<(StatusCode, Json<Submitted>), ApiError> {
+    identity.require(Permission::ManageJobs)?;
+    let id: JobId = parse_id(&id)?;
+    let new_id = retry_job(&state, id).await?;
+    tracing::info!(by = identity.user.username, job = %id, retry = %new_id, "job retried");
+    Ok((StatusCode::ACCEPTED, Json(Submitted { id: new_id })))
+}
+
+/// Stops a queued or running job.
+pub async fn cancel(
+    State(state): State<AppState>,
+    Auth(identity): Auth,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    identity.require(Permission::ManageJobs)?;
+    let id: JobId = parse_id(&id)?;
+    state.engine.cancel(id).await?;
+    tracing::info!(by = identity.user.username, job = %id, "job cancelled");
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Ends a running live capture, keeping what was recorded: the job goes on to make and
+/// post its output from the recording as it stands.
+pub async fn stop(
+    State(state): State<AppState>,
+    Auth(identity): Auth,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    identity.require(Permission::ManageJobs)?;
+    let id: JobId = parse_id(&id)?;
+    state.engine.stop(id).await?;
+    tracing::info!(by = identity.user.username, job = %id, "capture stopped");
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Removes a finished job's record and whatever it left in the cache.
+pub async fn delete(
+    State(state): State<AppState>,
+    Auth(identity): Auth,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    identity.require(Permission::ManageJobs)?;
+    let id: JobId = parse_id(&id)?;
+    state.engine.delete(id).await?;
+    tracing::info!(by = identity.user.username, job = %id, "job deleted");
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BulkAction {
+    Retry,
+    Cancel,
+    /// Ends the live captures among the jobs, keeping their recordings.
+    Stop,
+    Delete,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BulkRequest {
+    pub action: BulkAction,
+    pub ids: Vec<JobId>,
+}
+
+/// How one job fared in a bulk request.
+#[derive(Debug, Serialize)]
+pub struct BulkOutcome {
+    pub id: JobId,
+    pub ok: bool,
+    /// Why it failed, when it did.
+    pub error: Option<String>,
+    /// The job queued in its place, for a retry.
+    pub job: Option<JobId>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BulkResponse {
+    pub action: BulkAction,
+    pub results: Vec<BulkOutcome>,
+    pub succeeded: usize,
+    pub failed: usize,
+}
+
+/// Retries, cancels, stops or deletes several jobs. Each is reported on its own.
+pub async fn bulk(
+    State(state): State<AppState>,
+    Auth(identity): Auth,
+    Json(request): Json<BulkRequest>,
+) -> Result<Json<BulkResponse>, ApiError> {
+    identity.require(Permission::ManageJobs)?;
+    if request.ids.is_empty() {
+        return Err(ApiError::BadRequest("ids is empty".into()));
+    }
+    if request.ids.len() > BULK_MAX {
+        return Err(ApiError::BadRequest(format!(
+            "at most {BULK_MAX} jobs per request"
+        )));
+    }
+    let mut results = Vec::with_capacity(request.ids.len());
+    for id in request.ids {
+        let outcome: Result<Option<JobId>, String> = match request.action {
+            BulkAction::Retry => retry_job(&state, id)
+                .await
+                .map(Some)
+                .map_err(|e| e.message()),
+            BulkAction::Cancel => state
+                .engine
+                .cancel(id)
+                .await
+                .map(|()| None)
+                .map_err(|e| e.to_string()),
+            BulkAction::Stop => state
+                .engine
+                .stop(id)
+                .await
+                .map(|()| None)
+                .map_err(|e| e.to_string()),
+            BulkAction::Delete => state
+                .engine
+                .delete(id)
+                .await
+                .map(|()| None)
+                .map_err(|e| e.to_string()),
+        };
+        results.push(match outcome {
+            Ok(job) => BulkOutcome {
+                id,
+                ok: true,
+                error: None,
+                job,
+            },
+            Err(error) => BulkOutcome {
+                id,
+                ok: false,
+                error: Some(error),
+                job: None,
+            },
+        });
+    }
+    let succeeded = results.iter().filter(|r| r.ok).count();
+    let failed = results.len() - succeeded;
+    tracing::info!(by = identity.user.username, action = ?request.action, succeeded, failed, "bulk job action");
+    Ok(Json(BulkResponse {
+        action: request.action,
+        results,
+        succeeded,
+        failed,
+    }))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Artifact {
+    Output,
+    Source,
+    Subtitle,
+    /// The recording of a live capture, served while it grows.
+    Recording,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DownloadQuery {
+    #[serde(default = "output")]
+    pub artifact: Artifact,
+    /// Which subtitle track, for `subtitle`.
+    #[serde(default)]
+    pub index: usize,
+    /// Show in the browser rather than save.
+    #[serde(default)]
+    pub inline: bool,
+}
+
+fn output() -> Artifact {
+    Artifact::Output
+}
+
+impl DownloadQuery {
+    /// The output, shown inline.
+    pub fn output() -> Self {
+        Self {
+            artifact: Artifact::Output,
+            index: 0,
+            inline: true,
+        }
+    }
+}
+
+fn content_type_for(path: &FsPath) -> String {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    match ext.as_str() {
+        "vtt" => "text/vtt; charset=utf-8".to_string(),
+        "srt" => "application/x-subrip; charset=utf-8".to_string(),
+        "ass" | "ssa" => "text/x-ssa; charset=utf-8".to_string(),
+        "ttml" => "application/ttml+xml; charset=utf-8".to_string(),
+        // Served as a download only: an SVG shown inline could run script.
+        "svg" | "" => "application/octet-stream".to_string(),
+        _ => Container::from_extension(&ext)
+            .unwrap_or_else(|| Container::Other(ext.clone()))
+            .mime()
+            .to_string(),
+    }
+}
+
+/// The first existing path among the cached artifact and its archived copy.
+async fn first_present(candidates: Vec<PathBuf>) -> Option<PathBuf> {
+    for path in candidates {
+        if tokio::fs::metadata(&path).await.is_ok_and(|m| m.is_file()) {
+            return Some(path);
+        }
+    }
+    None
+}
+
+/// Where the artifact's bytes are, and the name to offer them under.
+pub(super) async fn locate(
+    job: &Job,
+    query: &DownloadQuery,
+) -> Result<(PathBuf, String), ApiError> {
+    let id = job.id.to_string();
+    let stem = format!(
+        "{}-{}",
+        safe_stem(job.title(), job.media().as_str()),
+        &id[..8]
+    );
+    let archived = job.artifacts.archived.as_ref();
+    let (candidates, suffix): (Vec<PathBuf>, &str) = match query.artifact {
+        Artifact::Output => (
+            job.artifacts
+                .output
+                .iter()
+                .map(|f| f.path.clone())
+                .chain(archived.and_then(|a| a.output.clone()))
+                .collect(),
+            "",
+        ),
+        Artifact::Source => (
+            job.artifacts
+                .source
+                .iter()
+                .map(|f| f.path.clone())
+                .chain(archived.and_then(|a| a.source.clone()))
+                .collect(),
+            "-source",
+        ),
+        Artifact::Recording => (
+            job.artifacts
+                .recording
+                .iter()
+                .map(|f| f.path.clone())
+                .collect(),
+            "-recording",
+        ),
+        Artifact::Subtitle => {
+            let track = job
+                .artifacts
+                .subtitles
+                .get(query.index)
+                .ok_or(ApiError::NotFound)?;
+            let language = track
+                .language
+                .chars()
+                .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+                .take(32)
+                .collect::<String>();
+            let path = first_present(vec![track.path.clone()])
+                .await
+                .ok_or_else(|| {
+                    ApiError::Conflict("the subtitle file is no longer in the cache".into())
+                })?;
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("vtt")
+                .to_string();
+            return Ok((path, format!("{stem}.{language}.{ext}")));
+        }
+    };
+    if candidates.is_empty() {
+        return Err(ApiError::NotFound);
+    }
+    let path = first_present(candidates)
+        .await
+        .ok_or_else(|| ApiError::Conflict("This file was deleted by retention cleanup.".into()))?;
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("bin")
+        .to_string();
+    Ok((path, format!("{stem}{suffix}.{ext}")))
+}
+
+/// A `Range: bytes=` header as the one span it asks for, within `len`.
+fn byte_range(headers: &HeaderMap, len: u64) -> Result<Option<(u64, u64)>, ApiError> {
+    let Some(value) = headers.get(header::RANGE).and_then(|v| v.to_str().ok()) else {
+        return Ok(None);
+    };
+    let unsatisfiable = || ApiError::RangeNotSatisfiable(len);
+    let spec = value
+        .strip_prefix("bytes=")
+        .ok_or_else(unsatisfiable)?
+        .trim();
+    if spec.contains(',') {
+        return Err(unsatisfiable());
+    }
+    let (start, end) = spec.split_once('-').ok_or_else(unsatisfiable)?;
+    let range = if start.is_empty() {
+        let suffix: u64 = end.parse().map_err(|_| unsatisfiable())?;
+        if suffix == 0 || len == 0 {
+            return Err(unsatisfiable());
+        }
+        (len.saturating_sub(suffix), len - 1)
+    } else {
+        let start: u64 = start.parse().map_err(|_| unsatisfiable())?;
+        let end: u64 = if end.is_empty() {
+            len.saturating_sub(1)
+        } else {
+            end.parse().map_err(|_| unsatisfiable())?
+        };
+        if start >= len || end < start {
+            return Err(unsatisfiable());
+        }
+        (start, end.min(len - 1))
+    };
+    Ok(Some(range))
+}
+
+/// How long a request for bytes a growing file does not hold yet waits for them.
+const GROWTH_WAIT: Duration = Duration::from_secs(10);
+
+/// The first byte a `Range: bytes=` header asks for, when it names one.
+fn range_start(headers: &HeaderMap) -> Option<u64> {
+    let value = headers.get(header::RANGE)?.to_str().ok()?;
+    let (start, _) = value.strip_prefix("bytes=")?.trim().split_once('-')?;
+    start.parse().ok()
+}
+
+/// Streams a file, whole or the range asked for, with the headers a browser or a video
+/// element needs to save or play it. A `growing` file is one still being written: its
+/// length is read afresh for every request, a range is answered without a total, and a
+/// request for bytes past its end waits for them to be written.
+pub(super) async fn serve_file(
+    path: &FsPath,
+    filename: &str,
+    inline: bool,
+    headers: &HeaderMap,
+    growing: bool,
+) -> Result<Response, ApiError> {
+    let mut file = tokio::fs::File::open(path)
+        .await
+        .map_err(|e| ApiError::Internal(format!("opening {}: {e}", path.display())))?;
+    let mut len = file
+        .metadata()
+        .await
+        .map_err(|e| ApiError::Internal(format!("reading {}: {e}", path.display())))?
+        .len();
+    if growing && let Some(start) = range_start(headers).filter(|start| *start >= len) {
+        let deadline = tokio::time::Instant::now() + GROWTH_WAIT;
+        while tokio::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            len = tokio::fs::metadata(path)
+                .await
+                .map_err(|e| ApiError::Internal(format!("reading {}: {e}", path.display())))?
+                .len();
+            if len > start {
+                break;
+            }
+        }
+    }
+    let disposition = format!(
+        "{}; filename=\"{}\"",
+        if inline { "inline" } else { "attachment" },
+        filename.replace('"', "")
+    );
+    let mut response = Response::builder()
+        .header(header::CONTENT_TYPE, content_type_for(path))
+        .header(header::ACCEPT_RANGES, "bytes")
+        .header(header::CACHE_CONTROL, "private, no-cache")
+        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+        .header(
+            header::CONTENT_DISPOSITION,
+            HeaderValue::from_str(&disposition)
+                .map_err(|e| ApiError::Internal(format!("content disposition: {e}")))?,
+        );
+    let body = match byte_range(headers, len)? {
+        Some((start, end)) => {
+            file.seek(std::io::SeekFrom::Start(start))
+                .await
+                .map_err(|e| ApiError::Internal(format!("seeking {}: {e}", path.display())))?;
+            let span = end - start + 1;
+            response = response
+                .status(StatusCode::PARTIAL_CONTENT)
+                .header(
+                    header::CONTENT_RANGE,
+                    if growing {
+                        format!("bytes {start}-{end}/*")
+                    } else {
+                        format!("bytes {start}-{end}/{len}")
+                    },
+                )
+                .header(header::CONTENT_LENGTH, span);
+            Body::from_stream(ReaderStream::new(file.take(span)))
+        }
+        None => {
+            response = response
+                .status(StatusCode::OK)
+                .header(header::CONTENT_LENGTH, len);
+            Body::from_stream(ReaderStream::new(file))
+        }
+    };
+    response
+        .body(body)
+        .map_err(|e| ApiError::Internal(format!("building response: {e}")))
+}
+
+/// Whether the job's recording is still being written: its live capture is under way.
+pub(super) fn recording_grows(job: &Job) -> bool {
+    job.artifacts.recording.is_some()
+        && job.status
+            == JobStatus::Running {
+                stage: Stage::Download,
+            }
+}
+
+/// The job's output, source, recording or a subtitle file, from the cache or the
+/// archive. The recording of a capture under way is served as it grows.
+pub async fn download(
+    State(state): State<AppState>,
+    Auth(_): Auth,
+    Path(id): Path<String>,
+    Query(query): Query<DownloadQuery>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    let id: JobId = parse_id(&id)?;
+    let job = state.engine.get(id).await?.ok_or(ApiError::NotFound)?;
+    let (path, filename) = locate(&job, &query).await?;
+    let growing = query.artifact == Artifact::Recording && recording_grows(&job);
+    serve_file(&path, &filename, query.inline, &headers, growing).await
+}
+
+impl IntoResponse for Submitted {
+    fn into_response(self) -> Response {
+        Json(self).into_response()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::http::{Method, StatusCode};
+    use discoclip_engine::job::{JobStatus, Origin, Request, SourceId};
+    use discoclip_engine::media::LocalFile;
+    use discoclip_engine::{JobStore, Stage};
+    use serde_json::json;
+    use url::Url;
+
+    use super::byte_range;
+    use crate::web::testing::{Client, SUPPORTED_HOST, app_with_admin_db};
+
+    #[tokio::test]
+    async fn links_are_submitted_retried_cancelled_and_deleted() {
+        let (app, db) = app_with_admin_db().await;
+        let mut admin = Client::new(&app);
+        admin.login("nick", "correct horse").await;
+
+        let (status, body) = admin
+            .post("/api/jobs", json!({"url": "ftp://video.test/clip"}))
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        let (status, body) = admin
+            .post(
+                "/api/jobs",
+                json!({"url": "https://nothing-handles.test/clip"}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert!(
+            body["error"]
+                .as_str()
+                .unwrap()
+                .contains("no resolver handles")
+        );
+        let (status, body) = admin
+            .post(
+                "/api/jobs",
+                json!({
+                    "url": format!("https://{SUPPORTED_HOST}/clip"),
+                    "limits": {"max_height": 720},
+                    "options": {"subtitles": "burn", "clip": {"start": {"secs": 5, "nanos": 0}, "end": null}}
+                }),
+            )
+            .await;
+        assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+        let id = body["id"].as_str().unwrap().to_string();
+        let (_, job) = admin.get(&format!("/api/jobs/{id}")).await;
+        assert_eq!(job["request"]["origin"]["source"], "local");
+        assert_eq!(job["request"]["origin"]["reference"], "nick");
+        assert_eq!(job["request"]["submitted_by"], "nick");
+        assert_eq!(job["request"]["limits"]["max_height"], 720);
+        assert_eq!(job["request"]["options"]["subtitles"], "burn");
+        assert_eq!(job["request"]["options"]["clip"]["start"]["secs"], 5);
+
+        // Not finished: no retry, no delete. Cancel works and then the others do.
+        let (status, _) = admin
+            .send(Method::POST, &format!("/api/jobs/{id}/retry"), None)
+            .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        let (status, _) = admin.delete(&format!("/api/jobs/{id}")).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        let (status, _) = admin
+            .send(Method::POST, &format!("/api/jobs/{id}/cancel"), None)
+            .await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+        let (_, job) = admin.get(&format!("/api/jobs/{id}")).await;
+        assert_eq!(job["status"]["status"], "cancelled");
+        let (status, _) = admin
+            .send(Method::POST, &format!("/api/jobs/{id}/cancel"), None)
+            .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        let (status, body) = admin
+            .send(Method::POST, &format!("/api/jobs/{id}/retry"), None)
+            .await;
+        assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+        let retry = body["id"].as_str().unwrap().to_string();
+        assert_ne!(retry, id);
+        let (_, job) = admin.get(&format!("/api/jobs/{retry}")).await;
+        assert_eq!(job["request"]["retry_of"], id);
+        let (status, _) = admin.delete(&format!("/api/jobs/{id}")).await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+        let (status, _) = admin.get(&format!("/api/jobs/{id}")).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        let (status, _) = admin.delete(&format!("/api/jobs/{id}")).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        // Bulk: one cancel that works, one that does not.
+        let (status, body) = admin
+            .post(
+                "/api/jobs/bulk",
+                json!({"action": "cancel", "ids": [retry, "00000000-0000-0000-0000-000000000000"]}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["succeeded"], 1);
+        assert_eq!(body["failed"], 1);
+        assert_eq!(body["results"][0]["ok"], true);
+        assert_eq!(body["results"][1]["ok"], false);
+        assert!(
+            body["results"][1]["error"]
+                .as_str()
+                .unwrap()
+                .contains("not found")
+        );
+        let (status, body) = admin
+            .post("/api/jobs/bulk", json!({"action": "retry", "ids": [retry]}))
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert!(body["results"][0]["job"].is_string());
+        let (status, _) = admin
+            .post("/api/jobs/bulk", json!({"action": "delete", "ids": []}))
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        let (status, _) = admin
+            .post(
+                "/api/jobs/bulk",
+                json!({"action": "explode", "ids": [retry]}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+
+        // Viewers read but do not act.
+        app.state
+            .users
+            .create("viewer", Some("battery staple"), crate::users::Role::Viewer)
+            .await
+            .unwrap();
+        let mut viewer = Client::new(&app);
+        viewer.login("viewer", "battery staple").await;
+        let (status, _) = viewer.get("/api/jobs").await;
+        assert_eq!(status, StatusCode::OK);
+        let (status, _) = viewer
+            .post(
+                "/api/jobs",
+                json!({"url": format!("https://{SUPPORTED_HOST}/x")}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let (status, _) = viewer.delete(&format!("/api/jobs/{retry}")).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let (status, _) = viewer
+            .post(
+                "/api/jobs/bulk",
+                json!({"action": "cancel", "ids": [retry]}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert!(db.get(retry.parse().unwrap()).await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn artifacts_download_whole_and_by_range() {
+        let (app, db) = app_with_admin_db().await;
+        let mut admin = Client::new(&app);
+        admin.login("nick", "correct horse").await;
+        let dir = std::env::temp_dir().join(format!("discoclip-download-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let output = dir.join("output.mp4");
+        std::fs::write(&output, b"0123456789").unwrap();
+        let subtitle = dir.join("subtitles.en.0.vtt");
+        std::fs::write(&subtitle, "WEBVTT\n").unwrap();
+
+        let origin = Origin {
+            source: SourceId::new("local"),
+            reference: "nick".into(),
+            url: None,
+            guild: None,
+            channel: None,
+        };
+        let mut job = discoclip_engine::Job::new(Request::new(
+            origin,
+            Url::parse(&format!("https://{SUPPORTED_HOST}/clip")).unwrap(),
+        ));
+        let mut resolved = discoclip_engine::Resolved::new("web");
+        resolved.title = Some("My Clip!".into());
+        job.artifacts.resolved = Some(resolved);
+        job.artifacts.output = Some(LocalFile {
+            path: output.clone(),
+            size: 10,
+            info: None,
+        });
+        job.artifacts.source = Some(LocalFile {
+            path: dir.join("gone.mp4"),
+            size: 3,
+            info: None,
+        });
+        job.artifacts.subtitles = vec![discoclip_engine::download::LocalSubtitle {
+            language: "en".into(),
+            name: None,
+            path: subtitle.clone(),
+            format: discoclip_engine::resolve::SubtitleFormat::Vtt,
+            url: None,
+        }];
+        job.status = JobStatus::Done;
+        db.insert(&job).await.unwrap();
+        let id = job.id.to_string();
+        let short = &id[..8];
+
+        let (status, headers, body) = admin.raw(&format!("/api/jobs/{id}/download")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, b"0123456789");
+        assert_eq!(headers["content-type"], "video/mp4");
+        assert_eq!(headers["accept-ranges"], "bytes");
+        assert_eq!(
+            headers["content-disposition"],
+            format!("attachment; filename=\"my-clip-{short}.mp4\"")
+        );
+        admin.headers = vec![("range".into(), "bytes=2-5".into())];
+        let (status, headers, body) = admin
+            .raw(&format!("/api/jobs/{id}/download?inline=true"))
+            .await;
+        assert_eq!(status, StatusCode::PARTIAL_CONTENT);
+        assert_eq!(body, b"2345");
+        assert_eq!(headers["content-range"], "bytes 2-5/10");
+        assert_eq!(headers["content-length"], "4");
+        assert!(
+            headers["content-disposition"]
+                .to_str()
+                .unwrap()
+                .starts_with("inline")
+        );
+        admin.headers = vec![("range".into(), "bytes=-3".into())];
+        let (status, _, body) = admin.raw(&format!("/api/jobs/{id}/download")).await;
+        assert_eq!(status, StatusCode::PARTIAL_CONTENT);
+        assert_eq!(body, b"789");
+        admin.headers = vec![("range".into(), "bytes=20-".into())];
+        let (status, headers, _) = admin.raw(&format!("/api/jobs/{id}/download")).await;
+        assert_eq!(status, StatusCode::RANGE_NOT_SATISFIABLE);
+        assert_eq!(headers["content-range"], "bytes */10");
+        admin.headers.clear();
+
+        let (status, headers, body) = admin
+            .raw(&format!(
+                "/api/jobs/{id}/download?artifact=subtitle&index=0"
+            ))
+            .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, b"WEBVTT\n");
+        assert!(
+            headers["content-type"]
+                .to_str()
+                .unwrap()
+                .starts_with("text/vtt")
+        );
+        assert_eq!(
+            headers["content-disposition"],
+            format!("attachment; filename=\"my-clip-{short}.en.vtt\"")
+        );
+        let (status, _, _) = admin
+            .raw(&format!(
+                "/api/jobs/{id}/download?artifact=subtitle&index=3"
+            ))
+            .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        // The source was tidied away after the job finished.
+        let (status, _, _) = admin
+            .raw(&format!("/api/jobs/{id}/download?artifact=source"))
+            .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        let (status, _, _) = admin
+            .raw("/api/jobs/00000000-0000-0000-0000-000000000000/download")
+            .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        // Deleting the job removes its cached directory too.
+        let cache_dir = app.state.engine.cache_dir().join("jobs").join(&id);
+        std::fs::create_dir_all(&cache_dir).unwrap();
+        std::fs::write(cache_dir.join("output.mp4"), b"x").unwrap();
+        let (status, _) = admin.delete(&format!("/api/jobs/{id}")).await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+        assert!(!cache_dir.exists());
+        std::fs::remove_dir_all(&dir).unwrap();
+        let _ = Stage::Resolve;
+    }
+
+    #[test]
+    fn ranges_are_read_as_browsers_send_them() {
+        use axum::http::{HeaderMap, HeaderValue};
+        let with = |value: &str| {
+            let mut map = HeaderMap::new();
+            map.insert("range", HeaderValue::from_str(value).unwrap());
+            map
+        };
+        assert_eq!(byte_range(&HeaderMap::new(), 10).unwrap(), None);
+        assert_eq!(byte_range(&with("bytes=0-"), 10).unwrap(), Some((0, 9)));
+        assert_eq!(byte_range(&with("bytes=3-100"), 10).unwrap(), Some((3, 9)));
+        assert_eq!(byte_range(&with("bytes=-4"), 10).unwrap(), Some((6, 9)));
+        assert!(byte_range(&with("bytes=5-2"), 10).is_err());
+        assert!(byte_range(&with("bytes=0-1,3-4"), 10).is_err());
+        assert!(byte_range(&with("items=0-1"), 10).is_err());
+        assert!(byte_range(&with("bytes=0-"), 0).is_err());
+    }
+
+    #[tokio::test]
+    async fn jobs_are_listed_counted_and_fetched() {
+        let (app, _db) = app_with_admin_db().await;
+        let mut admin = Client::new(&app);
+        admin.login("nick", "correct horse").await;
+        let (status, body) = admin.get("/api/jobs").await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["total"], 0);
+        assert_eq!(body["jobs"], json!([]));
+
+        let origin = Origin {
+            source: SourceId::new("discord"),
+            reference: "x".into(),
+            url: None,
+            guild: None,
+            channel: None,
+        };
+        let mut request = Request::new(
+            origin,
+            Url::parse(&format!("https://{SUPPORTED_HOST}/clip")).unwrap(),
+        );
+        request.submitted_by = Some("discord:9".into());
+        let id = app.state.engine.submit(request).await.unwrap();
+
+        let (status, body) = admin.get("/api/jobs?status=queued&q=clip").await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["total"], 1);
+        assert_eq!(body["jobs"][0]["id"], id.to_string());
+        assert_eq!(body["jobs"][0]["status"]["status"], "queued");
+        assert_eq!(body["jobs"][0]["submitted_by"], "discord:9");
+        assert_eq!(body["jobs"][0]["source"], "discord");
+        let (status, body) = admin.get("/api/jobs?status=done").await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["total"], 0);
+        let (status, _) = admin.get("/api/jobs?status=bogus").await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        let (status, _) = admin.get("/api/jobs?order=sideways").await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+
+        let (status, body) = admin.get(&format!("/api/jobs/{id}")).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["request"]["submitted_by"], "discord:9");
+        assert_eq!(body["log"], json!([]));
+        let (status, body) = admin.get(&format!("/api/jobs/{id}/children")).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body, json!([]));
+        let (status, _) = admin
+            .get("/api/jobs/00000000-0000-0000-0000-000000000000")
+            .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        let (status, body) = admin.get("/api/jobs/stats").await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["counts"]["queued"], 1);
+        assert_eq!(body["last_24h"]["queued"], 1);
+        assert_eq!(body["queue_depth"], 1);
+        assert_eq!(body["utilisation"]["workers"], 2);
+        assert_eq!(body["utilisation"]["waiting"], 1);
+        assert_eq!(body["active"], json!([]));
+
+        // The feed opens with the stats and carries the job's submission.
+        let stream = admin.stream("/api/jobs/events").await;
+        assert!(stream.contains("event: stats"), "{stream}");
+        assert!(stream.contains("\"queue_depth\":1"), "{stream}");
+        app.state.engine.cancel(id).await.unwrap();
+        let stream = admin.stream("/api/jobs/events").await;
+        assert!(stream.contains("\"queue_depth\":0"), "{stream}");
+
+        let mut anonymous = Client::new(&app);
+        let (status, _) = anonymous.get("/api/jobs").await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn the_feed_relays_job_events_with_summaries() {
+        let (app, _db) = app_with_admin_db().await;
+        let mut admin = Client::new(&app);
+        admin.login("nick", "correct horse").await;
+        let engine = app.state.engine.clone();
+        let feed = tokio::spawn({
+            let mut client = Client::new(&app);
+            client.cookie = admin.cookie.clone();
+            async move { client.stream("/api/jobs/events").await }
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        let origin = Origin {
+            source: SourceId::new("discord"),
+            reference: "x".into(),
+            url: None,
+            guild: None,
+            channel: None,
+        };
+        let id = engine
+            .submit(Request::new(
+                origin,
+                Url::parse(&format!("https://{SUPPORTED_HOST}/live")).unwrap(),
+            ))
+            .await
+            .unwrap();
+        let text = feed.await.unwrap();
+        assert!(text.contains("event: job"), "{text}");
+        assert!(text.contains("\"kind\":\"submitted\""), "{text}");
+        assert!(text.contains(&format!("\"job\":\"{id}\"")), "{text}");
+        assert!(text.contains("\"job_summary\":{"), "{text}");
+    }
+}

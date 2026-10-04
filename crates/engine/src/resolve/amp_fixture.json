@@ -1,0 +1,1148 @@
+{
+  "name": "amp",
+  "recorded_at": "2026-09-16T00:22:58.761524122Z",
+  "url": "https://www.foxnews.com/video/6320653836112",
+  "notes": "Fox News and ABC News videos through their Akamai AMP feeds",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.foxnews.com/v3/video-player/6320653836112?callback=uid_6320653836112",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://api.foxnews.com/v3/video-player/6320653836112?callback=uid_6320653836112",
+        "headers": [
+          [
+            "last-modified",
+            "Fri, 17 Feb 2023 05:25:01 GMT"
+          ],
+          [
+            "via",
+            "1.1 2b7c8ceb84f453714fcea5cf4f7202c8.cloudfront.net (CloudFront), 1.1 varnish, 1.1 varnish, 1.1 varnish"
+          ],
+          [
+            "etag",
+            "55c3ee14e71dce5a96530fab11cc3556"
+          ],
+          [
+            "content-type",
+            "application/javascript"
+          ],
+          [
+            "vary",
+            "Accept-Encoding"
+          ],
+          [
+            "x-debug-backend",
+            "fn_api_foxnews_com_cd2"
+          ],
+          [
+            "x-debug-url",
+            "/cd2/prod/video-player/6320653836112?callback=uid_6320653836112"
+          ],
+          [
+            "cache-control",
+            "max-age=300, stale-while-revalidate=10"
+          ],
+          [
+            "accept-ranges",
+            "bytes"
+          ],
+          [
+            "age",
+            "0"
+          ],
+          [
+            "date",
+            "Wed, 16 Sep 2026 00:22:59 GMT"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "access-control-allow-methods",
+            "GET,POST,OPTIONS"
+          ],
+          [
+            "access-control-allow-headers",
+            "*"
+          ],
+          [
+            "access-control-allow-credentials",
+            "false"
+          ],
+          [
+            "access-control-max-age",
+            "86400"
+          ],
+          [
+            "x-served-by",
+            "cache-iad-kiad7000165-IAD, cache-iad-kiad7000165-IAD, cache-iad-kiad7000176-IAD, cache-bfi-krnt7300080-BFI"
+          ],
+          [
+            "x-cache",
+            "Miss from cloudfront, MISS, MISS, HIT"
+          ],
+          [
+            "x-cache-hits",
+            "0, 0, 0"
+          ],
+          [
+            "x-timer",
+            "S1789518179.860864,VS0,VE199"
+          ]
+        ],
+        "body": {
+          "text": "uid_6320653836112({\n  \"channel\": {\n    \"link\": \"https://api.foxnews.com/v3/video-player/6320653836112\",\n    \"pubDate\": \"Fri, 17 Feb 2023 05:22:24 GMT\",\n    \"ttl\": \"10\",\n    \"item\": {\n      \"title\": \"Tucker Carlson joins 'Gutfeld!' to discuss his new documentary\",\n      \"link\": \"https://www.foxnews.com/video/6320653836112\",\n      \"description\": \"Fox News host Tucker Carlson joins 'Gutfeld!' to discuss his new documentary 'The Death of Comedy?' on Fox Nation and the loss of free expression.\",\n      \"dc-description\": \"Fox News host Tucker Carlson joins 'Gutfeld!' to discuss his new documentary 'The Death of Comedy?' on Fox Nation and the loss of free expression.\",\n      \"category\": [\n        \"personality|tucker_carlson\",\n        \"personality\",\n        \"on_air\",\n        \"primary_politics\",\n        \"politics\",\n        \"primary_us\",\n        \"us\",\n        \"on_air|gutfeld\",\n        \"personality|greg_gutfeld\",\n        \"personality|katherine_timpf\",\n        \"personality|tyrus_murdoch\",\n        \"settings/advertising/ad_supported\"\n      ],\n      \"pubDate\": \"Fri, 17 Feb 2023 05:22:24 GMT\",\n      \"guid\": \"6320653836112\",\n      \"dc-date\": \"2023-02-17T05:22:24.839Z\",\n      \"dc-source\": \"Fox News\",\n      \"dc-creator\": {},\n      \"dc-contributor\": {},\n      \"dc-language\": \"en\",\n      \"itunes-duration\": \"00:06:44\",\n      \"itunes-summary\": \"Fox News host Tucker Carlson joins 'Gutfeld!' to discuss his new documentary 'The Death of Comedy?' on Fox Nation and the loss of free expression.\",\n      \"media-group\": {\n        \"media-subTitle\": {\n          \"@attributes\": {\n            \"type\": \"text/vtt\",\n            \"lang\": \"en-us\",\n            \"href\": \"https://vod.foxnews.com/media/v1/text/vtt/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/12b5303a-f900-44e6-add5-93261ba74383/text.vtt\"\n          }\n        },\n        \"media-content\": [\n          {\n            \"@attributes\": {\n              \"isDefault\": true,\n              \"url\": \"https://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/10s/master.m3u8?fastly_token=NmI5YjEzOGVfNTJiNDczMWU5ODRkZGM0ZTU3YjJkYWJiOTk2ODgzNTI0YmEwMGJiNjNiZjlhZDAzYzVkMmU0MzA5MmZiMzAwMA%3D%3D\",\n              \"duration\": \"404\",\n              \"type\": \"application/x-mpegURL\"\n            },\n            \"media-category\": {\n              \"@attributes\": {\n                \"schema\": \"https://mrss.akamai.com/user_agent_hint\",\n                \"label\": \"HLS_ALL\"\n              }\n            },\n            \"media-copyright\": \"2026 Fox News Channel\"\n          }\n        ],\n        \"media-title\": \"Tucker Carlson joins 'Gutfeld!' to discuss his new documentary\",\n        \"media-description\": \"Fox News host Tucker Carlson joins 'Gutfeld!' to discuss his new documentary 'The Death of Comedy?' on Fox Nation and the loss of free expression.\",\n        \"media-player\": {\n          \"@attributes\": {\n            \"url\": \"https://video.foxnews.com/v/video-embed.html?video_id=6320653836112&d=video.foxnews.com\",\n            \"width\": \"640\",\n            \"height\": \"360\"\n          }\n        },\n        \"media-thumbnail\": {\n          \"@attributes\": {\n            \"url\": \"https://cf-images.us-east-1.prod.boltdns.net/v1/static/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/efd6afcd-e2a1-47cb-b8f8-7abb02b7bede/1280x720/match/image.jpg\",\n            \"width\": \"320\",\n            \"height\": \"240\"\n          }\n        }\n      },\n      \"publisher\": \"Fox News\"\n    }\n  }\n})"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/10s/master.m3u8?fastly_token=NmI5YjEzOGVfNTJiNDczMWU5ODRkZGM0ZTU3YjJkYWJiOTk2ODgzNTI0YmEwMGJiNjNiZjlhZDAzYzVkMmU0MzA5MmZiMzAwMA%3D%3D",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/10s/master.m3u8?fastly_token=NmI5YjEzOGVfNTJiNDczMWU5ODRkZGM0ZTU3YjJkYWJiOTk2ODgzNTI0YmEwMGJiNjNiZjlhZDAzYzVkMmU0MzA5MmZiMzAwMA%3D%3D",
+        "headers": [
+          [
+            "access-control-allow-headers",
+            "X-Requested-With,Origin,Range,Accept-Encoding,Referer"
+          ],
+          [
+            "access-control-allow-methods",
+            "GET,HEAD,OPTIONS"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "access-control-expose-headers",
+            "Server,Range,Content-Length,Content-Range"
+          ],
+          [
+            "cache-control",
+            "s-maxage=7905600, max-age=7905600"
+          ],
+          [
+            "content-type",
+            "application/x-mpegURL"
+          ],
+          [
+            "x-bolt-device-group",
+            "desktop-chrome"
+          ],
+          [
+            "x-powered-by",
+            "BC"
+          ],
+          [
+            "x-powered-from",
+            "gantry"
+          ],
+          [
+            "accept-ranges",
+            "bytes"
+          ],
+          [
+            "age",
+            "226984"
+          ],
+          [
+            "date",
+            "Wed, 16 Sep 2026 00:22:59 GMT"
+          ],
+          [
+            "via",
+            "1.1 varnish"
+          ],
+          [
+            "x-served-by",
+            "cache-bfi-krnt7300053-BFI"
+          ],
+          [
+            "x-cache",
+            "HIT"
+          ],
+          [
+            "x-cache-hits",
+            "0"
+          ],
+          [
+            "x-timer",
+            "S1789518179.152934,VS0,VE2"
+          ],
+          [
+            "x-device-group",
+            "desktop-chrome"
+          ],
+          [
+            "content-length",
+            "5355"
+          ]
+        ],
+        "body": {
+          "text": "#EXTM3U\n#EXT-X-VERSION:4\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio-0\",NAME=\"en (Main)\",DEFAULT=YES,AUTOSELECT=YES,LANGUAGE=\"en\",URI=\"https://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/447c7c61-fe0d-4fb5-bbbd-9d91efdb0a5f/10s/rendition.m3u8?fastly_token=NmI5N2IyOTZfYjYzN2YwOWE2N2ZhOGRhZWY4MjA4NDFlZWY5ZWI5YjczM2M4Y2NjYjM4ZDk3MGVjZWFlMzQ5ZTNiYTU3N2EwYw%3D%3D\"\n#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"subtitles-0\",NAME=\"English\",DEFAULT=YES,AUTOSELECT=YES,LANGUAGE=\"en\",URI=\"https://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/12b5303a-f900-44e6-add5-93261ba74383/rendition.m3u8?fastly_token=NmI5N2IyOTZfZTg2ZDkwNGZlNjNiNDg0NzQ5NTQ2OTg1ODdhNTQxMGE1NjFjZDU2M2E4ODM4NjE5NjFmMDNkZmZmZmJjOTQ3Nw%3D%3D\"\n#EXT-X-STREAM-INF:PROGRAM-ID=0,BANDWIDTH=957000,CODECS=\"mp4a.40.2,avc1.4d001e\",RESOLUTION=768x432,AUDIO=\"audio-0\",CLOSED-CAPTIONS=NONE,SUBTITLES=\"subtitles-0\"\nhttps://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/eea8c2f3-4f3b-4a35-a6b2-f47245ac048f/10s/rendition.m3u8?fastly_token=NmI5N2IyOTZfOWMzOGYxYTliYjE5MjA5OWM0ZDc3MzhhOGFkMTYzMmQ3NmQ1ZDY3YzE2Mzk2ZWZiZWU4NDk1Y2Y3OTk5MTA5Yg%3D%3D\n#EXT-X-I-FRAME-STREAM-INF:PROGRAM-ID=0,BANDWIDTH=957000,CODECS=\"mp4a.40.2,avc1.4d001e\",RESOLUTION=768x432,URI=\"https://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/eea8c2f3-4f3b-4a35-a6b2-f47245ac048f/iframe.m3u8?fastly_token=NmI5N2IyOTZfMjZhYzYwN2ZhZTBhMGU4Nzc4YmE1OTIwMzM0ZDEwMjA0ZWI0YjY3NDNhZWQ2NWZiZTdjMWEwZjY3OTE5MjgwNQ%3D%3D\"\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio-1\",NAME=\"en (Main)\",DEFAULT=YES,AUTOSELECT=YES,LANGUAGE=\"en\",URI=\"https://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/bd48250c-14c8-45de-a41e-2f95d2dc1193/10s/rendition.m3u8?fastly_token=NmI5N2IyOTZfM2JiMGE3OWE5MjU1M2M5Njg5ZGUwZTExZWQ4ZTEyMGIwODRjN2U3N2Y3NzQ1ZmY2ZDg1OGI2NmVhYmE1NmI5Mg%3D%3D\"\n#EXT-X-STREAM-INF:PROGRAM-ID=0,BANDWIDTH=317900,CODECS=\"mp4a.40.2,avc1.42000d\",RESOLUTION=320x180,AUDIO=\"audio-1\",CLOSED-CAPTIONS=NONE,SUBTITLES=\"subtitles-0\"\nhttps://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/b937004b-9197-4075-8115-400fe1b33e48/10s/rendition.m3u8?fastly_token=NmI5N2IyOTZfNWI5NzA2OWEwMjg1YzBhM2QwNTliOWRkZDgzMjVmYmE1YjE0ZGYwMDFiM2M2MDQyZWFhNWE1MmI4ZTViM2JlYQ%3D%3D\n#EXT-X-I-FRAME-STREAM-INF:PROGRAM-ID=0,BANDWIDTH=317900,CODECS=\"mp4a.40.2,avc1.42000d\",RESOLUTION=320x180,URI=\"https://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/b937004b-9197-4075-8115-400fe1b33e48/iframe.m3u8?fastly_token=NmI5N2IyOTZfODc5ZWNiZDNkMmQ2ZTAzZjNjMDg0ZmJjYmQwN2VhMzQwNTE5ZTdjZTU0MjViNTljNTQwNTg3ODZmM2E1YWJhYw%3D%3D\"\n#EXT-X-STREAM-INF:PROGRAM-ID=0,BANDWIDTH=553300,CODECS=\"mp4a.40.2,avc1.4d0015\",RESOLUTION=512x288,AUDIO=\"audio-0\",CLOSED-CAPTIONS=NONE,SUBTITLES=\"subtitles-0\"\nhttps://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/0a56383f-d19e-4fcc-acf6-9a6900574573/10s/rendition.m3u8?fastly_token=NmI5N2IyOTZfMDU0MTQyNjBlMWZmYjEyZGFlZGZhMzUwZmY4ZWEzNjZlODkwM2MyYzlhYTNjNzhhYWNhNDVjMGRhNDgwMTcwNw%3D%3D\n#EXT-X-I-FRAME-STREAM-INF:PROGRAM-ID=0,BANDWIDTH=553300,CODECS=\"mp4a.40.2,avc1.4d0015\",RESOLUTION=512x288,URI=\"https://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/0a56383f-d19e-4fcc-acf6-9a6900574573/iframe.m3u8?fastly_token=NmI5N2IyOTZfNjE2NDkzZDdjMmYxNmIyZmE1ODg1NDczYTM1Y2ZlZmFjNjk0MmFhYzRlYTMxZDhmNjBiZTY1YWVlMmU4ZTQwZg%3D%3D\"\n#EXT-X-STREAM-INF:PROGRAM-ID=0,BANDWIDTH=1536700,CODECS=\"mp4a.40.2,avc1.4d001f\",RESOLUTION=1024x576,AUDIO=\"audio-0\",CLOSED-CAPTIONS=NONE,SUBTITLES=\"subtitles-0\"\nhttps://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/c22c041d-015f-4f2d-8396-d4a255491bc9/10s/rendition.m3u8?fastly_token=NmI5N2IyOTZfMTRjN2NkNWFhMjY1ZTlkYmE2NWU2OWEzZDkxOTJhOTA0NWUzZDAxYjNjOGZhOWZmZDdkYzAyYWMzMDMxZDI4OQ%3D%3D\n#EXT-X-I-FRAME-STREAM-INF:PROGRAM-ID=0,BANDWIDTH=1536700,CODECS=\"mp4a.40.2,avc1.4d001f\",RESOLUTION=1024x576,URI=\"https://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/c22c041d-015f-4f2d-8396-d4a255491bc9/iframe.m3u8?fastly_token=NmI5N2IyOTZfNjQzYTkwOTJlY2NhZjY3MjI2ODIyMzYwMjIxNWE0NWYwNDU1NzU4ZTdlMjBkMWVjY2QzNDVmMGNmN2U3YjIyMw%3D%3D\"\n#EXT-X-STREAM-INF:PROGRAM-ID=0,BANDWIDTH=2445300,CODECS=\"mp4a.40.2,avc1.4d001f\",RESOLUTION=1280x720,AUDIO=\"audio-0\",CLOSED-CAPTIONS=NONE,SUBTITLES=\"subtitles-0\"\nhttps://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/10s/rendition.m3u8?fastly_token=NmI5N2IyOTZfMDM3ZmRjYmNlMWRkMzg5YTIxYzkxMzI0Y2Y1MTBjYzhmY2E1MmRjODJjMzJjMmZhYmRmMTBjMjViNGMwM2UwNA%3D%3D\n#EXT-X-I-FRAME-STREAM-INF:PROGRAM-ID=0,BANDWIDTH=2445300,CODECS=\"mp4a.40.2,avc1.4d001f\",RESOLUTION=1280x720,URI=\"https://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/iframe.m3u8?fastly_token=NmI5N2IyOTZfMmZhNTBiM2I3OTJlMmUxYzg5YmFhOWJlYjAzZTQ1ODBlNjBkMzBhM2RhNTVlZmMyMmRlYjdmOTA5NGY4NWVkZA%3D%3D\"\n"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/10s/rendition.m3u8?fastly_token=NmI5N2IyOTZfMDM3ZmRjYmNlMWRkMzg5YTIxYzkxMzI0Y2Y1MTBjYzhmY2E1MmRjODJjMzJjMmZhYmRmMTBjMjViNGMwM2UwNA%3D%3D",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/10s/rendition.m3u8?fastly_token=NmI5N2IyOTZfMDM3ZmRjYmNlMWRkMzg5YTIxYzkxMzI0Y2Y1MTBjYzhmY2E1MmRjODJjMzJjMmZhYmRmMTBjMjViNGMwM2UwNA%3D%3D",
+        "headers": [
+          [
+            "access-control-allow-headers",
+            "X-Requested-With,Origin,Range,Accept-Encoding,Referer"
+          ],
+          [
+            "access-control-allow-methods",
+            "GET,HEAD,OPTIONS"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "access-control-expose-headers",
+            "Server,Range,Content-Length,Content-Range"
+          ],
+          [
+            "cache-control",
+            "s-maxage=7905600, max-age=7905600"
+          ],
+          [
+            "content-type",
+            "application/x-mpegURL"
+          ],
+          [
+            "x-powered-by",
+            "BC"
+          ],
+          [
+            "x-powered-from",
+            "gantry"
+          ],
+          [
+            "accept-ranges",
+            "bytes"
+          ],
+          [
+            "age",
+            "177436"
+          ],
+          [
+            "date",
+            "Wed, 16 Sep 2026 00:22:59 GMT"
+          ],
+          [
+            "via",
+            "1.1 varnish"
+          ],
+          [
+            "x-served-by",
+            "cache-bfi-krnt7300053-BFI"
+          ],
+          [
+            "x-cache",
+            "HIT"
+          ],
+          [
+            "x-cache-hits",
+            "0"
+          ],
+          [
+            "x-timer",
+            "S1789518179.175744,VS0,VE1"
+          ],
+          [
+            "x-device-group",
+            "desktop-chrome"
+          ],
+          [
+            "content-length",
+            "6868"
+          ]
+        ],
+        "body": {
+          "text": "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-TARGETDURATION:10\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment0.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment1.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment2.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment3.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment4.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment5.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment6.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment7.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment8.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment9.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment10.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment11.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment12.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment13.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment14.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment15.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment16.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment17.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment18.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment19.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment20.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment21.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment22.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment23.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment24.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment25.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment26.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment27.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment28.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment29.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment30.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment31.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment32.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment33.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment34.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment35.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment36.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment37.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment38.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment39.ts\n#EXTINF:3.604,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment40.ts\n#EXT-X-ENDLIST\n"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.foxnews.com/v3/video-player/6320653836112?callback=uid_6320653836112",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://api.foxnews.com/v3/video-player/6320653836112?callback=uid_6320653836112",
+        "headers": [
+          [
+            "last-modified",
+            "Fri, 17 Feb 2023 05:25:01 GMT"
+          ],
+          [
+            "via",
+            "1.1 2b7c8ceb84f453714fcea5cf4f7202c8.cloudfront.net (CloudFront), 1.1 varnish, 1.1 varnish, 1.1 varnish"
+          ],
+          [
+            "etag",
+            "55c3ee14e71dce5a96530fab11cc3556"
+          ],
+          [
+            "content-type",
+            "application/javascript"
+          ],
+          [
+            "vary",
+            "Accept-Encoding"
+          ],
+          [
+            "x-debug-backend",
+            "fn_api_foxnews_com_cd2"
+          ],
+          [
+            "x-debug-url",
+            "/cd2/prod/video-player/6320653836112?callback=uid_6320653836112"
+          ],
+          [
+            "cache-control",
+            "max-age=300, stale-while-revalidate=10"
+          ],
+          [
+            "accept-ranges",
+            "bytes"
+          ],
+          [
+            "date",
+            "Wed, 16 Sep 2026 00:22:59 GMT"
+          ],
+          [
+            "age",
+            "0"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "access-control-allow-methods",
+            "GET,POST,OPTIONS"
+          ],
+          [
+            "access-control-allow-headers",
+            "*"
+          ],
+          [
+            "access-control-allow-credentials",
+            "false"
+          ],
+          [
+            "access-control-max-age",
+            "86400"
+          ],
+          [
+            "x-served-by",
+            "cache-iad-kiad7000165-IAD, cache-iad-kiad7000165-IAD, cache-iad-kiad7000176-IAD, cache-bfi-krnt7300080-BFI"
+          ],
+          [
+            "x-cache",
+            "Miss from cloudfront, MISS, MISS, HIT"
+          ],
+          [
+            "x-cache-hits",
+            "0, 0, 1"
+          ],
+          [
+            "x-timer",
+            "S1789518179.202751,VS0,VE2"
+          ]
+        ],
+        "body": {
+          "text": "uid_6320653836112({\n  \"channel\": {\n    \"link\": \"https://api.foxnews.com/v3/video-player/6320653836112\",\n    \"pubDate\": \"Fri, 17 Feb 2023 05:22:24 GMT\",\n    \"ttl\": \"10\",\n    \"item\": {\n      \"title\": \"Tucker Carlson joins 'Gutfeld!' to discuss his new documentary\",\n      \"link\": \"https://www.foxnews.com/video/6320653836112\",\n      \"description\": \"Fox News host Tucker Carlson joins 'Gutfeld!' to discuss his new documentary 'The Death of Comedy?' on Fox Nation and the loss of free expression.\",\n      \"dc-description\": \"Fox News host Tucker Carlson joins 'Gutfeld!' to discuss his new documentary 'The Death of Comedy?' on Fox Nation and the loss of free expression.\",\n      \"category\": [\n        \"personality|tucker_carlson\",\n        \"personality\",\n        \"on_air\",\n        \"primary_politics\",\n        \"politics\",\n        \"primary_us\",\n        \"us\",\n        \"on_air|gutfeld\",\n        \"personality|greg_gutfeld\",\n        \"personality|katherine_timpf\",\n        \"personality|tyrus_murdoch\",\n        \"settings/advertising/ad_supported\"\n      ],\n      \"pubDate\": \"Fri, 17 Feb 2023 05:22:24 GMT\",\n      \"guid\": \"6320653836112\",\n      \"dc-date\": \"2023-02-17T05:22:24.839Z\",\n      \"dc-source\": \"Fox News\",\n      \"dc-creator\": {},\n      \"dc-contributor\": {},\n      \"dc-language\": \"en\",\n      \"itunes-duration\": \"00:06:44\",\n      \"itunes-summary\": \"Fox News host Tucker Carlson joins 'Gutfeld!' to discuss his new documentary 'The Death of Comedy?' on Fox Nation and the loss of free expression.\",\n      \"media-group\": {\n        \"media-subTitle\": {\n          \"@attributes\": {\n            \"type\": \"text/vtt\",\n            \"lang\": \"en-us\",\n            \"href\": \"https://vod.foxnews.com/media/v1/text/vtt/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/12b5303a-f900-44e6-add5-93261ba74383/text.vtt\"\n          }\n        },\n        \"media-content\": [\n          {\n            \"@attributes\": {\n              \"isDefault\": true,\n              \"url\": \"https://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/10s/master.m3u8?fastly_token=NmI5YjEzOGVfNTJiNDczMWU5ODRkZGM0ZTU3YjJkYWJiOTk2ODgzNTI0YmEwMGJiNjNiZjlhZDAzYzVkMmU0MzA5MmZiMzAwMA%3D%3D\",\n              \"duration\": \"404\",\n              \"type\": \"application/x-mpegURL\"\n            },\n            \"media-category\": {\n              \"@attributes\": {\n                \"schema\": \"https://mrss.akamai.com/user_agent_hint\",\n                \"label\": \"HLS_ALL\"\n              }\n            },\n            \"media-copyright\": \"2026 Fox News Channel\"\n          }\n        ],\n        \"media-title\": \"Tucker Carlson joins 'Gutfeld!' to discuss his new documentary\",\n        \"media-description\": \"Fox News host Tucker Carlson joins 'Gutfeld!' to discuss his new documentary 'The Death of Comedy?' on Fox Nation and the loss of free expression.\",\n        \"media-player\": {\n          \"@attributes\": {\n            \"url\": \"https://video.foxnews.com/v/video-embed.html?video_id=6320653836112&d=video.foxnews.com\",\n            \"width\": \"640\",\n            \"height\": \"360\"\n          }\n        },\n        \"media-thumbnail\": {\n          \"@attributes\": {\n            \"url\": \"https://cf-images.us-east-1.prod.boltdns.net/v1/static/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/efd6afcd-e2a1-47cb-b8f8-7abb02b7bede/1280x720/match/image.jpg\",\n            \"width\": \"320\",\n            \"height\": \"240\"\n          }\n        }\n      },\n      \"publisher\": \"Fox News\"\n    }\n  }\n})"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/10s/master.m3u8?fastly_token=NmI5YjEzOGVfNTJiNDczMWU5ODRkZGM0ZTU3YjJkYWJiOTk2ODgzNTI0YmEwMGJiNjNiZjlhZDAzYzVkMmU0MzA5MmZiMzAwMA%3D%3D",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/10s/master.m3u8?fastly_token=NmI5YjEzOGVfNTJiNDczMWU5ODRkZGM0ZTU3YjJkYWJiOTk2ODgzNTI0YmEwMGJiNjNiZjlhZDAzYzVkMmU0MzA5MmZiMzAwMA%3D%3D",
+        "headers": [
+          [
+            "access-control-allow-headers",
+            "X-Requested-With,Origin,Range,Accept-Encoding,Referer"
+          ],
+          [
+            "access-control-allow-methods",
+            "GET,HEAD,OPTIONS"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "access-control-expose-headers",
+            "Server,Range,Content-Length,Content-Range"
+          ],
+          [
+            "cache-control",
+            "s-maxage=7905600, max-age=7905600"
+          ],
+          [
+            "content-type",
+            "application/x-mpegURL"
+          ],
+          [
+            "x-bolt-device-group",
+            "desktop-chrome"
+          ],
+          [
+            "x-powered-by",
+            "BC"
+          ],
+          [
+            "x-powered-from",
+            "gantry"
+          ],
+          [
+            "accept-ranges",
+            "bytes"
+          ],
+          [
+            "date",
+            "Wed, 16 Sep 2026 00:22:59 GMT"
+          ],
+          [
+            "via",
+            "1.1 varnish"
+          ],
+          [
+            "age",
+            "226984"
+          ],
+          [
+            "x-served-by",
+            "cache-bfi-krnt7300053-BFI"
+          ],
+          [
+            "x-cache",
+            "HIT"
+          ],
+          [
+            "x-cache-hits",
+            "1"
+          ],
+          [
+            "x-timer",
+            "S1789518179.227588,VS0,VE4"
+          ],
+          [
+            "x-device-group",
+            "desktop-chrome"
+          ],
+          [
+            "content-length",
+            "5355"
+          ]
+        ],
+        "body": {
+          "text": "#EXTM3U\n#EXT-X-VERSION:4\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio-0\",NAME=\"en (Main)\",DEFAULT=YES,AUTOSELECT=YES,LANGUAGE=\"en\",URI=\"https://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/447c7c61-fe0d-4fb5-bbbd-9d91efdb0a5f/10s/rendition.m3u8?fastly_token=NmI5N2IyOTZfYjYzN2YwOWE2N2ZhOGRhZWY4MjA4NDFlZWY5ZWI5YjczM2M4Y2NjYjM4ZDk3MGVjZWFlMzQ5ZTNiYTU3N2EwYw%3D%3D\"\n#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"subtitles-0\",NAME=\"English\",DEFAULT=YES,AUTOSELECT=YES,LANGUAGE=\"en\",URI=\"https://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/12b5303a-f900-44e6-add5-93261ba74383/rendition.m3u8?fastly_token=NmI5N2IyOTZfZTg2ZDkwNGZlNjNiNDg0NzQ5NTQ2OTg1ODdhNTQxMGE1NjFjZDU2M2E4ODM4NjE5NjFmMDNkZmZmZmJjOTQ3Nw%3D%3D\"\n#EXT-X-STREAM-INF:PROGRAM-ID=0,BANDWIDTH=957000,CODECS=\"mp4a.40.2,avc1.4d001e\",RESOLUTION=768x432,AUDIO=\"audio-0\",CLOSED-CAPTIONS=NONE,SUBTITLES=\"subtitles-0\"\nhttps://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/eea8c2f3-4f3b-4a35-a6b2-f47245ac048f/10s/rendition.m3u8?fastly_token=NmI5N2IyOTZfOWMzOGYxYTliYjE5MjA5OWM0ZDc3MzhhOGFkMTYzMmQ3NmQ1ZDY3YzE2Mzk2ZWZiZWU4NDk1Y2Y3OTk5MTA5Yg%3D%3D\n#EXT-X-I-FRAME-STREAM-INF:PROGRAM-ID=0,BANDWIDTH=957000,CODECS=\"mp4a.40.2,avc1.4d001e\",RESOLUTION=768x432,URI=\"https://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/eea8c2f3-4f3b-4a35-a6b2-f47245ac048f/iframe.m3u8?fastly_token=NmI5N2IyOTZfMjZhYzYwN2ZhZTBhMGU4Nzc4YmE1OTIwMzM0ZDEwMjA0ZWI0YjY3NDNhZWQ2NWZiZTdjMWEwZjY3OTE5MjgwNQ%3D%3D\"\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio-1\",NAME=\"en (Main)\",DEFAULT=YES,AUTOSELECT=YES,LANGUAGE=\"en\",URI=\"https://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/bd48250c-14c8-45de-a41e-2f95d2dc1193/10s/rendition.m3u8?fastly_token=NmI5N2IyOTZfM2JiMGE3OWE5MjU1M2M5Njg5ZGUwZTExZWQ4ZTEyMGIwODRjN2U3N2Y3NzQ1ZmY2ZDg1OGI2NmVhYmE1NmI5Mg%3D%3D\"\n#EXT-X-STREAM-INF:PROGRAM-ID=0,BANDWIDTH=317900,CODECS=\"mp4a.40.2,avc1.42000d\",RESOLUTION=320x180,AUDIO=\"audio-1\",CLOSED-CAPTIONS=NONE,SUBTITLES=\"subtitles-0\"\nhttps://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/b937004b-9197-4075-8115-400fe1b33e48/10s/rendition.m3u8?fastly_token=NmI5N2IyOTZfNWI5NzA2OWEwMjg1YzBhM2QwNTliOWRkZDgzMjVmYmE1YjE0ZGYwMDFiM2M2MDQyZWFhNWE1MmI4ZTViM2JlYQ%3D%3D\n#EXT-X-I-FRAME-STREAM-INF:PROGRAM-ID=0,BANDWIDTH=317900,CODECS=\"mp4a.40.2,avc1.42000d\",RESOLUTION=320x180,URI=\"https://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/b937004b-9197-4075-8115-400fe1b33e48/iframe.m3u8?fastly_token=NmI5N2IyOTZfODc5ZWNiZDNkMmQ2ZTAzZjNjMDg0ZmJjYmQwN2VhMzQwNTE5ZTdjZTU0MjViNTljNTQwNTg3ODZmM2E1YWJhYw%3D%3D\"\n#EXT-X-STREAM-INF:PROGRAM-ID=0,BANDWIDTH=553300,CODECS=\"mp4a.40.2,avc1.4d0015\",RESOLUTION=512x288,AUDIO=\"audio-0\",CLOSED-CAPTIONS=NONE,SUBTITLES=\"subtitles-0\"\nhttps://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/0a56383f-d19e-4fcc-acf6-9a6900574573/10s/rendition.m3u8?fastly_token=NmI5N2IyOTZfMDU0MTQyNjBlMWZmYjEyZGFlZGZhMzUwZmY4ZWEzNjZlODkwM2MyYzlhYTNjNzhhYWNhNDVjMGRhNDgwMTcwNw%3D%3D\n#EXT-X-I-FRAME-STREAM-INF:PROGRAM-ID=0,BANDWIDTH=553300,CODECS=\"mp4a.40.2,avc1.4d0015\",RESOLUTION=512x288,URI=\"https://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/0a56383f-d19e-4fcc-acf6-9a6900574573/iframe.m3u8?fastly_token=NmI5N2IyOTZfNjE2NDkzZDdjMmYxNmIyZmE1ODg1NDczYTM1Y2ZlZmFjNjk0MmFhYzRlYTMxZDhmNjBiZTY1YWVlMmU4ZTQwZg%3D%3D\"\n#EXT-X-STREAM-INF:PROGRAM-ID=0,BANDWIDTH=1536700,CODECS=\"mp4a.40.2,avc1.4d001f\",RESOLUTION=1024x576,AUDIO=\"audio-0\",CLOSED-CAPTIONS=NONE,SUBTITLES=\"subtitles-0\"\nhttps://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/c22c041d-015f-4f2d-8396-d4a255491bc9/10s/rendition.m3u8?fastly_token=NmI5N2IyOTZfMTRjN2NkNWFhMjY1ZTlkYmE2NWU2OWEzZDkxOTJhOTA0NWUzZDAxYjNjOGZhOWZmZDdkYzAyYWMzMDMxZDI4OQ%3D%3D\n#EXT-X-I-FRAME-STREAM-INF:PROGRAM-ID=0,BANDWIDTH=1536700,CODECS=\"mp4a.40.2,avc1.4d001f\",RESOLUTION=1024x576,URI=\"https://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/c22c041d-015f-4f2d-8396-d4a255491bc9/iframe.m3u8?fastly_token=NmI5N2IyOTZfNjQzYTkwOTJlY2NhZjY3MjI2ODIyMzYwMjIxNWE0NWYwNDU1NzU4ZTdlMjBkMWVjY2QzNDVmMGNmN2U3YjIyMw%3D%3D\"\n#EXT-X-STREAM-INF:PROGRAM-ID=0,BANDWIDTH=2445300,CODECS=\"mp4a.40.2,avc1.4d001f\",RESOLUTION=1280x720,AUDIO=\"audio-0\",CLOSED-CAPTIONS=NONE,SUBTITLES=\"subtitles-0\"\nhttps://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/10s/rendition.m3u8?fastly_token=NmI5N2IyOTZfMDM3ZmRjYmNlMWRkMzg5YTIxYzkxMzI0Y2Y1MTBjYzhmY2E1MmRjODJjMzJjMmZhYmRmMTBjMjViNGMwM2UwNA%3D%3D\n#EXT-X-I-FRAME-STREAM-INF:PROGRAM-ID=0,BANDWIDTH=2445300,CODECS=\"mp4a.40.2,avc1.4d001f\",RESOLUTION=1280x720,URI=\"https://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/iframe.m3u8?fastly_token=NmI5N2IyOTZfMmZhNTBiM2I3OTJlMmUxYzg5YmFhOWJlYjAzZTQ1ODBlNjBkMzBhM2RhNTVlZmMyMmRlYjdmOTA5NGY4NWVkZA%3D%3D\"\n"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/10s/rendition.m3u8?fastly_token=NmI5N2IyOTZfMDM3ZmRjYmNlMWRkMzg5YTIxYzkxMzI0Y2Y1MTBjYzhmY2E1MmRjODJjMzJjMmZhYmRmMTBjMjViNGMwM2UwNA%3D%3D",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/10s/rendition.m3u8?fastly_token=NmI5N2IyOTZfMDM3ZmRjYmNlMWRkMzg5YTIxYzkxMzI0Y2Y1MTBjYzhmY2E1MmRjODJjMzJjMmZhYmRmMTBjMjViNGMwM2UwNA%3D%3D",
+        "headers": [
+          [
+            "access-control-allow-headers",
+            "X-Requested-With,Origin,Range,Accept-Encoding,Referer"
+          ],
+          [
+            "access-control-allow-methods",
+            "GET,HEAD,OPTIONS"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "access-control-expose-headers",
+            "Server,Range,Content-Length,Content-Range"
+          ],
+          [
+            "cache-control",
+            "s-maxage=7905600, max-age=7905600"
+          ],
+          [
+            "content-type",
+            "application/x-mpegURL"
+          ],
+          [
+            "x-powered-by",
+            "BC"
+          ],
+          [
+            "x-powered-from",
+            "gantry"
+          ],
+          [
+            "accept-ranges",
+            "bytes"
+          ],
+          [
+            "date",
+            "Wed, 16 Sep 2026 00:22:59 GMT"
+          ],
+          [
+            "via",
+            "1.1 varnish"
+          ],
+          [
+            "age",
+            "177436"
+          ],
+          [
+            "x-served-by",
+            "cache-bfi-krnt7300053-BFI"
+          ],
+          [
+            "x-cache",
+            "HIT"
+          ],
+          [
+            "x-cache-hits",
+            "1"
+          ],
+          [
+            "x-timer",
+            "S1789518179.248200,VS0,VE1"
+          ],
+          [
+            "x-device-group",
+            "desktop-chrome"
+          ],
+          [
+            "content-length",
+            "6868"
+          ]
+        ],
+        "body": {
+          "text": "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-TARGETDURATION:10\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment0.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment1.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment2.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment3.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment4.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment5.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment6.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment7.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment8.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment9.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment10.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment11.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment12.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment13.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment14.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment15.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment16.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment17.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment18.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment19.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment20.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment21.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment22.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment23.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment24.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment25.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment26.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment27.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment28.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment29.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment30.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment31.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment32.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment33.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment34.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment35.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment36.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment37.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment38.ts\n#EXTINF:10.010,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment39.ts\n#EXTINF:3.604,\nhttps://vod.foxnews.com/media/v1/hls/v4/clear/694940094001/f2d95c86-910e-4eca-905b-0f188cb5cd21/71c75377-a81c-4b80-8fa9-6de659827989/5x/segment40.ts\n#EXT-X-ENDLIST\n"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://abcnews.go.com/video/itemfeed?id=20411932",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://abcnews.go.com/video/itemfeed?id=20411932",
+        "headers": [
+          [
+            "content-type",
+            "text/json;charset=UTF-8"
+          ],
+          [
+            "date",
+            "Wed, 16 Sep 2026 00:22:59 GMT"
+          ],
+          [
+            "set-cookie",
+            "<redacted>"
+          ],
+          [
+            "set-cookie",
+            "<redacted>"
+          ],
+          [
+            "x-amz-cf-id",
+            "2YnG9kfSbgDeqdUxOPoVoTlJPlUaBvfQzE-WCbWWbojRp-rkMGULAQ=="
+          ],
+          [
+            "cache-control",
+            "max-age=60"
+          ],
+          [
+            "etag",
+            "W/\"AcgFRh5r7+iBikkLsHXykA==\""
+          ],
+          [
+            "vary",
+            "Accept-Encoding"
+          ],
+          [
+            "x-cache",
+            "Miss from cloudfront"
+          ],
+          [
+            "via",
+            "1.1 34a95ff6629dd0f462325bca6ae702c6.cloudfront.net (CloudFront)"
+          ],
+          [
+            "x-amz-cf-pop",
+            "SEA900-P6"
+          ]
+        ],
+        "body": {
+          "text": "{\n\t\"@attributes\" : {\n\t\t\"version\" : \"2.0\"\n\t},\n\t\"channel\" : {\n\t\t\"category\" : \"\",\n\t\t\"pubDate\" : \"\",\n\t\t\"language\" : \"en\",\n\t\t\"ttl\" : \"10\",\n\t\t\"item\" : {\n\t\t\t\"shareEnabled\" : true,\n\t\t\t\"media-group\" : {\n\t\t\t\t\"media-content\" : [\n\t\t\t\t\t{\n\t\t\t\t\t\t\"temporalType\" : \"vod\",\n\t\t\t\t\t\t\"media-category\" : {\n\t\t\t\t\t\t\t\"@attributes\" : {\n\t\t\t\t\t\t\t\t\"schema\" : \"http:\\/\\/mrss.akamai.com\\/user_agent_hint\",\n\t\t\t\t\t\t\t\t\"label\" : \"HDS_ALL\"\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t},\n\t\t\t\t\t\t\"@attributes\" : {\n\t\t\t\t\t\t\t\"isLive\" : \"false\",\n\t\t\t\t\t\t\t\"url\" : \"https:\\/\\/service-pkgabcnews.akamaized.net\\/opp\\/hls\\/abcnews\\/130929_tw_zarif_1003_,500,700,900,1200,1600,2000,2500,.mp4.csmil\\/manifest.f4m\",\n\t\t\t\t\t\t\t\"type\" : \"video\\/f4m\",\n\t\t\t\t\t\t\t\"medium\" : \"video\",\n\t\t\t\t\t\t\t\"duration\" : 180,\n\t\t\t\t\t\t\t\"isDefault\" : \"true\"\n\t\t\t\t\t\t}\n\t\t\t\t\t},\n\t\t\t\t\t{\n\t\t\t\t\t\t\"temporalType\" : \"vod\",\n\t\t\t\t\t\t\"media-category\" : {\n\t\t\t\t\t\t\t\"@attributes\" : {\n\t\t\t\t\t\t\t\t\"schema\" : \"http:\\/\\/mrss.akamai.com\\/user_agent_hint\",\n\t\t\t\t\t\t\t\t\"label\" : \"HLS_ALL\"\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t},\n\t\t\t\t\t\t\"@attributes\" : {\n\t\t\t\t\t\t\t\"isLive\" : \"false\",\n\t\t\t\t\t\t\t\"url\" : \"https:\\/\\/service-pkgabcnews.akamaized.net\\/opp\\/hls\\/abcnews\\/130929_tw_zarif_1003_,500,700,900,1200,1600,2000,2500,.mp4.csmil\\/playlist.m3u8\",\n\t\t\t\t\t\t\t\"type\" : \"application\\/x-mpegURL\",\n\t\t\t\t\t\t\t\"medium\" : \"video\",\n\t\t\t\t\t\t\t\"duration\" : 180\n\t\t\t\t\t\t}\n\t\t\t\t\t},\n\t\t\t\t\t{\n\t\t\t\t\t\t\"temporalType\" : \"vod\",\n\t\t\t\t\t\t\"media-category\" : {\n\t\t\t\t\t\t\t\"@attributes\" : {\n\t\t\t\t\t\t\t\t\"schema\" : \"http:\\/\\/mrss.akamai.com\\/user_agent_hint\",\n\t\t\t\t\t\t\t\t\"label\" : \"PDL_MED\"\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t},\n\t\t\t\t\t\t\"@attributes\" : {\n\t\t\t\t\t\t\t\"isLive\" : \"false\",\n\t\t\t\t\t\t\t\"url\" : \"https:\\/\\/ondemand.abcnews.com\\/playback\\/abcnews\\/130929_tw_zarif_1003_700.mp4\",\n\t\t\t\t\t\t\t\"type\" : \"video\\/mp4\",\n\t\t\t\t\t\t\t\"medium\" : \"video\",\n\t\t\t\t\t\t\t\"duration\" : 180\n\t\t\t\t\t\t}\n\t\t\t\t\t},\n\t\t\t\t\t{\n\t\t\t\t\t\t\"temporalType\" : \"vod\",\n\t\t\t\t\t\t\"media-category\" : {\n\t\t\t\t\t\t\t\"@attributes\" : {\n\t\t\t\t\t\t\t\t\"schema\" : \"http:\\/\\/mrss.akamai.com\\/user_agent_hint\",\n\t\t\t\t\t\t\t\t\"label\" : \"PDL_LOW\"\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t},\n\t\t\t\t\t\t\"@attributes\" : {\n\t\t\t\t\t\t\t\"isLive\" : \"false\",\n\t\t\t\t\t\t\t\"url\" : \"https:\\/\\/ondemand.abcnews.com\\/playback\\/abcnews\\/130929_tw_zarif_1003_700.mp4\",\n\t\t\t\t\t\t\t\"type\" : \"video\\/mp4\",\n\t\t\t\t\t\t\t\"medium\" : \"video\",\n\t\t\t\t\t\t\t\"duration\" : 180\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t],\n\t\t\t\t\"media-title\" : \"'This Week' Exclusive: Iran's Foreign Minister Zarif\",\n\t\t\t\t\"media-description\" : \"George Stephanopoulos goes one-on-one with Iranian Foreign Minister Dr. Javad Zarif.\",\n\t\t\t\t\"media-genre\" : \"\",\n\t\t\t\t\"media-asset-title\" : \"130929_tw_zarif_1003_video\",\n\t\t\t\t\"media-subTitle\" : {\n\t\t\t\t\t\"@attributes\" : {\n\t\t\t\t\t\t\"type\" : \"application\\/ttml+xml\",\n\t\t\t\t\t\t\"lang\" : \"en\",\n\t\t\t\t\t\t\"href\" : \"https:\\/\\/abcnews.com\\/xmldata\\/caption?id=20411932\"\n\t\t\t\t\t}\n\t\t\t\t},\n\t\t\t\t\"media-thumbnail\" : {\n\t\t\t\t\t\"@attributes\" : {\n\t\t\t\t\t\t\"url\" : \"https:\\/\\/s.abcnews.com\\/images\\/ThisWeek\\/abc_tw_zarif_130929_wg.jpg\",\n\t\t\t\t\t\t\"width\" : \"640\",\n\t\t\t\t\t\t\"height\" : \"360\"\n\t\t\t\t\t}\n\t\t\t\t},\n\t\t\t\t\"media-thumbnails\" : [\n\t\t\t\t\t{\n\t\t\t\t\t\t\"@attributes\" : {\n\t\t\t\t\t\t\t\"url\" : \"https:\\/\\/s.abcnews.com\\/images\\/ThisWeek\\/abc_tw_zarif_130929_wg.jpg\",\n\t\t\t\t\t\t\t\"width\" : \"640\",\n\t\t\t\t\t\t\t\"height\" : \"360\"\n\t\t\t\t\t\t}\n\t\t\t\t\t},\n\t\t\t\t\t{\n\t\t\t\t\t\t\"@attributes\" : {\n\t\t\t\t\t\t\t\"url\" : \"https:\\/\\/s.abcnews.com\\/images\\/ThisWeek\\/abc_tw_zarif_130929_wg.jpg\",\n\t\t\t\t\t\t\t\"width\" : \"360\",\n\t\t\t\t\t\t\t\"height\" : \"640\"\n\t\t\t\t\t\t}\n\t\t\t\t\t},\n\t\t\t\t\t{\n\t\t\t\t\t\t\"@attributes\" : {\n\t\t\t\t\t\t\t\"url\" : \"https:\\/\\/s.abcnews.com\\/images\\/ThisWeek\\/abc_tw_zarif_130929_640x480.jpg\",\n\t\t\t\t\t\t\t\"width\" : \"360\",\n\t\t\t\t\t\t\t\"height\" : \"360\"\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t],\n\t\t\t\t\"media-embed\" : {\n\t\t\t\t\t\"@attributes\" : {\n\t\t\t\t\t\t\"url\" : \"https:\\/\\/abcnews.com\\/video\\/embed\",\n\t\t\t\t\t\t\"width\" : \"640\",\n\t\t\t\t\t\t\"height\" : \"360\"\n\t\t\t\t\t},\n\t\t\t\t\t\"media-param\" : {\n\t\t\t\t\t\t\"@attributes\" : {\n\t\t\t\t\t\t\t\"name\" : \"type\"\n\t\t\t\t\t\t},\n\t\t\t\t\t\t\"#text\" : \"text\\/javascript\"\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t},\n\t\t\t\"temporalType\" : \"vod\",\n\t\t\t\"thumb\" : \"https:\\/\\/s.abcnews.com\\/images\\/ThisWeek\\/abc_tw_zarif_130929_wg.jpg\",\n\t\t\t\"link\" : \"https:\\/\\/abcnews.com\\/video\\/20411932\\/\",\n\t\t\t\"description\" : \"\",\n\t\t\t\"aspectRatio\" : \"16x9\",\n\t\t\t\"title\" : \"'This Week' Exclusive: Iran's Foreign Minister Zarif\",\n\t\t\t\"omniture\" : {\n\t\t\t\t\"channel\" : \"abcn:thisweek\",\n\t\t\t\t\"event1\" : \"event1\",\n\t\t\t\t\"prop4\" : \"video\",\n\t\t\t\t\"prop3\" : \"20411932|130929_tw_zarif_1003_video|sec_live|&apos;This Week&apos; Exclusive: Iran&apos;s Foreign Minister Zarif\",\n\t\t\t\t\"eVar2\" : \"20411932|130929_tw_zarif_1003_video|sec_live|&apos;This Week&apos; Exclusive: Iran&apos;s Foreign Minister Zarif\",\n\t\t\t\t\"prop25\" : \"20411932\",\n\t\t\t\t\"eVar12\" : \"20411932\",\n\t\t\t\t\"prop18\" : \"player|videoindex\",\n\t\t\t\t\"eVar15\" : \"player|videoindex\",\n\t\t\t\t\"prop16\" : \"\",\n\t\t\t\t\"prop31\" : \"abcn:live\",\n\t\t\t\t\"prop32\" : \"\",\n\t\t\t\t\"prop33\" : \"\",\n\t\t\t\t\"prop34\" : \"\",\n\t\t\t\t\"eVar32\" : \"\",\n\t\t\t\t\"eVar40\" : \"\\\\&apos;This Week\\\\&apos; Exclusive: Iran\\\\&apos;s Foreign Minister Zarif\",\n\t\t\t\t\"prop40\" : \"\\\\&apos;This Week\\\\&apos; Exclusive: Iran\\\\&apos;s Foreign Minister Zarif\",\n\t\t\t\t\"eVar42\" : \"09-29-2013\",\n\t\t\t\t\"prop42\" : \"09-29-2013\",\n\t\t\t\t\"eVar43\" : \"15:30\",\n\t\t\t\t\"prop43\" : \"15:30\",\n\t\t\t\t\"eVar45\" : \"This Week, George Stephanopoulos, Terry Moran, Javad Zarif, Iran, Foreign Minister, nuclear\",\n\t\t\t\t\"eVar46\" : \"https:\\/\\/abcnews.com\\/ThisWeek\\/video\\/week-exclusive-irans-foreign-minister-zarif-20411932\",\n\t\t\t\t\"eVar47\" : \"\",\n\t\t\t\t\"prop47\" : \"\",\n\t\t\t\t\"eVar49\" : \"09-30-2013\",\n\t\t\t\t\"prop49\" : \"09-30-2013\",\n\t\t\t\t\"event12\" : \"event12\",\n\t\t\t\t\"eVar20\" : \"\",\n\t\t\t\t\"prop54\" : \"ShortForm\",\n\t\t\t\t\"eVar54\" : \"ShortForm\",\n\t\t\t\t\"prop56\" : \"180\",\n\t\t\t\t\"eVar56\" : \"180\"\n\t\t\t},\n\t\t\t\"transcript\" : \"\",\n\t\t\t\"videoContentType\" : \"sf\",\n\t\t\t\"freewheel\" : {\n\t\t\t\t\"videoAssetId\" : \"news-20411932\"\n\t\t\t},\n\t\t\t\"comscore\" : {\n\t\t\t\t\"show\" : \"THW\"\n\t\t\t},\n\t\t\t\"nielsenDate\" : \"20130929 11:30:38\",\n\t\t\t\"timestamp\" : \"Sun, 29 Sep 2013 11:30:38 -0400\",\n\t\t\t\"kalturaId\" : null,\n\t\t\t\"canonicalUrl\" : \"https:\\/\\/abcnews.com\\/video\\/20411932\\/\",\n\t\t\t\"outbrainSrcUrl\" : \"http:\\/\\/abcnews.com\\/ThisWeek\\/video\",\n\t\t\t\"pubDate\" : \"Sep 29, 2013, 11:30 AM\",\n\t\t\t\"adTags\" : \"\",\n\t\t\t\"isLiveVideo\" : false,\n\t\t\t\"guid\" : \"20411932\",\n\t\t\t\"shareUrl\" : \"https:\\/\\/abcnews.com\\/ThisWeek\\/video\\/week-exclusive-irans-foreign-minister-zarif-20411932\",\n\t\t\t\"category\" : \"thisweek\",\n\t\t\t\"unicorn\" : \"http:\\/\\/once.unicornmedia.com\\/now\\/od\\/auto\\/98330877-5095-4ac9-9a8c-7cdcd3944274\\/15a750c8-e7be-4371-b5c3-dd911c0d8bb0\\/thisweek-20411932\\/content.once\",\n\t\t\t\"mediatype\" : \"default\"\n\t\t}\n\t}\n}"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://service-pkgabcnews.akamaized.net/opp/hls/abcnews/130929_tw_zarif_1003_,500,700,900,1200,1600,2000,2500,.mp4.csmil/playlist.m3u8",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://service-pkgabcnews.akamaized.net/opp/hls/abcnews/130929_tw_zarif_1003_,500,700,900,1200,1600,2000,2500,.mp4.csmil/playlist.m3u8",
+        "headers": [
+          [
+            "etag",
+            "\"-1-762\""
+          ],
+          [
+            "server",
+            "nginx"
+          ],
+          [
+            "accept-ranges",
+            "bytes"
+          ],
+          [
+            "x-amz-cf-pop",
+            "LAX53-P5"
+          ],
+          [
+            "x-amz-cf-id",
+            "BI9qbXQKbXgceF2LhY7bYD5RJhqhhlR9MGys9L3hoxjeFL7OzlvetQ=="
+          ],
+          [
+            "akamai-grn",
+            "0.8b793517.1789518179.30066aac"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "cache-control",
+            "max-age=2980"
+          ],
+          [
+            "expires",
+            "Wed, 16 Sep 2026 01:12:39 GMT"
+          ],
+          [
+            "date",
+            "Wed, 16 Sep 2026 00:22:59 GMT"
+          ],
+          [
+            "connection",
+            "keep-alive"
+          ],
+          [
+            "vary",
+            "Accept-Encoding"
+          ],
+          [
+            "akamai-request-bc",
+            "[a=23.53.121.139,b=805726892,c=g,n=US_WA_SEATTLE,o=20940],[c=p,n=US_WA_SEATTLE,o=20940]"
+          ],
+          [
+            "akamai-mon-iucid-del",
+            "1411147"
+          ],
+          [
+            "content-type",
+            "application/x-mpegURL"
+          ],
+          [
+            "access-control-max-age",
+            "86400"
+          ],
+          [
+            "access-control-allow-credentials",
+            "true"
+          ],
+          [
+            "access-control-expose-headers",
+            "Server,range,hdntl,hdnts,Akamai-Mon-Iucid-Ing,Akamai-Mon-Iucid-Del,Akamai-Request-BC"
+          ],
+          [
+            "access-control-allow-headers",
+            "origin,range,hdntl,hdnts,CMCD-Request,CMCD-Object,CMCD-Status,CMCD-Session"
+          ],
+          [
+            "access-control-allow-methods",
+            "GET,POST,OPTIONS"
+          ]
+        ],
+        "body": {
+          "text": "#EXTM3U\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=496011,RESOLUTION=512x288,FRAME-RATE=29.970,CODECS=\"avc1.64001f,mp4a.40.2\",CLOSED-CAPTIONS=NONE\nindex-f1-v1-a1.m3u8\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=696021,RESOLUTION=640x360,FRAME-RATE=29.970,CODECS=\"avc1.64001f,mp4a.40.2\",CLOSED-CAPTIONS=NONE\nindex-f2-v1-a1.m3u8\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=895977,RESOLUTION=640x360,FRAME-RATE=29.970,CODECS=\"avc1.64001f,mp4a.40.2\",CLOSED-CAPTIONS=NONE\nindex-f3-v1-a1.m3u8\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=1195903,RESOLUTION=640x360,FRAME-RATE=29.970,CODECS=\"avc1.64001f,mp4a.40.2\",CLOSED-CAPTIONS=NONE\nindex-f4-v1-a1.m3u8\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=1595713,RESOLUTION=640x360,FRAME-RATE=29.970,CODECS=\"avc1.64001f,mp4a.40.2\",CLOSED-CAPTIONS=NONE\nindex-f5-v1-a1.m3u8\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=1995944,RESOLUTION=1024x576,FRAME-RATE=29.970,CODECS=\"avc1.640033,mp4a.40.2\",CLOSED-CAPTIONS=NONE\nindex-f6-v1-a1.m3u8\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=2495914,RESOLUTION=1280x720,FRAME-RATE=29.970,CODECS=\"avc1.640033,mp4a.40.2\",CLOSED-CAPTIONS=NONE\nindex-f7-v1-a1.m3u8\n\n#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=61050,RESOLUTION=512x288,CODECS=\"avc1.64001f\",URI=\"iframes-f1-v1-a1.m3u8\"\n#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=83631,RESOLUTION=640x360,CODECS=\"avc1.64001f\",URI=\"iframes-f2-v1-a1.m3u8\"\n#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=95194,RESOLUTION=640x360,CODECS=\"avc1.64001f\",URI=\"iframes-f3-v1-a1.m3u8\"\n#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=105118,RESOLUTION=640x360,CODECS=\"avc1.64001f\",URI=\"iframes-f4-v1-a1.m3u8\"\n#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=116602,RESOLUTION=640x360,CODECS=\"avc1.64001f\",URI=\"iframes-f5-v1-a1.m3u8\"\n#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=178851,RESOLUTION=1024x576,CODECS=\"avc1.640033\",URI=\"iframes-f6-v1-a1.m3u8\"\n#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=216007,RESOLUTION=1280x720,CODECS=\"avc1.640033\",URI=\"iframes-f7-v1-a1.m3u8\"\n"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://service-pkgabcnews.akamaized.net/opp/hls/abcnews/130929_tw_zarif_1003_,500,700,900,1200,1600,2000,2500,.mp4.csmil/index-f7-v1-a1.m3u8",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://service-pkgabcnews.akamaized.net/opp/hls/abcnews/130929_tw_zarif_1003_,500,700,900,1200,1600,2000,2500,.mp4.csmil/index-f7-v1-a1.m3u8",
+        "headers": [
+          [
+            "server",
+            "nginx"
+          ],
+          [
+            "etag",
+            "\"-1-1946\""
+          ],
+          [
+            "accept-ranges",
+            "bytes"
+          ],
+          [
+            "x-amz-cf-pop",
+            "ATL59-P9"
+          ],
+          [
+            "x-amz-cf-id",
+            "OVti7yEsdzslnTkeHTp-_-5XRZ-0cBN3Rkt-hoVrMweReu2ITGfJhw=="
+          ],
+          [
+            "akamai-grn",
+            "0.8b793517.1789518179.30066b66"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "cache-control",
+            "max-age=2980"
+          ],
+          [
+            "expires",
+            "Wed, 16 Sep 2026 01:12:39 GMT"
+          ],
+          [
+            "date",
+            "Wed, 16 Sep 2026 00:22:59 GMT"
+          ],
+          [
+            "connection",
+            "keep-alive"
+          ],
+          [
+            "vary",
+            "Accept-Encoding"
+          ],
+          [
+            "akamai-request-bc",
+            "[a=23.53.121.139,b=805727078,c=g,n=US_WA_SEATTLE,o=20940],[c=p,n=US_WA_SEATTLE,o=20940]"
+          ],
+          [
+            "akamai-mon-iucid-del",
+            "1411147"
+          ],
+          [
+            "content-type",
+            "application/x-mpegURL"
+          ],
+          [
+            "access-control-max-age",
+            "86400"
+          ],
+          [
+            "access-control-allow-credentials",
+            "true"
+          ],
+          [
+            "access-control-expose-headers",
+            "Server,range,hdntl,hdnts,Akamai-Mon-Iucid-Ing,Akamai-Mon-Iucid-Del,Akamai-Request-BC"
+          ],
+          [
+            "access-control-allow-headers",
+            "origin,range,hdntl,hdnts,CMCD-Request,CMCD-Object,CMCD-Status,CMCD-Session"
+          ],
+          [
+            "access-control-allow-methods",
+            "GET,POST,OPTIONS"
+          ]
+        ],
+        "body": {
+          "text": "#EXTM3U\n#EXT-X-TARGETDURATION:9\n#EXT-X-ALLOW-CACHE:YES\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-VERSION:3\n#EXT-X-MEDIA-SEQUENCE:1\n#EXTINF:3.470,\nseg-1-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-2-f7-v1-a1.ts\n#EXTINF:6.974,\nseg-4-f7-v1-a1.ts\n#EXTINF:6.440,\nseg-5-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-6-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-7-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-8-f7-v1-a1.ts\n#EXTINF:8.509,\nseg-9-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-10-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-11-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-12-f7-v1-a1.ts\n#EXTINF:5.239,\nseg-13-f7-v1-a1.ts\n#EXTINF:6.173,\nseg-14-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-15-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-16-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-17-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-18-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-19-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-20-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-21-f7-v1-a1.ts\n#EXTINF:4.438,\nseg-22-f7-v1-a1.ts\n#EXTINF:6.373,\nseg-23-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-24-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-25-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-26-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-27-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-28-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-29-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-30-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-31-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-32-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-33-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-34-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-35-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-36-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-37-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-38-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-39-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-40-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-41-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-42-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-43-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-44-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-45-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-46-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-47-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-48-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-49-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-50-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-51-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-52-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-53-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-54-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-55-f7-v1-a1.ts\n#EXTINF:8.041,\nseg-56-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-57-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-58-f7-v1-a1.ts\n#EXTINF:5.906,\nseg-59-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-60-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-61-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-62-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-63-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-64-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-65-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-66-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-67-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-68-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-69-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-70-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-71-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-72-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-73-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-74-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-75-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-76-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-77-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-78-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-79-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-80-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-81-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-82-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-83-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-84-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-85-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-86-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-87-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-88-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-89-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-90-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-91-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-92-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-93-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-94-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-95-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-96-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-97-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-98-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-99-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-100-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-101-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-102-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-103-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-104-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-105-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-106-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-107-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-108-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-109-f7-v1-a1.ts\n#EXTINF:6.373,\nseg-110-f7-v1-a1.ts\n#EXTINF:7.074,\nseg-111-f7-v1-a1.ts\n#EXTINF:7.307,\nseg-112-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-113-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-114-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-115-f7-v1-a1.ts\n#EXTINF:7.941,\nseg-116-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-117-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-118-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-119-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-120-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-121-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-122-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-123-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-124-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-125-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-126-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-127-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-128-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-129-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-130-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-131-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-132-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-133-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-134-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-135-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-136-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-137-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-138-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-139-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-140-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-141-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-142-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-143-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-144-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-145-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-146-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-147-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-148-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-149-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-150-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-151-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-152-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-153-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-154-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-155-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-156-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-157-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-158-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-159-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-160-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-161-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-162-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-163-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-164-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-165-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-166-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-167-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-168-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-169-f7-v1-a1.ts\n#EXTINF:7.508,\nseg-170-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-171-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-172-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-173-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-174-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-175-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-176-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-177-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-178-f7-v1-a1.ts\n#EXTINF:6.773,\nseg-179-f7-v1-a1.ts\n#EXTINF:4.338,\nseg-180-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-181-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-182-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-183-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-184-f7-v1-a1.ts\n#EXTINF:2.202,\nseg-185-f7-v1-a1.ts\n#EXT-X-ENDLIST\n"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://abcnews.go.com/video/itemfeed?id=20411932",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ],
+          [
+            "cookie",
+            "<redacted>"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://abcnews.go.com/video/itemfeed?id=20411932",
+        "headers": [
+          [
+            "content-type",
+            "text/json;charset=UTF-8"
+          ],
+          [
+            "x-amz-cf-pop",
+            "SEA900-P6"
+          ],
+          [
+            "date",
+            "Wed, 16 Sep 2026 00:22:59 GMT"
+          ],
+          [
+            "set-cookie",
+            "<redacted>"
+          ],
+          [
+            "etag",
+            "W/\"AcgFRh5r7+iBikkLsHXykA==\""
+          ],
+          [
+            "x-amz-cf-id",
+            "sTwuVIKb5Db29MYr6eJMjCg95OweWqACn9mTcwQtypNeM3duUojjgw=="
+          ],
+          [
+            "cache-control",
+            "max-age=60"
+          ],
+          [
+            "vary",
+            "Accept-Encoding"
+          ],
+          [
+            "x-cache",
+            "Miss from cloudfront"
+          ],
+          [
+            "via",
+            "1.1 34a95ff6629dd0f462325bca6ae702c6.cloudfront.net (CloudFront)"
+          ]
+        ],
+        "body": {
+          "text": "{\n\t\"@attributes\" : {\n\t\t\"version\" : \"2.0\"\n\t},\n\t\"channel\" : {\n\t\t\"category\" : \"\",\n\t\t\"pubDate\" : \"\",\n\t\t\"language\" : \"en\",\n\t\t\"ttl\" : \"10\",\n\t\t\"item\" : {\n\t\t\t\"shareEnabled\" : true,\n\t\t\t\"media-group\" : {\n\t\t\t\t\"media-content\" : [\n\t\t\t\t\t{\n\t\t\t\t\t\t\"temporalType\" : \"vod\",\n\t\t\t\t\t\t\"media-category\" : {\n\t\t\t\t\t\t\t\"@attributes\" : {\n\t\t\t\t\t\t\t\t\"schema\" : \"http:\\/\\/mrss.akamai.com\\/user_agent_hint\",\n\t\t\t\t\t\t\t\t\"label\" : \"HDS_ALL\"\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t},\n\t\t\t\t\t\t\"@attributes\" : {\n\t\t\t\t\t\t\t\"isLive\" : \"false\",\n\t\t\t\t\t\t\t\"url\" : \"https:\\/\\/service-pkgabcnews.akamaized.net\\/opp\\/hls\\/abcnews\\/130929_tw_zarif_1003_,500,700,900,1200,1600,2000,2500,.mp4.csmil\\/manifest.f4m\",\n\t\t\t\t\t\t\t\"type\" : \"video\\/f4m\",\n\t\t\t\t\t\t\t\"medium\" : \"video\",\n\t\t\t\t\t\t\t\"duration\" : 180,\n\t\t\t\t\t\t\t\"isDefault\" : \"true\"\n\t\t\t\t\t\t}\n\t\t\t\t\t},\n\t\t\t\t\t{\n\t\t\t\t\t\t\"temporalType\" : \"vod\",\n\t\t\t\t\t\t\"media-category\" : {\n\t\t\t\t\t\t\t\"@attributes\" : {\n\t\t\t\t\t\t\t\t\"schema\" : \"http:\\/\\/mrss.akamai.com\\/user_agent_hint\",\n\t\t\t\t\t\t\t\t\"label\" : \"HLS_ALL\"\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t},\n\t\t\t\t\t\t\"@attributes\" : {\n\t\t\t\t\t\t\t\"isLive\" : \"false\",\n\t\t\t\t\t\t\t\"url\" : \"https:\\/\\/service-pkgabcnews.akamaized.net\\/opp\\/hls\\/abcnews\\/130929_tw_zarif_1003_,500,700,900,1200,1600,2000,2500,.mp4.csmil\\/playlist.m3u8\",\n\t\t\t\t\t\t\t\"type\" : \"application\\/x-mpegURL\",\n\t\t\t\t\t\t\t\"medium\" : \"video\",\n\t\t\t\t\t\t\t\"duration\" : 180\n\t\t\t\t\t\t}\n\t\t\t\t\t},\n\t\t\t\t\t{\n\t\t\t\t\t\t\"temporalType\" : \"vod\",\n\t\t\t\t\t\t\"media-category\" : {\n\t\t\t\t\t\t\t\"@attributes\" : {\n\t\t\t\t\t\t\t\t\"schema\" : \"http:\\/\\/mrss.akamai.com\\/user_agent_hint\",\n\t\t\t\t\t\t\t\t\"label\" : \"PDL_MED\"\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t},\n\t\t\t\t\t\t\"@attributes\" : {\n\t\t\t\t\t\t\t\"isLive\" : \"false\",\n\t\t\t\t\t\t\t\"url\" : \"https:\\/\\/ondemand.abcnews.com\\/playback\\/abcnews\\/130929_tw_zarif_1003_700.mp4\",\n\t\t\t\t\t\t\t\"type\" : \"video\\/mp4\",\n\t\t\t\t\t\t\t\"medium\" : \"video\",\n\t\t\t\t\t\t\t\"duration\" : 180\n\t\t\t\t\t\t}\n\t\t\t\t\t},\n\t\t\t\t\t{\n\t\t\t\t\t\t\"temporalType\" : \"vod\",\n\t\t\t\t\t\t\"media-category\" : {\n\t\t\t\t\t\t\t\"@attributes\" : {\n\t\t\t\t\t\t\t\t\"schema\" : \"http:\\/\\/mrss.akamai.com\\/user_agent_hint\",\n\t\t\t\t\t\t\t\t\"label\" : \"PDL_LOW\"\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t},\n\t\t\t\t\t\t\"@attributes\" : {\n\t\t\t\t\t\t\t\"isLive\" : \"false\",\n\t\t\t\t\t\t\t\"url\" : \"https:\\/\\/ondemand.abcnews.com\\/playback\\/abcnews\\/130929_tw_zarif_1003_700.mp4\",\n\t\t\t\t\t\t\t\"type\" : \"video\\/mp4\",\n\t\t\t\t\t\t\t\"medium\" : \"video\",\n\t\t\t\t\t\t\t\"duration\" : 180\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t],\n\t\t\t\t\"media-title\" : \"'This Week' Exclusive: Iran's Foreign Minister Zarif\",\n\t\t\t\t\"media-description\" : \"George Stephanopoulos goes one-on-one with Iranian Foreign Minister Dr. Javad Zarif.\",\n\t\t\t\t\"media-genre\" : \"\",\n\t\t\t\t\"media-asset-title\" : \"130929_tw_zarif_1003_video\",\n\t\t\t\t\"media-subTitle\" : {\n\t\t\t\t\t\"@attributes\" : {\n\t\t\t\t\t\t\"type\" : \"application\\/ttml+xml\",\n\t\t\t\t\t\t\"lang\" : \"en\",\n\t\t\t\t\t\t\"href\" : \"https:\\/\\/abcnews.com\\/xmldata\\/caption?id=20411932\"\n\t\t\t\t\t}\n\t\t\t\t},\n\t\t\t\t\"media-thumbnail\" : {\n\t\t\t\t\t\"@attributes\" : {\n\t\t\t\t\t\t\"url\" : \"https:\\/\\/s.abcnews.com\\/images\\/ThisWeek\\/abc_tw_zarif_130929_wg.jpg\",\n\t\t\t\t\t\t\"width\" : \"640\",\n\t\t\t\t\t\t\"height\" : \"360\"\n\t\t\t\t\t}\n\t\t\t\t},\n\t\t\t\t\"media-thumbnails\" : [\n\t\t\t\t\t{\n\t\t\t\t\t\t\"@attributes\" : {\n\t\t\t\t\t\t\t\"url\" : \"https:\\/\\/s.abcnews.com\\/images\\/ThisWeek\\/abc_tw_zarif_130929_wg.jpg\",\n\t\t\t\t\t\t\t\"width\" : \"640\",\n\t\t\t\t\t\t\t\"height\" : \"360\"\n\t\t\t\t\t\t}\n\t\t\t\t\t},\n\t\t\t\t\t{\n\t\t\t\t\t\t\"@attributes\" : {\n\t\t\t\t\t\t\t\"url\" : \"https:\\/\\/s.abcnews.com\\/images\\/ThisWeek\\/abc_tw_zarif_130929_wg.jpg\",\n\t\t\t\t\t\t\t\"width\" : \"360\",\n\t\t\t\t\t\t\t\"height\" : \"640\"\n\t\t\t\t\t\t}\n\t\t\t\t\t},\n\t\t\t\t\t{\n\t\t\t\t\t\t\"@attributes\" : {\n\t\t\t\t\t\t\t\"url\" : \"https:\\/\\/s.abcnews.com\\/images\\/ThisWeek\\/abc_tw_zarif_130929_640x480.jpg\",\n\t\t\t\t\t\t\t\"width\" : \"360\",\n\t\t\t\t\t\t\t\"height\" : \"360\"\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t],\n\t\t\t\t\"media-embed\" : {\n\t\t\t\t\t\"@attributes\" : {\n\t\t\t\t\t\t\"url\" : \"https:\\/\\/abcnews.com\\/video\\/embed\",\n\t\t\t\t\t\t\"width\" : \"640\",\n\t\t\t\t\t\t\"height\" : \"360\"\n\t\t\t\t\t},\n\t\t\t\t\t\"media-param\" : {\n\t\t\t\t\t\t\"@attributes\" : {\n\t\t\t\t\t\t\t\"name\" : \"type\"\n\t\t\t\t\t\t},\n\t\t\t\t\t\t\"#text\" : \"text\\/javascript\"\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t},\n\t\t\t\"temporalType\" : \"vod\",\n\t\t\t\"thumb\" : \"https:\\/\\/s.abcnews.com\\/images\\/ThisWeek\\/abc_tw_zarif_130929_wg.jpg\",\n\t\t\t\"link\" : \"https:\\/\\/abcnews.com\\/video\\/20411932\\/\",\n\t\t\t\"description\" : \"\",\n\t\t\t\"aspectRatio\" : \"16x9\",\n\t\t\t\"title\" : \"'This Week' Exclusive: Iran's Foreign Minister Zarif\",\n\t\t\t\"omniture\" : {\n\t\t\t\t\"channel\" : \"abcn:thisweek\",\n\t\t\t\t\"event1\" : \"event1\",\n\t\t\t\t\"prop4\" : \"video\",\n\t\t\t\t\"prop3\" : \"20411932|130929_tw_zarif_1003_video|sec_live|&apos;This Week&apos; Exclusive: Iran&apos;s Foreign Minister Zarif\",\n\t\t\t\t\"eVar2\" : \"20411932|130929_tw_zarif_1003_video|sec_live|&apos;This Week&apos; Exclusive: Iran&apos;s Foreign Minister Zarif\",\n\t\t\t\t\"prop25\" : \"20411932\",\n\t\t\t\t\"eVar12\" : \"20411932\",\n\t\t\t\t\"prop18\" : \"player|videoindex\",\n\t\t\t\t\"eVar15\" : \"player|videoindex\",\n\t\t\t\t\"prop16\" : \"\",\n\t\t\t\t\"prop31\" : \"abcn:live\",\n\t\t\t\t\"prop32\" : \"\",\n\t\t\t\t\"prop33\" : \"\",\n\t\t\t\t\"prop34\" : \"\",\n\t\t\t\t\"eVar32\" : \"\",\n\t\t\t\t\"eVar40\" : \"\\\\&apos;This Week\\\\&apos; Exclusive: Iran\\\\&apos;s Foreign Minister Zarif\",\n\t\t\t\t\"prop40\" : \"\\\\&apos;This Week\\\\&apos; Exclusive: Iran\\\\&apos;s Foreign Minister Zarif\",\n\t\t\t\t\"eVar42\" : \"09-29-2013\",\n\t\t\t\t\"prop42\" : \"09-29-2013\",\n\t\t\t\t\"eVar43\" : \"15:30\",\n\t\t\t\t\"prop43\" : \"15:30\",\n\t\t\t\t\"eVar45\" : \"This Week, George Stephanopoulos, Terry Moran, Javad Zarif, Iran, Foreign Minister, nuclear\",\n\t\t\t\t\"eVar46\" : \"https:\\/\\/abcnews.com\\/ThisWeek\\/video\\/week-exclusive-irans-foreign-minister-zarif-20411932\",\n\t\t\t\t\"eVar47\" : \"\",\n\t\t\t\t\"prop47\" : \"\",\n\t\t\t\t\"eVar49\" : \"09-30-2013\",\n\t\t\t\t\"prop49\" : \"09-30-2013\",\n\t\t\t\t\"event12\" : \"event12\",\n\t\t\t\t\"eVar20\" : \"\",\n\t\t\t\t\"prop54\" : \"ShortForm\",\n\t\t\t\t\"eVar54\" : \"ShortForm\",\n\t\t\t\t\"prop56\" : \"180\",\n\t\t\t\t\"eVar56\" : \"180\"\n\t\t\t},\n\t\t\t\"transcript\" : \"\",\n\t\t\t\"videoContentType\" : \"sf\",\n\t\t\t\"freewheel\" : {\n\t\t\t\t\"videoAssetId\" : \"news-20411932\"\n\t\t\t},\n\t\t\t\"comscore\" : {\n\t\t\t\t\"show\" : \"THW\"\n\t\t\t},\n\t\t\t\"nielsenDate\" : \"20130929 11:30:38\",\n\t\t\t\"timestamp\" : \"Sun, 29 Sep 2013 11:30:38 -0400\",\n\t\t\t\"kalturaId\" : null,\n\t\t\t\"canonicalUrl\" : \"https:\\/\\/abcnews.com\\/video\\/20411932\\/\",\n\t\t\t\"outbrainSrcUrl\" : \"http:\\/\\/abcnews.com\\/ThisWeek\\/video\",\n\t\t\t\"pubDate\" : \"Sep 29, 2013, 11:30 AM\",\n\t\t\t\"adTags\" : \"\",\n\t\t\t\"isLiveVideo\" : false,\n\t\t\t\"guid\" : \"20411932\",\n\t\t\t\"shareUrl\" : \"https:\\/\\/abcnews.com\\/ThisWeek\\/video\\/week-exclusive-irans-foreign-minister-zarif-20411932\",\n\t\t\t\"category\" : \"thisweek\",\n\t\t\t\"unicorn\" : \"http:\\/\\/once.unicornmedia.com\\/now\\/od\\/auto\\/98330877-5095-4ac9-9a8c-7cdcd3944274\\/15a750c8-e7be-4371-b5c3-dd911c0d8bb0\\/thisweek-20411932\\/content.once\",\n\t\t\t\"mediatype\" : \"default\"\n\t\t}\n\t}\n}"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://service-pkgabcnews.akamaized.net/opp/hls/abcnews/130929_tw_zarif_1003_,500,700,900,1200,1600,2000,2500,.mp4.csmil/playlist.m3u8",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://service-pkgabcnews.akamaized.net/opp/hls/abcnews/130929_tw_zarif_1003_,500,700,900,1200,1600,2000,2500,.mp4.csmil/playlist.m3u8",
+        "headers": [
+          [
+            "etag",
+            "\"-1-762\""
+          ],
+          [
+            "server",
+            "nginx"
+          ],
+          [
+            "accept-ranges",
+            "bytes"
+          ],
+          [
+            "x-amz-cf-pop",
+            "LAX53-P5"
+          ],
+          [
+            "x-amz-cf-id",
+            "BI9qbXQKbXgceF2LhY7bYD5RJhqhhlR9MGys9L3hoxjeFL7OzlvetQ=="
+          ],
+          [
+            "akamai-grn",
+            "0.8b793517.1789518179.30066beb"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "cache-control",
+            "max-age=2980"
+          ],
+          [
+            "expires",
+            "Wed, 16 Sep 2026 01:12:39 GMT"
+          ],
+          [
+            "date",
+            "Wed, 16 Sep 2026 00:22:59 GMT"
+          ],
+          [
+            "connection",
+            "keep-alive"
+          ],
+          [
+            "vary",
+            "Accept-Encoding"
+          ],
+          [
+            "akamai-request-bc",
+            "[a=23.53.121.139,b=805727211,c=g,n=US_WA_SEATTLE,o=20940],[c=p,n=US_WA_SEATTLE,o=20940]"
+          ],
+          [
+            "akamai-mon-iucid-del",
+            "1411147"
+          ],
+          [
+            "content-type",
+            "application/x-mpegURL"
+          ],
+          [
+            "access-control-max-age",
+            "86400"
+          ],
+          [
+            "access-control-allow-credentials",
+            "true"
+          ],
+          [
+            "access-control-expose-headers",
+            "Server,range,hdntl,hdnts,Akamai-Mon-Iucid-Ing,Akamai-Mon-Iucid-Del,Akamai-Request-BC"
+          ],
+          [
+            "access-control-allow-headers",
+            "origin,range,hdntl,hdnts,CMCD-Request,CMCD-Object,CMCD-Status,CMCD-Session"
+          ],
+          [
+            "access-control-allow-methods",
+            "GET,POST,OPTIONS"
+          ]
+        ],
+        "body": {
+          "text": "#EXTM3U\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=496011,RESOLUTION=512x288,FRAME-RATE=29.970,CODECS=\"avc1.64001f,mp4a.40.2\",CLOSED-CAPTIONS=NONE\nindex-f1-v1-a1.m3u8\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=696021,RESOLUTION=640x360,FRAME-RATE=29.970,CODECS=\"avc1.64001f,mp4a.40.2\",CLOSED-CAPTIONS=NONE\nindex-f2-v1-a1.m3u8\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=895977,RESOLUTION=640x360,FRAME-RATE=29.970,CODECS=\"avc1.64001f,mp4a.40.2\",CLOSED-CAPTIONS=NONE\nindex-f3-v1-a1.m3u8\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=1195903,RESOLUTION=640x360,FRAME-RATE=29.970,CODECS=\"avc1.64001f,mp4a.40.2\",CLOSED-CAPTIONS=NONE\nindex-f4-v1-a1.m3u8\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=1595713,RESOLUTION=640x360,FRAME-RATE=29.970,CODECS=\"avc1.64001f,mp4a.40.2\",CLOSED-CAPTIONS=NONE\nindex-f5-v1-a1.m3u8\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=1995944,RESOLUTION=1024x576,FRAME-RATE=29.970,CODECS=\"avc1.640033,mp4a.40.2\",CLOSED-CAPTIONS=NONE\nindex-f6-v1-a1.m3u8\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=2495914,RESOLUTION=1280x720,FRAME-RATE=29.970,CODECS=\"avc1.640033,mp4a.40.2\",CLOSED-CAPTIONS=NONE\nindex-f7-v1-a1.m3u8\n\n#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=61050,RESOLUTION=512x288,CODECS=\"avc1.64001f\",URI=\"iframes-f1-v1-a1.m3u8\"\n#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=83631,RESOLUTION=640x360,CODECS=\"avc1.64001f\",URI=\"iframes-f2-v1-a1.m3u8\"\n#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=95194,RESOLUTION=640x360,CODECS=\"avc1.64001f\",URI=\"iframes-f3-v1-a1.m3u8\"\n#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=105118,RESOLUTION=640x360,CODECS=\"avc1.64001f\",URI=\"iframes-f4-v1-a1.m3u8\"\n#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=116602,RESOLUTION=640x360,CODECS=\"avc1.64001f\",URI=\"iframes-f5-v1-a1.m3u8\"\n#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=178851,RESOLUTION=1024x576,CODECS=\"avc1.640033\",URI=\"iframes-f6-v1-a1.m3u8\"\n#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=216007,RESOLUTION=1280x720,CODECS=\"avc1.640033\",URI=\"iframes-f7-v1-a1.m3u8\"\n"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://service-pkgabcnews.akamaized.net/opp/hls/abcnews/130929_tw_zarif_1003_,500,700,900,1200,1600,2000,2500,.mp4.csmil/index-f7-v1-a1.m3u8",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://service-pkgabcnews.akamaized.net/opp/hls/abcnews/130929_tw_zarif_1003_,500,700,900,1200,1600,2000,2500,.mp4.csmil/index-f7-v1-a1.m3u8",
+        "headers": [
+          [
+            "server",
+            "nginx"
+          ],
+          [
+            "etag",
+            "\"-1-1946\""
+          ],
+          [
+            "accept-ranges",
+            "bytes"
+          ],
+          [
+            "x-amz-cf-pop",
+            "ATL59-P9"
+          ],
+          [
+            "x-amz-cf-id",
+            "OVti7yEsdzslnTkeHTp-_-5XRZ-0cBN3Rkt-hoVrMweReu2ITGfJhw=="
+          ],
+          [
+            "akamai-grn",
+            "0.8b793517.1789518179.30066d37"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "cache-control",
+            "max-age=2980"
+          ],
+          [
+            "expires",
+            "Wed, 16 Sep 2026 01:12:39 GMT"
+          ],
+          [
+            "date",
+            "Wed, 16 Sep 2026 00:22:59 GMT"
+          ],
+          [
+            "connection",
+            "keep-alive"
+          ],
+          [
+            "vary",
+            "Accept-Encoding"
+          ],
+          [
+            "akamai-request-bc",
+            "[a=23.53.121.139,b=805727543,c=g,n=US_WA_SEATTLE,o=20940],[c=p,n=US_WA_SEATTLE,o=20940]"
+          ],
+          [
+            "akamai-mon-iucid-del",
+            "1411147"
+          ],
+          [
+            "content-type",
+            "application/x-mpegURL"
+          ],
+          [
+            "access-control-max-age",
+            "86400"
+          ],
+          [
+            "access-control-allow-credentials",
+            "true"
+          ],
+          [
+            "access-control-expose-headers",
+            "Server,range,hdntl,hdnts,Akamai-Mon-Iucid-Ing,Akamai-Mon-Iucid-Del,Akamai-Request-BC"
+          ],
+          [
+            "access-control-allow-headers",
+            "origin,range,hdntl,hdnts,CMCD-Request,CMCD-Object,CMCD-Status,CMCD-Session"
+          ],
+          [
+            "access-control-allow-methods",
+            "GET,POST,OPTIONS"
+          ]
+        ],
+        "body": {
+          "text": "#EXTM3U\n#EXT-X-TARGETDURATION:9\n#EXT-X-ALLOW-CACHE:YES\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-VERSION:3\n#EXT-X-MEDIA-SEQUENCE:1\n#EXTINF:3.470,\nseg-1-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-2-f7-v1-a1.ts\n#EXTINF:6.974,\nseg-4-f7-v1-a1.ts\n#EXTINF:6.440,\nseg-5-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-6-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-7-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-8-f7-v1-a1.ts\n#EXTINF:8.509,\nseg-9-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-10-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-11-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-12-f7-v1-a1.ts\n#EXTINF:5.239,\nseg-13-f7-v1-a1.ts\n#EXTINF:6.173,\nseg-14-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-15-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-16-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-17-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-18-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-19-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-20-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-21-f7-v1-a1.ts\n#EXTINF:4.438,\nseg-22-f7-v1-a1.ts\n#EXTINF:6.373,\nseg-23-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-24-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-25-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-26-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-27-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-28-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-29-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-30-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-31-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-32-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-33-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-34-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-35-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-36-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-37-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-38-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-39-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-40-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-41-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-42-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-43-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-44-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-45-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-46-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-47-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-48-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-49-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-50-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-51-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-52-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-53-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-54-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-55-f7-v1-a1.ts\n#EXTINF:8.041,\nseg-56-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-57-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-58-f7-v1-a1.ts\n#EXTINF:5.906,\nseg-59-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-60-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-61-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-62-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-63-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-64-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-65-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-66-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-67-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-68-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-69-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-70-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-71-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-72-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-73-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-74-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-75-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-76-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-77-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-78-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-79-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-80-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-81-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-82-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-83-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-84-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-85-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-86-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-87-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-88-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-89-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-90-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-91-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-92-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-93-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-94-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-95-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-96-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-97-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-98-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-99-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-100-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-101-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-102-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-103-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-104-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-105-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-106-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-107-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-108-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-109-f7-v1-a1.ts\n#EXTINF:6.373,\nseg-110-f7-v1-a1.ts\n#EXTINF:7.074,\nseg-111-f7-v1-a1.ts\n#EXTINF:7.307,\nseg-112-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-113-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-114-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-115-f7-v1-a1.ts\n#EXTINF:7.941,\nseg-116-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-117-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-118-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-119-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-120-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-121-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-122-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-123-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-124-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-125-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-126-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-127-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-128-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-129-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-130-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-131-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-132-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-133-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-134-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-135-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-136-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-137-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-138-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-139-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-140-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-141-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-142-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-143-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-144-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-145-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-146-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-147-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-148-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-149-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-150-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-151-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-152-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-153-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-154-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-155-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-156-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-157-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-158-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-159-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-160-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-161-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-162-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-163-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-164-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-165-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-166-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-167-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-168-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-169-f7-v1-a1.ts\n#EXTINF:7.508,\nseg-170-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-171-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-172-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-173-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-174-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-175-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-176-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-177-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-178-f7-v1-a1.ts\n#EXTINF:6.773,\nseg-179-f7-v1-a1.ts\n#EXTINF:4.338,\nseg-180-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-181-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-182-f7-v1-a1.ts\n#EXTINF:8.008,\nseg-183-f7-v1-a1.ts\n#EXTINF:4.004,\nseg-184-f7-v1-a1.ts\n#EXTINF:2.202,\nseg-185-f7-v1-a1.ts\n#EXT-X-ENDLIST\n"
+        },
+        "truncated": false
+      }
+    }
+  ]
+}

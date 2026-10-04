@@ -1,145 +1,82 @@
-![image](https://user-images.githubusercontent.com/60236014/215372009-d6ca97db-f187-4c39-a8d9-d7ac31e5d52a.png)
+<p align="center">
+  <img alt="DiscoClip logo" src="brand/mark.svg" width="300" />
+  <h2 align="center">DiscoClip</h2>
+</p>
 
-# DiscoClip
-A web-app/bot that monitors discord channels for IG/TikTok video-links then downloads, transcodes (to Discord's size limit), posts, and archives each video.
+Download media from Discord channels or a web app, convert it to fit upload limits,
+and post or archive the result. Supports video, audio, images, playlists and live
+stream recording.
 
-<hr />
+## Install
 
-## General Requirements
-Running the discord bot requires a discord developer account (https://discord.com/developers/applications), and a bot created/invited (via your developer acount) to your chosen discord server.
+Download a binary or Linux package from [Releases](https://github.com/nickheyer/DiscoClip/releases),
+or use the installer on Linux and macOS:
 
-## Installation (Recommended Method)
-
-### Linux -- Fully Automated Install & Updates
-
-```bash 
-curl https://raw.githubusercontent.com/nickheyer/DiscoClip/main/installer/auto_install_update.sh -o auto_install_update.sh && sudo bash auto_install_update.sh
+```sh
+curl -fsSL https://raw.githubusercontent.com/nickheyer/DiscoClip/main/packaging/install.sh | sh
 ```
 
-### Other Operating Systems (Windows/Mac) or (Manual Docker Installation)
+Run with a config based on [discoclip.example.toml](discoclip.example.toml):
 
-
-##### Download Docker Image (x86_64 Architecture) 
-```bash
-docker image pull nickheyer/discoclip:latest
-```
-##### Download Docker Image (aarch64 Architecture, ie: Raspberry-Pi) 
-```bash
-docker image pull nickheyer/discoclip_rpi:latest
-```
-##### Run Docker Container
-```bash
-docker run -d -p 7600:7600 nickheyer/discoclip
-```
-##### The server within the docker container can be accessed locally at [http://127.0.0.1:7600](http://127.0.0.1:7600)
-
-<hr />
-
-## Installation From Source (Not Recommended)
-
-### Prerequisites, Dependencies, and Requirements
-**_NOTE:_**  Installation from source using Windows has been deprecated with the introduction of web-socket functionality, gevent, and other integral parts of this application that are not currently supported by Microsoft.
-
-1. Python - Download and install Python [here](https://www.python.org/downloads/). Make sure that you choose "Add Python to environmental variables" during installation.
-2. Git - Download and install Git [here](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git)
-3. FFMpeg - Download and install FFMpeg [here](https://ffmpeg.org/download.html).
-4. "requirements.txt" - Once you've git-cloned DiscoClip (see next steps), you will be instructed to install the remaining dependencies found in this file, via `pip install -r requirements.txt`.
-
-### Next Steps
-
-1. Change directory to preferred install location
-```bash 
-cd /where/you/want/this/installed
+```sh
+discoclip --config discoclip.toml
 ```
 
-2. Clone DiscoClip
-```bash 
-git clone https://github.com/nickheyer/DiscoClip
-```
- 
-3. Change directory to DiscoClip
-```bash 
-cd ./DiscoClip
-```
+Open `/setup` on the server to create the admin account. Linux binaries require
+glibc 2.35 or newer. For a systemd service, install a `.deb` or `.rpm` package, or
+run the installer as root with `--system`.
 
-4. Install "requirements.txt"
-```bash 
-pip install -r requirements.txt
+For Docker, use [compose.yaml](compose.yaml):
+
+```sh
+docker compose up -d
 ```
 
-5. Run DiscoClip
-```bash
-sh ./run.sh
-```
+Images are available for amd64 and arm64 at `ghcr.io/nickheyer/discoclip:latest`
+(CPU) and `ghcr.io/nickheyer/discoclip:gpu`. The compose file includes
+`discoclip-nvidia` and `discoclip-intel-amd` services. NVIDIA requires the host
+driver and Container Toolkit; Intel and AMD require access to `/dev/dri`.
 
-<hr />
+## Use
 
-## General Instructions
+1. In **Applications**, add a bot token from the Discord Developer Portal.
+2. Select **Add to a server** to invite it.
+3. Enable watching for a server or individual channels. Use **Options** to choose
+   the output channel and who can submit links there, kept as that place's own profile.
 
-#### Accessing The Web-UI
+You can also submit links through the web app or `/clip`. Live recordings play
+while they grow; **Stop** or `/clip stop` keeps the recording, while **Cancel**
+deletes it.
 
-![image](https://user-images.githubusercontent.com/60236014/220238279-848edf93-47d6-4c1a-8629-4e68fe11b749.png)
+**Profiles** set platform access, media limits, who may post and where results go, the
+output format, the upload limit, link delivery and how the post reads. Every value a
+profile leaves blank inherits, from the built-in default through server, channel and member
+assignments.
 
-#### *If you are running DiscoClip on the machine you would like to access it from, you should be able to access it [here](http://127.0.0.1:7600). Otherwise, you will need to get the IP address of the computer hosting DiscoClip. On Windows, you would type `ipconfig` on the host machine and look for your `ipv4`.*
+**Platforms** lists supported sites and lets admins import cookies for sites
+that require a login.
 
-#### *If you would like to access DiscoClip remotely, as in not on the same network as the host machine, you will need to do some port forwarding to expose port 7600 to the internet. If you run into any trouble here, feel free to join the [Discord](https://discord.com/invite/6Z9yKTbsrP)!*
+**Content views** share media at `/f/<slug>`, with public access or a login requirement.
+A profile's **Delivery** section posts a page from a view instead of a file for media that
+exceeds the upload limit or falls under the quality floor. A posted page unfurls with an inline player for video up to 80 MB and
+with a thumbnail card above that. Pages, login callbacks and link previews are built on
+the address you open the web app at, which the server learns from your own requests; set
+`web.public_url` to fix it. Signed media links allow access without login until they expire.
 
-<hr />
+Every finished job's media is archived under `engine.archive.dir` (`data/archive` by
+default, `/var/lib/discoclip/archive` for the packages and containers), filed by year and
+month beside a JSON record of the job. Retention sweeps the working cache on its schedule
+and leaves the archive alone. Turn the archive off or move it under **Settings**.
 
-### Configuration
-
-
-![image](https://user-images.githubusercontent.com/60236014/215380220-496a98b3-9262-41b0-86d4-60af6ec096ea.png)
-#### *DiscoClip is mostly good to go in terms of configuration. The only thing you will need to provide it is a token from [Discord](https://discord.com/developers/applications). The bot will not start without a valid token. Once your bot is made, you can get the token by clicking 'Reset Token' which will provide it one time only.*
-
-<hr />
-
-![image](https://user-images.githubusercontent.com/60236014/215379968-f63d6682-b1c4-44fd-9107-e4247fc72388.png)
-#### *If you haven't already, now is also a good time to invite the bot to the server or servers you would like to monitor, you can do that via the same link.*
-
-<hr />
-
-![image](https://user-images.githubusercontent.com/60236014/215380518-a18661de-24e9-4f3f-81f4-4090214ab386.png)
-![image](https://user-images.githubusercontent.com/60236014/215380615-c39618e9-75a6-416c-9770-df80e23082a8.png)
-#### *Make sure you select these intents and permissions on your bot page and while generating your invite link (via url generator). It doesn't need to have administrator permissions, that is up to you. Just make sure that it can read and write messages, etc.*
-
-<hr />
-
-## Usage
-
-### Test That The Bot Is Running
-Type the following into a discord chat message that the bot can see:
-
-```
-!dc test
-```
-
-### Your First Clip
-Test that the bot is archiving, transcoding, and storing video files properly by pasting a TikTok or Instagram Video url into chat. You can give it a shot with one of my TikTok videos!
-
-Normally, you would not be able to save and upload a video of this size to Discord, but now you can with DiscoClip's transcoding magic! Just paste this link into chat:
-
-```
-https://www.tiktok.com/t/ZTRsaDRqY/
-```
+**Platforms** shows whether each site still works: a platform is checked with links kept in
+the database, which are the ones it ships with, any you add, and the newest links of jobs
+that finished on it, so real use keeps the set fresh. A check tries the links in turn and
+stops at the first that resolves; a link that fails while another resolves is set aside.
+Links can be run one at a time, edited and removed.
 
 
-## Further Notes
+Admins manage the server, operators manage jobs and bots, and viewers have read
+access. Users with linked Discord accounts can manage watch rules for servers
+they manage on Discord. Create API tokens under **Account**; see [API.md](API.md)
+for endpoints and authentication.
 
-
-- For any other comments or questions, feel free to reach me on discord via NicholasHeyer#4212
-- Feel free to join the [Discord](https://discord.com/invite/6Z9yKTbsrP)!
-
-
-
-
-## Authors
-
-- [@nickheyer](https://www.github.com/nickheyer)
-
-
-## Contributing
-
-Contributions are always welcome!
-
-Email `nick@heyer.app` for ways to get started.

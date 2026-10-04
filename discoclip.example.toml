@@ -1,0 +1,182 @@
+# Copy to discoclip.toml, or set any key through the environment as
+# DISCOCLIP_<SECTION>__<KEY>, for example DISCOCLIP_ENGINE__WORKERS. Environment variables
+# override the file. YAML and JSON files work the same way.
+
+data_dir = "data"              # database and secret key
+
+[log]
+# A tracing filter: a level, or per-crate directives such as "info,discoclip_engine=debug".
+level = "info"
+
+[engine]
+cache_dir = "cache"            # ffmpeg and active downloads
+workers = 2                    # concurrent jobs
+# ffmpeg = "/usr/bin/ffmpeg"   # an installed ffmpeg to run instead of the embedded build
+
+[engine.limits]
+max_source_bytes = 2147483648  # maximum download size
+max_duration_secs = 10800      # maximum duration in seconds
+max_height = 1080              # taller sources are downscaled
+
+# The archive keeps a copy of every finished job's media for good, filed by year and month
+# beside a JSON record of the job. Retention sweeps the cache; it never touches the archive.
+[engine.archive]
+enabled = true
+dir = "data/archive"
+keep = "output"                # "output", "source" or "both"
+
+
+[engine.playlists]
+enabled = true                 # create one job per entry
+max_entries = 50               # maximum entries per playlist
+
+[engine.live]
+max_capture_secs = 10800       # maximum recording duration in seconds
+
+# HTTP downloads use parallel byte ranges and resume interrupted transfers.
+[engine.download]
+connections = 4                # parallel connections per file
+chunk_bytes = 8388608          # bytes per request. Minimum 65536
+resume_attempts = 5            # retry attempts per download
+
+# Video encoding. "auto" tries the hardware families in turn and falls back to software.
+# Hardware encoders come from the ffmpeg build in use: the embedded build has none, so
+# name an installed build with engine.ffmpeg to use NVENC, VA-API, Quick Sync, AMF or
+# VideoToolbox. The gpu container image carries such a build and names it.
+[engine.transcode]
+encoder = "auto"               # auto, software, nvenc, vaapi, qsv, videotoolbox, amf, v4l2m2m
+vaapi_device = "/dev/dri/renderD128"
+
+[engine.shutdown]
+grace_secs = 30                # how long running jobs get to finish at shutdown
+
+[engine.retention]
+jobs_days = 90                 # completed job retention in days. 0 keeps all
+failed_jobs_days = 30          # failed job retention in days. 0 keeps all
+cache_max_bytes = 21474836480  # maximum cache bytes. 0 disables cleanup
+sweep_interval_secs = 3600     # cleanup interval in seconds
+
+# Outgoing HTTP requests.
+[http]
+user_agent = "DiscoClip/0.1.0" # default request user agent
+connect_timeout_secs = 15
+request_timeout_secs = 90      # page and API timeout. Excludes media downloads
+read_timeout_secs = 60         # maximum wait for response data
+max_redirects = 10
+
+[http.retry]
+attempts = 3                   # total attempts, including the first
+base_ms = 500                  # initial retry delay. Doubles per retry
+max_ms = 10000                 # maximum retry delay
+
+[http.rate_limits.default]
+per_second = 4.0               # average requests per second. 0 disables the limit
+burst = 8                      # maximum requests in a burst
+
+# Rates by host suffix: youtube.com covers www.youtube.com.
+# [http.rate_limits.hosts."youtube.com"]
+# per_second = 1.0
+# burst = 2
+
+# Platform and host proxy overrides. Bypassed hosts connect directly.
+# [http.proxies]
+# default = "socks5h://proxy:1080"
+# bypass = ["internal.example"]
+# [http.proxies.platforms]
+# tiktok = "http://proxy:3128"
+# [http.proxies.hosts]
+# "googlevideo.com" = "http://proxy:3128"
+
+# Add Discord applications, credentials, rules and commands through the web app.
+
+[local]
+dir = "data/local"             # web submission output directory
+max_bytes = 104857600          # size budget for web app submissions
+
+# What media published there is made to. Every destination has a target like this.
+[local.target]
+container = "mp4"              # mp4, mov, mkv or webm
+video_codec = "h264"           # h264, h265, vp9, vp8 or av1, as the container allows
+audio_codec = "aac"            # aac, mp3, opus, vorbis or flac, as the container allows
+# max_height = 1080            # a cap below engine.limits.max_height
+# max_fps = 60                 # faster pictures are slowed to this
+audio_over_still = false       # publish sound alone as a video over its cover art
+audio_containers = ["m4a", "mp3", "ogg"]   # sound published as it is. Empty means as video
+image_containers = ["jpeg", "png", "webp", "gif"]
+files = true                   # take files that are neither video, audio nor images
+
+# Discord uploads.
+[discord.limits]
+base_bytes = 10485760          # servers without boosts, and direct messages
+tier1_bytes = 10485760
+tier2_bytes = 52428800
+tier3_bytes = 104857600
+
+# How long an upload gets: the grace, plus the file's size at the slowest rate an upload
+# link is given credit for. A failed connection or a Discord server error sends it again.
+[discord.upload]
+grace_secs = 60
+min_rate_bytes_per_sec = 131072   # 1 Mbit/s. A 10 MB file gets 80 s on top of the grace
+attempts = 3
+
+[discord.target]               # the same keys as local.target
+container = "mp4"
+video_codec = "h264"
+audio_codec = "aac"
+audio_over_still = false
+audio_containers = ["m4a", "mp3", "ogg"]
+image_containers = ["jpeg", "png", "webp", "gif"]
+files = true
+
+# A server with a limit or target of its own, by server id.
+# [discord.guilds."123456789012345678"]
+# max_bytes = 26214400
+# [discord.guilds."123456789012345678".target]
+# max_height = 720
+# max_fps = 30
+# audio_over_still = true
+
+# Database backups. Each is a consistent copy of the whole database. Restore one with
+# `discoclip restore <file>` while the server is stopped.
+[backup]
+enabled = true
+dir = "data/backups"
+interval_secs = 86400          # one backup a day, and one at startup when the newest is older
+keep = 7                       # backups kept. Older ones are removed after each new one
+
+# Scheduled platform checks. Results appear on the Platforms page.
+[fixtures]
+interval_secs = 86400          # check interval in seconds. 0 disables scheduled checks
+timeout_secs = 60              # timeout per test link
+
+[web]
+bind = "127.0.0.1:8080"        # address the web app listens on
+# public_url = "https://clips.example.com"  # public address for login and media links
+
+# Trusted proxy IP addresses or CIDR networks. Forwarded headers from other hosts
+# are ignored.
+# trusted_proxies = ["127.0.0.1", "10.0.0.0/8", "::1"]
+
+# HTTPS certificate and key in PEM format. Changed files reload automatically.
+# [web.tls]
+# cert = "/etc/discoclip/fullchain.pem"
+# key = "/etc/discoclip/privkey.pem"
+
+# OAuth login. Register the callback at the provider:
+# https://<public_url>/api/auth/<provider>/callback
+# Provider IDs: github, google, oidc and discord.
+[auth]
+oauth_signup = false           # allow new accounts through login providers
+# Configure Discord login in Applications.
+# [auth.github]
+# client_id = ""
+# client_secret = ""
+# [auth.google]
+# client_id = ""
+# client_secret = ""
+# [auth.oidc]                  # any OpenID Connect issuer
+# name = "Single sign-on"      # login button label
+# issuer = "https://login.example.com/realms/main"
+# client_id = ""
+# client_secret = ""
+# scopes = ["openid", "profile", "email"]

@@ -1,0 +1,44 @@
+@import 'tailwindcss';
+@import '@skeletonlabs/skeleton';
+@import '@skeletonlabs/skeleton-svelte';
+@import './lib/brand/theme.css';
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/jetbrains-mono';
+
+@plugin '@tailwindcss/forms';
+
+@custom-variant dark (&:where([data-mode=dark], [data-mode=dark] *));
+
+@theme {
+	--font-sans: 'Inter Variable', system-ui, sans-serif;
+	--font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+}
+
+@layer base {
+	html,
+	body {
+		min-height: 100%;
+	}
+
+	body {
+		font-feature-settings: 'cv11', 'ss01';
+	}
+}
+
+/* Focus is always visible, in the brand colour. */
+:focus-visible {
+	outline: 2px solid var(--color-primary-500);
+	outline-offset: 2px;
+}
+
+/* People who asked for less motion get none. */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
+	}
+}

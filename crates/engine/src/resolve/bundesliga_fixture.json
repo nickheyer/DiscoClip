@@ -1,0 +1,379 @@
+{
+  "name": "bundesliga",
+  "recorded_at": "2026-09-16T02:54:16.256671912Z",
+  "url": "https://www.bundesliga.com/en/bundesliga/videos?vid=bhhHkKyN",
+  "notes": "Bundesliga video: JW Player delivery API, HLS and DASH manifests expanded",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://cdn.jwplayer.com/v2/media/bhhHkKyN",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://cdn.jwplayer.com/v2/media/bhhHkKyN",
+        "headers": [
+          [
+            "content-type",
+            "application/json; charset=utf-8"
+          ],
+          [
+            "date",
+            "Wed, 16 Sep 2026 02:54:16 GMT"
+          ],
+          [
+            "x-amz-cf-id",
+            "qS_acwVTJ-hrtduu2SJ9HQuvd-dNx1M1QSj4pTMX4qv9hzKrl8XNGQ=="
+          ],
+          [
+            "server",
+            "gunicorn"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "cache-control",
+            "max-age=180, max-stale=180"
+          ],
+          [
+            "expires",
+            "Wed, 16 Sep 2026 02:57:16"
+          ],
+          [
+            "x-robots-tag",
+            "none, indexifembedded"
+          ],
+          [
+            "vary",
+            "Accept-Encoding"
+          ],
+          [
+            "x-cache",
+            "Miss from cloudfront"
+          ],
+          [
+            "via",
+            "1.1 82fa7f20ab5a12301da8e01f9493e222.cloudfront.net (CloudFront)"
+          ],
+          [
+            "x-amz-cf-pop",
+            "SEA900-P10"
+          ]
+        ],
+        "body": {
+          "text": "{\"title\":\"Watch: Alphonso Davies and Jeremie Frimpong head-to-head\",\"description\":\"When Alphonso Davies and Jeremie Frimpong meet, it\\u2019s certainly going to be fast-paced. The two youngsters from Bayern Munich and Bayer Leverkusen are among the quickest wide players in the Bundesliga. Time to compare the hotshots in a Head2Head.\",\"kind\":\"Single Item\",\"siteid\":\"0D1PcWDq\",\"playlist\":[{\"title\":\"Watch: Alphonso Davies and Jeremie Frimpong head-to-head\",\"mediaid\":\"bhhHkKyN\",\"link\":\"https://cdn.jwplayer.com/previews/bhhHkKyN\",\"image\":\"https://cdn.jwplayer.com/v2/media/bhhHkKyN/poster.jpg?width=720\",\"images\":[{\"src\":\"https://cdn.jwplayer.com/v2/media/bhhHkKyN/poster.jpg?width=320\",\"width\":320,\"type\":\"image/jpeg\"},{\"src\":\"https://cdn.jwplayer.com/v2/media/bhhHkKyN/poster.jpg?width=480\",\"width\":480,\"type\":\"image/jpeg\"},{\"src\":\"https://cdn.jwplayer.com/v2/media/bhhHkKyN/poster.jpg?width=640\",\"width\":640,\"type\":\"image/jpeg\"},{\"src\":\"https://cdn.jwplayer.com/v2/media/bhhHkKyN/poster.jpg?width=720\",\"width\":720,\"type\":\"image/jpeg\"},{\"src\":\"https://cdn.jwplayer.com/v2/media/bhhHkKyN/poster.jpg?width=1280\",\"width\":1280,\"type\":\"image/jpeg\"},{\"src\":\"https://cdn.jwplayer.com/v2/media/bhhHkKyN/poster.jpg?width=1920\",\"width\":1920,\"type\":\"image/jpeg\"}],\"siteid\":\"0D1PcWDq\",\"duration\":146,\"content_source_type\":\"file\",\"pubdate\":1664366511,\"updated\":1664368161,\"description\":\"When Alphonso Davies and Jeremie Frimpong meet, it\\u2019s certainly going to be fast-paced. The two youngsters from Bayern Munich and Bayer Leverkusen are among the quickest wide players in the Bundesliga. Time to compare the hotshots in a Head2Head.\",\"tags\":\"LANG_EN,bayern munich,bayer leverkusen,Alphonso Davies,Jeremie Frimpong\",\"sources\":[{\"file\":\"https://cdn.jwplayer.com/manifests/bhhHkKyN.mpd\",\"type\":\"application/dash+xml\",\"mediaTypes\":[\"video/webm; codecs=\\\"vp9\\\"\",\"audio/webm; codecs=\\\"vorbis\\\"\"]},{\"file\":\"https://cdn.jwplayer.com/manifests/bhhHkKyN.m3u8\",\"type\":\"application/vnd.apple.mpegurl\"},{\"file\":\"https://cdn.jwplayer.com/videos/bhhHkKyN-SH48RTuC.mp4\",\"type\":\"video/mp4\",\"height\":180,\"width\":320,\"label\":\"180p\",\"bitrate\":489662,\"filesize\":8936344,\"framerate\":25.0},{\"file\":\"https://cdn.jwplayer.com/videos/bhhHkKyN-Y6NBtmrs.mp4\",\"type\":\"video/mp4\",\"height\":270,\"width\":480,\"label\":\"270p\",\"bitrate\":682067,\"filesize\":12447733,\"framerate\":25.0},{\"file\":\"https://cdn.jwplayer.com/videos/bhhHkKyN-F8l14swf.mp4\",\"type\":\"video/mp4\",\"height\":406,\"width\":720,\"label\":\"406p\",\"bitrate\":954700,\"filesize\":17423282,\"framerate\":25.0},{\"file\":\"https://cdn.jwplayer.com/videos/bhhHkKyN-x63H3iK2.mp4\",\"type\":\"video/mp4\",\"height\":720,\"width\":1280,\"label\":\"720p\",\"bitrate\":2191196,\"filesize\":39989334,\"framerate\":25.0},{\"file\":\"https://cdn.jwplayer.com/videos/bhhHkKyN-QnVCcRcd.m4a\",\"type\":\"audio/mp4\",\"label\":\"AAC Audio\",\"bitrate\":113695,\"filesize\":2074950},{\"file\":\"https://cdn.jwplayer.com/videos/bhhHkKyN-UZm5g2pF.mp4\",\"type\":\"video/mp4\",\"height\":1080,\"width\":1920,\"label\":\"1080p\",\"bitrate\":4477783,\"filesize\":81719554,\"framerate\":25.0}],\"tracks\":[{\"file\":\"https://cdn.jwplayer.com/strips/bhhHkKyN-120.vtt\",\"kind\":\"thumbnails\"}],\"variations\":{}}],\"feed_instance_id\":\"d345decb-b32d-46e6-8555-96cd1380b4b9\"}"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://cdn.jwplayer.com/manifests/bhhHkKyN.mpd",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://cdn.jwplayer.com/manifests/bhhHkKyN.mpd",
+        "headers": [
+          [
+            "content-type",
+            "application/dash+xml"
+          ],
+          [
+            "date",
+            "Wed, 16 Sep 2026 02:54:16 GMT"
+          ],
+          [
+            "x-amz-cf-id",
+            "XmHxFE5kGv81HcW0IVDNe5pqD5aBlKpwIn3tmBtm_AX9mk8kYM9Ndw=="
+          ],
+          [
+            "server",
+            "gunicorn"
+          ],
+          [
+            "cache-control",
+            "max-age=180"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "x-robots-tag",
+            "none, indexifembedded"
+          ],
+          [
+            "vary",
+            "Accept-Encoding"
+          ],
+          [
+            "x-cache",
+            "Miss from cloudfront"
+          ],
+          [
+            "via",
+            "1.1 82fa7f20ab5a12301da8e01f9493e222.cloudfront.net (CloudFront)"
+          ],
+          [
+            "x-amz-cf-pop",
+            "SEA900-P10"
+          ]
+        ],
+        "body": {
+          "text": "<?xml version='1.0' encoding='UTF-8'?>\n<MPD xmlns=\"urn:mpeg:dash:schema:mpd:2011\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:schemaLocation=\"urn:mpeg:dash:schema:mpd:2011 DASH-MPD.xsd\" profiles=\"urn:mpeg:dash:profile:isoff-on-demand:2011\" minBufferTime=\"PT1S\" type=\"static\" mediaPresentationDuration=\"PT2M26.351S\">\n  <Period id=\"0\" start=\"P0D\" duration=\"PT2M26.351S\">\n    <AdaptationSet id=\"0\" mimeType=\"video/webm\" codecs=\"vp9\" lang=\"eng\" bitstreamSwitching=\"true\" subsegmentAlignment=\"true\" subsegmentStartsWithSAP=\"1\">\n      <Representation id=\"0\" bandwidth=\"532622\" width=\"720\" height=\"406\">\n        <BaseURL>https://videos-cloudfront.jwpsrv.com/6aaaaf29_d005f6f27fb2132bf95c4490925d7dcd889b2981/content/conversions/0D1PcWDq/videos/bhhHkKyN-33833869.webm</BaseURL>\n        <SegmentBase indexRange=\"9738249-9738981\">\n          <Initialization range=\"0-441\"/>\n        </SegmentBase>\n      </Representation>\n      <Representation id=\"1\" bandwidth=\"257418\" width=\"320\" height=\"180\">\n        <BaseURL>https://videos-cloudfront.jwpsrv.com/6aaaaec6_a7f7e3a3aa837d3e879a36f8473eaf876fa8c448/content/conversions/0D1PcWDq/videos/bhhHkKyN-33833867.webm</BaseURL>\n        <SegmentBase indexRange=\"4706152-4706884\">\n          <Initialization range=\"0-439\"/>\n        </SegmentBase>\n      </Representation>\n      <Representation id=\"2\" bandwidth=\"347758\" width=\"480\" height=\"270\">\n        <BaseURL>https://videos-cloudfront.jwpsrv.com/6aaaaecf_1f722f88537d91393d23f3f62e8c783b9467b12d/content/conversions/0D1PcWDq/videos/bhhHkKyN-33833868.webm</BaseURL>\n        <SegmentBase indexRange=\"6358017-6358749\">\n          <Initialization range=\"0-441\"/>\n        </SegmentBase>\n      </Representation>\n      <Representation id=\"3\" bandwidth=\"1194631\" width=\"1280\" height=\"720\">\n        <BaseURL>https://videos-cloudfront.jwpsrv.com/6aaaae98_6f362bafa238053c5b352fef083a49422f91026b/content/conversions/0D1PcWDq/videos/bhhHkKyN-33833870.webm</BaseURL>\n        <SegmentBase indexRange=\"21843076-21843817\">\n          <Initialization range=\"0-441\"/>\n        </SegmentBase>\n      </Representation>\n      <Representation id=\"4\" bandwidth=\"2351113\" width=\"1920\" height=\"1080\">\n        <BaseURL>https://videos-cloudfront.jwpsrv.com/6aaaaf32_3ef6c97fca6d952180316fab8f0f9c6c408bf919/content/conversions/0D1PcWDq/videos/bhhHkKyN-33833871.webm</BaseURL>\n        <SegmentBase indexRange=\"42989337-42990092\">\n          <Initialization range=\"0-441\"/>\n        </SegmentBase>\n      </Representation>\n    </AdaptationSet>\n    <AdaptationSet id=\"1\" mimeType=\"audio/webm\" codecs=\"vorbis\" lang=\"eng\" bitstreamSwitching=\"true\" subsegmentAlignment=\"true\" subsegmentStartsWithSAP=\"1\" audioSamplingRate=\"44100\">\n      <Representation id=\"5\" bandwidth=\"107211\">\n        <BaseURL>https://videos-cloudfront.jwpsrv.com/6aaaae54_5c4c9e5072e0991f528844a5499d4007bbb728f6/content/conversions/0D1PcWDq/videos/bhhHkKyN-33833872.webm</BaseURL>\n        <SegmentBase indexRange=\"1960107-1960702\">\n          <Initialization range=\"0-4389\"/>\n        </SegmentBase>\n      </Representation>\n    </AdaptationSet>\n  </Period>\n</MPD>\n"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://cdn.jwplayer.com/manifests/bhhHkKyN.m3u8",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://cdn.jwplayer.com/manifests/bhhHkKyN.m3u8",
+        "headers": [
+          [
+            "content-type",
+            "application/vnd.apple.mpegurl; charset=utf-8"
+          ],
+          [
+            "date",
+            "Wed, 16 Sep 2026 02:54:16 GMT"
+          ],
+          [
+            "x-amz-cf-id",
+            "k7ZPkC3a1b5wdquHI9gSVOPfylMgikUuM9qEZleg8EoeGO23jcHpkA=="
+          ],
+          [
+            "server",
+            "gunicorn"
+          ],
+          [
+            "cache-control",
+            "max-age=180"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "x-robots-tag",
+            "none, indexifembedded"
+          ],
+          [
+            "vary",
+            "Accept-Encoding"
+          ],
+          [
+            "x-cache",
+            "Miss from cloudfront"
+          ],
+          [
+            "via",
+            "1.1 82fa7f20ab5a12301da8e01f9493e222.cloudfront.net (CloudFront)"
+          ],
+          [
+            "x-amz-cf-pop",
+            "SEA900-P10"
+          ]
+        ],
+        "body": {
+          "text": "#EXTM3U\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=690000,RESOLUTION=480x270,CODECS=\"mp4a.40.2,avc1.42c015\",FRAME-RATE=25.0,CLOSED-CAPTIONS=NONE\nhttps://videos-cloudfront-usp.jwpsrv.com/6aaab0f8_02d8936e5e84f4817f67ab446db614ecd8c5edfc/sites/0D1PcWDq/media/bhhHkKyN/versions/bhhHkKyN/manifest.ism/manifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=563516.m3u8\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=4480000,RESOLUTION=1920x1080,CODECS=\"mp4a.40.2,avc1.640028\",FRAME-RATE=25.0,CLOSED-CAPTIONS=NONE\nhttps://videos-cloudfront-usp.jwpsrv.com/6aaab0f8_02d8936e5e84f4817f67ab446db614ecd8c5edfc/sites/0D1PcWDq/media/bhhHkKyN/versions/bhhHkKyN/manifest.ism/manifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552.m3u8\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=2200000,RESOLUTION=1280x720,CODECS=\"mp4a.40.2,avc1.4d401f\",FRAME-RATE=25.0,CLOSED-CAPTIONS=NONE\nhttps://videos-cloudfront-usp.jwpsrv.com/6aaab0f8_02d8936e5e84f4817f67ab446db614ecd8c5edfc/sites/0D1PcWDq/media/bhhHkKyN/versions/bhhHkKyN/manifest.ism/manifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=2068295.m3u8\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=960000,RESOLUTION=720x406,CODECS=\"mp4a.40.2,avc1.4d401e\",FRAME-RATE=25.0,CLOSED-CAPTIONS=NONE\nhttps://videos-cloudfront-usp.jwpsrv.com/6aaab0f8_02d8936e5e84f4817f67ab446db614ecd8c5edfc/sites/0D1PcWDq/media/bhhHkKyN/versions/bhhHkKyN/manifest.ism/manifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=834149.m3u8\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=490000,RESOLUTION=320x180,CODECS=\"mp4a.40.2,avc1.42c00d\",FRAME-RATE=25.0,CLOSED-CAPTIONS=NONE\nhttps://videos-cloudfront-usp.jwpsrv.com/6aaab0f8_02d8936e5e84f4817f67ab446db614ecd8c5edfc/sites/0D1PcWDq/media/bhhHkKyN/versions/bhhHkKyN/manifest.ism/manifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=371479.m3u8\n"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://videos-cloudfront-usp.jwpsrv.com/6aaab0f8_02d8936e5e84f4817f67ab446db614ecd8c5edfc/sites/0D1PcWDq/media/bhhHkKyN/versions/bhhHkKyN/manifest.ism/manifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552.m3u8",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "url": "https://videos-cloudfront-usp.jwpsrv.com/6aaab0f8_02d8936e5e84f4817f67ab446db614ecd8c5edfc/sites/0D1PcWDq/media/bhhHkKyN/versions/bhhHkKyN/manifest.ism/manifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552.m3u8",
+        "headers": [
+          [
+            "content-type",
+            "application/vnd.apple.mpegurl"
+          ],
+          [
+            "content-length",
+            "4001"
+          ],
+          [
+            "server",
+            "Apache"
+          ],
+          [
+            "accept-ranges",
+            "bytes"
+          ],
+          [
+            "last-modified",
+            "Thu, 01 Jan 1970 00:02:26 GMT"
+          ],
+          [
+            "x-usp-last-modified",
+            "Thu, 01 Jan 1970 00:02:26 GMT"
+          ],
+          [
+            "access-control-allow-headers",
+            "origin, range, x-cdn-forward"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "access-control-expose-headers",
+            "server,range,date,x-cdn-forward"
+          ],
+          [
+            "timing-allow-origin",
+            "*"
+          ],
+          [
+            "date",
+            "Fri, 04 Sep 2026 02:30:18 GMT"
+          ],
+          [
+            "cache-control",
+            "max-age=2592000"
+          ],
+          [
+            "etag",
+            "\"usp-4CC52B2C\""
+          ],
+          [
+            "x-cache",
+            "Hit from cloudfront"
+          ],
+          [
+            "via",
+            "1.1 c72e48ed2f0a994f695ca2fb4bc9247e.cloudfront.net (CloudFront)"
+          ],
+          [
+            "x-amz-cf-pop",
+            "SEA900-P9"
+          ],
+          [
+            "x-amz-cf-id",
+            "rAdfCAbQGayZFdsQOv05akriykcqpZ-E14vSvxN9GuecryFPNnfpdA=="
+          ],
+          [
+            "age",
+            "1139455"
+          ]
+        ],
+        "body": {
+          "text": "#EXTM3U\n#EXT-X-VERSION:4\n## Created with Unified Streaming Platform (version=1.15.16-32383)\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-MEDIA-SEQUENCE:1\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-TARGETDURATION:4\n#USP-X-TIMESTAMP-MAP:MPEGTS=900000,LOCAL=1970-01-01T00:00:00Z\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-1.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-2.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-3.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-4.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-5.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-6.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-7.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-8.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-9.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-10.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-11.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-12.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-13.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-14.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-15.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-16.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-17.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-18.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-19.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-20.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-21.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-22.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-23.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-24.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-25.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-26.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-27.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-28.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-29.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-30.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-31.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-32.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-33.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-34.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-35.ts\n#EXTINF:4, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-36.ts\n#EXTINF:2.28, no desc\nmanifest-audio_0_5c02M2eI_8neJBpbY=112003-video_0_5c02M2eI_6KXOOgZn=4350552-37.ts\n#EXT-X-ENDLIST\n"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://cdn.jwplayer.com/v2/media/zzzzzzzz",
+        "headers": [
+          [
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          ]
+        ],
+        "body": null
+      },
+      "response": {
+        "status": 404,
+        "url": "https://cdn.jwplayer.com/v2/media/zzzzzzzz",
+        "headers": [
+          [
+            "content-type",
+            "application/json"
+          ],
+          [
+            "content-length",
+            "51"
+          ],
+          [
+            "date",
+            "Wed, 16 Sep 2026 02:54:17 GMT"
+          ],
+          [
+            "x-robots-tag",
+            "none, indexifembedded"
+          ],
+          [
+            "server",
+            "gunicorn"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "cache-control",
+            "max-age=180, max-stale=180"
+          ],
+          [
+            "expires",
+            "Wed, 16 Sep 2026 02:57:17"
+          ],
+          [
+            "x-cache",
+            "Error from cloudfront"
+          ],
+          [
+            "via",
+            "1.1 82fa7f20ab5a12301da8e01f9493e222.cloudfront.net (CloudFront)"
+          ],
+          [
+            "x-amz-cf-pop",
+            "SEA900-P10"
+          ],
+          [
+            "x-amz-cf-id",
+            "4-Bg52zOhDcZrOmLFB0DqWNflPw4khK4j4ixeCmAod--_sL-89QLDA=="
+          ]
+        ],
+        "body": {
+          "text": "{\"message\":\"['zzzzzzzz']: id not found in index.\"}\n"
+        },
+        "truncated": false
+      }
+    }
+  ]
+}

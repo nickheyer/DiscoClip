@@ -1,0 +1,14 @@
+{
+	"name": "DiscoClip",
+	"short_name": "DiscoClip",
+	"description": "Downloads media links from Discord channels and the web app",
+	"start_url": "/",
+	"display": "standalone",
+	"background_color": "#0b0b0e",
+	"theme_color": "#f2542d",
+	"icons": [
+		{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+		{ "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+		{ "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+	]
+}

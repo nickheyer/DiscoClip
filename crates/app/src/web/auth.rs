@@ -1,0 +1,611 @@
+//! Who is asking: the session cookie, the CSRF token it must echo, first-run setup, login,
+//! recovery of a locked-out account, logout, and the sessions an account can see and end.
+
+use std::net::IpAddr;
+
+use axum::Json;
+use axum::extract::{FromRequestParts, Path, Request, State};
+use axum::http::request::Parts;
+use axum::http::{HeaderMap, Method, StatusCode, header};
+use axum::middleware::Next;
+use axum::response::Response;
+use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
+use jiff::Timestamp;
+use serde::{Deserialize, Serialize};
+use subtle::ConstantTimeEq;
+
+use super::AppState;
+use super::error::ApiError;
+use super::proxy::{ClientInfo, Scheme};
+use crate::audit::{self, Actor};
+use crate::sessions::{ABSOLUTE_LIFETIME, Session, SessionId, random_token};
+use crate::tokens::ApiToken;
+use crate::users::{Permission, User};
+
+pub const COOKIE: &str = "discoclip_session";
+pub const CSRF_HEADER: &str = "x-csrf-token";
+
+/// The account behind a request, established by the `identify` middleware.
+#[derive(Debug, Clone)]
+pub struct Identity {
+    pub user: User,
+    pub via: Via,
+    /// The address the request came from.
+    pub ip: IpAddr,
+}
+
+/// What carried the account's credentials.
+#[derive(Debug, Clone)]
+pub enum Via {
+    /// A browser session cookie.
+    Session {
+        session: Session,
+        csrf_token: String,
+    },
+    /// A bearer API token.
+    Token(ApiToken),
+}
+
+impl Identity {
+    /// 403 unless the account's role allows `permission` and, for an API token, the
+    /// token was minted with it.
+    pub fn require(&self, permission: Permission) -> Result<(), ApiError> {
+        if !self.user.role.allows(permission) {
+            return Err(ApiError::Forbidden(format!(
+                "the {} role does not allow {permission}",
+                self.user.role
+            )));
+        }
+        if let Via::Token(token) = &self.via
+            && !token.scopes.contains(&permission)
+        {
+            return Err(ApiError::Forbidden(format!(
+                "this API token was not given {permission}"
+            )));
+        }
+        Ok(())
+    }
+
+    /// The browser session behind the request. 403 for an API token.
+    pub fn session(&self) -> Result<&Session, ApiError> {
+        match &self.via {
+            Via::Session { session, .. } => Ok(session),
+            Via::Token(_) => Err(ApiError::Forbidden(
+                "this needs a browser session, not an API token".into(),
+            )),
+        }
+    }
+
+    pub fn session_id(&self) -> Option<SessionId> {
+        match &self.via {
+            Via::Session { session, .. } => Some(session.id),
+            Via::Token(_) => None,
+        }
+    }
+
+    /// The account as the audit log names it.
+    pub fn actor(&self) -> Actor {
+        Actor::User {
+            id: self.user.id,
+            username: self.user.username.clone(),
+            via: match &self.via {
+                Via::Session { .. } => audit::Via::Session,
+                Via::Token(_) => audit::Via::Token,
+            },
+            ip: self.ip,
+        }
+    }
+}
+
+/// The request's account, or 401.
+pub struct Auth(pub Identity);
+
+impl<S: Send + Sync> FromRequestParts<S> for Auth {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, ApiError> {
+        parts
+            .extensions
+            .get::<Identity>()
+            .cloned()
+            .map(Auth)
+            .ok_or(ApiError::Unauthorized)
+    }
+}
+
+/// The request's account, when it has one.
+pub struct MaybeAuth(pub Option<Identity>);
+
+impl<S: Send + Sync> FromRequestParts<S> for MaybeAuth {
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
+        Ok(MaybeAuth(parts.extensions.get::<Identity>().cloned()))
+    }
+}
+
+/// The address the request came from, through the trusted proxies.
+pub struct ClientIp(pub IpAddr);
+
+impl<S: Send + Sync> FromRequestParts<S> for ClientIp {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, ApiError> {
+        parts
+            .extensions
+            .get::<ClientInfo>()
+            .map(|info| ClientIp(info.ip))
+            .ok_or_else(|| ApiError::Internal("client address unavailable".into()))
+    }
+}
+
+/// Resolves a bearer API token, or else a live session cookie, into an [`Identity`]. A
+/// bearer token that names nothing ends the request with 401, and counts against the
+/// address like a wrong password.
+pub async fn identify(
+    State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
+    jar: CookieJar,
+    mut request: Request,
+    next: Next,
+) -> Result<Response, ApiError> {
+    let bearer = request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .map(str::trim)
+        .map(str::to_string);
+    if let Some(secret) = bearer {
+        let ip_key = ip.to_string();
+        state
+            .limits
+            .login_ip
+            .check(&ip_key)
+            .map_err(ApiError::TooManyRequests)?;
+        let found = match state.tokens.authenticate(&secret).await? {
+            Some(token) => state
+                .users
+                .get(token.user_id)
+                .await?
+                .map(|user| (user, token)),
+            None => None,
+        };
+        let Some((user, token)) = found else {
+            state.limits.login_ip.strike(&ip_key);
+            return Err(ApiError::Unauthorized);
+        };
+        request.extensions_mut().insert(Identity {
+            user,
+            via: Via::Token(token),
+            ip,
+        });
+    } else if let Some(cookie) = jar.get(COOKIE)
+        && let Some(auth) = state.sessions.authenticate(cookie.value()).await?
+        && let Some(user) = state.users.get(auth.session.user_id).await?
+    {
+        request.extensions_mut().insert(Identity {
+            user,
+            via: Via::Session {
+                session: auth.session,
+                csrf_token: auth.csrf_token,
+            },
+            ip,
+        });
+    }
+    // An account's request says where the app is reached: the address its browser shows,
+    // which the browser names in Origin and Referer, else the one the request arrived at.
+    if request.extensions().get::<Identity>().is_some()
+        && let Some(origin) = request_origin(&request)
+    {
+        state.public_url.learn(&origin).await?;
+    }
+    Ok(next.run(request).await)
+}
+
+/// The origin the browser is on, from its `Origin` header, else its `Referer`, else the
+/// scheme and host the request came to as the trusted proxies report them.
+fn request_origin(request: &Request) -> Option<String> {
+    let headed = |name: header::HeaderName| {
+        request
+            .headers()
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| url::Url::parse(value).ok())
+            .filter(|url| matches!(url.scheme(), "http" | "https") && url.host().is_some())
+            .map(|url| url.origin().ascii_serialization())
+    };
+    headed(header::ORIGIN)
+        .or_else(|| headed(header::REFERER))
+        .or_else(|| {
+            request
+                .extensions()
+                .get::<ClientInfo>()
+                .and_then(|info| info.origin())
+        })
+}
+
+/// Refuses cross-site state changes: the request's origin must be this host, and a
+/// session must echo its CSRF token in the `x-csrf-token` header.
+pub async fn csrf_guard(request: Request, next: Next) -> Result<Response, ApiError> {
+    if !matches!(
+        *request.method(),
+        Method::GET | Method::HEAD | Method::OPTIONS
+    ) {
+        let host = request
+            .extensions()
+            .get::<ClientInfo>()
+            .and_then(|info| info.host.clone());
+        check_origin(request.headers(), host.as_deref())?;
+        if let Some(Identity {
+            via: Via::Session { csrf_token, .. },
+            ..
+        }) = request.extensions().get::<Identity>()
+        {
+            let sent = request
+                .headers()
+                .get(CSRF_HEADER)
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or("");
+            if !bool::from(sent.as_bytes().ct_eq(csrf_token.as_bytes())) {
+                return Err(ApiError::Forbidden("missing or wrong CSRF token".into()));
+            }
+        }
+    }
+    Ok(next.run(request).await)
+}
+
+/// `host` is what the browser asked for: the `Host` header, or what a trusted proxy
+/// forwarded when it rewrote it.
+fn check_origin(headers: &HeaderMap, host: Option<&str>) -> Result<(), ApiError> {
+    if let Some(site) = headers
+        .get("sec-fetch-site")
+        .and_then(|value| value.to_str().ok())
+        && !matches!(site, "same-origin" | "none")
+    {
+        return Err(ApiError::Forbidden("cross-site request".into()));
+    }
+    if let Some(origin) = headers
+        .get(header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
+    {
+        let host = host.unwrap_or("");
+        if !same_authority(origin, host) {
+            return Err(ApiError::Forbidden(
+                "request origin does not match this host".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Whether an `Origin` header names the host and port a `Host` header does. Browsers leave
+/// default ports out of both.
+fn same_authority(origin: &str, host: &str) -> bool {
+    origin
+        .split_once("://")
+        .is_some_and(|(_, authority)| !host.is_empty() && authority.eq_ignore_ascii_case(host))
+}
+
+#[derive(Debug, Serialize)]
+pub struct SessionView {
+    pub id: SessionId,
+    pub created_at: Timestamp,
+    pub last_seen_at: Timestamp,
+    pub expires_at: Timestamp,
+    pub user_agent: Option<String>,
+    pub ip: Option<IpAddr>,
+    /// Whether this is the session making the request.
+    pub current: bool,
+}
+
+impl SessionView {
+    pub fn of(session: &Session, current: SessionId) -> Self {
+        Self {
+            id: session.id,
+            created_at: session.created_at,
+            last_seen_at: session.last_seen_at,
+            expires_at: session.expires_at(),
+            user_agent: session.user_agent.clone(),
+            ip: session.ip,
+            current: session.id == current,
+        }
+    }
+}
+
+/// Who is asking: the account, and for a browser the CSRF token to send back, for a
+/// script the token it used.
+#[derive(Debug, Serialize)]
+pub struct WhoAmI {
+    pub user: User,
+    pub csrf_token: Option<String>,
+    pub session: Option<SessionView>,
+    pub token: Option<ApiToken>,
+}
+
+impl WhoAmI {
+    fn of(identity: Identity) -> Self {
+        match identity.via {
+            Via::Session {
+                session,
+                csrf_token,
+            } => Self {
+                user: identity.user,
+                csrf_token: Some(csrf_token),
+                session: Some(SessionView::of(&session, session.id)),
+                token: None,
+            },
+            Via::Token(token) => Self {
+                user: identity.user,
+                csrf_token: None,
+                session: None,
+                token: Some(token),
+            },
+        }
+    }
+}
+
+/// Opens a session for `user` and puts its cookie in the jar. Over HTTPS the cookie is
+/// marked `Secure`, so a browser never sends it in the clear.
+pub async fn start_session(
+    state: &AppState,
+    user: User,
+    jar: CookieJar,
+    headers: &HeaderMap,
+    client: &ClientInfo,
+) -> Result<(CookieJar, Identity), ApiError> {
+    let user_agent = headers
+        .get(header::USER_AGENT)
+        .and_then(|value| value.to_str().ok())
+        .map(|agent| agent.chars().take(256).collect());
+    let ip = client.ip;
+    let created = state.sessions.create(user.id, user_agent, Some(ip)).await?;
+    let cookie = Cookie::build((COOKIE, created.token))
+        .path("/")
+        .http_only(true)
+        .secure(client.scheme == Scheme::Https)
+        .same_site(SameSite::Lax)
+        .max_age(time::Duration::seconds(ABSOLUTE_LIFETIME.as_secs()))
+        .build();
+    let identity = Identity {
+        user,
+        via: Via::Session {
+            session: created.session,
+            csrf_token: created.csrf_token,
+        },
+        ip,
+    };
+    Ok((jar.add(cookie), identity))
+}
+
+async fn open_session(
+    state: &AppState,
+    user: User,
+    jar: CookieJar,
+    headers: &HeaderMap,
+    client: &ClientInfo,
+) -> Result<(CookieJar, Json<WhoAmI>), ApiError> {
+    let (jar, identity) = start_session(state, user, jar, headers, client).await?;
+    Ok((jar, Json(WhoAmI::of(identity))))
+}
+
+pub fn cleared(jar: CookieJar) -> CookieJar {
+    jar.remove(
+        Cookie::build(COOKIE)
+            .path("/")
+            .http_only(true)
+            .same_site(SameSite::Lax),
+    )
+}
+
+#[derive(Debug, Serialize)]
+pub struct SetupStatus {
+    /// Whether the first account still has to be created.
+    pub needed: bool,
+}
+
+pub async fn setup_status(State(state): State<AppState>) -> Result<Json<SetupStatus>, ApiError> {
+    Ok(Json(SetupStatus {
+        needed: !state.users.is_set_up().await?,
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetupRequest {
+    pub username: String,
+    pub password: String,
+}
+
+/// Creates the first account, an admin, and logs it in. Refused once any account exists.
+pub async fn setup(
+    State(state): State<AppState>,
+    super::proxy::Client(client): super::proxy::Client,
+    jar: CookieJar,
+    headers: HeaderMap,
+    Json(request): Json<SetupRequest>,
+) -> Result<(CookieJar, Json<WhoAmI>), ApiError> {
+    let user = state
+        .users
+        .set_up(&request.username, &request.password)
+        .await?;
+    tracing::info!(username = user.username, ip = %client.ip, "first account created");
+    open_session(&state, user, jar, &headers, &client).await
+}
+
+/// Prints the recovery key on the console, set apart so it is found. It goes to standard
+/// output straight rather than through the log, so the Logs page never shows it.
+pub fn announce_recovery_key(key: &str, recover_url: Option<&str>) {
+    let rule = "=".repeat(72);
+    let open = match recover_url {
+        Some(url) => format!("Open {url}"),
+        None => "Open /recover on the web app".to_string(),
+    };
+    println!(
+        "\n{rule}\n  DISCOCLIP RECOVERY KEY\n\n      {key}\n\n  Locked out of an account? {open} and enter this key with\n  the username to set a new password. The key changes each time the server\n  starts and each time it is used.\n{rule}\n"
+    );
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RecoverRequest {
+    pub username: String,
+    /// The recovery key the server printed on its console.
+    pub key: String,
+    pub password: String,
+}
+
+/// Sets a new password for a locked-out account with the recovery key, ends the account's
+/// sessions and the lockout, and logs it in. The key is replaced and printed again.
+pub async fn recover(
+    State(state): State<AppState>,
+    super::proxy::Client(client): super::proxy::Client,
+    jar: CookieJar,
+    headers: HeaderMap,
+    Json(request): Json<RecoverRequest>,
+) -> Result<(CookieJar, Json<WhoAmI>), ApiError> {
+    let ip_key = client.ip.to_string();
+    state
+        .limits
+        .recovery
+        .check(&ip_key)
+        .map_err(ApiError::TooManyRequests)?;
+    let expected = state
+        .recovery_key
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    if !bool::from(request.key.trim().as_bytes().ct_eq(expected.as_bytes())) {
+        state.limits.recovery.strike(&ip_key);
+        tracing::warn!(ip = %client.ip, "wrong recovery key");
+        return Err(ApiError::Forbidden("wrong recovery key".into()));
+    }
+    let user = state
+        .users
+        .find(&request.username)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    let user = state.users.set_password(user.id, &request.password).await?;
+    state.sessions.revoke_all_for(user.id, None).await?;
+    state
+        .limits
+        .login_user
+        .clear(&user.username.to_ascii_lowercase());
+    state.limits.login_ip.clear(&ip_key);
+    let fresh = random_token();
+    *state.recovery_key.lock().unwrap_or_else(|e| e.into_inner()) = fresh.clone();
+    announce_recovery_key(&fresh, None);
+    tracing::warn!(username = user.username, ip = %client.ip, "password reset with the recovery key");
+    open_session(&state, user, jar, &headers, &client).await
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LoginRequest {
+    pub username: String,
+    pub password: String,
+}
+
+pub async fn login(
+    State(state): State<AppState>,
+    super::proxy::Client(client): super::proxy::Client,
+    jar: CookieJar,
+    headers: HeaderMap,
+    Json(request): Json<LoginRequest>,
+) -> Result<(CookieJar, Json<WhoAmI>), ApiError> {
+    let ip = client.ip;
+    let user_key = request.username.to_ascii_lowercase();
+    let ip_key = ip.to_string();
+    let wait = [
+        state.limits.login_user.check(&user_key),
+        state.limits.login_ip.check(&ip_key),
+    ]
+    .into_iter()
+    .filter_map(Result::err)
+    .max();
+    if let Some(wait) = wait {
+        return Err(ApiError::TooManyRequests(wait));
+    }
+    match state
+        .users
+        .verify_login(&request.username, &request.password)
+        .await?
+    {
+        Some(user) => {
+            state.limits.login_user.clear(&user_key);
+            tracing::info!(username = user.username, %ip, "logged in");
+            open_session(&state, user, cleared(jar), &headers, &client).await
+        }
+        None => {
+            state.limits.login_user.strike(&user_key);
+            state.limits.login_ip.strike(&ip_key);
+            tracing::info!(username = request.username, %ip, "login refused");
+            Err(ApiError::Unauthorized)
+        }
+    }
+}
+
+pub async fn logout(
+    State(state): State<AppState>,
+    Auth(identity): Auth,
+    jar: CookieJar,
+) -> Result<(CookieJar, StatusCode), ApiError> {
+    state.sessions.revoke(identity.session()?.id).await?;
+    Ok((cleared(jar), StatusCode::NO_CONTENT))
+}
+
+pub async fn current_session(Auth(identity): Auth) -> Json<WhoAmI> {
+    Json(WhoAmI::of(identity))
+}
+
+pub async fn list_sessions(
+    State(state): State<AppState>,
+    Auth(identity): Auth,
+) -> Result<Json<Vec<SessionView>>, ApiError> {
+    let current = identity.session()?.id;
+    let sessions = state.sessions.list_for(identity.user.id).await?;
+    Ok(Json(
+        sessions
+            .iter()
+            .map(|session| SessionView::of(session, current))
+            .collect(),
+    ))
+}
+
+/// Ends one of the account's own sessions.
+pub async fn revoke_session(
+    State(state): State<AppState>,
+    Auth(identity): Auth,
+    Path(id): Path<String>,
+    jar: CookieJar,
+) -> Result<(CookieJar, StatusCode), ApiError> {
+    let current = identity.session()?.id;
+    let id: SessionId = parse_id(&id)?;
+    let session = state.sessions.get(id).await?.ok_or(ApiError::NotFound)?;
+    if session.user_id != identity.user.id {
+        return Err(ApiError::NotFound);
+    }
+    state.sessions.revoke(id).await?;
+    let jar = if id == current { cleared(jar) } else { jar };
+    Ok((jar, StatusCode::NO_CONTENT))
+}
+
+#[derive(Debug, Serialize)]
+pub struct Revoked {
+    pub revoked: usize,
+}
+
+/// A path segment as an id, or 404.
+pub fn parse_id<T: std::str::FromStr>(id: &str) -> Result<T, ApiError> {
+    id.parse().map_err(|_| ApiError::NotFound)
+}
+
+/// Ends every session of the account but the one asking.
+pub async fn revoke_other_sessions(
+    State(state): State<AppState>,
+    Auth(identity): Auth,
+) -> Result<Json<Revoked>, ApiError> {
+    let current = identity.session()?.id;
+    let revoked = state
+        .sessions
+        .revoke_all_for(identity.user.id, Some(current))
+        .await?;
+    Ok(Json(Revoked { revoked }))
+}

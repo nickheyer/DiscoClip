@@ -461,6 +461,15 @@ impl EngineHandle {
         self.shared.resolvers.platforms()
     }
 
+    /// The display name of the platform behind a resolver id, else the id itself
+    pub fn platform_name(&self, id: &str) -> String {
+        self.shared
+            .resolvers
+            .get(id)
+            .map(|r| r.platform().name.to_string())
+            .unwrap_or_else(|| id.to_string())
+    }
+
     /// The resolver that would take `url`.
     pub fn resolver_for(&self, url: &Url) -> Option<&'static str> {
         self.shared.resolvers.find(url).map(|r| r.id())
@@ -874,6 +883,11 @@ impl EngineHandle {
 
     pub async fn stats_since(&self, since: Timestamp) -> Result<Stats, StoreError> {
         self.shared.store.stats_since(since).await
+    }
+
+    /// The resolvers of the jobs a filter admits, each once
+    pub async fn job_resolvers(&self, filter: &JobFilter) -> Result<Vec<String>, StoreError> {
+        self.shared.store.resolvers(filter).await
     }
 
     pub async fn resolver_stats(&self) -> Result<Vec<ResolverStats>, StoreError> {

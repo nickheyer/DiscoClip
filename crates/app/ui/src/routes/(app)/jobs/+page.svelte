@@ -228,12 +228,12 @@
 	}
 
 	const columns: Column<JobSummary>[] = [
-		{ key: 'job', label: 'Job', cell: jobCell, class: 'min-w-64' },
-		{ key: 'media', label: 'Media', cell: mediaCell },
-		{ key: 'status', label: 'Status', cell: statusCell },
+		{ key: 'job', label: 'Job', cell: jobCell, class: 'min-w-64', fill: true },
+		{ key: 'media', label: 'Media', cell: mediaCell, class: 'whitespace-nowrap' },
+		{ key: 'status', label: 'Status', cell: statusCell, class: 'whitespace-nowrap' },
 		{ key: 'origin', label: 'From', cell: originCell },
-		{ key: 'size', label: 'Size', align: 'right', cell: sizeCell },
-		{ key: 'age', label: 'Submitted', cell: ageCell }
+		{ key: 'size', label: 'Size', align: 'right', cell: sizeCell, class: 'whitespace-nowrap' },
+		{ key: 'age', label: 'Submitted', cell: ageCell, class: 'whitespace-nowrap' }
 	];
 
 	const canManage = $derived(session.can('manage_jobs'));

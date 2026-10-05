@@ -489,8 +489,9 @@ export interface FrontJobQuery {
 	media?: MediaKind;
 	resolver?: string;
 	before?: Timestamp;
-	/** At most 48. */
+	after?: Timestamp;
 	limit?: number;
+	order?: JobOrder;
 }
 
 export interface FrontSecretLogin {
@@ -939,10 +940,20 @@ export interface FrontInfo {
 	viewer: FrontViewer | null;
 }
 
+export interface FrontPlatform {
+	id: string;
+	/** The resolver's display name. */
+	name: string;
+}
+
 export interface FrontPage {
 	jobs: FrontJob[];
-	/** The `before` of the next page. */
+	/** The cursor of the next page: `before` newest first, `after` oldest first. */
 	next: Timestamp | null;
+	/** How many entries the query matches in all. */
+	total: number;
+	/** Every platform the front end has media from, in name order. */
+	platforms: FrontPlatform[];
 }
 
 export interface FrontJob {
@@ -950,6 +961,8 @@ export interface FrontJob {
 	title: string | null;
 	media: MediaKind;
 	resolver: string;
+	/** The resolver's display name. */
+	platform: string;
 	uploader: string | null;
 	webpage_url: Url | null;
 	/** Shows the still that stands for the media, with its signed token. */
@@ -1008,6 +1021,8 @@ export interface JobSummary {
 	retry_of: Uuid | null;
 	title: string | null;
 	resolver: string | null;
+	/** The resolver's display name. */
+	platform: string | null;
 	/** What the probe found the source to be, else what the resolver said, else `video`. */
 	media: MediaKind;
 	uploader: string | null;
@@ -1184,6 +1199,8 @@ export interface Job {
 	request: JobRequest;
 	/** The request's origin in the names people know, for a request from Discord. */
 	place: Place | null;
+	/** The resolver's display name. */
+	platform: string | null;
 	/** The request's limits tightened by the engine's own: what the job is held to. */
 	limits_in_force: LimitsInForce;
 	status: JobStatus;

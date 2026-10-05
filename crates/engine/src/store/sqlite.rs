@@ -315,57 +315,56 @@ fn columns(job: &Job) -> Result<[Value; 18], StoreError> {
     ])
 }
 
-/// The `WHERE` clause and bindings of a filter.
-fn clauses(filter: &JobFilter) -> (String, Vec<Value>) {
+/// The conditions of a filter on the jobs table named `t`, with their bindings in order
+fn conditions(filter: &JobFilter, t: &str) -> (Vec<String>, Vec<Value>) {
     let mut clauses: Vec<String> = Vec::new();
     let mut values: Vec<Value> = Vec::new();
     if let Some(source) = &filter.source {
-        clauses.push("source = ?".into());
+        clauses.push(format!("{t}.source = ?"));
         values.push(Value::Text(source.0.clone()));
     }
     if let Some(status) = filter.status {
-        clauses.push("status = ?".into());
+        clauses.push(format!("{t}.status = ?"));
         values.push(Value::Text(status.as_str().to_string()));
     }
     if let Some(before) = filter.before {
-        clauses.push("created_at < ?".into());
+        clauses.push(format!("{t}.created_at < ?"));
         values.push(Value::Integer(nanos(before)));
     }
     if let Some(after) = filter.after {
-        clauses.push("created_at > ?".into());
+        clauses.push(format!("{t}.created_at > ?"));
         values.push(Value::Integer(nanos(after)));
     }
     if let Some(resolver) = &filter.resolver {
-        clauses.push("resolver = ?".into());
+        clauses.push(format!("{t}.resolver = ?"));
         values.push(Value::Text(resolver.clone()));
     }
     if !filter.resolvers.is_empty() {
         let marks = vec!["?"; filter.resolvers.len()].join(", ");
-        clauses.push(format!("resolver IN ({marks})"));
+        clauses.push(format!("{t}.resolver IN ({marks})"));
         values.extend(filter.resolvers.iter().map(|r| Value::Text(r.clone())));
     }
     if let Some(view) = &filter.view {
-        clauses.push("view_id = ?".into());
+        clauses.push(format!("{t}.view_id = ?"));
         values.push(Value::Text(view.clone()));
     }
     if let Some(media) = filter.media {
-        clauses.push("media = ?".into());
+        clauses.push(format!("{t}.media = ?"));
         values.push(Value::Text(media.as_str().to_string()));
     }
     if filter.with_output {
-        clauses.push(
-            "((status = 'done' AND json_extract(data, '$.artifacts.output') IS NOT NULL) \
-              OR (status = 'running' AND (json_extract(data, '$.artifacts.recording') IS NOT NULL \
-                  OR (json_extract(data, '$.status.stage') IN ('publish', 'archive') \
-                      AND json_extract(data, '$.artifacts.output') IS NOT NULL))))"
-                .into(),
-        );
+        clauses.push(format!(
+            "(({t}.status = 'done' AND json_extract({t}.data, '$.artifacts.output') IS NOT NULL) \
+              OR ({t}.status = 'running' AND (json_extract({t}.data, '$.artifacts.recording') IS NOT NULL \
+                  OR (json_extract({t}.data, '$.status.stage') IN ('publish', 'archive') \
+                      AND json_extract({t}.data, '$.artifacts.output') IS NOT NULL))))"
+        ));
     }
     if let Some(parent) = filter.parent {
-        clauses.push("parent_id = ?".into());
+        clauses.push(format!("{t}.parent_id = ?"));
         values.push(Value::Text(parent.to_string()));
     } else if filter.top_level {
-        clauses.push("parent_id IS NULL".into());
+        clauses.push(format!("{t}.parent_id IS NULL"));
     }
     if let Some(q) = filter.q.as_deref().map(str::trim).filter(|q| !q.is_empty()) {
         let like = format!(
@@ -374,13 +373,46 @@ fn clauses(filter: &JobFilter) -> (String, Vec<Value>) {
                 .replace('%', "\\%")
                 .replace('_', "\\_")
         );
-        clauses.push(
-            "(url LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\' OR submitted_by LIKE ? ESCAPE '\\' OR id LIKE ? ESCAPE '\\')"
-                .into(),
-        );
+        clauses.push(format!(
+            "({t}.url LIKE ? ESCAPE '\\' OR {t}.title LIKE ? ESCAPE '\\' OR {t}.submitted_by LIKE ? ESCAPE '\\' OR {t}.id LIKE ? ESCAPE '\\')"
+        ));
         for _ in 0..4 {
             values.push(Value::Text(like.clone()));
         }
+    }
+    (clauses, values)
+}
+
+/// The `WHERE` clause and bindings of a filter.
+fn clauses(filter: &JobFilter) -> (String, Vec<Value>) {
+    let (mut clauses, mut values) = conditions(filter, "jobs");
+    if filter.one_per_media {
+        let twins = JobFilter {
+            before: None,
+            after: None,
+            limit: None,
+            offset: None,
+            one_per_media: false,
+            ..filter.clone()
+        };
+        let (mut inner, inner_values) = conditions(&twins, "n");
+        inner.push(
+            "(n.url_key = jobs.url_key OR (n.media_key IS NOT NULL AND n.media_key = jobs.media_key))"
+                .into(),
+        );
+        inner.push(
+            "json_extract(n.data, '$.request.options.clip') IS json_extract(jobs.data, '$.request.options.clip')"
+                .into(),
+        );
+        inner.push(
+            "(n.created_at > jobs.created_at OR (n.created_at = jobs.created_at AND n.id > jobs.id))"
+                .into(),
+        );
+        clauses.push(format!(
+            "NOT EXISTS (SELECT 1 FROM jobs n WHERE {})",
+            inner.join(" AND ")
+        ));
+        values.extend(inner_values);
     }
     let sql = if clauses.is_empty() {
         String::new()
@@ -613,6 +645,23 @@ impl JobStore for SqliteStore {
         .await
     }
 
+    async fn resolvers(&self, filter: &JobFilter) -> Result<Vec<String>, StoreError> {
+        let filter = filter.clone();
+        self.call(move |conn| {
+            let (where_sql, values) = clauses(&filter);
+            let joiner = if where_sql.is_empty() { " WHERE" } else { " AND" };
+            let sql = format!(
+                "SELECT DISTINCT jobs.resolver FROM jobs{where_sql}{joiner} jobs.resolver IS NOT NULL ORDER BY jobs.resolver"
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt.query_map(rusqlite::params_from_iter(values), |row| {
+                row.get::<_, String>(0)
+            })?;
+            rows.map(|row| Ok(row?)).collect()
+        })
+        .await
+    }
+
     async fn resolver_stats(&self) -> Result<Vec<ResolverStats>, StoreError> {
         self.call(move |conn| {
             let mut stmt = conn.prepare(
@@ -773,6 +822,87 @@ mod tests {
         assert!(store.delete(child.id).await.unwrap());
         assert!(!store.delete(child.id).await.unwrap());
         assert!(store.children(parent.id).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn one_per_media_keeps_the_newest_job_of_each_media() {
+        let store = SqliteStore::open_in_memory().await.unwrap();
+        let at = |hours: i64| Timestamp::UNIX_EPOCH + jiff::SignedDuration::from_hours(hours);
+        let done = |url: &str, view: &str, hours: i64| {
+            let mut job = Job::new(request(url));
+            job.request.policy.delivery.view = crate::policy::View::Id(view.into());
+            let mut resolved = crate::resolve::Resolved::new("web");
+            resolved.id = Some("1".into());
+            job.artifacts.resolved = Some(resolved);
+            job.status = crate::job::JobStatus::Done;
+            job.created_at = at(hours);
+            job
+        };
+        let first = done("https://a.test/v?id=1", "v1", 1);
+        let repost = done("https://a.test/v?id=1", "v1", 2);
+        let mut clipped = done("https://a.test/v?id=1", "v1", 3);
+        clipped.request.options.clip = Some(crate::resolve::ClipRange {
+            start: std::time::Duration::from_secs(5),
+            end: None,
+        });
+        let elsewhere = done("https://a.test/v?id=1", "v2", 4);
+        let by_media_id = done("https://b.test/x", "v1", 5);
+        for job in [&first, &repost, &clipped, &elsewhere, &by_media_id] {
+            store.insert(job).await.unwrap();
+        }
+        let grouped = JobFilter {
+            view: Some("v1".into()),
+            one_per_media: true,
+            ..JobFilter::default()
+        };
+        assert_eq!(
+            store.list(&grouped).await.unwrap(),
+            vec![by_media_id.clone(), clipped.clone()]
+        );
+        assert_eq!(store.count(&grouped).await.unwrap(), 2);
+        assert_eq!(store.resolvers(&grouped).await.unwrap(), vec!["web"]);
+        assert_eq!(
+            store
+                .list(&JobFilter {
+                    one_per_media: false,
+                    ..grouped.clone()
+                })
+                .await
+                .unwrap()
+                .len(),
+            4
+        );
+        assert_eq!(
+            store
+                .list(&JobFilter {
+                    view: Some("v2".into()),
+                    ..grouped.clone()
+                })
+                .await
+                .unwrap(),
+            vec![elsewhere.clone()]
+        );
+        assert_eq!(
+            store
+                .list(&JobFilter {
+                    limit: Some(1),
+                    ..grouped.clone()
+                })
+                .await
+                .unwrap(),
+            vec![by_media_id.clone()]
+        );
+        assert_eq!(
+            store
+                .list(&JobFilter {
+                    limit: Some(1),
+                    before: Some(by_media_id.created_at),
+                    ..grouped.clone()
+                })
+                .await
+                .unwrap(),
+            vec![clipped.clone()]
+        );
     }
 
     #[tokio::test]

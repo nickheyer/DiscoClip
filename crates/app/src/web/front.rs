@@ -310,11 +310,16 @@ pub struct ListQuery {
     pub media: Option<MediaKind>,
     #[serde(default)]
     pub resolver: Option<String>,
-    /// Jobs finished before this moment: the cursor for the next page.
+    /// Jobs created before this moment: the cursor for the next page, newest first.
     #[serde(default)]
     pub before: Option<Timestamp>,
+    /// Jobs created after this moment: the cursor for the next page, oldest first.
+    #[serde(default)]
+    pub after: Option<Timestamp>,
     #[serde(default)]
     pub limit: Option<usize>,
+    #[serde(default)]
+    pub order: Order,
 }
 
 /// A piece of media as a front end shows it.
@@ -416,13 +421,7 @@ fn front_job(state: &AppState, frontend: &Frontend, job: &Job) -> Option<FrontJo
 
 /// The display name of the platform behind the resolver id, else the id itself
 fn platform_name(state: &AppState, resolver: &str) -> String {
-    state
-        .engine
-        .platforms()
-        .into_iter()
-        .find(|p| p.id == resolver)
-        .map(|p| p.name.to_string())
-        .unwrap_or_else(|| resolver.to_string())
+    state.engine.platform_name(resolver)
 }
 
 /// Whether the job has a playable file and its profile published it on the front end
@@ -447,11 +446,23 @@ async fn media_file(job: &Job) -> Result<(PathBuf, String, bool), ApiError> {
     Ok((path, filename, false))
 }
 
+/// A platform the front end has media from.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct FrontPlatform {
+    pub id: String,
+    /// The resolver's display name
+    pub name: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct FrontPage {
     pub jobs: Vec<FrontJob>,
-    /// The `before` for the next page, when there may be more.
+    /// The cursor for the next page, when there may be more: `before` newest first, `after` oldest first.
     pub next: Option<Timestamp>,
+    /// How many entries the query matches in all.
+    pub total: u64,
+    /// Every platform the front end has media from, in name order.
+    pub platforms: Vec<FrontPlatform>,
 }
 
 const PAGE_LIMIT: usize = 48;
@@ -466,22 +477,24 @@ pub async fn list(
     let frontend = frontend(&state, &slug)?;
     admitted(&state, &frontend, &jar).await?;
     let limit = query.limit.unwrap_or(PAGE_LIMIT).clamp(1, PAGE_LIMIT);
-    let filter = JobFilter {
-        source: None,
-        status: None,
-        before: query.before,
-        after: None,
-        limit: Some(limit + 1),
-        offset: None,
+    let on_view = JobFilter {
+        view: Some(frontend.id.to_string()),
+        with_output: true,
+        one_per_media: true,
+        ..JobFilter::default()
+    };
+    let matching = JobFilter {
         q: query.q,
         resolver: query.resolver,
-        resolvers: Vec::new(),
-        parent: None,
-        top_level: false,
-        view: Some(frontend.id.to_string()),
         media: query.media,
-        with_output: true,
-        order: Order::Newest,
+        order: query.order,
+        ..on_view.clone()
+    };
+    let filter = JobFilter {
+        before: query.before,
+        after: query.after,
+        limit: Some(limit + 1),
+        ..matching.clone()
     };
     let mut jobs = state.engine.list(&filter).await?;
     let next = if jobs.len() > limit {
@@ -490,11 +503,28 @@ pub async fn list(
     } else {
         None
     };
+    let total = state.engine.count(&matching).await?;
+    let mut platforms: Vec<FrontPlatform> = state
+        .engine
+        .job_resolvers(&on_view)
+        .await?
+        .into_iter()
+        .map(|id| FrontPlatform {
+            name: platform_name(&state, &id),
+            id,
+        })
+        .collect();
+    platforms.sort_by_key(|platform| platform.name.to_lowercase());
     let jobs = jobs
         .iter()
         .filter_map(|job| front_job(&state, &frontend, job))
         .collect();
-    Ok(Json(FrontPage { jobs, next }))
+    Ok(Json(FrontPage {
+        jobs,
+        next,
+        total,
+        platforms,
+    }))
 }
 
 /// One piece of media the front end shows.
@@ -1011,6 +1041,7 @@ mod tests {
         assert_eq!(status, StatusCode::OK, "{page}");
         let jobs = page["jobs"].as_array().unwrap();
         assert_eq!(jobs.len(), 2, "{page}");
+        assert_eq!(page["total"], 2);
         assert_eq!(jobs[0]["id"], local.id.to_string());
         assert_eq!(jobs[1]["id"], in_guild.id.to_string());
         assert_eq!(jobs[1]["title"], "Clip a");
@@ -1022,6 +1053,26 @@ mod tests {
         let (status, page) = guest.get("/api/f/five/jobs?resolver=nothing").await;
         assert_eq!(status, StatusCode::OK, "{page}");
         assert!(page["jobs"].as_array().unwrap().is_empty());
+        assert_eq!(page["total"], 0);
+        assert_eq!(
+            page["platforms"],
+            json!([{"id": "fixtured", "name": "Fixtured"}])
+        );
+        // Oldest first pages forward from the cursor.
+        let (status, page) = guest.get("/api/f/five/jobs?order=oldest&limit=1").await;
+        assert_eq!(status, StatusCode::OK, "{page}");
+        assert_eq!(page["total"], 2);
+        assert_eq!(page["jobs"][0]["id"], in_guild.id.to_string());
+        assert_eq!(page["jobs"][0]["platform"], "Fixtured");
+        let cursor = page["next"].as_str().unwrap().to_string();
+        let (status, page) = guest
+            .get(&format!(
+                "/api/f/five/jobs?order=oldest&limit=1&after={cursor}"
+            ))
+            .await;
+        assert_eq!(status, StatusCode::OK, "{page}");
+        assert_eq!(page["jobs"][0]["id"], local.id.to_string());
+        assert!(page["next"].is_null());
         for gone in [&other_guild, &unrouted] {
             assert_eq!(
                 guest.get(&format!("/api/f/five/jobs/{}", gone.id)).await.0,
@@ -1179,6 +1230,35 @@ mod tests {
             viewer.get("/api/f/five/jobs").await.0,
             StatusCode::UNAUTHORIZED
         );
+
+        // The admin's browser also holds the admin session cookie and sends no CSRF token on a view's page
+        let mut admin_browser = visitor(&app);
+        admin_browser.cookie = admin.cookie.clone();
+        let (status, info) = admin_browser
+            .post("/api/f/five/login", json!({"secret": "2468"}))
+            .await;
+        assert_eq!(status, StatusCode::OK, "{info}");
+        assert_eq!(info["viewer"]["subject"], "secret");
+        assert!(
+            admin_browser
+                .set_cookie
+                .as_deref()
+                .is_some_and(|set| set.starts_with("dcf_five=")),
+            "{:?}",
+            admin_browser.set_cookie
+        );
+        assert_eq!(
+            admin_browser.post("/api/f/five/logout", json!({})).await.0,
+            StatusCode::NO_CONTENT
+        );
+        // A state change from another site is still refused
+        let mut elsewhere = visitor(&app);
+        elsewhere.origin = Some("http://evil.example".into());
+        let (status, body) = elsewhere
+            .post("/api/f/five/login", json!({"secret": "2468"}))
+            .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+        assert_eq!(body["error"], "request origin does not match this host");
 
         // An account of the front end's own.
         let (status, user) = admin

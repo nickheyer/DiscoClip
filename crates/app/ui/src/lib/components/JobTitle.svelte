@@ -13,7 +13,7 @@
 
 	const title = $derived(job.title ?? job.url);
 	const subtitle = $derived(
-		[job.uploader, job.resolver ?? host(job.url)].filter(Boolean).join(' · ')
+		[job.uploader, job.platform ?? host(job.url)].filter(Boolean).join(' · ')
 	);
 </script>
 

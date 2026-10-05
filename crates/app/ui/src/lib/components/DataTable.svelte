@@ -12,6 +12,8 @@
 		/** Classes for the header cell, such as a width. */
 		headerClass?: string;
 		align?: 'left' | 'right' | 'center';
+		/** Takes the width the other columns leave, so its text truncates instead of widening the table. */
+		fill?: boolean;
 		/** The plain value, for text cells and local sorting. */
 		value?: (row: T) => string | number | null | undefined;
 		/** Custom cell content. */
@@ -71,6 +73,7 @@
 	}: Props = $props();
 
 	const ALIGN = { left: 'text-left', right: 'text-right', center: 'text-center' };
+	const FILL = 'w-full max-w-0';
 
 	const blank = (v: string | number | null | undefined) =>
 		v === null || v === undefined || v === '';
@@ -156,7 +159,8 @@
 				{/if}
 				{#each shownColumns as column (column.key)}
 					<th
-						class="{ALIGN[column.align ?? 'left']} {column.headerClass ?? ''} whitespace-nowrap"
+						class="{ALIGN[column.align ?? 'left']} {column.fill ? FILL : ''} {column.headerClass ??
+							''} whitespace-nowrap"
 						scope="col"
 						aria-sort={sortKey === column.key
 							? sortDir === 'asc'
@@ -238,7 +242,10 @@
 							</td>
 						{/if}
 						{#each shownColumns as column (column.key)}
-							<td class="{ALIGN[column.align ?? 'left']} {column.class ?? ''}">
+							<td
+								class="{ALIGN[column.align ?? 'left']} {column.fill ? FILL : ''} {column.class ??
+									''}"
+							>
 								{#if column.cell}
 									{@render column.cell(row)}
 								{:else if column.value}

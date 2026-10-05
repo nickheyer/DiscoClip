@@ -17,8 +17,8 @@ use discoclip_engine::job::{
 };
 use discoclip_engine::media::{Container, MediaKind, safe_stem};
 use discoclip_engine::{
-    EngineEvent, EventKind, JobFilter, Order, ResolverStats, Stats, StatusKind, ThumbnailError,
-    Utilisation,
+    EngineEvent, EngineHandle, EventKind, JobFilter, Order, ResolverStats, Stats, StatusKind,
+    ThumbnailError, Utilisation,
 };
 
 use futures::{Stream, StreamExt};
@@ -193,6 +193,8 @@ pub struct JobSummary {
     pub retry_of: Option<JobId>,
     pub title: Option<String>,
     pub resolver: Option<String>,
+    /// The resolver's display name
+    pub platform: Option<String>,
     /// What the media is: what the probe found the source to be, else what the resolver
     /// said, else a video until the link resolves.
     pub media: MediaKind,
@@ -218,8 +220,8 @@ pub struct JobSummary {
 }
 
 impl JobSummary {
-    /// `bots` names the job's place when the request came from Discord.
-    pub fn of(job: &Job, bots: &BotManager) -> Self {
+    /// `bots` names the job's place when the request came from Discord, `engine` its platform.
+    pub fn of(job: &Job, bots: &BotManager, engine: &EngineHandle) -> Self {
         let resolved = job.artifacts.resolved.as_ref();
         Self {
             id: job.id,
@@ -238,6 +240,7 @@ impl JobSummary {
             retry_of: job.request.retry_of,
             title: resolved.and_then(|r| r.title.clone()),
             resolver: resolved.map(|r| r.resolver.clone()),
+            platform: resolved.map(|r| engine.platform_name(&r.resolver)),
             media: job.media(),
             uploader: resolved.and_then(|r| r.uploader.clone()),
             webpage_url: resolved.and_then(|r| r.webpage_url.clone()),
@@ -322,6 +325,7 @@ impl ListQuery {
             view: None,
             media: None,
             with_output: false,
+            one_per_media: false,
             order,
         })
     }
@@ -349,7 +353,7 @@ pub async fn list(
     Ok(Json(JobPage {
         jobs: jobs
             .iter()
-            .map(|job| JobSummary::of(job, &state.bots))
+            .map(|job| JobSummary::of(job, &state.bots, &state.engine))
             .collect(),
         total,
         limit,
@@ -364,6 +368,8 @@ pub struct JobView {
     pub job: Job,
     /// The origin in the names people know, for a request from Discord.
     pub place: Option<Place>,
+    /// The resolver's display name
+    pub platform: Option<String>,
     /// The request's limits tightened by the engine's own: what the job is held to.
     pub limits_in_force: LimitsInForce,
 }
@@ -407,9 +413,15 @@ pub async fn get(
         job.request.destination.as_deref(),
     );
     let limits_in_force = LimitsInForce::of(&job.request);
+    let platform = job
+        .artifacts
+        .resolved
+        .as_ref()
+        .map(|r| state.engine.platform_name(&r.resolver));
     Ok(Json(JobView {
         job,
         place,
+        platform,
         limits_in_force,
     }))
 }
@@ -426,7 +438,7 @@ pub async fn children(
     Ok(Json(
         children
             .iter()
-            .map(|job| JobSummary::of(job, &state.bots))
+            .map(|job| JobSummary::of(job, &state.bots, &state.engine))
             .collect(),
     ))
 }
@@ -522,7 +534,7 @@ pub(super) async fn job_events(
                             .ok()
                             .flatten()
                             .as_ref()
-                            .map(|job| JobSummary::of(job, &bots))
+                            .map(|job| JobSummary::of(job, &bots, &engine))
                     } else {
                         None
                     };

@@ -6,7 +6,15 @@
 	import { page } from '$app/state';
 	import { ApiError } from '$lib/api/client';
 	import { front } from '$lib/api/endpoints';
-	import type { FrontInfo, FrontJob, MediaKind } from '$lib/api/types';
+	import type {
+		FrontInfo,
+		FrontJob,
+		FrontJobQuery,
+		FrontPlatform,
+		JobOrder,
+		MediaKind
+	} from '$lib/api/types';
+	import Count from '$lib/components/Count.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
 	import MediaKindIcon from '$lib/components/MediaKindIcon.svelte';
@@ -27,15 +35,29 @@
 	let info = $state<FrontInfo | null>(null);
 	let jobs = $state<FrontJob[]>([]);
 	let next = $state<string | null>(null);
+	let total = $state<number | null>(null);
+	let platforms = $state<FrontPlatform[]>([]);
 	let loading = $state(true);
 	let loadingMore = $state(false);
 	let error = $state<unknown>(null);
 	let q = $state('');
 	let media = $state<MediaKind | ''>('');
 	let resolver = $state('');
+	let order = $state<JobOrder>('newest');
 	let sentinel = $state<HTMLElement | null>(null);
 
-	const resolvers = $derived([...new Set(jobs.map((job) => job.resolver))].sort());
+	/** The filters as a query, with the cursor in the place the order reads it from. */
+	function queryFor(cursor: string | null): FrontJobQuery {
+		return {
+			q: q.trim() || undefined,
+			media: media || undefined,
+			resolver: resolver || undefined,
+			order,
+			before: order === 'newest' && cursor ? cursor : undefined,
+			after: order === 'oldest' && cursor ? cursor : undefined,
+			limit: LIMIT
+		};
+	}
 
 	function toLogin() {
 		return goto(resolve('/(front)/f/[slug]/login', { slug }));
@@ -55,15 +77,12 @@
 				await toLogin();
 				return;
 			}
-			const first = await front.jobs(slug, {
-				q: q.trim() || undefined,
-				media: media || undefined,
-				resolver: resolver || undefined,
-				limit: LIMIT
-			});
+			const first = await front.jobs(slug, queryFor(null));
 			if (current !== requestId) return;
 			jobs = first.jobs;
 			next = first.next;
+			total = first.total;
+			platforms = first.platforms;
 		} catch (err) {
 			if (current !== requestId) return;
 			if (err instanceof ApiError && err.unauthorized) {
@@ -80,15 +99,11 @@
 		if (!next || loadingMore) return;
 		loadingMore = true;
 		try {
-			const pageResult = await front.jobs(slug, {
-				q: q.trim() || undefined,
-				media: media || undefined,
-				resolver: resolver || undefined,
-				before: next,
-				limit: LIMIT
-			});
+			const pageResult = await front.jobs(slug, queryFor(next));
 			jobs = [...jobs, ...pageResult.jobs];
 			next = pageResult.next;
+			total = pageResult.total;
+			platforms = pageResult.platforms;
 		} catch (err) {
 			if (err instanceof ApiError && err.unauthorized) {
 				await toLogin();
@@ -176,11 +191,24 @@
 				aria-label="Platform"
 			>
 				<option value="">Any platform</option>
-				{#each resolvers as id (id)}
-					<option value={id}>{id}</option>
+				{#each platforms as platform (platform.id)}
+					<option value={platform.id}>{platform.name}</option>
 				{/each}
 			</select>
+			<select
+				class="select w-36"
+				bind:value={order}
+				onchange={() => void load()}
+				aria-label="Order"
+			>
+				<option value="newest">Newest first</option>
+				<option value="oldest">Oldest first</option>
+			</select>
 		</form>
+
+		{#if total !== null}
+			<p class="text-sm text-surface-600-400"><Count value={total} noun="item" /></p>
+		{/if}
 
 		{#if loading && jobs.length === 0}
 			{@render placeholders()}
@@ -194,7 +222,7 @@
 		{:else}
 			<ul class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
 				{#each jobs as job (job.id)}
-					<li class="group overflow-hidden card preset-filled-surface-100-900">
+					<li class="group flex flex-col overflow-hidden card preset-filled-surface-100-900">
 						<a href={resolve('/(front)/f/[slug]/j/[id]', { slug, id: job.id })} class="block">
 							<div class="relative flex aspect-video items-center justify-center preset-tonal">
 								{#if job.thumbnail}
@@ -227,16 +255,18 @@
 								{/if}
 							</div>
 							<div class="space-y-1 p-3">
-								<p class="line-clamp-2 font-medium" title={job.title ?? ''}>
+								<p class="line-clamp-2 min-h-[2lh] font-medium" title={job.title ?? ''}>
 									{job.title ?? mediaLabel(job.media)}
 								</p>
 								<p class="flex items-center gap-1.5 truncate text-sm text-surface-600-400">
 									<MediaKindIcon kind={job.media} class="size-3.5" />
-									{[job.uploader, job.resolver].filter(Boolean).join(' · ')}
+									{[job.uploader, job.platform].filter(Boolean).join(' · ')}
 								</p>
 							</div>
 						</a>
-						<div class="flex items-center justify-between px-3 pb-3 text-sm text-surface-600-400">
+						<div
+							class="mt-auto flex items-center justify-between px-3 pb-3 text-sm text-surface-600-400"
+						>
 							<span><Timestamp at={job.published_at} /> · <Bytes value={job.size} /></span>
 							{#if info.downloads && job.download_url}
 								<a

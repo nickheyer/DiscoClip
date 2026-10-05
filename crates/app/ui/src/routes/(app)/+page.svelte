@@ -116,11 +116,11 @@
 	});
 
 	const columns: Column<JobSummary>[] = [
-		{ key: 'title', label: 'Job', cell: titleCell, class: 'min-w-64' },
-		{ key: 'status', label: 'Status', cell: statusCell },
+		{ key: 'title', label: 'Job', cell: titleCell, class: 'min-w-64', fill: true },
+		{ key: 'status', label: 'Status', cell: statusCell, class: 'whitespace-nowrap' },
 		{ key: 'source', label: 'From', cell: fromCell },
-		{ key: 'size', label: 'Size', align: 'right', cell: sizeCell },
-		{ key: 'age', label: 'Submitted', cell: ageCell }
+		{ key: 'size', label: 'Size', align: 'right', cell: sizeCell, class: 'whitespace-nowrap' },
+		{ key: 'age', label: 'Submitted', cell: ageCell, class: 'whitespace-nowrap' }
 	];
 </script>
 

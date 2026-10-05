@@ -1128,16 +1128,17 @@ Start a provider login for a content view.
 
 ### GET /api/f/{slug}/jobs
 
-List the media the profiles published on the view: jobs whose `delivery.view` names it.
+List the media the profiles published on the view: jobs whose `delivery.view` names it, one entry per media.
 
 | Field | Value |
 |---|---|
 | Auth | viewer, unless open |
 | Path | `slug` |
-| Query | `q` · `media` `MediaKind` · `resolver` · `before` `timestamp` · `limit` (at most 48) |
+| Query | `q` · `media` `MediaKind` · `resolver` · `order` `"newest"` (default) `"oldest"` · `before` `timestamp` (newest first) · `after` `timestamp` (oldest first) · `limit` (at most 48) |
 | Response | `200` `FrontPage` |
 | Errors | `401` `404` |
-| Order | Newest first |
+| Order | `order`, newest first by default |
+| Grouping | Jobs of one link, or one platform media id, with the same clip range are one entry, the newest job |
 
 ### GET /api/f/{slug}/jobs/{id}
 
@@ -2603,7 +2604,9 @@ What the engine runs a job under, stamped on its request when it is submitted.
 | Field | Type |
 |---|---|
 | `jobs` | `FrontJob[]` |
-| `next` | `timestamp \| null` · next page cursor (`before`) |
+| `next` | `timestamp \| null` · next page cursor: `before` newest first, `after` oldest first |
+| `total` | `integer` · entries the query matches in all |
+| `platforms` | `[{ id, name }]` · every platform the view has media from, in name order |
 
 ### FrontJob
 
@@ -2711,6 +2714,7 @@ What the engine runs a job under, stamped on its request when it is submitted.
 | `retry_of` | `uuid \| null` |
 | `title` | `string \| null` |
 | `resolver` | `string \| null` |
+| `platform` | `string \| null` · the resolver's display name |
 | `media` | `MediaKind` · probe → resolver → `video` |
 | `uploader` | `string \| null` |
 | `webpage_url` | `url \| null` |
@@ -2898,6 +2902,7 @@ What the engine runs a job under, stamped on its request when it is submitted.
 | `id` | `uuid` |
 | `request` | `JobRequest` |
 | `place` | `Place \| null` · Discord names |
+| `platform` | `string \| null` · the resolver's display name |
 | `limits_in_force` | `LimitsInForce` · minimum of request and engine limits |
 | `status` | `JobStatus` |
 | `artifacts` | `Artifacts` |

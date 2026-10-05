@@ -126,7 +126,7 @@
 					{#if job.recording}<Status label="Recording" tone="error" pulse />{/if}
 				</h1>
 				<p class="text-sm text-surface-600-400">
-					{[job.uploader, job.resolver].filter(Boolean).join(' · ')}
+					{[job.uploader, job.platform].filter(Boolean).join(' · ')}
 				</p>
 			</div>
 			<div class="flex flex-wrap gap-2">

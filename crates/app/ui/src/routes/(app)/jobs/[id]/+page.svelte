@@ -499,7 +499,7 @@
 				<MediaKindIcon kind={media} class="size-4" />
 				{mediaLabel(media)}
 			</span>
-			{#if resolved?.resolver}<span>{resolved.resolver}</span>{/if}
+			{#if job.platform}<span>{job.platform}</span>{/if}
 			{#if resolved?.uploader_url}
 				{@render external(resolved.uploader_url, resolved.uploader ?? resolved.uploader_url)}
 			{:else if resolved?.uploader}
@@ -832,7 +832,7 @@
 	</div>
 
 	{#if resolved}
-		<Card title="Resolved" description="What {resolved.resolver} said about the link.">
+		<Card title="Resolved" description="What {job.platform} said about the link.">
 			<div class="space-y-4">
 				<KeyValue>
 					{#if resolved.webpage_url}

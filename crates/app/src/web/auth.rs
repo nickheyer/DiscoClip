@@ -225,18 +225,33 @@ fn request_origin(request: &Request) -> Option<String> {
         })
 }
 
+/// Whether the method may change state and so needs the browser's origin checked
+fn mutating(method: &Method) -> bool {
+    !matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS)
+}
+
+/// 403 for a state change from another site, judged by the request's origin against this host
+fn refuse_cross_site(request: &Request) -> Result<(), ApiError> {
+    let host = request
+        .extensions()
+        .get::<ClientInfo>()
+        .and_then(|info| info.host.clone());
+    check_origin(request.headers(), host.as_deref())
+}
+
+/// Refuses cross-site state changes on the content views' routes, which act for no admin session
+pub async fn origin_guard(request: Request, next: Next) -> Result<Response, ApiError> {
+    if mutating(request.method()) {
+        refuse_cross_site(&request)?;
+    }
+    Ok(next.run(request).await)
+}
+
 /// Refuses cross-site state changes: the request's origin must be this host, and a
 /// session must echo its CSRF token in the `x-csrf-token` header.
 pub async fn csrf_guard(request: Request, next: Next) -> Result<Response, ApiError> {
-    if !matches!(
-        *request.method(),
-        Method::GET | Method::HEAD | Method::OPTIONS
-    ) {
-        let host = request
-            .extensions()
-            .get::<ClientInfo>()
-            .and_then(|info| info.host.clone());
-        check_origin(request.headers(), host.as_deref())?;
+    if mutating(request.method()) {
+        refuse_cross_site(&request)?;
         if let Some(Identity {
             via: Via::Session { csrf_token, .. },
             ..

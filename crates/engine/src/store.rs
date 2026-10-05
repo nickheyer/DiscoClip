@@ -30,6 +30,8 @@ pub trait JobStore: Send + Sync {
     async fn stats_since(&self, since: Timestamp) -> Result<Stats, StoreError>;
     /// Done and failed counts per resolver, over every job.
     async fn resolver_stats(&self) -> Result<Vec<ResolverStats>, StoreError>;
+    /// The resolvers of the jobs a filter admits, each once, in id order
+    async fn resolvers(&self, filter: &JobFilter) -> Result<Vec<String>, StoreError>;
     /// Archived done jobs whose link key or platform media key matches, newest first
     async fn find_finished_by_url(
         &self,
@@ -72,6 +74,8 @@ pub struct JobFilter {
     pub media: Option<crate::media::MediaKind>,
     /// Only jobs with an output, done or being published or archived, or running with a live recording
     pub with_output: bool,
+    /// Only the newest job of each media, by link or platform media id and clip range, among those admitted
+    pub one_per_media: bool,
     pub order: Order,
 }
 

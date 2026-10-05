@@ -532,6 +532,23 @@ async fn serve_on(
     Ok(())
 }
 
+/// The content views' routes, which read no admin session and so need only a matching origin
+fn views(state: AppState) -> Router {
+    Router::new()
+        .route("/f/{slug}", get(front::get))
+        .route("/f/{slug}/login", post(front::login))
+        .route("/f/{slug}/logout", post(front::logout))
+        .route("/f/{slug}/auth/{provider}/start", get(front::start))
+        .route("/f/{slug}/jobs", get(front::list))
+        .route("/f/{slug}/jobs/{id}", get(front::get_job))
+        .route("/f/{slug}/jobs/{id}/media", get(front::media))
+        .route("/f/{slug}/jobs/{id}/thumbnail", get(front::thumbnail))
+        .route("/f/{slug}/jobs/{id}/oembed", get(front::oembed))
+        .route("/f/{slug}/jobs/{id}/download", get(front::download))
+        .layer(from_fn(auth::origin_guard))
+        .with_state(state)
+}
+
 fn api(state: AppState) -> Router {
     Router::new()
         .route("/setup", get(auth::setup_status).post(auth::setup))
@@ -679,16 +696,6 @@ fn api(state: AppState) -> Router {
             "/frontends/{id}/sessions/{session}",
             delete(frontends::revoke_session),
         )
-        .route("/f/{slug}", get(front::get))
-        .route("/f/{slug}/login", post(front::login))
-        .route("/f/{slug}/logout", post(front::logout))
-        .route("/f/{slug}/auth/{provider}/start", get(front::start))
-        .route("/f/{slug}/jobs", get(front::list))
-        .route("/f/{slug}/jobs/{id}", get(front::get_job))
-        .route("/f/{slug}/jobs/{id}/media", get(front::media))
-        .route("/f/{slug}/jobs/{id}/thumbnail", get(front::thumbnail))
-        .route("/f/{slug}/jobs/{id}/oembed", get(front::oembed))
-        .route("/f/{slug}/jobs/{id}/download", get(front::download))
         .route("/profiles", get(profiles::list).post(profiles::create))
         .route("/profiles/presets", get(profiles::presets))
         .route("/profiles/assignments", get(profiles::assignments))
@@ -758,7 +765,8 @@ fn api(state: AppState) -> Router {
         .fallback(api_not_found)
         .layer(from_fn(auth::csrf_guard))
         .layer(from_fn_with_state(state.clone(), auth::identify))
-        .with_state(state)
+        .with_state(state.clone())
+        .merge(views(state))
 }
 
 /// An `/api` path nothing answers: the API's own 404, never the browser app's page.

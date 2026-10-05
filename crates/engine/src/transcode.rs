@@ -1714,6 +1714,8 @@ impl FfmpegTranscoder {
             ));
             args.extend(["-r".into(), STILL_FPS.to_string().into()]);
             args.extend(audio_args(encoders.audio, audio_bps));
+            // Bound the looped picture even when -shortest leaves buffered video frames.
+            args.extend(["-t".into(), format!("{:.3}", duration.as_secs_f64()).into()]);
             args.extend(["-sn".into(), "-dn".into(), "-shortest".into()]);
             if encoders.faststart {
                 args.extend(["-movflags".into(), "+faststart".into()]);

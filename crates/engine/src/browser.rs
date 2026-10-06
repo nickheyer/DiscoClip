@@ -477,7 +477,7 @@ impl Browser {
         let tail: Arc<Mutex<VecDeque<String>>> = Arc::new(Mutex::new(VecDeque::new()));
         let (found, endpoint) = oneshot::channel::<String>();
         let kept = tail.clone();
-        tokio::spawn(async move {
+        let mut reader = tokio::spawn(async move {
             let mut found = Some(found);
             let mut stderr = BufReader::new(stderr);
             let mut bytes = Vec::new();
@@ -542,6 +542,10 @@ impl Browser {
                 }
             },
             status = child.wait() => {
+                // The exit closes the pipe unless a helper lingers on it, so the tail fills first
+                if tokio::time::timeout(CLOSE_TIMEOUT, &mut reader).await.is_err() {
+                    reader.abort();
+                }
                 let _ = tokio::fs::remove_dir_all(profile).await;
                 return Err(failed(exited(status)));
             }

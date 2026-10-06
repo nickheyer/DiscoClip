@@ -1,9 +1,3 @@
-# Every push and pull request: formatting, lints, tests, the web app's checks, and both
-# container images with a smoke test of each.
-#
-# The resolver tests marked #[ignore] fetch from the sites they cover; they run on a
-# schedule in live-tests.yml, not here.
-
 name: CI
 
 on:

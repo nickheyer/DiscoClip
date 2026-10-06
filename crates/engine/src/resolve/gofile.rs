@@ -803,10 +803,6 @@ mod tests {
     /// The clip the run uploads: a tenth of a second of black, 16 by 16, H.264 in MP4.
     const CLIP: &[u8] = include_bytes!("gofile_clip.mp4");
     const UPLOAD: &str = "https://upload.gofile.io/uploadfile";
-
-    /// Uploads the clip as `name`: into `account`'s folder, or as a new guest into a new
-    /// folder. What the upload API answers: the file's id and its folder's code and id,
-    /// and the guest token when it made the guest.
     async fn upload(http: &Http, name: &str, account: Option<(&str, &str)>) -> Value {
         let boundary = "discoclip-gofile-live-test";
         let mut body = Vec::new();

@@ -3,9 +3,12 @@
 
 use std::env;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use flate2::Compression;
+use flate2::write::GzEncoder;
 use sha2::{Digest, Sha256};
 
 /// What Cargo watches for changes. Anything else under `ui/` is derived from these.
@@ -24,6 +27,29 @@ struct Asset {
     content_type: &'static str,
     etag: String,
     immutable: bool,
+    /// The gzipped copy, written when text came out smaller that way
+    gzip: Option<PathBuf>,
+    etag_gzip: String,
+}
+
+/// Whether a content type is text worth gzipping, as fonts and pictures are compressed already
+fn compressible(content_type: &str) -> bool {
+    content_type.starts_with("text/")
+        || content_type.starts_with("application/json")
+        || content_type.starts_with("application/manifest+json")
+        || content_type.starts_with("application/xml")
+        || content_type == "image/svg+xml"
+}
+
+/// The bytes gzipped as small as the library makes them
+fn gzip(bytes: &[u8]) -> Vec<u8> {
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::best());
+    encoder
+        .write_all(bytes)
+        .expect("writing into memory does not fail");
+    encoder
+        .finish()
+        .expect("finishing an in-memory gzip stream does not fail")
 }
 
 fn npm() -> &'static str {
@@ -98,7 +124,8 @@ fn content_type(path: &Path) -> &'static str {
     }
 }
 
-fn walk(root: &Path, dir: &Path, assets: &mut Vec<Asset>) {
+/// Collects every file under `dir`, writing a gzipped copy of compressible text into `gz_root`
+fn walk(root: &Path, gz_root: &Path, dir: &Path, assets: &mut Vec<Asset>) {
     let mut entries: Vec<_> = fs::read_dir(dir)
         .unwrap_or_else(|e| panic!("reading {}: {e}", dir.display()))
         .map(|entry| entry.expect("directory entry").path())
@@ -106,24 +133,41 @@ fn walk(root: &Path, dir: &Path, assets: &mut Vec<Asset>) {
     entries.sort();
     for entry in entries {
         if entry.is_dir() {
-            walk(root, &entry, assets);
+            walk(root, gz_root, &entry, assets);
             continue;
         }
-        let relative = entry
-            .strip_prefix(root)
-            .expect("under the build root")
+        let under_root = entry.strip_prefix(root).expect("under the build root");
+        let relative = under_root
             .components()
             .map(|c| c.as_os_str().to_string_lossy().into_owned())
             .collect::<Vec<_>>()
             .join("/");
         let bytes = fs::read(&entry).unwrap_or_else(|e| panic!("reading {}: {e}", entry.display()));
         let digest = Sha256::digest(&bytes);
+        let content_type = content_type(&entry);
+        let mut gzipped = None;
+        if compressible(content_type) {
+            let compressed = gzip(&bytes);
+            if compressed.len() < bytes.len() {
+                let mut target = gz_root.join(under_root).into_os_string();
+                target.push(".gz");
+                let target = PathBuf::from(target);
+                let parent = target.parent().expect("a gzip target has a directory");
+                fs::create_dir_all(parent)
+                    .unwrap_or_else(|e| panic!("creating {}: {e}", parent.display()));
+                fs::write(&target, &compressed)
+                    .unwrap_or_else(|e| panic!("writing {}: {e}", target.display()));
+                gzipped = Some(target);
+            }
+        }
         assets.push(Asset {
-            content_type: content_type(&entry),
+            content_type,
             etag: format!("\"{}\"", hex(&digest[..16])),
+            etag_gzip: format!("\"{}-gz\"", hex(&digest[..16])),
             immutable: relative.starts_with("_app/immutable/"),
             path: relative,
             file: entry,
+            gzip: gzipped,
         });
     }
 }
@@ -209,8 +253,12 @@ fn main() {
         &[("DISCOCLIP_UI_OUT", &dist)],
     );
 
+    let gz = out_dir.join("ui-gz");
+    if gz.exists() {
+        fs::remove_dir_all(&gz).unwrap_or_else(|e| panic!("clearing {}: {e}", gz.display()));
+    }
     let mut assets = Vec::new();
-    walk(&dist, &dist, &mut assets);
+    walk(&dist, &gz, &dist, &mut assets);
     let index = assets
         .iter()
         .find(|asset| asset.path == "index.html")
@@ -221,13 +269,18 @@ fn main() {
     let mut code = String::new();
     code.push_str("pub static ASSETS: &[Asset] = &[\n");
     for asset in &assets {
+        let gzip = match &asset.gzip {
+            Some(file) => format!("Some(include_bytes!({:?}))", file.display().to_string()),
+            None => "None".to_string(),
+        };
         code.push_str(&format!(
-            "    Asset {{ path: {path:?}, content_type: {content_type:?}, etag: {etag:?}, immutable: {immutable}, bytes: include_bytes!({file:?}) }},\n",
+            "    Asset {{ path: {path:?}, content_type: {content_type:?}, etag: {etag:?}, immutable: {immutable}, bytes: include_bytes!({file:?}), gzip: {gzip}, etag_gzip: {etag_gzip:?} }},\n",
             path = asset.path,
             content_type = asset.content_type,
             etag = asset.etag,
             immutable = asset.immutable,
             file = asset.file.display().to_string(),
+            etag_gzip = asset.etag_gzip,
         ));
     }
     code.push_str("];\n");

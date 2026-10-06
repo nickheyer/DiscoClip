@@ -11,11 +11,16 @@ pub mod sqlite;
 pub trait JobStore: Send + Sync {
     async fn insert(&self, job: &Job) -> Result<(), StoreError>;
     async fn update(&self, job: &Job) -> Result<(), StoreError>;
+    /// The whole job, its resolved variants included
     async fn get(&self, id: JobId) -> Result<Option<Job>, StoreError>;
+    /// The job with its resolved variants left out, for serving and showing it
+    async fn get_without_variants(&self, id: JobId) -> Result<Option<Job>, StoreError>;
+    /// The jobs a filter admits, each without its resolved variants
     async fn list(&self, filter: &JobFilter) -> Result<Vec<Job>, StoreError>;
     async fn count(&self, filter: &JobFilter) -> Result<u64, StoreError>;
+    /// Queued and running jobs in full, oldest first
     async fn list_active(&self) -> Result<Vec<Job>, StoreError>;
-    /// The jobs a playlist job expanded into, oldest first.
+    /// The jobs a playlist job expanded into, oldest first, each without its resolved variants
     async fn children(&self, parent: JobId) -> Result<Vec<Job>, StoreError>;
     /// Removes a job's record. Whether there was one.
     async fn delete(&self, id: JobId) -> Result<bool, StoreError>;

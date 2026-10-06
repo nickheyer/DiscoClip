@@ -32,7 +32,7 @@ PKGARCH := $(if $(filter aarch64,$(ARCH)),arm64,amd64)
 
 .PHONY: dev build run test test-live check fmt clean deps image image-gpu smoke dist deb rpm release
 
-dev: clean
+dev:
 	$(CARGO) run -- $(ARGS)
 
 build:

@@ -1158,9 +1158,11 @@ Stream a media file.
 | Auth | viewer, unless open, or a valid `t` |
 | Path | `slug` · `id` `uuid` |
 | Query | `t` optional |
-| Response | `200` or `206` the file |
+| Response | `200` or `206` the file · `304` when `If-None-Match` or `If-Modified-Since` still holds |
 | Errors | `401` `404` `416` |
-| Token | Signed `t` from `FrontJob.media_url` · valid until expiry |
+| Token | Signed `t` from the media page's head · valid until expiry |
+| Validators | `ETag` and `Last-Modified` on a finished file · `If-Range` naming another version gets the whole file |
+| Cache | `private, max-age=86400` finished · `private, no-cache` while a recording grows |
 
 ### GET /api/f/{slug}/jobs/{id}/thumbnail
 
@@ -1171,9 +1173,10 @@ Serve the still that stands for the media: a frame of a video, the picture scale
 | Auth | viewer, unless open, or a valid `t` |
 | Path | `slug` · `id` `uuid` |
 | Query | `t` optional |
-| Response | `200` JPEG |
+| Response | `200` JPEG · `304` when `If-None-Match` or `If-Modified-Since` still holds |
 | Errors | `401` `404` |
-| Token | Signed `t` from `FrontJob.thumbnail` · the media token |
+| Token | Signed `t` from the media page's head · the media token |
+| Validators | `ETag` and `Last-Modified` |
 | Cache | `private, max-age=86400` |
 
 ### GET /api/f/{slug}/jobs/{id}/oembed
@@ -1195,9 +1198,21 @@ Download a media file.
 |---|---|
 | Auth | viewer, unless open |
 | Path | `slug` · `id` `uuid` |
-| Response | `200` or `206` the file |
+| Response | `200` or `206` the file · `304` when `If-None-Match` or `If-Modified-Since` still holds |
 | Errors | `401` `403` `404` `416` |
 | Requires | Downloads enabled on the view |
+| Validators | `ETag` and `Last-Modified` on a finished file |
+| Cache | `private, max-age=86400` finished · `private, no-cache` while a recording grows |
+
+### GET /f/{slug}
+
+Serve the view's gallery page.
+
+| Field | Value |
+|---|---|
+| Inline data | `<script id="discoclip-front" type="application/json">` holding `FrontInline` |
+| `FrontInline.page` | The first page of `GET /api/f/{slug}/jobs` with no filters, for a visitor the view lets in |
+| Encoding | gzip when `Accept-Encoding` takes it |
 
 ### GET /f/{slug}/j/{id}
 
@@ -1207,6 +1222,9 @@ Serve a media page with social previews.
 |---|---|
 | Preview metadata | Open Graph and Twitter |
 | Preview media | Signed video/audio/image links |
+| Inline data | `<script id="discoclip-front" type="application/json">` holding `FrontInline` |
+| `FrontInline.job` | The `FrontJob`, for a visitor the view lets in |
+| Encoding | gzip when `Accept-Encoding` takes it |
 
 ## Account guilds
 
@@ -2620,7 +2638,7 @@ What the engine runs a job under, stamped on its request when it is submitted.
 | `uploader` | `string \| null` |
 | `uploader_url` | `url \| null` |
 | `webpage_url` | `url \| null` |
-| `thumbnail` | `string \| null` · signed path to the still, see `GET /api/f/{slug}/jobs/{id}/thumbnail` |
+| `thumbnail` | `string \| null` · path to the still, fixed per job, see `GET /api/f/{slug}/jobs/{id}/thumbnail` |
 | `duration_secs` | `number \| null` |
 | `live` | `bool` · recorded live stream |
 | `recording` | `bool` · recording in progress |
@@ -2629,8 +2647,17 @@ What the engine runs a job under, stamped on its request when it is submitted.
 | `height` | `integer \| null` |
 | `content_type` | `string` |
 | `published_at` | `timestamp` |
-| `media_url` | `string` · signed media URL |
+| `media_url` | `string` · media path, fixed per job |
 | `download_url` | `string \| null` |
+
+### FrontInline
+
+| Field | Type |
+|---|---|
+| `slug` | `string` |
+| `info` | `FrontInfo` |
+| `job` | `FrontJob` · on a media page, for a visitor the view lets in |
+| `page` | `FrontPage` · on a gallery page, for a visitor the view lets in |
 
 ### OEmbed
 

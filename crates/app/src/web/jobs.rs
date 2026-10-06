@@ -142,28 +142,25 @@ pub async fn thumbnail(
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
     let id: JobId = parse_id(&id)?;
+    let job = state
+        .engine
+        .get_without_variants(id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
     let file = state
         .engine
-        .thumbnail(id)
+        .thumbnail(&job)
         .await?
         .ok_or(ApiError::NotFound)?;
     serve_thumbnail(&file.path, &headers).await
 }
 
-/// How long a browser keeps a still before asking again.
-const THUMBNAIL_CACHE: &str = "private, max-age=86400";
-
-/// Serves a still inline, kept by the browser for a day.
+/// Serves a still inline under a fixed name
 pub(super) async fn serve_thumbnail(
     path: &FsPath,
     headers: &HeaderMap,
 ) -> Result<Response, ApiError> {
-    let mut response = serve_file(path, "thumbnail.jpg", true, headers, false).await?;
-    response.headers_mut().insert(
-        header::CACHE_CONTROL,
-        HeaderValue::from_static(THUMBNAIL_CACHE),
-    );
-    Ok(response)
+    serve_file(path, "thumbnail.jpg", true, headers, false).await
 }
 
 impl From<ThumbnailError> for ApiError {
@@ -433,7 +430,11 @@ pub async fn children(
     Path(id): Path<String>,
 ) -> Result<Json<Vec<JobSummary>>, ApiError> {
     let id: JobId = parse_id(&id)?;
-    state.engine.get(id).await?.ok_or(ApiError::NotFound)?;
+    state
+        .engine
+        .get_without_variants(id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
     let children = state.engine.children(id).await?;
     Ok(Json(
         children
@@ -1026,10 +1027,93 @@ fn range_start(headers: &HeaderMap) -> Option<u64> {
     start.parse().ok()
 }
 
-/// Streams a file, whole or the range asked for, with the headers a browser or a video
-/// element needs to save or play it. A `growing` file is one still being written: its
-/// length is read afresh for every request, a range is answered without a total, and a
-/// request for bytes past its end waits for them to be written.
+/// Bytes read from disk per chunk of a streamed file
+const CHUNK: usize = 256 * 1024;
+
+/// How long a browser keeps a finished file before asking whether it changed
+const FILE_CACHE: &str = "private, max-age=86400";
+
+/// How a file still being written is kept, which is not at all
+const GROWING_CACHE: &str = "private, no-cache";
+
+/// The shape of an HTTP date
+const HTTP_DATE: &str = "%a, %d %b %Y %H:%M:%S GMT";
+
+/// What a finished file is known by between requests, so a browser can ask whether it changed
+struct Validators {
+    etag: String,
+    /// The last write, at whole seconds as HTTP dates carry it
+    modified: Timestamp,
+}
+
+impl Validators {
+    /// A strong tag over the length and the last write to the nanosecond
+    fn of(path: &FsPath, meta: &std::fs::Metadata) -> Result<Self, ApiError> {
+        let written = meta
+            .modified()
+            .map_err(|e| ApiError::Internal(format!("modified time of {}: {e}", path.display())))?;
+        let written = Timestamp::try_from(written)
+            .map_err(|e| ApiError::Internal(format!("modified time of {}: {e}", path.display())))?;
+        let modified = Timestamp::from_second(written.as_second())
+            .map_err(|e| ApiError::Internal(format!("modified time of {}: {e}", path.display())))?;
+        Ok(Self {
+            etag: format!("\"{:x}-{:x}\"", meta.len(), written.as_nanosecond()),
+            modified,
+        })
+    }
+
+    fn last_modified(&self) -> String {
+        self.modified.strftime(HTTP_DATE).to_string()
+    }
+
+    /// Whether the browser's copy is current, by tag when it sends one and by date otherwise
+    fn fresh(&self, headers: &HeaderMap) -> bool {
+        if let Some(tags) = headers.get(header::IF_NONE_MATCH) {
+            return etag_listed(tags, &self.etag);
+        }
+        headers
+            .get(header::IF_MODIFIED_SINCE)
+            .and_then(|value| value.to_str().ok())
+            .and_then(http_date)
+            .is_some_and(|since| self.modified <= since)
+    }
+
+    /// Whether a range request may be honoured, which an `If-Range` naming another version forbids
+    fn range_applies(&self, headers: &HeaderMap) -> bool {
+        let Some(value) = headers
+            .get(header::IF_RANGE)
+            .and_then(|value| value.to_str().ok())
+        else {
+            return true;
+        };
+        if value.starts_with('"') || value.starts_with("W/") {
+            return value == self.etag;
+        }
+        http_date(value).is_some_and(|date| date == self.modified)
+    }
+}
+
+/// Whether an `If-None-Match` list names `etag` or everything
+fn etag_listed(value: &HeaderValue, etag: &str) -> bool {
+    value.to_str().is_ok_and(|list| {
+        list.split(',')
+            .map(|tag| tag.trim().trim_start_matches("W/"))
+            .any(|tag| tag == "*" || tag == etag)
+    })
+}
+
+/// The moment an HTTP date names
+fn http_date(text: &str) -> Option<Timestamp> {
+    let parsed = jiff::fmt::strtime::parse(HTTP_DATE, text.trim()).ok()?;
+    let zoned = parsed
+        .to_datetime()
+        .ok()?
+        .to_zoned(jiff::tz::TimeZone::UTC)
+        .ok()?;
+    Some(zoned.timestamp())
+}
+
+/// Streams a finished file with validators and a day of caching, or a growing one afresh each request
 pub(super) async fn serve_file(
     path: &FsPath,
     filename: &str,
@@ -1040,11 +1124,16 @@ pub(super) async fn serve_file(
     let mut file = tokio::fs::File::open(path)
         .await
         .map_err(|e| ApiError::Internal(format!("opening {}: {e}", path.display())))?;
-    let mut len = file
+    let meta = file
         .metadata()
         .await
-        .map_err(|e| ApiError::Internal(format!("reading {}: {e}", path.display())))?
-        .len();
+        .map_err(|e| ApiError::Internal(format!("reading {}: {e}", path.display())))?;
+    let mut len = meta.len();
+    let validators = if growing {
+        None
+    } else {
+        Some(Validators::of(path, &meta)?)
+    };
     if growing && let Some(start) = range_start(headers).filter(|start| *start >= len) {
         let deadline = tokio::time::Instant::now() + GROWTH_WAIT;
         while tokio::time::Instant::now() < deadline {
@@ -1066,14 +1155,36 @@ pub(super) async fn serve_file(
     let mut response = Response::builder()
         .header(header::CONTENT_TYPE, content_type_for(path))
         .header(header::ACCEPT_RANGES, "bytes")
-        .header(header::CACHE_CONTROL, "private, no-cache")
+        .header(
+            header::CACHE_CONTROL,
+            if growing { GROWING_CACHE } else { FILE_CACHE },
+        )
         .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
         .header(
             header::CONTENT_DISPOSITION,
             HeaderValue::from_str(&disposition)
                 .map_err(|e| ApiError::Internal(format!("content disposition: {e}")))?,
         );
-    let body = match byte_range(headers, len)? {
+    if let Some(validators) = &validators {
+        response = response
+            .header(header::ETAG, &validators.etag)
+            .header(header::LAST_MODIFIED, validators.last_modified());
+        if validators.fresh(headers) {
+            return response
+                .status(StatusCode::NOT_MODIFIED)
+                .body(Body::empty())
+                .map_err(|e| ApiError::Internal(format!("building response: {e}")));
+        }
+    }
+    let range = if validators
+        .as_ref()
+        .is_none_or(|validators| validators.range_applies(headers))
+    {
+        byte_range(headers, len)?
+    } else {
+        None
+    };
+    let body = match range {
         Some((start, end)) => {
             file.seek(std::io::SeekFrom::Start(start))
                 .await
@@ -1090,13 +1201,13 @@ pub(super) async fn serve_file(
                     },
                 )
                 .header(header::CONTENT_LENGTH, span);
-            Body::from_stream(ReaderStream::new(file.take(span)))
+            Body::from_stream(ReaderStream::with_capacity(file.take(span), CHUNK))
         }
         None => {
             response = response
                 .status(StatusCode::OK)
                 .header(header::CONTENT_LENGTH, len);
-            Body::from_stream(ReaderStream::new(file))
+            Body::from_stream(ReaderStream::with_capacity(file, CHUNK))
         }
     };
     response
@@ -1123,7 +1234,11 @@ pub async fn download(
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
     let id: JobId = parse_id(&id)?;
-    let job = state.engine.get(id).await?.ok_or(ApiError::NotFound)?;
+    let job = state
+        .engine
+        .get_without_variants(id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
     let (path, filename) = locate(&job, &query).await?;
     let growing = query.artifact == Artifact::Recording && recording_grows(&job);
     serve_file(&path, &filename, query.inline, &headers, growing).await
@@ -1343,6 +1458,46 @@ mod tests {
             headers["content-disposition"],
             format!("attachment; filename=\"my-clip-{short}.mp4\"")
         );
+        // A finished file is kept for a day and asked about by tag or date after that.
+        assert_eq!(headers["cache-control"], "private, max-age=86400");
+        let etag = headers["etag"].to_str().unwrap().to_string();
+        assert!(etag.starts_with('"') && etag.ends_with('"'), "{etag}");
+        let modified = headers["last-modified"].to_str().unwrap().to_string();
+        assert!(modified.ends_with(" GMT"), "{modified}");
+        admin.headers = vec![("if-none-match".into(), etag.clone())];
+        let (status, headers, body) = admin.raw(&format!("/api/jobs/{id}/download")).await;
+        assert_eq!(status, StatusCode::NOT_MODIFIED);
+        assert_eq!(headers["etag"].to_str().unwrap(), etag);
+        assert!(body.is_empty());
+        admin.headers = vec![("if-modified-since".into(), modified.clone())];
+        let (status, _, _) = admin.raw(&format!("/api/jobs/{id}/download")).await;
+        assert_eq!(status, StatusCode::NOT_MODIFIED);
+        admin.headers = vec![(
+            "if-modified-since".into(),
+            "Thu, 01 Jan 2015 00:00:00 GMT".into(),
+        )];
+        let (status, _, body) = admin.raw(&format!("/api/jobs/{id}/download")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, b"0123456789");
+        admin.headers = vec![("if-none-match".into(), "\"stale\"".into())];
+        let (status, _, body) = admin.raw(&format!("/api/jobs/{id}/download")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, b"0123456789");
+        // A range against another version gets the whole file instead.
+        admin.headers = vec![
+            ("range".into(), "bytes=2-5".into()),
+            ("if-range".into(), "\"stale\"".into()),
+        ];
+        let (status, _, body) = admin.raw(&format!("/api/jobs/{id}/download")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, b"0123456789");
+        admin.headers = vec![
+            ("range".into(), "bytes=2-5".into()),
+            ("if-range".into(), etag.clone()),
+        ];
+        let (status, _, body) = admin.raw(&format!("/api/jobs/{id}/download")).await;
+        assert_eq!(status, StatusCode::PARTIAL_CONTENT);
+        assert_eq!(body, b"2345");
         admin.headers = vec![("range".into(), "bytes=2-5".into())];
         let (status, headers, body) = admin
             .raw(&format!("/api/jobs/{id}/download?inline=true"))

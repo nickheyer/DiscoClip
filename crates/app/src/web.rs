@@ -355,6 +355,10 @@ impl WebApp {
         Router::new()
             .nest("/api", api(self.state.clone()))
             .route(
+                "/f/{slug}",
+                get(front::gallery).with_state(self.state.clone()),
+            )
+            .route(
                 "/f/{slug}/j/{id}",
                 get(front::page).with_state(self.state.clone()),
             )

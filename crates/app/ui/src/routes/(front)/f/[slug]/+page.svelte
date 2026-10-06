@@ -10,10 +10,12 @@
 		FrontInfo,
 		FrontJob,
 		FrontJobQuery,
+		FrontPage,
 		FrontPlatform,
 		JobOrder,
 		MediaKind
 	} from '$lib/api/types';
+	import { takeInline } from '$lib/front/inline';
 	import Count from '$lib/components/Count.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
@@ -63,22 +65,34 @@
 		return goto(resolve('/(front)/f/[slug]/login', { slug }));
 	}
 
+	/** Whether the filters are at rest, which is the page the server sends inline */
+	function unfiltered(): boolean {
+		return !q.trim() && !media && !resolver && order === 'newest';
+	}
+
+	/** The view and its first page, from the page itself when it carries them, else from the API */
+	async function fetchBoth(): Promise<[FrontInfo, FrontPage]> {
+		const inline = takeInline(slug);
+		if (!inline) {
+			return Promise.all([front.info(slug), front.jobs(slug, queryFor(null))]);
+		}
+		if (inline.page && unfiltered()) return [inline.info, inline.page];
+		if (!inline.info.access.open && !inline.info.viewer) {
+			throw new ApiError(401, 'This view asks for a login.');
+		}
+		return [inline.info, await front.jobs(slug, queryFor(null))];
+	}
+
 	let requestId = 0;
 	async function load() {
 		const current = ++requestId;
 		loading = true;
 		error = null;
 		try {
-			const loaded = await front.info(slug);
+			const [loaded, first] = await fetchBoth();
 			if (current !== requestId) return;
 			info = loaded;
 			document.title = loaded.name;
-			if (!loaded.access.open && !loaded.viewer) {
-				await toLogin();
-				return;
-			}
-			const first = await front.jobs(slug, queryFor(null));
-			if (current !== requestId) return;
 			jobs = first.jobs;
 			next = first.next;
 			total = first.total;

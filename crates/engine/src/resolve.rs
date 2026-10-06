@@ -681,6 +681,8 @@ pub struct Resolved {
     pub clip: Option<ClipRange>,
     #[serde(default)]
     pub subtitles: Vec<SubtitleTrack>,
+    /// Every stream the platform offered, kept apart from the job record and absent from listings
+    #[serde(default)]
     pub variants: Vec<Variant>,
 }
 

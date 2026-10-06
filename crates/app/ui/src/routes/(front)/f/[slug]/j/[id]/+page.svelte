@@ -19,6 +19,7 @@
 	import Duration from '$lib/components/Duration.svelte';
 	import Timestamp from '$lib/components/Timestamp.svelte';
 	import { bytes, mediaLabel } from '$lib/format';
+	import { takeInline } from '$lib/front/inline';
 
 	const slug = $derived(page.params.slug ?? '');
 	const id = $derived(page.params.id ?? '');
@@ -30,13 +31,28 @@
 
 	const gallery = $derived(resolve('/(front)/f/[slug]', { slug }));
 
+	function toLogin() {
+		return goto(resolve('/(front)/f/[slug]/login', { slug }));
+	}
+
+	/** The view and the media, from the page itself when it carries them, else from the API */
+	async function fetchBoth(): Promise<[FrontInfo, FrontJob]> {
+		const inline = takeInline(slug);
+		if (!inline) return Promise.all([front.info(slug), front.job(slug, id)]);
+		if (inline.job?.id === id) return [inline.info, inline.job];
+		if (!inline.info.access.open && !inline.info.viewer) {
+			throw new ApiError(401, 'This view asks for a login.');
+		}
+		return [inline.info, await front.job(slug, id)];
+	}
+
 	let requestId = 0;
 	async function load() {
 		const current = ++requestId;
 		loading = true;
 		error = null;
 		try {
-			const [loadedInfo, loadedJob] = await Promise.all([front.info(slug), front.job(slug, id)]);
+			const [loadedInfo, loadedJob] = await fetchBoth();
 			if (current !== requestId) return;
 			info = loadedInfo;
 			job = loadedJob;
@@ -44,7 +60,7 @@
 		} catch (err) {
 			if (current !== requestId) return;
 			if (err instanceof ApiError && err.unauthorized) {
-				await goto(resolve('/(front)/f/[slug]/login', { slug }));
+				await toLogin();
 				return;
 			}
 			error = err;
@@ -63,7 +79,7 @@
 		try {
 			await front.logout(slug);
 		} finally {
-			await goto(resolve('/(front)/f/[slug]/login', { slug }));
+			await toLogin();
 		}
 	}
 </script>

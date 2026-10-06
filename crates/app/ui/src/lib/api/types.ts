@@ -965,7 +965,7 @@ export interface FrontJob {
 	platform: string;
 	uploader: string | null;
 	webpage_url: Url | null;
-	/** Shows the still that stands for the media, with its signed token. */
+	/** Shows the still that stands for the media. Fixed per job, so the browser keeps it. */
 	thumbnail: string | null;
 	duration_secs: number | null;
 	/** A recorded stream. */
@@ -977,9 +977,19 @@ export interface FrontJob {
 	height: number | null;
 	content_type: string;
 	published_at: Timestamp;
-	/** Plays or shows the media, with its signed token. */
+	/** Plays or shows the media. Fixed per job, so the browser keeps it. */
 	media_url: string;
 	download_url: string | null;
+}
+
+/** What a view's page carries inline, so its first paint needs no API round trip. */
+export interface FrontInline {
+	slug: string;
+	info: FrontInfo;
+	/** The media of a media page, when the visitor may see it. */
+	job?: FrontJob;
+	/** The first page of a gallery with no filters, when the visitor may see it. */
+	page?: FrontPage;
 }
 
 export interface Submitted {

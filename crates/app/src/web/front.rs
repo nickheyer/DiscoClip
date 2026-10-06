@@ -19,13 +19,13 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use super::AppState;
+use super::assets;
 use super::error::ApiError;
 use super::jobs::{
     Artifact, DownloadQuery, has_thumbnail, locate, recording_grows, serve_file, serve_thumbnail,
 };
 use super::oauth::callback_url;
 use super::proxy::{Client, ClientInfo, Scheme};
-use super::{assets, front};
 use crate::frontends::{Access, Frontend, SecretKind, Viewer};
 use crate::oauth::Intent;
 
@@ -302,7 +302,7 @@ pub async fn start(
     Ok(Redirect::to(location.as_str()))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 pub struct ListQuery {
     #[serde(default)]
     pub q: Option<String>,
@@ -334,8 +334,7 @@ pub struct FrontJob {
     pub uploader: Option<String>,
     pub uploader_url: Option<Url>,
     pub webpage_url: Option<Url>,
-    /// Shows the still that stands for the media. Carries the token that opens it without
-    /// a session, as the media link does.
+    /// Shows the still that stands for the media. Fixed per job, so browsers keep it.
     pub thumbnail: Option<String>,
     pub duration_secs: Option<f64>,
     /// A recorded stream.
@@ -348,7 +347,7 @@ pub struct FrontJob {
     /// The output's media type.
     pub content_type: String,
     pub published_at: Timestamp,
-    /// Plays or shows the media. Carries the token that opens it without a session.
+    /// Plays or shows the media. Fixed per job, so browsers keep it.
     pub media_url: String,
     /// Hands the file out, when the front end allows downloads.
     pub download_url: Option<String>,
@@ -366,10 +365,10 @@ fn playable(job: &Job) -> Option<(&LocalFile, bool)> {
     }
 }
 
+/// The job as the front end shows it, with links that never change so browsers keep what they fetched
 fn front_job(state: &AppState, frontend: &Frontend, job: &Job) -> Option<FrontJob> {
     let resolved = job.artifacts.resolved.as_ref()?;
     let (file, recording) = playable(job)?;
-    let token = state.frontends.sign_media(frontend, job.id.0);
     let base = format!("/api/f/{}/jobs/{}", frontend.input.slug, job.id);
     let info = file.info.as_ref();
     let picture = info.and_then(|i| i.video.as_ref());
@@ -395,7 +394,7 @@ fn front_job(state: &AppState, frontend: &Frontend, job: &Job) -> Option<FrontJo
         uploader: resolved.uploader.clone(),
         uploader_url: resolved.uploader_url.clone(),
         webpage_url: resolved.webpage_url.clone(),
-        thumbnail: has_thumbnail(job).then(|| format!("{base}/thumbnail?t={token}")),
+        thumbnail: has_thumbnail(job).then(|| format!("{base}/thumbnail")),
         duration_secs: if recording {
             None
         } else {
@@ -414,7 +413,7 @@ fn front_job(state: &AppState, frontend: &Frontend, job: &Job) -> Option<FrontJo
         } else {
             job.finished_at.unwrap_or(job.updated_at)
         },
-        media_url: format!("{base}/media?t={token}"),
+        media_url: format!("{base}/media"),
         download_url: frontend.input.downloads.then(|| format!("{base}/download")),
     })
 }
@@ -476,6 +475,15 @@ pub async fn list(
 ) -> Result<Json<FrontPage>, ApiError> {
     let frontend = frontend(&state, &slug)?;
     admitted(&state, &frontend, &jar).await?;
+    Ok(Json(page_of(&state, &frontend, query).await?))
+}
+
+/// One page of the media the front end shows, as the query filters and orders it
+async fn page_of(
+    state: &AppState,
+    frontend: &Frontend,
+    query: ListQuery,
+) -> Result<FrontPage, ApiError> {
     let limit = query.limit.unwrap_or(PAGE_LIMIT).clamp(1, PAGE_LIMIT);
     let on_view = JobFilter {
         view: Some(frontend.id.to_string()),
@@ -510,21 +518,21 @@ pub async fn list(
         .await?
         .into_iter()
         .map(|id| FrontPlatform {
-            name: platform_name(&state, &id),
+            name: platform_name(state, &id),
             id,
         })
         .collect();
     platforms.sort_by_key(|platform| platform.name.to_lowercase());
     let jobs = jobs
         .iter()
-        .filter_map(|job| front_job(&state, &frontend, job))
+        .filter_map(|job| front_job(state, frontend, job))
         .collect();
-    Ok(Json(FrontPage {
+    Ok(FrontPage {
         jobs,
         next,
         total,
         platforms,
-    }))
+    })
 }
 
 /// One piece of media the front end shows.
@@ -536,7 +544,11 @@ pub async fn get_job(
     let frontend = frontend(&state, &slug)?;
     admitted(&state, &frontend, &jar).await?;
     let id: JobId = super::auth::parse_id(&id)?;
-    let job = state.engine.get(id).await?.ok_or(ApiError::NotFound)?;
+    let job = state
+        .engine
+        .get_without_variants(id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
     if !shown(&frontend, &job) {
         return Err(ApiError::NotFound);
     }
@@ -570,7 +582,11 @@ pub async fn media(
     if !ticketed {
         admitted(&state, &frontend, &jar).await?;
     }
-    let job = state.engine.get(id).await?.ok_or(ApiError::NotFound)?;
+    let job = state
+        .engine
+        .get_without_variants(id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
     if !shown(&frontend, &job) {
         return Err(ApiError::NotFound);
     }
@@ -596,13 +612,17 @@ pub async fn thumbnail(
     if !ticketed {
         admitted(&state, &frontend, &jar).await?;
     }
-    let job = state.engine.get(id).await?.ok_or(ApiError::NotFound)?;
+    let job = state
+        .engine
+        .get_without_variants(id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
     if !shown(&frontend, &job) {
         return Err(ApiError::NotFound);
     }
     let file = state
         .engine
-        .thumbnail(id)
+        .thumbnail(&job)
         .await?
         .ok_or(ApiError::NotFound)?;
     serve_thumbnail(&file.path, &headers).await
@@ -623,7 +643,11 @@ pub async fn download(
         ));
     }
     let id: JobId = super::auth::parse_id(&id)?;
-    let job = state.engine.get(id).await?.ok_or(ApiError::NotFound)?;
+    let job = state
+        .engine
+        .get_without_variants(id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
     if !shown(&frontend, &job) {
         return Err(ApiError::NotFound);
     }
@@ -713,24 +737,25 @@ pub fn oembed_document(base: Option<&Url>, frontend: &Frontend, job: &FrontJob) 
     }
 }
 
-/// The head a front end's media page carries: what Discord and other unfurlers read to
-/// show the title and thumbnail and to play a video or audio inline from a plain link.
-/// The media and thumbnail links are signed so the unfurler needs no session, and every
-/// link is absolute under the app's public address.
-pub fn media_head(base: &Url, frontend: &Frontend, job: &FrontJob) -> String {
+/// An app path made absolute under the public address and signed with `token`
+fn signed(base: &Url, path: &str, token: &str) -> Url {
+    let mut url = base
+        .join(path.trim_start_matches('/'))
+        .expect("an app path joins");
+    url.set_query(Some(&format!("t={token}")));
+    url
+}
+
+/// Head markup unfurlers read, with media and thumbnail links made absolute and signed with the token
+pub fn media_head(base: &Url, frontend: &Frontend, job: &FrontJob, token: &str) -> String {
     let page = base
         .join(&format!("f/{}/j/{}", frontend.input.slug, job.id))
         .expect("a page path joins");
-    let media = base
-        .join(job.media_url.trim_start_matches('/'))
-        .expect("a media path joins");
+    let media = signed(base, &job.media_url, token);
     let image = job
         .thumbnail
         .as_deref()
-        .map(|path| {
-            base.join(path.trim_start_matches('/'))
-                .expect("a thumbnail path joins")
-        })
+        .map(|path| signed(base, path, token))
         .unwrap_or_else(|| base.join("icons/icon-512.png").expect("an icon path joins"));
     let oembed = base
         .join(&format!(
@@ -832,36 +857,94 @@ fn clock(secs: f64) -> String {
     }
 }
 
-/// The page for one piece of media: the app's shell with the unfurl metadata in its
-/// head. Anyone with the link gets the metadata, so the link can be unfurled wherever it
-/// is posted. The page itself asks for a login as the front end does.
+/// The media page with unfurl metadata in its head and the media inline for a visitor let in
 pub async fn page(
     State(state): State<AppState>,
     Path((slug, id)): Path<(String, String)>,
     Client(client): Client,
-) -> Response {
+    jar: CookieJar,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
     let Some(frontend) = state.frontends.cache().get(&slug) else {
-        return assets::page_with_head("");
+        return Ok(assets::page_with_head("", &headers));
     };
     let Ok(id) = id.parse::<JobId>() else {
-        return assets::page_with_head("");
+        return Ok(assets::page_with_head("", &headers));
     };
-    let job = match state.engine.get(id).await {
-        Ok(Some(job)) if shown(&frontend, &job) => job,
-        _ => return assets::page_with_head(""),
+    let job = match state.engine.get_without_variants(id).await? {
+        Some(job) if shown(&frontend, &job) => job,
+        _ => return Ok(assets::page_with_head("", &headers)),
     };
     let Some(front) = front_job(&state, &frontend, &job) else {
-        return assets::page_with_head("");
+        return Ok(assets::page_with_head("", &headers));
     };
+    let info = info(&state, &frontend, &jar).await?;
+    let mut head = String::new();
     let base = state
         .public_url
         .get()
         .or_else(|| client.origin().and_then(|o| Url::parse(&o).ok()));
+    if let Some(base) = base {
+        let token = state.frontends.sign_media(&frontend, job.id.0);
+        head.push_str(&media_head(&base, &frontend, &front, &token));
+    }
+    let let_in = frontend.input.access.open || info.viewer.is_some();
+    head.push_str(&inline_block(&FrontInline {
+        slug: frontend.input.slug.clone(),
+        info,
+        job: let_in.then_some(front),
+        page: None,
+    }));
+    Ok(assets::page_with_head(&head, &headers))
+}
 
-    let Some(base) = base else {
-        return assets::page_with_head("");
+/// The gallery page with the view and its first unfiltered page inline for a visitor let in
+pub async fn gallery(
+    State(state): State<AppState>,
+    Path(slug): Path<String>,
+    jar: CookieJar,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    let Some(frontend) = state.frontends.cache().get(&slug) else {
+        return Ok(assets::page_with_head("", &headers));
     };
-    assets::page_with_head(&front::media_head(&base, &frontend, &front))
+    let info = info(&state, &frontend, &jar).await?;
+    let page = if frontend.input.access.open || info.viewer.is_some() {
+        Some(page_of(&state, &frontend, ListQuery::default()).await?)
+    } else {
+        None
+    };
+    let head = inline_block(&FrontInline {
+        slug: frontend.input.slug.clone(),
+        info,
+        job: None,
+        page,
+    });
+    Ok(assets::page_with_head(&head, &headers))
+}
+
+/// What a view's page carries inline for the app to read instead of asking the API
+#[derive(Debug, Serialize)]
+pub struct FrontInline {
+    pub slug: String,
+    pub info: FrontInfo,
+    /// The media of a media page, when the visitor may see it
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub job: Option<FrontJob>,
+    /// The first page of a gallery, unfiltered, when the visitor may see it
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page: Option<FrontPage>,
+}
+
+/// The id of the data block a view's page carries
+pub const INLINE_ID: &str = "discoclip-front";
+
+/// The data block as head markup, every `<` escaped so the JSON cannot close the element
+fn inline_block(data: &FrontInline) -> String {
+    let json = serde_json::to_string(data)
+        .expect("front data serializes")
+        .replace('<', "\\u003c");
+    format!("<script id=\"{INLINE_ID}\" type=\"application/json\">{json}</script>\n")
 }
 
 /// The oEmbed document of a media page, open to anyone as the page's head is
@@ -872,7 +955,11 @@ pub async fn oembed(
 ) -> Result<Json<OEmbed>, ApiError> {
     let frontend = frontend(&state, &slug)?;
     let id: JobId = super::auth::parse_id(&id)?;
-    let job = state.engine.get(id).await?.ok_or(ApiError::NotFound)?;
+    let job = state
+        .engine
+        .get_without_variants(id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
     if !shown(&frontend, &job) {
         return Err(ApiError::NotFound);
     }
@@ -979,6 +1066,15 @@ mod tests {
         client.headers.push(("cookie".into(), pair));
     }
 
+    /// The signed app path a page's head gives for `property`, with the host taken off
+    fn signed_link(html: &str, property: &str) -> String {
+        let marker = format!(r#"<meta property="{property}" content="http://localhost:8080"#);
+        let start = html.find(&marker).expect("the head names the link") + marker.len();
+        let rest = &html[start..];
+        let end = rest.find('"').expect("the link closes");
+        rest[..end].replace("&amp;", "&")
+    }
+
     #[tokio::test]
     async fn front_ends_show_what_the_profiles_send_them_to_the_viewers_they_let_in() {
         let (app, db) = app_with_admin_db().await;
@@ -1049,7 +1145,7 @@ mod tests {
         assert_eq!(jobs[1]["content_type"], "video/mp4");
         assert!(jobs[1]["download_url"].is_null());
         let media_url = jobs[1]["media_url"].as_str().unwrap().to_string();
-        assert!(media_url.starts_with(&format!("/api/f/five/jobs/{}/media?t=", in_guild.id)));
+        assert_eq!(media_url, format!("/api/f/five/jobs/{}/media", in_guild.id));
         let (status, page) = guest.get("/api/f/five/jobs?resolver=nothing").await;
         assert_eq!(status, StatusCode::OK, "{page}");
         assert!(page["jobs"].as_array().unwrap().is_empty());
@@ -1082,9 +1178,52 @@ mod tests {
         let (status, body) = guest.get(&media_url).await;
         assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(body, json!("0123456789"));
-        // A token opens only its own job on its own front end.
-        let token = media_url.split_once("?t=").unwrap().1.to_string();
+        // The page signs its links for unfurlers and carries the media inline for the app.
         let mut stranger = Client::new(&app);
+        let (status, html) = stranger.get(&format!("/f/five/j/{}", in_guild.id)).await;
+        assert_eq!(status, StatusCode::OK);
+        let html = html.as_str().unwrap().to_string();
+        let signed_media = signed_link(&html, "og:video");
+        let signed_thumbnail = signed_link(&html, "og:image");
+        assert!(
+            signed_media.starts_with(&format!("{media_url}?t=")),
+            "{signed_media}"
+        );
+        assert!(
+            html.contains(
+                r#"<script id="discoclip-front" type="application/json">{"slug":"five","info":{"#
+            ),
+            "{html}"
+        );
+        assert!(
+            html.contains(&format!(r#""job":{{"id":"{}""#, in_guild.id)),
+            "{html}"
+        );
+        // Gzipped for a browser that takes it, and still the same page.
+        stranger.headers = vec![("accept-encoding".into(), "br, gzip;q=0.8".into())];
+        let (status, headers, zipped) = stranger.raw(&format!("/f/five/j/{}", in_guild.id)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(headers["content-encoding"], "gzip");
+        assert_eq!(headers["vary"], "Accept-Encoding");
+        let mut unzipped = String::new();
+        std::io::Read::read_to_string(
+            &mut flate2::read::GzDecoder::new(zipped.as_slice()),
+            &mut unzipped,
+        )
+        .unwrap();
+        assert!(unzipped.contains(r#"id="discoclip-front""#), "{unzipped}");
+        stranger.headers.clear();
+        // The gallery page carries the view and its first page.
+        let (status, html) = guest.get("/api/f/five").await;
+        assert_eq!(status, StatusCode::OK, "{html}");
+        let (status, gallery) = guest.get("/f/five").await;
+        assert_eq!(status, StatusCode::OK);
+        let gallery = gallery.as_str().unwrap();
+        assert!(gallery.contains(r#"{"slug":"five","info":{"#), "{gallery}");
+        assert!(gallery.contains(r#""page":{"jobs":[{"id":""#), "{gallery}");
+        assert!(gallery.contains(r#""total":2"#), "{gallery}");
+        // A token opens only its own job on its own front end.
+        let token = signed_media.split_once("?t=").unwrap().1.to_string();
         assert_eq!(
             stranger
                 .get(&format!(
@@ -1119,9 +1258,13 @@ mod tests {
         // The poster is the app's own still of the output, signed like the media, so
         // Discord shows it and nothing depends on the platform's picture staying up.
         let thumbnail_url = jobs[1]["thumbnail"].as_str().unwrap().to_string();
+        assert_eq!(
+            thumbnail_url,
+            format!("/api/f/five/jobs/{}/thumbnail", in_guild.id)
+        );
         assert!(
-            thumbnail_url.starts_with(&format!("/api/f/five/jobs/{}/thumbnail?t=", in_guild.id)),
-            "{thumbnail_url}"
+            signed_thumbnail.starts_with(&format!("{thumbnail_url}?t=")),
+            "{signed_thumbnail}"
         );
         assert!(
             html.contains(&format!(
@@ -1200,23 +1343,35 @@ mod tests {
             .get(&format!("/api/f/five/jobs/{}/download", in_guild.id))
             .await;
         assert_eq!(status, StatusCode::OK, "{body}");
-        // The signed link still works without a session, for unfurlers.
-        assert_eq!(stranger.get(&media_url).await.0, StatusCode::OK);
+        // The signed links still work without a session, for unfurlers. The plain ones ask for a login.
+        assert_eq!(stranger.get(&signed_media).await.0, StatusCode::OK);
+        assert_eq!(stranger.get(&media_url).await.0, StatusCode::UNAUTHORIZED);
         assert_eq!(
-            stranger
-                .get(&format!("/api/f/five/jobs/{}/media", in_guild.id))
-                .await
-                .0,
+            stranger.raw(&thumbnail_url).await.0,
             StatusCode::UNAUTHORIZED
         );
-        assert_eq!(
-            stranger
-                .get(&format!("/api/f/five/jobs/{}/thumbnail", in_guild.id))
-                .await
-                .0,
-            StatusCode::UNAUTHORIZED
+        assert_eq!(stranger.raw(&signed_thumbnail).await.0, StatusCode::OK);
+        // The pages tell a stranger who the view is, and nothing of what it shows.
+        let (status, html) = stranger.get(&format!("/f/five/j/{}", in_guild.id)).await;
+        assert_eq!(status, StatusCode::OK);
+        let html = html.as_str().unwrap();
+        assert!(html.contains(r#"{"slug":"five","info":{"#), "{html}");
+        assert!(!html.contains(r#""job":"#), "{html}");
+        let (status, gallery) = stranger.get("/f/five").await;
+        assert_eq!(status, StatusCode::OK);
+        let gallery = gallery.as_str().unwrap();
+        assert!(gallery.contains(r#""secret":"pin""#), "{gallery}");
+        assert!(!gallery.contains(r#""page":"#), "{gallery}");
+        // A viewer's gallery page carries the first page.
+        let (status, gallery) = viewer.get("/f/five").await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            gallery
+                .as_str()
+                .unwrap()
+                .contains(r#""page":{"jobs":[{"id":""#),
+            "{gallery}"
         );
-        assert_eq!(stranger.raw(&thumbnail_url).await.0, StatusCode::OK);
 
         let (status, sessions) = admin.get(&format!("/api/frontends/{id}/sessions")).await;
         assert_eq!(status, StatusCode::OK, "{sessions}");

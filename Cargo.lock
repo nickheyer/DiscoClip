@@ -1516,6 +1516,7 @@ dependencies = [
  "dirs",
  "discoclip-bot",
  "discoclip-engine",
+ "flate2",
  "futures",
  "hex",
  "http-body-util",

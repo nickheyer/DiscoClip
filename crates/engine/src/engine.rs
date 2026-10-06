@@ -800,17 +800,14 @@ impl EngineHandle {
         self.shared.store.get(id).await
     }
 
-    /// The still that stands for `id`'s output: the one made with the job, or, for a job
-    /// that finished before stills were made, one made now from the output, in the cache
-    /// or the archive, and kept with the job. `None` for a job without an output on disk,
-    /// or whose output has no picture to take.
-    pub async fn thumbnail(&self, id: JobId) -> Result<Option<LocalFile>, ThumbnailError> {
-        let mut job = self
-            .shared
-            .store
-            .get(id)
-            .await?
-            .ok_or(ThumbnailError::NotFound(id))?;
+    /// The job without its resolved variants, enough to list, show and serve it
+    pub async fn get_without_variants(&self, id: JobId) -> Result<Option<Job>, StoreError> {
+        self.shared.store.get_without_variants(id).await
+    }
+
+    /// The still on disk for the job, else one made now from a finished output and kept
+    pub async fn thumbnail(&self, job: &Job) -> Result<Option<LocalFile>, ThumbnailError> {
+        let id = job.id;
         let archived = job.artifacts.archived.as_ref();
         if let Some(thumbnail) = &job.artifacts.thumbnail {
             for path in
@@ -860,8 +857,14 @@ impl EngineHandle {
             Err(TranscodeError::NoPicture | TranscodeError::NotMedia) => return Ok(None),
             Err(error) => return Err(error.into()),
         };
-        job.artifacts.thumbnail = Some(made.clone());
-        self.shared.store.update(&job).await?;
+        let mut stored = self
+            .shared
+            .store
+            .get(id)
+            .await?
+            .ok_or(ThumbnailError::NotFound(id))?;
+        stored.artifacts.thumbnail = Some(made.clone());
+        self.shared.store.update(&stored).await?;
         Ok(Some(made))
     }
 

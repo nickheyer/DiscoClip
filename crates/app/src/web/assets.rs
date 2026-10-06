@@ -3,11 +3,12 @@
 //! there.
 
 use std::collections::HashMap;
+use std::io::Write;
 use std::sync::LazyLock;
 
 use axum::body::Body;
 use axum::extract::Request;
-use axum::http::{HeaderValue, Method, StatusCode, header};
+use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 
 pub struct Asset {
@@ -19,6 +20,10 @@ pub struct Asset {
     /// Whether the file's name carries its content hash, so it never changes.
     pub immutable: bool,
     pub bytes: &'static [u8],
+    /// The bytes gzipped at build time, for text that came out smaller that way.
+    pub gzip: Option<&'static [u8]>,
+    /// A strong validator over the gzipped bytes, already quoted.
+    pub etag_gzip: &'static str,
 }
 
 include!(concat!(env!("OUT_DIR"), "/ui_embed.rs"));
@@ -48,10 +53,8 @@ static CONTENT_SECURITY_POLICY: LazyLock<HeaderValue> = LazyLock::new(|| {
     .expect("a CSP is a valid header value")
 });
 
-/// The app's page with `head` inserted at the start of its `<head>`, for pages that carry
-/// their own metadata, such as a front end's media page and what link unfurlers read
-/// from it. Served fresh every time, since the head differs by page.
-pub fn page_with_head(head: &str) -> Response {
+/// The app page with head markup inserted, served fresh and gzipped for a browser that takes it
+pub fn page_with_head(head: &str, headers: &HeaderMap) -> Response {
     let shell = String::from_utf8_lossy(PAGE.bytes);
     let html = match shell.find("<head>") {
         Some(at) => {
@@ -60,23 +63,63 @@ pub fn page_with_head(head: &str) -> Response {
         }
         None => format!("{head}{shell}"),
     };
-    Response::builder()
+    let mut response = Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, PAGE.content_type)
         .header(header::CACHE_CONTROL, REVALIDATE)
+        .header(header::VARY, ACCEPT_ENCODING)
         .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
         .header(
             header::CONTENT_SECURITY_POLICY,
             CONTENT_SECURITY_POLICY.clone(),
         )
         .header(header::REFERRER_POLICY, "same-origin")
-        .header(header::X_FRAME_OPTIONS, "DENY")
-        .body(Body::from(html))
+        .header(header::X_FRAME_OPTIONS, "DENY");
+    let body = if accepts_gzip(headers) {
+        response = response.header(header::CONTENT_ENCODING, GZIP);
+        gzip(html.as_bytes())
+    } else {
+        html.into_bytes()
+    };
+    response
+        .header(header::CONTENT_LENGTH, body.len())
+        .body(Body::from(body))
         .expect("a response with valid headers")
 }
 
 const IMMUTABLE: &str = "public, max-age=31536000, immutable";
 const REVALIDATE: &str = "no-cache";
+const ACCEPT_ENCODING: &str = "Accept-Encoding";
+const GZIP: &str = "gzip";
+
+/// Whether the request takes a gzip body, by a gzip coding it lists with a weight above zero
+fn accepts_gzip(headers: &HeaderMap) -> bool {
+    headers
+        .get_all(header::ACCEPT_ENCODING)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(','))
+        .any(|coding| {
+            let mut parts = coding.split(';').map(str::trim);
+            let name = parts.next().unwrap_or("");
+            let wanted = parts
+                .find_map(|part| part.strip_prefix("q="))
+                .and_then(|weight| weight.parse::<f32>().ok())
+                .is_none_or(|weight| weight > 0.0);
+            name.eq_ignore_ascii_case(GZIP) && wanted
+        })
+}
+
+/// The bytes gzipped at the library's default level
+fn gzip(bytes: &[u8]) -> Vec<u8> {
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder
+        .write_all(bytes)
+        .expect("writing into memory does not fail");
+    encoder
+        .finish()
+        .expect("finishing an in-memory gzip stream does not fail")
+}
 
 /// Whether an `If-None-Match` header names `etag`.
 fn matches(header: &HeaderValue, etag: &str) -> bool {
@@ -104,11 +147,22 @@ pub async fn serve(request: Request) -> Response {
     } else {
         REVALIDATE
     };
+    let gzipped = asset.gzip.filter(|_| accepts_gzip(request.headers()));
+    let (bytes, etag) = match gzipped {
+        Some(bytes) => (bytes, asset.etag_gzip),
+        None => (asset.bytes, asset.etag),
+    };
 
     let mut response = Response::builder()
-        .header(header::ETAG, asset.etag)
+        .header(header::ETAG, etag)
         .header(header::CACHE_CONTROL, cache)
         .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff");
+    if asset.gzip.is_some() {
+        response = response.header(header::VARY, ACCEPT_ENCODING);
+    }
+    if gzipped.is_some() {
+        response = response.header(header::CONTENT_ENCODING, GZIP);
+    }
     if asset.content_type.starts_with("text/html") {
         response = response
             .header(
@@ -122,7 +176,7 @@ pub async fn serve(request: Request) -> Response {
     let fresh = request
         .headers()
         .get(header::IF_NONE_MATCH)
-        .is_some_and(|value| matches(value, asset.etag));
+        .is_some_and(|value| matches(value, etag));
     if fresh {
         return response
             .status(StatusCode::NOT_MODIFIED)
@@ -132,12 +186,124 @@ pub async fn serve(request: Request) -> Response {
     let body = if *request.method() == Method::HEAD {
         Body::empty()
     } else {
-        Body::from(asset.bytes)
+        Body::from(bytes)
     };
     response
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, asset.content_type)
-        .header(header::CONTENT_LENGTH, asset.bytes.len())
+        .header(header::CONTENT_LENGTH, bytes.len())
         .body(body)
         .expect("a response with valid headers")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Read;
+
+    use axum::body::to_bytes;
+    use axum::http::{Request, StatusCode};
+
+    use super::*;
+
+    fn request(path: &str, encodings: Option<&str>) -> Request<Body> {
+        let mut request = Request::builder().uri(path);
+        if let Some(encodings) = encodings {
+            request = request.header(header::ACCEPT_ENCODING, encodings);
+        }
+        request.body(Body::empty()).unwrap()
+    }
+
+    #[test]
+    fn gzip_is_taken_when_listed_with_weight() {
+        let mut headers = HeaderMap::new();
+        assert!(!accepts_gzip(&headers));
+        headers.insert(
+            header::ACCEPT_ENCODING,
+            HeaderValue::from_static("br, gzip;q=0.5"),
+        );
+        assert!(accepts_gzip(&headers));
+        headers.insert(header::ACCEPT_ENCODING, HeaderValue::from_static("GZIP"));
+        assert!(accepts_gzip(&headers));
+        headers.insert(
+            header::ACCEPT_ENCODING,
+            HeaderValue::from_static("gzip;q=0, br"),
+        );
+        assert!(!accepts_gzip(&headers));
+        headers.insert(
+            header::ACCEPT_ENCODING,
+            HeaderValue::from_static("identity"),
+        );
+        assert!(!accepts_gzip(&headers));
+    }
+
+    #[tokio::test]
+    async fn the_page_is_gzipped_for_a_browser_that_takes_it_and_plain_otherwise() {
+        let plain = serve(request("/", None)).await;
+        assert_eq!(plain.status(), StatusCode::OK);
+        assert!(plain.headers().get(header::CONTENT_ENCODING).is_none());
+        assert_eq!(plain.headers()["vary"], "Accept-Encoding");
+        let plain_etag = plain.headers()["etag"].clone();
+        let plain_body = to_bytes(plain.into_body(), usize::MAX).await.unwrap();
+
+        let zipped = serve(request("/", Some("gzip, deflate"))).await;
+        assert_eq!(zipped.status(), StatusCode::OK);
+        assert_eq!(zipped.headers()["content-encoding"], "gzip");
+        assert_eq!(zipped.headers()["vary"], "Accept-Encoding");
+        let zipped_etag = zipped.headers()["etag"].clone();
+        assert_ne!(zipped_etag, plain_etag);
+        assert!(zipped_etag.to_str().unwrap().ends_with("-gz\""));
+        let zipped_body = to_bytes(zipped.into_body(), usize::MAX).await.unwrap();
+        assert!(zipped_body.len() < plain_body.len());
+        let mut unzipped = Vec::new();
+        flate2::read::GzDecoder::new(zipped_body.as_ref())
+            .read_to_end(&mut unzipped)
+            .unwrap();
+        assert_eq!(unzipped, plain_body);
+
+        // Each form is asked about by its own tag.
+        let mut again = request("/", Some("gzip"));
+        again
+            .headers_mut()
+            .insert(header::IF_NONE_MATCH, zipped_etag.clone());
+        assert_eq!(serve(again).await.status(), StatusCode::NOT_MODIFIED);
+        let mut other = request("/", Some("gzip"));
+        other
+            .headers_mut()
+            .insert(header::IF_NONE_MATCH, plain_etag);
+        assert_eq!(serve(other).await.status(), StatusCode::OK);
+
+        // A font is compressed already and goes out as it is.
+        let font = ASSETS
+            .iter()
+            .find(|asset| asset.path.ends_with(".woff2"))
+            .expect("the app ships a font");
+        assert!(font.gzip.is_none());
+        let served = serve(request(&format!("/{}", font.path), Some("gzip"))).await;
+        assert!(served.headers().get(header::CONTENT_ENCODING).is_none());
+        assert!(served.headers().get(header::VARY).is_none());
+    }
+
+    #[tokio::test]
+    async fn a_page_with_a_head_is_gzipped_on_request() {
+        let plain = page_with_head("<title>x</title>", &HeaderMap::new());
+        assert!(plain.headers().get(header::CONTENT_ENCODING).is_none());
+        let plain_body = to_bytes(plain.into_body(), usize::MAX).await.unwrap();
+        assert!(plain_body.starts_with(b"<!doctype html>"));
+        let mut headers = HeaderMap::new();
+        headers.insert(header::ACCEPT_ENCODING, HeaderValue::from_static("gzip"));
+        let zipped = page_with_head("<title>x</title>", &headers);
+        assert_eq!(zipped.headers()["content-encoding"], "gzip");
+        let length: usize = zipped.headers()["content-length"]
+            .to_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        let zipped_body = to_bytes(zipped.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(zipped_body.len(), length);
+        let mut unzipped = Vec::new();
+        flate2::read::GzDecoder::new(zipped_body.as_ref())
+            .read_to_end(&mut unzipped)
+            .unwrap();
+        assert_eq!(unzipped, plain_body);
+    }
 }

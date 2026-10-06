@@ -21,6 +21,7 @@ clap.workspace = true
 dirs.workspace = true
 discoclip-bot.workspace = true
 discoclip-engine.workspace = true
+flate2.workspace = true
 futures.workspace = true
 hex.workspace = true
 hyper.workspace = true
@@ -58,6 +59,7 @@ uuid.workspace = true
 workspace = true
 
 [build-dependencies]
+flate2.workspace = true
 sha2.workspace = true
 
 [dev-dependencies]

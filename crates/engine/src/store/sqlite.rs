@@ -105,6 +105,17 @@ WHERE json_extract(data, '$.request.policy.delivery.view') NOT IN ('', 'auto', '
 CREATE INDEX IF NOT EXISTS jobs_view ON jobs(view_id, status, created_at DESC);
 ",
     },
+    Migration {
+        version: 6,
+        name: "jobs.variants_column",
+        sql: "
+ALTER TABLE jobs ADD COLUMN variants TEXT;
+UPDATE jobs SET
+    variants = json_extract(data, '$.artifacts.resolved.variants'),
+    data = json_remove(data, '$.artifacts.resolved.variants')
+WHERE json_type(data, '$.artifacts.resolved.variants') = 'array';
+",
+    },
 ];
 
 impl From<rusqlite::Error> for StoreError {
@@ -260,13 +271,37 @@ fn nanos(ts: jiff::Timestamp) -> i64 {
     ts.as_nanosecond().clamp(i64::MIN as i128, i64::MAX as i128) as i64
 }
 
+/// The job record alone, its resolved variants left in their own column
 fn decode(data: String) -> Result<Job, StoreError> {
     Ok(serde_json::from_str(&data)?)
 }
 
-fn columns(job: &Job) -> Result<[Value; 18], StoreError> {
+/// The job record with the variants column spliced back into its resolved media
+fn decode_with_variants(data: String, variants: Option<String>) -> Result<Job, StoreError> {
+    let mut job = decode(data)?;
+    if let Some(variants) = variants {
+        let id = job.id;
+        let resolved = job.artifacts.resolved.as_mut().ok_or_else(|| {
+            StoreError::Corrupt(format!("job {id}: variants stored without resolved media"))
+        })?;
+        resolved.variants = serde_json::from_str(&variants)?;
+    }
+    Ok(job)
+}
+
+/// The row's columns, with the resolved variants taken out of the record into their own value
+fn columns(job: &mut Job) -> Result<([Value; 18], Value), StoreError> {
+    let variants = job
+        .artifacts
+        .resolved
+        .as_mut()
+        .map(|resolved| std::mem::take(&mut resolved.variants));
     let data = serde_json::to_string(job)?;
-    Ok([
+    let variants = match variants {
+        Some(variants) => Value::Text(serde_json::to_string(&variants)?),
+        None => Value::Null,
+    };
+    let row = [
         Value::Text(job.id.to_string()),
         Value::Text(job.request.origin.source.0.clone()),
         Value::Text(job.status.kind().as_str().to_string()),
@@ -312,7 +347,8 @@ fn columns(job: &Job) -> Result<[Value; 18], StoreError> {
             .view
             .id()
             .map_or(Value::Null, |id| Value::Text(id.to_string())),
-    ])
+    ];
+    Ok((row, variants))
 }
 
 /// The conditions of a filter on the jobs table named `t`, with their bindings in order
@@ -441,15 +477,17 @@ fn read_stats(conn: &Connection, sql: &str, values: Vec<Value>) -> Result<Stats,
 #[async_trait]
 impl JobStore for SqliteStore {
     async fn insert(&self, job: &Job) -> Result<(), StoreError> {
-        let job = job.clone();
+        let mut job = job.clone();
         self.call(move |conn| {
-            let values = columns(&job)?;
+            let (values, variants) = columns(&mut job)?;
             conn.execute(
-                "INSERT INTO jobs (id, source, status, created_at, updated_at, data, url, title, resolver, parent_id, submitted_by, guild_id, channel_id, media, url_key, media_key, media_hash, view_id, finished_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
-                rusqlite::params_from_iter(values.into_iter().chain(std::iter::once(
-                    job.finished_at.map_or(Value::Null, |t| Value::Integer(nanos(t))),
-                ))),
+                "INSERT INTO jobs (id, source, status, created_at, updated_at, data, url, title, resolver, parent_id, submitted_by, guild_id, channel_id, media, url_key, media_key, media_hash, view_id, finished_at, variants)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
+                rusqlite::params_from_iter(values.into_iter().chain([
+                    job.finished_at
+                        .map_or(Value::Null, |t| Value::Integer(nanos(t))),
+                    variants,
+                ])),
             )?;
             Ok(())
         })
@@ -457,16 +495,19 @@ impl JobStore for SqliteStore {
     }
 
     async fn update(&self, job: &Job) -> Result<(), StoreError> {
-        let job = job.clone();
+        let mut job = job.clone();
         self.call(move |conn| {
-            let values = columns(&job)?;
+            let (values, variants) = columns(&mut job)?;
             let changed = conn.execute(
                 "UPDATE jobs SET source = ?2, status = ?3, created_at = ?4, updated_at = ?5, data = ?6, url = ?7,
                  title = ?8, resolver = ?9, parent_id = ?10, submitted_by = ?11, guild_id = ?12, channel_id = ?13,
-                 media = ?14, url_key = ?15, media_key = ?16, media_hash = ?17, view_id = ?18, finished_at = ?19 WHERE id = ?1",
-                rusqlite::params_from_iter(values.into_iter().chain(std::iter::once(
-                    job.finished_at.map_or(Value::Null, |t| Value::Integer(nanos(t))),
-                ))),
+                 media = ?14, url_key = ?15, media_key = ?16, media_hash = ?17, view_id = ?18, finished_at = ?19,
+                 variants = ?20 WHERE id = ?1",
+                rusqlite::params_from_iter(values.into_iter().chain([
+                    job.finished_at
+                        .map_or(Value::Null, |t| Value::Integer(nanos(t))),
+                    variants,
+                ])),
             )?;
             if changed == 0 {
                 return Err(StoreError::NotFound(job.id));
@@ -477,6 +518,21 @@ impl JobStore for SqliteStore {
     }
 
     async fn get(&self, id: JobId) -> Result<Option<Job>, StoreError> {
+        self.call(move |conn| {
+            let row: Option<(String, Option<String>)> = conn
+                .query_row(
+                    "SELECT data, variants FROM jobs WHERE id = ?1",
+                    params![id.to_string()],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()?;
+            row.map(|(data, variants)| decode_with_variants(data, variants))
+                .transpose()
+        })
+        .await
+    }
+
+    async fn get_without_variants(&self, id: JobId) -> Result<Option<Job>, StoreError> {
         self.call(move |conn| {
             let data: Option<String> = conn
                 .query_row(
@@ -529,10 +585,16 @@ impl JobStore for SqliteStore {
     async fn list_active(&self) -> Result<Vec<Job>, StoreError> {
         self.call(move |conn| {
             let mut stmt = conn.prepare(
-                "SELECT data FROM jobs WHERE status IN ('queued', 'running') ORDER BY created_at ASC, id ASC",
+                "SELECT data, variants FROM jobs WHERE status IN ('queued', 'running') ORDER BY created_at ASC, id ASC",
             )?;
-            let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-            rows.map(|row| decode(row?)).collect()
+            let rows = stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+            })?;
+            rows.map(|row| {
+                let (data, variants) = row?;
+                decode_with_variants(data, variants)
+            })
+            .collect()
         })
         .await
     }
@@ -619,14 +681,19 @@ impl JobStore for SqliteStore {
         let media_key = media_key.map(str::to_string);
         self.call(move |conn| {
             let mut stmt = conn.prepare(
-                "SELECT data FROM jobs WHERE status = 'done' \
+                "SELECT data, variants FROM jobs WHERE status = 'done' \
                  AND (url_key = ?1 OR (?2 IS NOT NULL AND media_key = ?2)) \
                  AND json_extract(data, '$.artifacts.archived') IS NOT NULL \
                  ORDER BY created_at DESC, id DESC LIMIT 20",
             )?;
-            let rows =
-                stmt.query_map(params![url_key, media_key], |row| row.get::<_, String>(0))?;
-            rows.map(|row| decode(row?)).collect()
+            let rows = stmt.query_map(params![url_key, media_key], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+            })?;
+            rows.map(|row| {
+                let (data, variants) = row?;
+                decode_with_variants(data, variants)
+            })
+            .collect()
         })
         .await
     }
@@ -635,12 +702,18 @@ impl JobStore for SqliteStore {
         let media_hash = media_hash.to_string();
         self.call(move |conn| {
             let mut stmt = conn.prepare(
-                "SELECT data FROM jobs WHERE status = 'done' AND media_hash = ?1 \
+                "SELECT data, variants FROM jobs WHERE status = 'done' AND media_hash = ?1 \
                  AND json_extract(data, '$.artifacts.archived') IS NOT NULL \
                  ORDER BY created_at DESC, id DESC LIMIT 20",
             )?;
-            let rows = stmt.query_map(params![media_hash], |row| row.get::<_, String>(0))?;
-            rows.map(|row| decode(row?)).collect()
+            let rows = stmt.query_map(params![media_hash], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+            })?;
+            rows.map(|row| {
+                let (data, variants) = row?;
+                decode_with_variants(data, variants)
+            })
+            .collect()
         })
         .await
     }
@@ -721,6 +794,120 @@ mod tests {
             },
             Url::parse(url).unwrap(),
         )
+    }
+
+    /// A done job resolved on `resolver` with two offered streams
+    fn resolved_job(url: &str) -> Job {
+        let mut job = Job::new(request(url));
+        let mut resolved = crate::resolve::Resolved::new("web");
+        resolved.title = Some("Streams".into());
+        resolved.variants = vec![
+            crate::resolve::Variant::file(Url::parse("https://cdn.test/720.mp4").unwrap()),
+            crate::resolve::Variant::file(Url::parse("https://cdn.test/1080.mp4").unwrap()),
+        ];
+        job.artifacts.resolved = Some(resolved);
+        job.status = crate::job::JobStatus::Done;
+        job
+    }
+
+    #[tokio::test]
+    async fn variants_live_in_their_own_column_and_stay_out_of_listings() {
+        let store = SqliteStore::open_in_memory().await.unwrap();
+        let job = resolved_job("https://a.test/streams");
+        store.insert(&job).await.unwrap();
+
+        assert_eq!(store.get(job.id).await.unwrap().unwrap(), job);
+        let (data, variants): (String, String) = store
+            .call(move |conn| {
+                Ok(conn.query_row(
+                    "SELECT data, variants FROM jobs WHERE id = ?1",
+                    params![job.id.to_string()],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )?)
+            })
+            .await
+            .unwrap();
+        assert!(!data.contains("cdn.test"), "{data}");
+        assert!(variants.contains("https://cdn.test/720.mp4"), "{variants}");
+
+        let mut without = job.clone();
+        without
+            .artifacts
+            .resolved
+            .as_mut()
+            .unwrap()
+            .variants
+            .clear();
+        assert_eq!(
+            store.get_without_variants(job.id).await.unwrap().unwrap(),
+            without
+        );
+        assert_eq!(
+            store.list(&JobFilter::default()).await.unwrap(),
+            vec![without.clone()]
+        );
+        assert_eq!(
+            store.find_finished_by_url("", None).await.unwrap(),
+            Vec::<Job>::new()
+        );
+
+        // An update keeps the variants when the job carries them
+        let mut again = job.clone();
+        again.log.push(crate::job::LogEntry {
+            at: Timestamp::now(),
+            stage: None,
+            message: "noted".into(),
+        });
+        store.update(&again).await.unwrap();
+        assert_eq!(store.get(job.id).await.unwrap().unwrap(), again);
+        let mut active = resolved_job("https://a.test/live");
+        active.status = crate::job::JobStatus::Queued;
+        store.insert(&active).await.unwrap();
+        assert_eq!(store.list_active().await.unwrap(), vec![active]);
+    }
+
+    #[tokio::test]
+    async fn older_records_move_their_variants_into_the_column() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrate::apply(&mut conn, SCOPE, &MIGRATIONS[..5]).unwrap();
+        let job = resolved_job("https://a.test/legacy");
+        let legacy = serde_json::to_string(&job).unwrap();
+        assert!(legacy.contains("cdn.test"));
+        conn.execute(
+            "INSERT INTO jobs (id, source, status, created_at, updated_at, data) VALUES (?1, 'local', 'done', 1, 1, ?2)",
+            params![job.id.to_string(), legacy],
+        )
+        .unwrap();
+        let mut bare = Job::new(request("https://a.test/bare"));
+        bare.status = crate::job::JobStatus::Failed {
+            stage: crate::job::Stage::Download,
+            message: "no media".into(),
+        };
+        conn.execute(
+            "INSERT INTO jobs (id, source, status, created_at, updated_at, data) VALUES (?1, 'local', 'failed', 2, 2, ?2)",
+            params![bare.id.to_string(), serde_json::to_string(&bare).unwrap()],
+        )
+        .unwrap();
+
+        assert_eq!(migrate::apply(&mut conn, SCOPE, MIGRATIONS).unwrap(), 1);
+        let (data, variants): (String, Option<String>) = conn
+            .query_row(
+                "SELECT data, variants FROM jobs WHERE id = ?1",
+                params![job.id.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert!(!data.contains("cdn.test"), "{data}");
+        assert_eq!(decode_with_variants(data, variants).unwrap(), job);
+        let (data, variants): (String, Option<String>) = conn
+            .query_row(
+                "SELECT data, variants FROM jobs WHERE id = ?1",
+                params![bare.id.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert!(variants.is_none());
+        assert_eq!(decode_with_variants(data, variants).unwrap(), bare);
     }
 
     #[tokio::test]

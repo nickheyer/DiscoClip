@@ -1504,7 +1504,7 @@ dependencies = [
 
 [[package]]
 name = "discoclip"
-version = "0.1.15"
+version = "0.1.16"
 dependencies = [
  "aes-gcm 0.11.1",
  "argon2",
@@ -1556,7 +1556,7 @@ dependencies = [
 
 [[package]]
 name = "discoclip-bot"
-version = "0.1.15"
+version = "0.1.16"
 dependencies = [
  "async-trait",
  "axum",
@@ -1582,7 +1582,7 @@ dependencies = [
 
 [[package]]
 name = "discoclip-engine"
-version = "0.1.15"
+version = "0.1.16"
 dependencies = [
  "aes 0.9.2",
  "argon2",

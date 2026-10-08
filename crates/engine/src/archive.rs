@@ -192,7 +192,13 @@ impl Archiver for FsArchiver {
             .resolved
             .as_ref()
             .and_then(|r| r.title.as_deref());
-        let stem = format!("{}-{}", &id[..8], safe_stem(title, job.media().as_str()));
+        // time prefix sorts the files
+        let stem = format!(
+            "{}-{}-{}",
+            &id[..8],
+            &id[24..],
+            safe_stem(title, job.media().as_str())
+        );
 
         let mut files = Vec::new();
         let mut bytes = 0;
@@ -223,11 +229,15 @@ impl Archiver for FsArchiver {
                 .source
                 .as_ref()
                 .ok_or(ArchiveError::Missing("source"))?;
-            let suffix = if keep == Keep::Both { "-source" } else { "" };
-            let (path, n) = copy_into(&source.path, &dir, &stem, suffix).await?;
-            files.push(path.clone());
-            archived_source = Some(path);
-            bytes += n;
+            if source.path.starts_with(&config.dir) {
+                archived_source = Some(source.path.clone());
+            } else {
+                let suffix = if keep == Keep::Both { "-source" } else { "" };
+                let (path, n) = copy_into(&source.path, &dir, &stem, suffix).await?;
+                files.push(path.clone());
+                archived_source = Some(path);
+                bytes += n;
+            }
         }
 
         let record = dir.join(format!("{stem}.json"));

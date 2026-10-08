@@ -745,6 +745,17 @@ pub enum BulkAction {
     Delete,
 }
 
+impl BulkAction {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            BulkAction::Retry => "retry",
+            BulkAction::Cancel => "cancel",
+            BulkAction::Stop => "stop",
+            BulkAction::Delete => "delete",
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct BulkRequest {
     pub action: BulkAction,
@@ -828,7 +839,13 @@ pub async fn bulk(
     }
     let succeeded = results.iter().filter(|r| r.ok).count();
     let failed = results.len() - succeeded;
-    tracing::info!(by = identity.user.username, action = ?request.action, succeeded, failed, "bulk job action");
+    tracing::info!(
+        by = identity.user.username,
+        action = request.action.as_str(),
+        succeeded,
+        failed,
+        "bulk job action"
+    );
     Ok(Json(BulkResponse {
         action: request.action,
         results,

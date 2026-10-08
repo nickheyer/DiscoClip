@@ -1133,7 +1133,7 @@ impl FixtureRunner {
             if self.config().interval_secs > 0 {
                 match self.start_due().await {
                     Ok(started) if !started.is_empty() => {
-                        tracing::info!(platforms = ?started, "scheduled platform checks");
+                        tracing::info!(platforms = %started.join(", "), "scheduled platform checks");
                     }
                     Ok(_) => {}
                     Err(error) => tracing::error!("check runs not read: {error}"),

@@ -428,18 +428,21 @@ mod tests {
         tracing::subscriber::with_default(subscriber, || {
             tracing::info!(job = "abc", size = 5, "link submitted");
             tracing::warn!(error = %std::io::Error::other("boom"), "publishing failed");
+            tracing::info!(stage = Some("archive"), skipped = None::<&str>, "noted");
         });
         let lines = buffer.query(&LogFilter {
             limit: 10,
             ..LogFilter::default()
         });
-        assert_eq!(lines.len(), 2);
-        let submitted = &lines[1];
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[0].fields["stage"], "archive");
+        assert!(!lines[0].fields.contains_key("skipped"));
+        let submitted = &lines[2];
         assert_eq!(submitted.level, LogLevel::Info);
         assert_eq!(submitted.message, "link submitted");
         assert_eq!(submitted.fields["job"], "abc");
         assert_eq!(submitted.fields["size"], "5");
         assert!(submitted.target.starts_with("discoclip::telemetry"));
-        assert_eq!(lines[0].fields["error"], "boom");
+        assert_eq!(lines[1].fields["error"], "boom");
     }
 }

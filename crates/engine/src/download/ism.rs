@@ -1402,7 +1402,8 @@ impl Downloader for IsmDownloader {
                 }
                 if first > 0 && note {
                     session.note(format!(
-                        "{first} earlier fragment(s) of the live stream left out to keep the capture within the limit"
+                        "{} of the live stream left out to keep the capture within the limit",
+                        crate::text::count(first, "earlier fragment", "earlier fragments")
                     ));
                 }
                 pieces.drain(..first);

@@ -312,6 +312,20 @@ pub enum VideoCodec {
     Other(String),
 }
 
+impl VideoCodec {
+    /// The short name, h264 or av1
+    pub fn as_str(&self) -> &str {
+        match self {
+            VideoCodec::H264 => "h264",
+            VideoCodec::H265 => "h265",
+            VideoCodec::Vp8 => "vp8",
+            VideoCodec::Vp9 => "vp9",
+            VideoCodec::Av1 => "av1",
+            VideoCodec::Other(name) => name,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AudioCodec {
@@ -321,6 +335,20 @@ pub enum AudioCodec {
     Mp3,
     Flac,
     Other(String),
+}
+
+impl AudioCodec {
+    /// The short name, aac or opus
+    pub fn as_str(&self) -> &str {
+        match self {
+            AudioCodec::Aac => "aac",
+            AudioCodec::Opus => "opus",
+            AudioCodec::Vorbis => "vorbis",
+            AudioCodec::Mp3 => "mp3",
+            AudioCodec::Flac => "flac",
+            AudioCodec::Other(name) => name,
+        }
+    }
 }
 
 /// How the picture's fields are laid out in time.

@@ -328,7 +328,7 @@ async fn every_kind_of_media_goes_through_the_pipeline() {
     assert!(
         job.log
             .iter()
-            .any(|e| e.message.contains("resolved image with 1 variants")),
+            .any(|e| e.message.contains("resolved image with 1 variant")),
         "{:?}",
         job.log
     );
@@ -358,7 +358,7 @@ async fn every_kind_of_media_goes_through_the_pipeline() {
     assert!(
         job.log
             .iter()
-            .any(|e| e.message.contains("Publishing without conversion")),
+            .any(|e| e.message.contains("Publishing it without conversion")),
         "{:?}",
         job.log
     );

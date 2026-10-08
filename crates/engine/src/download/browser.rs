@@ -1975,21 +1975,23 @@ impl BrowserDownloader {
         for (index, stream) in video.iter().chain(audio.iter()) {
             if stream.runs.len() > 1 {
                 notes.push(format!(
-                    "browser: the {} stream changed codec configuration {} time(s). Its parts were joined by decoding them.",
+                    "browser: the {} stream changed codec configuration {}. Its parts were joined by decoding them.",
                     stream.mime,
-                    stream.runs.len() - 1
+                    crate::text::count(stream.runs.len() - 1, "time", "times")
                 ));
             }
             if stream.duplicates > 0 {
                 notes.push(format!(
-                    "browser: {} segment(s) of the {} stream the player appended again were kept once",
-                    stream.duplicates, stream.mime
+                    "browser: the player appended {} of the {} stream again. Each was kept once.",
+                    crate::text::count(stream.duplicates, "segment", "segments"),
+                    stream.mime
                 ));
             }
             if stream.stray > 0 {
                 notes.push(format!(
-                    "browser: {} segment(s) of the {} stream arrived before any initialization section and were left out",
-                    stream.stray, stream.mime
+                    "browser: left out {} of the {} stream that arrived before any initialization section",
+                    crate::text::count(stream.stray, "segment", "segments"),
+                    stream.mime
                 ));
             }
             let path = self

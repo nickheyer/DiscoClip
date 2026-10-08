@@ -21,6 +21,7 @@ pub mod policy;
 pub mod publish;
 pub mod resolve;
 pub mod store;
+pub mod text;
 pub mod transcode;
 
 pub use reqwest;

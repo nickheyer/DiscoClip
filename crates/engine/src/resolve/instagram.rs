@@ -1,8 +1,10 @@
 //! Instagram posts, reels and IGTV, through the web app's GraphQL query as a visitor or a
 //! logged-in session, and through the embed page when the query is walled off, which it
 //! is for visitors from most networks: asked for the way a browser navigates to it, the
-//! embed page carries the post's GraphQL record in its context JSON. A post carrying
-//! several videos becomes a playlist of them.
+//! embed page carries the post's GraphQL record in its context JSON. The embed withholds
+//! the video of a post that uses licensed music, so such a post is read from its own page,
+//! which renders the media record into its script data. A post carrying several videos
+//! becomes a playlist of them.
 
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -13,6 +15,7 @@ use serde_json::{Value, json};
 use url::Url;
 
 use super::page::{Page, json_after, unescape_json_string};
+use super::util::{find_key, parse_duration};
 use super::{
     MAX_PAGE, Platform, Playlist, PlaylistEntry, Resolution, ResolveError, Resolved, Resolver,
     SessionCheck, SessionSupport, Tag, Variant, VariantKind, clean_title, fetch_ok,
@@ -37,6 +40,12 @@ static RE_USERNAME: LazyLock<Regex> =
 /// The embed page's context, a JSON document held as a string in the page's script data.
 static RE_CONTEXT_JSON: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#""contextJSON":"((?:[^"\\]|\\.)*)""#).unwrap());
+static RE_MPD_DURATION: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"mediaPresentationDuration="([^"]+)""#).unwrap());
+const POST_PAGE_MARKERS: [&str; 2] = [
+    "xig_polaris_media",
+    "xdt_api__v1__media__shortcode__web_info",
+];
 
 pub fn shortcode(url: &Url) -> Option<String> {
     RE_SHORTCODE.captures(url.path()).map(|c| c[1].to_string())
@@ -45,6 +54,8 @@ pub fn shortcode(url: &Url) -> Option<String> {
 /// One video of a post.
 #[derive(Debug, Clone, PartialEq)]
 struct Video {
+    /// Position among the post's items, counted from 1 as the site's img_index does
+    index: usize,
     url: Url,
     width: Option<u32>,
     height: Option<u32>,
@@ -64,12 +75,13 @@ struct Post {
     taken_at: Option<jiff::Timestamp>,
 }
 
-fn video_of(node: &Value) -> Option<Video> {
+fn video_of(node: &Value, index: usize) -> Option<Video> {
     if node["is_video"].as_bool() != Some(true) {
         return None;
     }
     let url = Url::parse(node["video_url"].as_str()?).ok()?;
     Some(Video {
+        index,
         url,
         width: node["dimensions"]["width"].as_u64().map(|w| w as u32),
         height: node["dimensions"]["height"].as_u64().map(|h| h as u32),
@@ -90,10 +102,14 @@ fn post_of(media: &Value) -> Post {
         .map(|edges| edges.iter().map(|e| &e["node"]).collect())
         .unwrap_or_default();
     let (videos, items) = if children.is_empty() {
-        (video_of(media).into_iter().collect(), 1)
+        (video_of(media, 1).into_iter().collect(), 1)
     } else {
         (
-            children.iter().filter_map(|c| video_of(c)).collect(),
+            children
+                .iter()
+                .enumerate()
+                .filter_map(|(i, c)| video_of(c, i + 1))
+                .collect(),
             children.len(),
         )
     };
@@ -119,6 +135,116 @@ fn context_media(html: &str) -> Option<Value> {
     let context: Value = serde_json::from_str(&text).ok()?;
     let media = context.pointer("/gql_data/shortcode_media")?;
     media.is_object().then(|| media.clone())
+}
+
+/// What the post page renders for the post, or whether it withholds it from visitors
+enum PageRecord {
+    Item(Value),
+    Gated,
+    Missing,
+}
+
+/// The media record in the post page's script data, in its visitor or logged-in shape
+fn page_record(html: &str, url: &Url) -> PageRecord {
+    let page = Page::parse(html, url);
+    let selector =
+        scraper::Selector::parse("script[type='application/json'][data-sjs]").expect("valid");
+    let mut gated = false;
+    for script in page.document().select(&selector) {
+        let text: String = script.text().collect();
+        if !POST_PAGE_MARKERS.iter().any(|m| text.contains(m)) {
+            continue;
+        }
+        let Ok(value) = serde_json::from_str::<Value>(&text) else {
+            continue;
+        };
+        if let Some(media) = find_key(&value, "xig_polaris_media") {
+            let item = &media["if_not_gated_logged_out"];
+            if item.is_object() {
+                return PageRecord::Item(item.clone());
+            }
+            gated = true;
+        }
+        if let Some(item) = find_key(&value, "xdt_api__v1__media__shortcode__web_info")
+            .and_then(|info| info["items"][0].as_object())
+        {
+            return PageRecord::Item(Value::Object(item.clone()));
+        }
+    }
+    if gated {
+        PageRecord::Gated
+    } else {
+        PageRecord::Missing
+    }
+}
+
+/// The best of a media item's video versions, type 101 first, then the tallest
+fn item_video(item: &Value, index: usize) -> Option<Video> {
+    let versions = item["video_versions"].as_array()?;
+    let version = versions
+        .iter()
+        .find(|v| v["type"].as_u64() == Some(101))
+        .or_else(|| {
+            versions
+                .iter()
+                .max_by_key(|v| v["height"].as_u64().unwrap_or(0))
+        })?;
+    let url = Url::parse(version["url"].as_str()?).ok()?;
+    let duration = item["video_duration"]
+        .as_f64()
+        .filter(|d| *d > 0.0)
+        .map(Duration::from_secs_f64)
+        .or_else(|| {
+            let manifest = item["video_dash_manifest"].as_str()?;
+            parse_duration(&RE_MPD_DURATION.captures(manifest)?[1])
+        });
+    Some(Video {
+        index,
+        url,
+        width: version["width"]
+            .as_u64()
+            .or_else(|| item["original_width"].as_u64())
+            .map(|w| w as u32),
+        height: version["height"]
+            .as_u64()
+            .or_else(|| item["original_height"].as_u64())
+            .map(|h| h as u32),
+        duration,
+        thumbnail: item
+            .pointer("/image_versions2/candidates/0/url")
+            .and_then(Value::as_str)
+            .and_then(|u| Url::parse(u).ok()),
+    })
+}
+
+/// The post a page's media item describes, carousel items included
+fn post_of_item(item: &Value) -> Post {
+    let children: Vec<&Value> = item["carousel_media"]
+        .as_array()
+        .map(|c| c.iter().collect())
+        .unwrap_or_default();
+    let (videos, items) = if children.is_empty() {
+        (item_video(item, 1).into_iter().collect(), 1)
+    } else {
+        (
+            children
+                .iter()
+                .enumerate()
+                .filter_map(|(i, c)| item_video(c, i + 1))
+                .collect(),
+            children.len(),
+        )
+    };
+    Post {
+        videos,
+        items,
+        caption: item["caption"]["text"].as_str().and_then(clean_title),
+        username: item["user"]["username"].as_str().map(String::from),
+        full_name: item["user"]["full_name"].as_str().and_then(clean_title),
+        taken_at: item["taken_at"]
+            .as_i64()
+            .and_then(|t| jiff::Timestamp::from_second(t).ok()),
+    }
 }
 
 pub struct InstagramResolver {
@@ -245,6 +371,7 @@ impl InstagramResolver {
         };
         Ok(Post {
             videos: vec![Video {
+                index: 1,
                 url,
                 width: None,
                 height: None,
@@ -257,6 +384,39 @@ impl InstagramResolver {
             full_name: None,
             taken_at: None,
         })
+    }
+
+    /// The post through its own page, which carries the video the embed withholds
+    async fn page(&self, code: &str, origin: &Url) -> Result<Post, ResolveError> {
+        let page_url = Url::parse(&format!("https://www.instagram.com/p/{code}/")).expect("valid");
+        let fetched = fetch_ok(
+            &self.http,
+            &page_url,
+            PLATFORM,
+            BROWSER_UA,
+            &navigation_headers(),
+            MAX_PAGE,
+        )
+        .await?;
+        if fetched.url.path().starts_with("/accounts/login") {
+            return Err(ResolveError::login_required(
+                origin,
+                PLATFORM,
+                "the post page asks to log in",
+            ));
+        }
+        match page_record(&fetched.text(), &page_url) {
+            PageRecord::Item(item) => Ok(post_of_item(&item)),
+            PageRecord::Gated => Err(ResolveError::login_required(
+                origin,
+                PLATFORM,
+                "the post is shown to logged-in viewers only",
+            )),
+            PageRecord::Missing => Err(ResolveError::unavailable(
+                origin,
+                "the post page carries no media record",
+            )),
+        }
     }
 
     fn resolved(&self, post: &Post, video: &Video, code: &str, index: Option<usize>) -> Resolved {
@@ -315,7 +475,10 @@ impl Resolver for InstagramResolver {
             tags: &[Tag::Basic, Tag::Social, Tag::Video],
             session: SessionSupport::Optional,
             on_by_default: true,
-            examples: &["https://www.instagram.com/p/aye83DjauH/"],
+            examples: &[
+                "https://www.instagram.com/p/aye83DjauH/",
+                "https://www.instagram.com/reel/DeMzMqyRgYT/",
+            ],
         }
     }
 
@@ -341,7 +504,17 @@ impl Resolver for InstagramResolver {
             }
             Err(error) => {
                 tracing::debug!(%url, "Instagram query failed: {error}. Trying the embed page.");
-                self.embed(&code, url).await?
+                match self.embed(&code, url).await {
+                    Ok(post) if !post.videos.is_empty() => post,
+                    Ok(_) => {
+                        tracing::debug!(%url, "Instagram embed shows no video. Trying the post page.");
+                        self.page(&code, url).await?
+                    }
+                    Err(error) => {
+                        tracing::debug!(%url, "Instagram embed failed: {error}. Trying the post page.");
+                        self.page(&code, url).await?
+                    }
+                }
             }
         };
         if post.videos.is_empty() {
@@ -349,7 +522,7 @@ impl Resolver for InstagramResolver {
         }
         match index {
             Some(i) if post.items > 1 => {
-                let video = post.videos.get(i - 1).ok_or_else(|| {
+                let video = post.videos.iter().find(|v| v.index == i).ok_or_else(|| {
                     ResolveError::unavailable(url, format!("item {i} of the post is not a video"))
                 })?;
                 Ok(Resolution::from(self.resolved(
@@ -377,7 +550,7 @@ impl Resolver for InstagramResolver {
                             Some(PlaylistEntry {
                                 url: Url::parse(&format!(
                                     "https://www.instagram.com/p/{code}/?img_index={}",
-                                    i + 1
+                                    video.index
                                 ))
                                 .ok()?,
                                 title: post
@@ -505,20 +678,15 @@ mod tests {
             json!({"data": {"xdt_shortcode_media": media}, "status": "ok"}).to_string()
         };
         let mut fixture = Fixture::new("instagram", None);
-        fixture.exchanges.push(exchange(
-            "POST",
-            GRAPHQL,
-            200,
-            "application/json",
-            sidecar("Three things"),
-        ));
-        fixture.exchanges.push(exchange(
-            "POST",
-            GRAPHQL,
-            200,
-            "application/json",
-            sidecar("Three things"),
-        ));
+        for _ in 0..3 {
+            fixture.exchanges.push(exchange(
+                "POST",
+                GRAPHQL,
+                200,
+                "application/json",
+                sidecar("Three things"),
+            ));
+        }
         let resolver = InstagramResolver::new(Http::replay(fixture));
         let playlist = match resolver
             .resolve(&Url::parse("https://www.instagram.com/someone/p/Cabcdefgh/").unwrap())
@@ -531,7 +699,7 @@ mod tests {
         assert_eq!(playlist.entries.len(), 2);
         assert_eq!(
             playlist.entries[1].url.as_str(),
-            "https://www.instagram.com/p/Cabcdefgh/?img_index=2"
+            "https://www.instagram.com/p/Cabcdefgh/?img_index=3"
         );
         assert_eq!(
             playlist.entries[1].title.as_deref(),
@@ -547,7 +715,17 @@ mod tests {
             second.variants[0].url.as_str(),
             "https://scontent.cdninstagram.com/two.mp4"
         );
-        assert_eq!(second.id.as_deref(), Some("Cabcdefgh_2"));
+        assert_eq!(second.id.as_deref(), Some("Cabcdefgh_3"));
+        let photo = resolver
+            .resolve(&Url::parse("https://www.instagram.com/p/Cabcdefgh/?img_index=1").unwrap())
+            .await
+            .unwrap_err();
+        assert!(
+            photo
+                .to_string()
+                .contains("item 1 of the post is not a video"),
+            "{photo}"
+        );
     }
 
     #[tokio::test]
@@ -664,5 +842,223 @@ mod tests {
                 .unwrap_err(),
             ResolveError::NotFound(_)
         ));
+    }
+
+    /// The post page's script data as the site renders it for a visitor
+    fn visitor_page(media: Value) -> String {
+        let data = json!({"require": [["ScheduledServerJS", "handle", null, [{"__bbox": {"require": [["RelayPrefetchedStreamCache", "next", [], ["adp_PolarisLoggedOutDesktopWWWPostRootContentQueryRelayPreloader_6ac7232d0df3e7e34796021", {"__bbox": {"complete": true, "result": {"data": {"xig_polaris_media": media}, "extensions": {"is_final": true}}}}]]]}}]]]});
+        format!(
+            r#"<html><head><script type="application/json" data-content-len="1" data-sjs>{{"define":[]}}</script><script type="application/json" data-sjs>{data}</script></head><body></body></html>"#
+        )
+    }
+
+    fn reel_item() -> Value {
+        json!({
+            "__typename": "XDTMediaDict", "code": "DeMzMqyRgYT", "pk": "4002799339771921939",
+            "product_type": "clips", "media_type": 2, "taken_at": 1791390938, "has_audio": true,
+            "original_width": 1080, "original_height": 1920,
+            "caption": {"text": "Flour is a neutral. I heard it goes with everything\n\n#fyp"},
+            "user": {"username": "creme.de.la.crumb", "full_name": "Crème de la Crumb", "is_private": false},
+            "image_versions2": {"candidates": [{"url": "https://scontent.cdninstagram.com/v/t51/reel.jpg?a=1", "width": 1080, "height": 1920}]},
+            "video_dash_manifest": "<?xml version=\"1.0\"?><MPD type=\"static\" mediaPresentationDuration=\"PT8.334513S\"></MPD>",
+            "video_versions": [
+                {"type": 103, "url": "https://scontent.cdninstagram.com/o1/v/low.mp4", "width": null, "height": null},
+                {"type": 101, "url": "https://scontent.cdninstagram.com/o1/v/best.mp4?efg=x", "width": null, "height": null},
+                {"type": 102, "url": "https://scontent.cdninstagram.com/o1/v/mid.mp4", "width": null, "height": null}
+            ]
+        })
+    }
+
+    /// The embed page of a post with licensed music, carrying the record without its video
+    fn blocked_embed(code: &str) -> String {
+        let context = json!({
+            "context": {"type": "GraphVideo", "shortcode": code, "copyright_blocked": true},
+            "gql_data": {"shortcode_media": {
+                "__typename": "GraphVideo", "shortcode": code, "is_video": true, "product_type": "clips",
+                "video_duration": 8.334, "dimensions": {"height": 1136, "width": 640},
+                "display_url": "https://scontent.cdninstagram.com/v/t51/thumb.jpg",
+                "owner": {"id": "72767094298", "username": "creme.de.la.crumb"}
+            }}
+        })
+        .to_string();
+        let script = json!({"define": [], "require": [["PolarisEmbedSimple", "init", [], [{"contextJSON": context}]]]}).to_string();
+        format!(
+            r#"<html><head><title>Instagram</title></head><body><script>requireLazy(["ServerJS"],function(ServerJS){{var s=(new ServerJS());s.handle({script});}});</script></body></html>"#
+        )
+    }
+
+    #[tokio::test]
+    async fn a_copyright_blocked_embed_falls_back_to_the_post_page() {
+        let mut fixture = Fixture::new("instagram", None);
+        fixture.exchanges.push(exchange(
+            "POST",
+            GRAPHQL,
+            403,
+            "text/html; charset=utf-8",
+            "<html><title>Page Not Found</title></html>".into(),
+        ));
+        fixture.exchanges.push(exchange(
+            "GET",
+            "https://www.instagram.com/p/DeMzMqyRgYT/embed/captioned/",
+            200,
+            "text/html",
+            blocked_embed("DeMzMqyRgYT"),
+        ));
+        fixture.exchanges.push(exchange(
+            "GET",
+            "https://www.instagram.com/p/DeMzMqyRgYT/",
+            200,
+            "text/html",
+            visitor_page(json!({"__typename": "XDTMediaDict", "pk": "4002799339771921939", "code": "DeMzMqyRgYT", "if_not_gated_logged_out": reel_item(), "gating_ruling": null, "id": "4002799339771921939_72767094298"})),
+        ));
+        let resolver = InstagramResolver::new(Http::replay(fixture));
+        let url = Url::parse("https://www.instagram.com/reel/DeMzMqyRgYT/?stkn=cXlpaGEzdGJ6ODln")
+            .unwrap();
+        let resolved = resolver.resolve(&url).await.unwrap().media().unwrap();
+        assert_eq!(resolved.variants.len(), 1);
+        assert_eq!(
+            resolved.variants[0].url.as_str(),
+            "https://scontent.cdninstagram.com/o1/v/best.mp4?efg=x"
+        );
+        assert_eq!(resolved.variants[0].width, Some(1080));
+        assert_eq!(resolved.variants[0].height, Some(1920));
+        assert_eq!(resolved.duration, Some(Duration::from_secs_f64(8.334513)));
+        assert_eq!(
+            resolved.title.as_deref(),
+            Some("Flour is a neutral. I heard it goes with everything #fyp")
+        );
+        assert_eq!(resolved.uploader.as_deref(), Some("Crème de la Crumb"));
+        assert_eq!(
+            resolved.uploader_url.as_ref().map(Url::as_str),
+            Some("https://www.instagram.com/creme.de.la.crumb/")
+        );
+        assert_eq!(
+            resolved.thumbnail.as_ref().map(Url::as_str),
+            Some("https://scontent.cdninstagram.com/v/t51/reel.jpg?a=1")
+        );
+        assert!(resolved.uploaded_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn a_logged_in_post_page_yields_its_carousel() {
+        let page = || {
+            let item = json!({
+                "code": "Cabcdefgh", "media_type": 8, "taken_at": 1_700_000_000,
+                "caption": {"text": "Three things"}, "user": {"username": "someone", "full_name": "Some One"},
+                "carousel_media": [
+                    {"media_type": 1, "image_versions2": {"candidates": [{"url": "https://scontent.cdninstagram.com/photo.jpg"}]}},
+                    {"media_type": 2, "video_duration": 4.5, "original_width": 720, "original_height": 1280, "video_versions": [{"type": 101, "url": "https://scontent.cdninstagram.com/one.mp4", "width": 720, "height": 1280}]},
+                    {"media_type": 2, "video_duration": 6.0, "video_versions": [{"type": 102, "url": "https://scontent.cdninstagram.com/two-mid.mp4", "width": 480, "height": 854}, {"type": 101, "url": "https://scontent.cdninstagram.com/two.mp4", "width": 720, "height": 1280}]}
+                ]
+            });
+            let data = json!({"require": [["ScheduledServerJS", "handle", null, [{"__bbox": {"require": [["RelayPrefetchedStreamCache", "next", [], ["PolarisPostRootQueryRelayPreloader_1", {"__bbox": {"result": {"data": {"xdt_api__v1__media__shortcode__web_info": {"items": [item]}}}}}]]]}}]]]});
+            format!(
+                r#"<html><head><script type="application/json" data-sjs>{data}</script></head><body></body></html>"#
+            )
+        };
+        let mut fixture = Fixture::new("instagram", None);
+        for _ in 0..2 {
+            fixture.exchanges.push(exchange("POST", GRAPHQL, 200, "application/json", json!({"data": null, "status": "fail", "message": "Please wait a few minutes before you try again."}).to_string()));
+            fixture.exchanges.push(exchange(
+                "GET",
+                "https://www.instagram.com/p/Cabcdefgh/embed/captioned/",
+                200,
+                "text/html",
+                "<html><head><title>Instagram</title></head><body></body></html>".into(),
+            ));
+            fixture.exchanges.push(exchange(
+                "GET",
+                "https://www.instagram.com/p/Cabcdefgh/",
+                200,
+                "text/html",
+                page(),
+            ));
+        }
+        let resolver = InstagramResolver::new(Http::replay(fixture));
+        let playlist = match resolver
+            .resolve(&Url::parse("https://www.instagram.com/p/Cabcdefgh/").unwrap())
+            .await
+            .unwrap()
+        {
+            Resolution::Playlist(playlist) => playlist,
+            Resolution::Media(_) => panic!("two videos make a playlist"),
+        };
+        assert_eq!(playlist.title.as_deref(), Some("Three things"));
+        assert_eq!(playlist.entries.len(), 2);
+        assert_eq!(
+            playlist.entries[1].duration,
+            Some(Duration::from_secs_f64(6.0))
+        );
+        let second = resolver
+            .resolve(&playlist.entries[1].url)
+            .await
+            .unwrap()
+            .media()
+            .unwrap();
+        assert_eq!(
+            second.variants[0].url.as_str(),
+            "https://scontent.cdninstagram.com/two.mp4"
+        );
+        assert_eq!(second.variants[0].height, Some(1280));
+        assert_eq!(second.id.as_deref(), Some("Cabcdefgh_3"));
+        assert_eq!(second.uploader.as_deref(), Some("Some One"));
+    }
+
+    #[tokio::test]
+    async fn a_gated_post_page_asks_for_a_session() {
+        let mut fixture = Fixture::new("instagram", None);
+        fixture.exchanges.push(exchange(
+            "POST",
+            GRAPHQL,
+            403,
+            "text/html",
+            "<html></html>".into(),
+        ));
+        fixture.exchanges.push(exchange(
+            "GET",
+            "https://www.instagram.com/p/DeMzMqyRgYT/embed/captioned/",
+            200,
+            "text/html",
+            blocked_embed("DeMzMqyRgYT"),
+        ));
+        fixture.exchanges.push(exchange(
+            "GET",
+            "https://www.instagram.com/p/DeMzMqyRgYT/",
+            200,
+            "text/html",
+            visitor_page(json!({"__typename": "XDTMediaDict", "code": "DeMzMqyRgYT", "if_not_gated_logged_out": null, "gating_ruling": "sensitive"})),
+        ));
+        let resolver = InstagramResolver::new(Http::replay(fixture));
+        let error = resolver
+            .resolve(&Url::parse("https://www.instagram.com/reel/DeMzMqyRgYT/").unwrap())
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("logged-in viewers"), "{error}");
+    }
+
+    /// Every example link resolves live to a playable video, the embed-withheld reel included
+    #[ignore = "reaches the live site: cargo test -- --ignored"]
+    #[tokio::test]
+    async fn live_examples_resolve() {
+        let resolver = InstagramResolver::new(Http::new(crate::http::HttpConfig::default()));
+        for link in resolver.platform().examples {
+            let url = Url::parse(link).unwrap();
+            let resolved = tokio::time::timeout(Duration::from_secs(60), resolver.resolve(&url))
+                .await
+                .expect("resolution timed out")
+                .unwrap_or_else(|e| panic!("{link}: {e}"))
+                .media()
+                .unwrap_or_else(|| panic!("{link}: a single video, not a playlist"));
+            assert_eq!(resolved.media, MediaKind::Video, "{link}");
+            assert!(
+                resolved.variants.iter().any(|v| v.is_playable()),
+                "{link}: no playable variant"
+            );
+            assert!(resolved.duration.is_some(), "{link}: no duration");
+            println!(
+                "{link}: {:?} by {:?}, {:?}, {}",
+                resolved.title, resolved.uploader, resolved.duration, resolved.variants[0].url
+            );
+        }
     }
 }

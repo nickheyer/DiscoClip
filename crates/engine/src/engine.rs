@@ -223,7 +223,7 @@ impl Engine {
             let job = match ctx.store.get(id).await {
                 Ok(Some(job)) if job.status == JobStatus::Queued => job,
                 Ok(Some(job)) => {
-                    tracing::debug!(job = %id, status = ?job.status, "skipping job that is no longer queued");
+                    tracing::debug!(job = %id, status = job.status.kind().as_str(), "skipping job that is no longer queued");
                     shared.active.lock().expect("active jobs lock").remove(&id);
                     continue;
                 }

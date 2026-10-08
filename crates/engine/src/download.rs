@@ -187,7 +187,7 @@ pub enum DownloadError {
     #[error("{0}")]
     Segment(String),
     /// A transfer broke once more than it could be picked up again.
-    #[error("download of {url} broke again after {resumes} resume(s): {last}")]
+    #[error("download of {url} broke again after {}: {last}", crate::text::count(*.resumes as usize, "resume", "resumes"))]
     Interrupted {
         url: String,
         resumes: u32,

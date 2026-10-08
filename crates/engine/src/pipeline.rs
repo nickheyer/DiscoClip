@@ -22,15 +22,17 @@ use crate::error::StageError;
 use crate::event::{EngineEvent, EventKind, Progress, ProgressSender};
 use crate::http::Http;
 use crate::job::{
-    Delivery, Job, JobId, JobStatus, LogEntry, Request, SourceId, Stage, SubtitleMode,
+    Delivery, Job, JobId, JobStatus, LogEntry, Request, RequestOptions, SourceId, Stage,
+    SubtitleMode,
 };
-use crate::media::{LocalFile, MediaInfo, MediaKind};
+use crate::media::{Container, LocalFile, MediaInfo, MediaKind};
 use crate::plan::{self, Plan};
 use crate::policy::{DeliveryPolicy, Limits, Policy};
 use crate::publish::{self, Constraints, LinkTarget, PublishError, Publisher, QualityFloor};
 use crate::resolve::SubtitleFormat;
 use crate::resolve::{ClipRange, Resolution, Resolved, ResolverRegistry, Variant};
 use crate::store::{JobStore, StoreError};
+use crate::text::{count, elapsed};
 use crate::transcode::{
     AudioTarget, BurnSource, ImageTarget, StillSource, Target, TranscodeError, Transcoder,
     VideoTarget, byte_budget_bps, clipped_duration,
@@ -108,7 +110,7 @@ impl Context {
             stage,
             message: message.into(),
         };
-        tracing::info!(job = %job.id, stage = ?stage, "{}", entry.message);
+        tracing::info!(job = %job.id, stage = stage.map(|s| s.as_str()), "{}", entry.message);
         job.log.push(entry.clone());
         job.updated_at = entry.at;
         self.store.update(job).await?;
@@ -327,9 +329,10 @@ async fn expand_playlist(
         job,
         Some(stage),
         format!(
-            "{} returned {total} entries. Queued {} jobs.",
+            "{} returned {}. Queued {}.",
             playlist.resolver,
-            ids.len()
+            count(total, "entry", "entries"),
+            count(ids.len(), "job", "jobs")
         ),
     )
     .await
@@ -500,9 +503,6 @@ async fn resolve_link(
 ) -> Result<Located, Interrupt> {
     let url = job.request.url.clone();
     let stage = Stage::Resolve;
-    ctx.transition(job, JobStatus::Running { stage })
-        .await
-        .map_err(|e| failed(stage)(e.into()))?;
     let resolution = unless_interrupted(
         interrupt,
         ctx.resolvers
@@ -546,9 +546,9 @@ async fn resolve_link(
         job,
         Some(stage),
         format!(
-            "{} resolved {media} with {} variants. Selected {} {}.",
+            "{} resolved {media} with {}. Selected {} {}.",
             resolved.resolver,
-            resolved.variants.len(),
+            count(resolved.variants.len(), "variant", "variants"),
             variant.kind.as_str(),
             describe_variant(&variant)
         ),
@@ -696,18 +696,21 @@ async fn download(
         job,
         Some(stage),
         format!(
-            "{} {} bytes to {}{}",
+            "{} {} bytes to {}{}.",
             if job.artifacts.recording.is_some() {
-                "captured"
+                "Captured"
             } else {
-                "downloaded"
+                "Downloaded"
             },
             source.size,
             source.path.display(),
             if local_subtitles.is_empty() {
                 String::new()
             } else {
-                format!(" with {} subtitle track(s)", local_subtitles.len())
+                format!(
+                    " with {}",
+                    count(local_subtitles.len(), "subtitle track", "subtitle tracks")
+                )
             }
         ),
     )
@@ -744,7 +747,7 @@ async fn fetch(
             )
             .await
             .map_err(|e| failed(stage)(e.into()))?;
-        if let Some(source) = reuse(
+        if let Some((source, _)) = reuse(
             ctx,
             job,
             job_dir,
@@ -752,7 +755,7 @@ async fn fetch(
             dest,
             limits,
             policy,
-            located.clip,
+            Some(located),
             stage,
             true,
         )
@@ -779,7 +782,7 @@ async fn fetch(
             .find_finished_by_hash(&hash)
             .await
             .map_err(|e| failed(stage)(e.into()))?;
-        if let Some(source) = reuse(
+        if let Some((source, _)) = reuse(
             ctx,
             job,
             job_dir,
@@ -787,7 +790,7 @@ async fn fetch(
             dest,
             limits,
             policy,
-            located.clip,
+            Some(located),
             stage,
             false,
         )
@@ -848,7 +851,7 @@ fn fits(
     .is_none()
 }
 
-/// The archived media of the first candidate with the same options that fits, brought in as this job's source
+/// The archived media of the first candidate with the same options that fits, brought in as this job's source, with the candidate it came from
 #[allow(clippy::too_many_arguments)]
 async fn reuse(
     ctx: &Context,
@@ -858,25 +861,37 @@ async fn reuse(
     dest: &Destination,
     limits: &Limits,
     policy: &Policy,
-    clip: Option<ClipRange>,
+    located: Option<&Located>,
     stage: Stage,
     from_source: bool,
-) -> Result<Option<LocalFile>, Interrupt> {
+) -> Result<Option<(LocalFile, Job)>, Interrupt> {
     let Some(archiver) = ctx.archiver.as_ref() else {
         return Ok(None);
     };
     let io = |e: std::io::Error| failed(stage)(StageError::Download(e.into()));
+    let all_skipped = match (located, stage) {
+        (None, _) => "Resolving, download and conversion skipped.",
+        (Some(_), Stage::Resolve) => "Download and conversion skipped.",
+        _ => "Conversion skipped.",
+    };
+    let fetch_skipped = if located.is_some() {
+        "Download skipped."
+    } else {
+        "Resolving and download skipped."
+    };
     for candidate in candidates {
-        let candidate_clip = candidate.request.options.clip.or(candidate
-            .artifacts
-            .resolved
-            .as_ref()
-            .and_then(|r| r.clip));
-        if candidate.id == job.id
-            || candidate.request.options != job.request.options
-            || candidate_clip != clip
-        {
+        if candidate.id == job.id || candidate.request.options != job.request.options {
             continue;
+        }
+        if let Some(located) = located {
+            let candidate_clip = candidate.request.options.clip.or(candidate
+                .artifacts
+                .resolved
+                .as_ref()
+                .and_then(|r| r.clip));
+            if candidate_clip != located.clip {
+                continue;
+            }
         }
         let Some(entry) = candidate.artifacts.archived.clone() else {
             continue;
@@ -888,16 +903,20 @@ async fn reuse(
             .published
             .as_ref()
             .and_then(|p| p.url.clone());
-        if let (Some(archived), Some(output)) = (files.output, candidate.artifacts.output.as_ref())
-            && let Some(info) = output.info.clone()
-        {
-            let archived = LocalFile {
+        let archived_output = match (files.output, candidate.artifacts.output.as_ref()) {
+            (Some(archived), Some(output)) => output.info.clone().map(|info| LocalFile {
                 info: Some(info),
                 ..archived
-            };
+            }),
+            _ => None,
+        };
+        if let (Some(archived), Some(output)) = (
+            archived_output.as_ref(),
+            candidate.artifacts.output.as_ref(),
+        ) {
             let reference = candidate.artifacts.source.as_ref().unwrap_or(output);
             if fits(
-                &archived,
+                archived,
                 reference,
                 &dest.constraints,
                 limits,
@@ -917,31 +936,33 @@ async fn reuse(
                     job.artifacts.media_hash = Some(hash);
                 }
                 job.artifacts.archived = Some(entry);
-                let skipped = if stage == Stage::Resolve {
-                    "Download and conversion skipped."
-                } else {
-                    "Conversion skipped."
-                };
                 ctx.note(
                     job,
                     Some(stage),
                     format!(
-                        "Same media as job {} ({title}), finished {}: reusing its archived \
-                         output ({} bytes). {skipped}",
+                        "Same media as job {} ({title}), finished {} earlier: reusing its \
+                         archived output ({} bytes). {all_skipped}",
                         candidate.id,
-                        candidate.finished_at.unwrap_or(candidate.updated_at),
+                        elapsed(
+                            candidate.finished_at.unwrap_or(candidate.updated_at),
+                            Timestamp::now()
+                        ),
                         archived.size
                     ),
                 )
                 .await
                 .map_err(|e| failed(stage)(e.into()))?;
-                return Ok(Some(LocalFile {
+                let reused = LocalFile {
                     path: copy,
-                    ..archived
-                }));
+                    ..archived.clone()
+                };
+                return Ok(Some((reused, candidate)));
             }
         }
-        if from_source && let Some(source) = files.source {
+        if !from_source {
+            continue;
+        }
+        if let Some(source) = files.source {
             let info = candidate
                 .artifacts
                 .source
@@ -957,16 +978,94 @@ async fn reuse(
                 Some(stage),
                 format!(
                     "Same media as job {} ({title}): its archived output does not fit here. \
-                     Converting from its archived source instead. Download skipped.",
+                     Converting from its archived source instead. {fetch_skipped}",
                     candidate.id
                 ),
             )
             .await
             .map_err(|e| failed(stage)(e.into()))?;
-            return Ok(Some(LocalFile { info, ..source }));
+            return Ok(Some((LocalFile { info, ..source }, candidate)));
+        }
+        if let Some(archived) = archived_output {
+            job.artifacts.reused_from = Some(candidate.id);
+            job.artifacts.earlier_post = earlier_post;
+            if let Some(hash) = candidate.artifacts.media_hash.clone() {
+                job.artifacts.media_hash = Some(hash);
+            }
+            ctx.note(
+                job,
+                Some(stage),
+                format!(
+                    "Same media as job {} ({title}): its archived output does not fit here. \
+                     Converting from that output instead. {fetch_skipped}",
+                    candidate.id
+                ),
+            )
+            .await
+            .map_err(|e| failed(stage)(e.into()))?;
+            return Ok(Some((archived, candidate)));
         }
     }
     Ok(None)
+}
+
+/// A finished job's resolution and the variant this job would take from it, unless it was live
+fn stored_variant(
+    candidate: &Job,
+    limits: &Limits,
+    options: &RequestOptions,
+) -> Option<(Resolved, Variant)> {
+    let resolved = candidate.artifacts.resolved.clone().filter(|r| !r.live)?;
+    let variant = plan::select_variant(
+        &resolved.variants,
+        limits,
+        &resolved.resolver,
+        resolved.media,
+        &options.audio_language,
+    )
+    .ok()?;
+    Some((resolved, variant))
+}
+
+/// The archived output of an earlier job for the same link, in place of resolving it again
+async fn reuse_link(
+    ctx: &Context,
+    job: &mut Job,
+    job_dir: &Path,
+    dest: &Destination,
+    limits: &Limits,
+    policy: &Policy,
+) -> Result<Option<(Located, LocalFile)>, Interrupt> {
+    if !policy.dedupe.enabled || !policy.dedupe.matching.by_url() {
+        return Ok(None);
+    }
+    let stage = Stage::Resolve;
+    let candidates: Vec<Job> = ctx
+        .store
+        .find_finished_by_url(&dedupe::url_key(&job.request.url), None)
+        .await
+        .map_err(|e| failed(stage)(e.into()))?
+        .into_iter()
+        .filter(|candidate| stored_variant(candidate, limits, &job.request.options).is_some())
+        .collect();
+    let Some((source, candidate)) = reuse(
+        ctx, job, job_dir, candidates, dest, limits, policy, None, stage, true,
+    )
+    .await?
+    else {
+        return Ok(None);
+    };
+    let (resolved, variant) = stored_variant(&candidate, limits, &job.request.options)
+        .expect("every candidate offered to reuse has a stored variant");
+    job.artifacts.resolved = Some(resolved.clone());
+    Ok(Some((
+        Located {
+            clip: job.request.options.clip.or(resolved.clip),
+            resolved,
+            variant,
+        },
+        source,
+    )))
 }
 
 async fn execute(
@@ -987,9 +1086,10 @@ async fn execute(
         )))
     })?;
 
+    let dest = destination(publisher.as_ref(), job).await?;
     // A capture the engine's stop interrupted carries on from its recording: what was
     // recorded is the source, and the job resumes at the transcode.
-    let (located, recording) = match resumable(job).await {
+    let (located, prefetched) = match resumable(job).await {
         Some(recording) => {
             let resolved = job
                 .artifacts
@@ -1014,27 +1114,42 @@ async fn execute(
             )
             .await
             .map_err(|e| failed(Stage::Download)(e.into()))?;
+            let subtitles = job.artifacts.subtitles.clone();
             (
                 Located {
                     clip: job.request.options.clip.or(resolved.clip),
                     resolved,
                     variant,
                 },
-                Some(recording),
+                Some(Fetched {
+                    source: recording,
+                    subtitles,
+                }),
             )
         }
-        None => match resolve_link(ctx, job, interrupt, &limits, &policy).await {
-            Ok(located) => (located, None),
-            Err(Interrupt::Expanded) => return Ok(()),
-            Err(other) => return Err(other),
-        },
+        None => {
+            let stage = Stage::Resolve;
+            ctx.transition(job, JobStatus::Running { stage })
+                .await
+                .map_err(|e| failed(stage)(e.into()))?;
+            match reuse_link(ctx, job, job_dir, &dest, &limits, &policy).await? {
+                Some((located, source)) => (
+                    located,
+                    Some(Fetched {
+                        source,
+                        subtitles: Vec::new(),
+                    }),
+                ),
+                None => match resolve_link(ctx, job, interrupt, &limits, &policy).await {
+                    Ok(located) => (located, None),
+                    Err(Interrupt::Expanded) => return Ok(()),
+                    Err(other) => return Err(other),
+                },
+            }
+        }
     };
-    let dest = destination(publisher.as_ref(), job).await?;
-    let fetched = match recording {
-        Some(source) => Fetched {
-            source,
-            subtitles: job.artifacts.subtitles.clone(),
-        },
+    let fetched = match prefetched {
+        Some(fetched) => fetched,
         None => {
             fetch(
                 ctx, job, job_dir, stop, interrupt, &config, &limits, &policy, &dest, &located,
@@ -1078,7 +1193,7 @@ async fn execute(
         ctx.note(
             job,
             Some(Stage::Transcode),
-            format!("output ready: {} bytes", output.size),
+            format!("Output ready, {} bytes.", output.size),
         )
         .await
         .map_err(|e| failed(Stage::Transcode)(e.into()))?;
@@ -1127,7 +1242,7 @@ async fn execute(
     ctx.note(
         job,
         Some(stage),
-        format!("published as {}", published.reference),
+        format!("Published as {}.", published.reference),
     )
     .await
     .map_err(|e| failed(stage)(e.into()))?;
@@ -1138,7 +1253,9 @@ async fn execute(
         ctx.note(
             job,
             Some(Stage::Archive),
-            format!("Archived with job {earlier}."),
+            format!(
+                "Not archived again. The archive already holds this output from job {earlier}."
+            ),
         )
         .await
         .map_err(|e| failed(Stage::Archive)(e.into()))?;
@@ -1154,8 +1271,8 @@ async fn execute(
             job,
             Some(stage),
             format!(
-                "archived {} file(s), {} bytes",
-                entry.files.len(),
+                "Archived {}, {} bytes.",
+                count(entry.files.len(), "file", "files"),
                 entry.bytes
             ),
         )
@@ -1610,11 +1727,17 @@ async fn produce(
     };
     let output = match plan {
         Plan::Passthrough => {
+            let subject = if job.artifacts.reused_from.is_some() && job.artifacts.archived.is_some()
+            {
+                "The reused output"
+            } else {
+                "The source"
+            };
             ctx.note(
                 job,
                 Some(stage),
                 format!(
-                    "Source meets {} requirements. Publishing without conversion.",
+                    "{subject} already meets the requirements, {}. Publishing it without conversion.",
                     describe_constraints(constraints, kind)
                 ),
             )
@@ -1627,7 +1750,7 @@ async fn produce(
                 job,
                 Some(stage),
                 format!(
-                    "Source: {} {}. Converting to {}{}.",
+                    "Source: {}, {} bytes. Converting to {}{}.",
                     info.map(describe_info).unwrap_or_else(|| kind.to_string()),
                     source.size,
                     describe_target(&target),
@@ -1960,12 +2083,12 @@ fn describe_variant(v: &crate::resolve::Variant) -> String {
 }
 
 fn describe_info(info: &crate::media::MediaInfo) -> String {
-    let mut s = format!("{} {:?}", info.kind, info.container);
+    let mut s = format!("{} {}", info.kind, info.container.extension());
     if let Some(v) = &info.video {
-        s.push_str(&format!(" {:?} {}x{}", v.codec, v.width, v.height));
+        s.push_str(&format!(" {} {}x{}", v.codec.as_str(), v.width, v.height));
     }
     if let Some(a) = &info.audio {
-        s.push_str(&format!(" {:?}", a.codec));
+        s.push_str(&format!(" {}", a.codec.as_str()));
     }
     if let Some(d) = info.duration {
         s.push_str(&format!(" {:.1}s", d.as_secs_f64()));
@@ -1974,20 +2097,29 @@ fn describe_info(info: &crate::media::MediaInfo) -> String {
 }
 
 fn describe_constraints(c: &Constraints, kind: MediaKind) -> String {
+    let list = |containers: &[Container]| {
+        containers
+            .iter()
+            .map(Container::extension)
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
     match kind {
         MediaKind::Video => format!(
-            "{:?}/{:?} under {} bytes",
-            c.preferred_container(),
-            c.preferred_video(),
+            "{}/{} under {} bytes",
+            c.preferred_container().extension(),
+            c.preferred_video().as_str(),
             c.max_bytes
         ),
         MediaKind::Audio => format!(
-            "audio in {:?} under {} bytes",
-            c.audio_containers, c.max_bytes
+            "audio in {} under {} bytes",
+            list(&c.audio_containers),
+            c.max_bytes
         ),
         MediaKind::Image => format!(
-            "images in {:?} under {} bytes",
-            c.image_containers, c.max_bytes
+            "images in {} under {} bytes",
+            list(&c.image_containers),
+            c.max_bytes
         ),
         MediaKind::File => format!("files under {} bytes", c.max_bytes),
     }

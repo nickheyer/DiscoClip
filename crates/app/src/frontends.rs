@@ -204,7 +204,7 @@ pub enum FrontendError {
     DuplicateUser(String, String),
     #[error("no login provider is called {0}")]
     UnknownProvider(String),
-    #[error("{0} profile(s) send media to this view: point them elsewhere first")]
+    #[error("{} assigned to this view must be pointed elsewhere first", discoclip_engine::text::count(*.0, "profile", "profiles"))]
     InUse(usize),
     #[error("{0}")]
     Password(String),

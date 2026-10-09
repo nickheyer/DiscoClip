@@ -686,9 +686,6 @@ fn meta_name(name: &str, content: &str) -> String {
     )
 }
 
-/// Discord plays an external video inline up to about this size and drops the whole embed above it
-pub const INLINE_VIDEO_LIMIT: u64 = 80 * 1024 * 1024;
-
 /// The coral of the brand mark, drawn by Discord as the bar beside a preview
 const BRAND_COLOR: &str = "#f2542d";
 
@@ -783,7 +780,7 @@ pub fn media_head(base: &Url, frontend: &Frontend, job: &FrontJob, token: &str) 
         escape(&title)
     ));
     match job.media {
-        MediaKind::Video if job.size <= INLINE_VIDEO_LIMIT => {
+        MediaKind::Video => {
             head.push_str(&meta("og:type", "video.other"));
             head.push_str(&meta("og:video", media.as_str()));
             head.push_str(&meta("og:video:url", media.as_str()));
@@ -807,13 +804,6 @@ pub fn media_head(base: &Url, frontend: &Frontend, job: &FrontJob, token: &str) 
                 head.push_str(&meta_name("twitter:player:width", &w.to_string()));
                 head.push_str(&meta_name("twitter:player:height", &h.to_string()));
             }
-        }
-        MediaKind::Video => {
-            head.push_str(&meta("og:type", "website"));
-            head.push_str(&meta("og:image", image.as_str()));
-            head.push_str(&meta_name("twitter:image", image.as_str()));
-            head.push_str(&meta_name("twitter:card", "summary_large_image"));
-            head.push_str(&meta_name("twitter:title", &title));
         }
         MediaKind::Audio => {
             head.push_str(&meta("og:type", "music.song"));
@@ -1663,9 +1653,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Discord drops the whole embed of a video past its proxy's limit, so it unfurls as a card
+    /// A video of any size unfurls with its player, since the page exists for media too big to upload
     #[tokio::test]
-    async fn a_video_past_the_inline_limit_unfurls_as_a_card() {
+    async fn a_large_video_unfurls_with_its_player() {
         let (app, db) = app_with_admin_db().await;
         let dir = std::env::temp_dir().join(format!("discoclip-front-{}", uuid::Uuid::now_v7()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -1680,65 +1670,31 @@ mod tests {
             Some(&five),
         )
         .await;
-        big.artifacts.output.as_mut().unwrap().size = super::INLINE_VIDEO_LIMIT + 1;
+        big.artifacts.output.as_mut().unwrap().size = 3 * 1024 * 1024 * 1024;
         db.update(&big).await.unwrap();
-        let mut fits = seed(
-            &db,
-            &dir,
-            "fits",
-            Some("5"),
-            Some("1"),
-            "fixtured",
-            Some(&five),
-        )
-        .await;
-        fits.artifacts.output.as_mut().unwrap().size = super::INLINE_VIDEO_LIMIT;
-        db.update(&fits).await.unwrap();
 
         let mut guest = visitor(&app);
         let (status, html) = guest.get(&format!("/f/five/j/{}", big.id)).await;
-        assert_eq!(status, StatusCode::OK);
-        let html = html.as_str().unwrap();
-        assert!(!html.contains("og:video"), "{html}");
-        assert!(!html.contains("twitter:player"), "{html}");
-        assert!(
-            html.contains(r#"<meta property="og:type" content="website">"#),
-            "{html}"
-        );
-        assert!(
-            html.contains(r#"<meta name="twitter:card" content="summary_large_image">"#),
-            "{html}"
-        );
-        assert!(html.contains("<title>Clip big</title>"), "{html}");
-        assert!(
-            html.contains(r#"<meta property="og:description" content="Fixtured">"#),
-            "{html}"
-        );
-        assert!(html.contains(&format!(
-            r#"<meta property="og:image" content="http://localhost:8080/api/f/five/jobs/{}/thumbnail?t="#,
-            big.id
-        )), "{html}");
-
-        let (status, html) = guest.get(&format!("/f/five/j/{}", fits.id)).await;
         assert_eq!(status, StatusCode::OK);
         let html = html.as_str().unwrap();
         assert!(
             html.contains(r#"<meta property="og:type" content="video.other">"#),
             "{html}"
         );
+        assert!(html.contains(&format!(
+            r#"<meta property="og:video" content="http://localhost:8080/api/f/five/jobs/{}/media?t="#,
+            big.id
+        )), "{html}");
+        assert!(
+            html.contains(r#"<meta property="og:video:type" content="video/mp4">"#),
+            "{html}"
+        );
         assert!(
             html.contains(r#"<meta name="twitter:card" content="player">"#),
             "{html}"
         );
-
-        // The page's own player is told where the media is either way
-        let (status, page) = guest.get("/api/f/five/jobs").await;
-        assert_eq!(status, StatusCode::OK, "{page}");
-        for job in page["jobs"].as_array().unwrap() {
-            assert_eq!(job["media"], "video");
-            let (status, body) = guest.get(job["media_url"].as_str().unwrap()).await;
-            assert_eq!(status, StatusCode::OK, "{body}");
-        }
+        assert!(!html.contains(r#"content="website""#), "{html}");
+        assert!(html.contains("<title>Clip big</title>"), "{html}");
         let _ = std::fs::remove_dir_all(&dir);
     }
     /// Discord lays the provider and author lines out from the oEmbed document the page links to
